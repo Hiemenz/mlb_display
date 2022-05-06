@@ -1,0 +1,39 @@
+featured_team: NYY
+alt_team: ARI
+rival_team: LAA
+
+end_point: "https://www.mlb.com/scores/"
+
+game_container: grid-itemstyle__GridItemWrapper-sc-cq9wv2-0 gmoPjI
+teams: imagestyle__ImageWrapper-sc-xw1tzz-0 cXiYpX
+
+full_name: TeamWrappersstyle__DesktopTeamWrapper-sc-uqs6qh-0 fdaoCu
+short_name: TeamWrappersstyle__MobileTeamWrapper-sc-uqs6qh-1 jXnGyx
+
+away_line_scores: lineScorestyle__StyledInningCell-sc-1d7bghs-1 fbtTqY
+away_score: lineScorestyle__StyledInningCell-sc-1d7bghs-1 ddFUsj
+away_hits_errors: lineScorestyle__StyledInningCell-sc-1d7bghs-1 bybxiY
+
+
+home_line_scores: lineScorestyle__StyledInningCell-sc-1d7bghs-1 cCJzxi
+home_score: lineScorestyle__StyledInningCell-sc-1d7bghs-1 jPCzPZ
+home_hits_errors: lineScorestyle__StyledInningCell-sc-1d7bghs-1 ggbVFi
+
+
+game_state_active: ScoresGamestyle__InningNumberWrapper-sc-7t80if-9 fGwgfi
+game_state_not_active: "StatusLayerstyle__GameStateWrapper-sc-1s2c2o8-3 feaLYF"
+game_state_time: StatusLayerstyle__StatusLayerValue-sc-1s2c2o8-2 cwSbWW
+game_state_outs: outsstyle__StyledBaseSVG-sc-4uh89f-0 clvNyU
+
+
+
+
+
+
+
+# not used yet
+# game_state: StatusLayerstyle__GameStateWrapper-sc-1s2c2o8-3 feaLYF
+image_logo_prefix: src="https://www.mlbstatic.com/team-logos/team-cap-on-light/
+
+team_logo: imagestyle__Img-sc-xw1tzz-1 gArTDD
+yankees: 147.svg
