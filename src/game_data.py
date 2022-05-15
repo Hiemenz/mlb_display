@@ -81,8 +81,7 @@ def get_team_box_score(team='DEFAULT'):
 
             return game['away_team'], game['home_team'], away_line, home_line, game['game_state'], game['inning_header']
     return 'Not Found', 2, 3, 4, 5, 6
-def save_off_scores():
-    pass
+
 
 def get_games():
     return soup.find_all("div", {"class": tags_dict['game_container']})
@@ -94,21 +93,13 @@ def get_game_state(game):
     game_state_time = game.find_all("div", {"class": tags_dict['game_state_time']})
     return game_state_active, game_state_not_active, game_state_time
 
+
 def get_team_names(game):
     teams = game.find_all("div", {"class": tags_dict['short_name']})
     away_team = teams[0].text
     home_team = teams[1].text
     return away_team, home_team
 
-
-def get_line_score():
-    pass
-
-def get_runs():
-    pass
-
-def get_hits_errors():
-    pass
 
 def store_data(
     game_state,
@@ -187,6 +178,28 @@ def get_standings():
     # print(result)
     return result
 
+def get_mlb_standings():
+    URL = tags_dict['url_standings']
+    r = requests.get(URL)
+    
+    standings = BeautifulSoup(r.content, 'html5lib') 
+    print(standings)
+
+    print(standings.find_all("span", {"class": tags_dict['division_containers_class']}))
+
+
+
+def save_off_scores():
+    pass
+
+
+def did_game_state_change():
+    pass
+
+
+def get_active_game():
+    pass
+
 
 orchastrate()
-# get_standings()
+# get_mlb_standings()

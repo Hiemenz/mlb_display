@@ -25,7 +25,9 @@ game_state_not_active: "StatusLayerstyle__GameStateWrapper-sc-1s2c2o8-3 feaLYF"
 game_state_time: StatusLayerstyle__StatusLayerValue-sc-1s2c2o8-2 cwSbWW
 game_state_outs: outsstyle__StyledBaseSVG-sc-4uh89f-0 clvNyU
 
-
+# standings
+url_standings: https://www.mlb.com/standings
+division_containers_class: team--name
 
 
 

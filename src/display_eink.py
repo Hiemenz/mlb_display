@@ -21,7 +21,6 @@ import traceback
 import game_data
 logging.basicConfig(level=logging.DEBUG)
 
-    
 
 def draw_boards():
     epd = epd7in5_V2.EPD()
@@ -110,7 +109,6 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
 
 def display_image(image_to_display):
 
-
     try:
 
         logging.info("epd7in5_V2 Demo")
@@ -119,8 +117,6 @@ def display_image(image_to_display):
         logging.info("init and Clear")
         epd.init()
         epd.Clear()
-
-        
 
         logging.info("1.Drawing on the Horizontal image...")
         
