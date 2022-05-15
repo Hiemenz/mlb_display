@@ -1,12 +1,13 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
+
 import sys
 import os
 
 from regex import F
+
 picdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic')
 libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib')
-
 
 if os.path.exists(libdir):
     sys.path.append(libdir)
@@ -124,7 +125,7 @@ def display_image(image_to_display):
         logging.info("1.Drawing on the Horizontal image...")
         
         epd.display(epd.getbuffer(image_to_display))
-        image_to_display.save('/home/pi/Documents/copy/RaspberryPi_JetsonNano/python/examples/test.bmp') 
+        image_to_display.save('/home/pi/Documents/mlb_display/resulting_image.bmp') 
         time.sleep(2)
 
     except IOError as e:
