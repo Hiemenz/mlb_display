@@ -4,7 +4,7 @@ import json
 
 tags_dict = ''
 
-with open("/Users/kevinhiemenz/Documents/python/mlb_display/src/tags.yaml", "r") as stream:
+with open("/home/pi/Documents/mlb_display/src/tags.yaml", "r") as stream:
     try:
         tags_dict = yaml.safe_load(stream)
         # print(tags_dict)
