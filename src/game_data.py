@@ -1,12 +1,10 @@
 
-import statsapi
 import yaml
 import json
 
 tags_dict = ''
 
-
-with open("/home/pi/Documents/mlb_display/src/tags.yaml", "r") as stream:
+with open("/Users/kevinhiemenz/Documents/python/mlb_display/src/tags.yaml", "r") as stream:
     try:
         tags_dict = yaml.safe_load(stream)
         # print(tags_dict)
@@ -164,30 +162,41 @@ def game_live_finished(game, game_state):
                 home_team, [ '' for i in range(9)], '', ['','']
             )
 
-def get_standings():
-    raw_standings =  statsapi.standings()
-    standing_list = raw_standings.split('\n')
-    print(standing_list[1:7])
-    result = []
-    result.append(standing_list[1].split()[:-5]) #+ ' '.join(item.split()[6:7])] )
-    for item in standing_list[2:7]:
-
-        result += [[item.split()[0], ' '.join(item.split()[1:-7])] + item.split()[-7:-3]]
-    
-    # result += [list(item.split()[0]) + list(item.split()[1:-7]) + list(item.split()[-4:]) for item in standing_list[2:7]]
-    # print(result)
-    return result
 
 def get_mlb_standings():
-    URL = tags_dict['url_standings']
-    r = requests.get(URL)
+
+    r = requests.get(tags_dict['url_standings'])
     
-    standings = BeautifulSoup(r.content, 'html5lib') 
+    standings = BeautifulSoup(r.content, 'lxml')
     print(standings)
 
-    print(standings.find_all("span", {"class": tags_dict['division_containers_class']}))
+    results = standings.find_all("div", {"class": tags_dict['division_containers_class']})
+    
+    standing_teams_name = []
+    standing_teams_values = []
+    [standing_teams_name.append(item.find("span", {"class": tags_dict['get_long_name']}).text)
+     for item in results]
+    
+    table_standings = standings.find_all(
+        "div", {"class": tags_dict['table_standings']})
+    
+    for table_standing in table_standings:
+        values = table_standing.find_all(
+            "tr", {"class": tags_dict['team_values']})
+        for value in values:
+            team_stats = []
+            col_values = value.find_all("td", {"class": tags_dict["col_values"]})
+            [team_stats.append(item.text) for item in col_values]
+            standing_teams_values.append(team_stats)
 
-
+    for item in standing_teams_values:
+        if item[0] == 'W':
+            standings_header = item
+            standing_teams_values.remove(item)
+    for team in range(len(standing_teams_name)):
+        print(standing_teams_name[team])
+        print(standing_teams_values[team])
+    return standing_teams_name, standing_teams_values, standings_header
 
 def save_off_scores():
     pass

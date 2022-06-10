@@ -7,7 +7,7 @@ authors = ["hiemenz <mckevinaaa24@gmail.com>"]
 
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "3.7"
 regex = "^2022.4.24"
 spidev = "^3.5"
 "RPi.GPIO" = "^0.7.1"
