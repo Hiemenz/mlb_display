@@ -25,9 +25,17 @@ game_state_not_active: "StatusLayerstyle__GameStateWrapper-sc-1s2c2o8-3 feaLYF"
 game_state_time: StatusLayerstyle__StatusLayerValue-sc-1s2c2o8-2 cwSbWW
 game_state_outs: outsstyle__StyledBaseSVG-sc-4uh89f-0 clvNyU
 
+# standings
+url_standings: https://www.espn.com/mlb/standings
+division_containers_class: "team-link flex items-center clr-gray-03"
+get_long_name: hide-mobile
+
+table_standings: Table__ScrollerWrapper relative overflow-hidden
+
+team_values: "Table__TR--sm"
 
 
-
+col_values: Table__TD
 
 
 
