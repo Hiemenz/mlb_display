@@ -31,6 +31,7 @@ def draw_boards():
                        255)  # 255: clear the frame
     col_start = 100
     row_start = 40
+    game_data.orchastrate()
     away_team, home_team, away, home, game_state, inning_header = game_data.get_team_box_score()
 
     if away_team != 'Not Found':
@@ -48,19 +49,24 @@ def draw_boards():
         Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away, home, game_state, inning_header)
 
 
-    col_start = 100
-    row_start = 320
-    away_team, home_team, away, home, game_state, inning_header = game_data.get_team_box_score('RIV')
+    # col_start = 100
+    # row_start = 320
+    # away_team, home_team, away, home, game_state, inning_header = game_data.get_team_box_score('RIV')
 
-    if away_team != 'Not Found':
-        Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away, home, game_state, inning_header)
+    # if away_team != 'Not Found':
+    #     Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away, home, game_state, inning_header)
     
     Himage = generate_standings(Himage, col_start=100, row_start=300)
     display_image(Himage)
 
 
 def generate_standings(Himage, col_start=0, row_start=0):
-    standing_teams_name, standing_teams_values, standings_header = game_data.get_mlb_standings()
+
+    payload = game_data.get_standings()
+
+    standing_teams_name = list(payload['standing_teams_name'])
+    standing_teams_values = list(payload['standing_teams_values'])
+    standings_header = list(payload['standings_header'])
 
     standings_list = [[name] + value for name, value in zip(standing_teams_name, standing_teams_values)]
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)

@@ -8,16 +8,14 @@ authors = ["hiemenz <mckevinaaa24@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "3.7"
-regex = "^2022.4.24"
-spidev = "^3.5"
-"RPi.GPIO" = "^0.7.1"
-Pillow = "^9.1.0"
-MLB-StatsAPI = "^1.4.2"
-PyYAML = "^6.0"
 bs4 = "^0.0.1"
-html5lib = "^1.1"
-
-
+regex = "*"
+spidev = "~=3.5"
+"RPi.GPIO" = "~=0.7.1"
+Pillow = "~=9.1.0"
+MLB-StatsAPI = "~=1.4.2"
+PyYAML = "~=6.0"
+html5lib = "1.1"
 
 
 [tool.poetry.dev-dependencies]
