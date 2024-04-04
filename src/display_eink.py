@@ -319,13 +319,13 @@ def generate_standings(Himage, col_start=100, row_start=320):
                   team.get('streak'), font=font18, fill=0)
     #     # last 10
         draw.text((verticle_lines[5] + 8 + col_start, padding + row_start),
-                 f'{team.get('last_ten_wins')}-{team.get('last_ten_losses')}' , font=font18, fill=0)
+                 f'{team.get("last_ten_wins")}-{team.get("last_ten_losses")}' , font=font18, fill=0)
     #     # home record
         draw.text((verticle_lines[6] + 8 + col_start, padding + row_start),
-                  f'{team.get('home_wins')}-{team.get('home_losses')}', font=font18, fill=0)
+                  f'{team.get("home_wins")}-{team.get("home_losses")}', font=font18, fill=0)
     #     # away record
         draw.text((verticle_lines[7] + 8 + col_start, padding + row_start),
-                  f'{team.get('away_wins')}-{team.get('away_losses')}', font=font18, fill=0)
+                  f'{team.get("away_wins")}-{team.get("away_losses")}', font=font18, fill=0)
     return Himage
 
 def draw_diamond(Himage, center, size, fill=False):
