@@ -97,7 +97,7 @@ def parse_games(data):
 
 def check_if_games_in_progress(data):
     if data.get('totalGamesInProgress', 0) > 0:
-        print(f'{data.get('totalGamesInProgress')} games in progress.')
+        print(f'{data.get("totalGamesInProgress")} games in progress.')
     else:
         print('No games in progress.')    
     
