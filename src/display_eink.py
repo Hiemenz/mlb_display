@@ -159,10 +159,12 @@ def draw_boards():
     else: 
         print('image is different')
         
+        Himage.save('temp.bmp') 
+        display_image(Himage)
+        
     save_off_results(new_image_dict, "old_image_state")
+    print('saving off image...')
     
-    Himage.save('temp.bmp') 
-    # display_image(Himage)
 
 
 def generate_image(Himage, col_start, row_start, away_team, home_team, away, home,
