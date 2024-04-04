@@ -14,8 +14,11 @@ libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__)
 if os.path.exists(libdir):
     sys.path.append(libdir)
 
+EPD_WIDTH = 800
+EPD_HEIGHT = 480
+
 import logging
-from waveshare_epd import epd7in5_V2
+# from waveshare_epd import epd7in5_V2
 import time
 from PIL import Image, ImageDraw, ImageFont
 import traceback
@@ -353,36 +356,30 @@ def draw_circle(Himage, center, radius, fill):
 
 
 
-def display_image(image_to_display):
-    try:
-        epd = epd7in5_V2.EPD()
-        epd.init_fast()
-        epd.display(epd.getbuffer(image_to_display))
-
 
 
 
 
 def display_image(image_to_display):
     
-    
 
 
     try:
 
-        logging.info("epd7in5_V2 Demo")
+        # logging.info("epd7in5_V2 Demo")
         epd = epd7in5_V2.EPD()
         
         logging.info("init and Clear")
-        epd.init()
-        epd.Clear()
-
-        
+        epd.init_fast()
+        # epd.Clear()
 
         logging.info("1.Drawing on the Horizontal image...")
         
         epd.display(epd.getbuffer(image_to_display))
         image_to_display.save('/home/pi/Documents/mlb_display/resulting_image.bmp') 
+        # image_to_display.save('/Users/kevinhiemenz/Documents/python/mlb_display/resulting_image.bmp')
+
+
         time.sleep(2)
 
     except IOError as e:

@@ -1,10 +1,10 @@
 
-import statsapi
 import yaml
 import json
+import pickle
+
 
 tags_dict = ''
-
 
 with open("/home/pi/Documents/mlb_display/src/tags.yaml", "r") as stream:
     try:
@@ -15,11 +15,7 @@ with open("/home/pi/Documents/mlb_display/src/tags.yaml", "r") as stream:
 
 import requests
 from bs4 import BeautifulSoup
-  
-URL = tags_dict['end_point']
-r = requests.get(URL)
-  
-soup = BeautifulSoup(r.content, 'html5lib') 
+
 results = []
 # print(soup.prettify())
 def orchastrate():
@@ -64,6 +60,7 @@ def orchastrate():
 
 
 def get_team_box_score(team='DEFAULT'):
+
     if team == 'DEFAULT':
         featured_team = tags_dict['featured_team']
     elif team == 'ALT':
@@ -81,10 +78,14 @@ def get_team_box_score(team='DEFAULT'):
 
             return game['away_team'], game['home_team'], away_line, home_line, game['game_state'], game['inning_header']
     return 'Not Found', 2, 3, 4, 5, 6
-def save_off_scores():
-    pass
+
 
 def get_games():
+
+    URL = tags_dict['end_point']
+    r = requests.get(URL)
+    
+    soup = BeautifulSoup(r.content, 'html5lib')
     return soup.find_all("div", {"class": tags_dict['game_container']})
 
 
@@ -94,21 +95,13 @@ def get_game_state(game):
     game_state_time = game.find_all("div", {"class": tags_dict['game_state_time']})
     return game_state_active, game_state_not_active, game_state_time
 
+
 def get_team_names(game):
     teams = game.find_all("div", {"class": tags_dict['short_name']})
     away_team = teams[0].text
     home_team = teams[1].text
     return away_team, home_team
 
-
-def get_line_score():
-    pass
-
-def get_runs():
-    pass
-
-def get_hits_errors():
-    pass
 
 def store_data(
     game_state,
@@ -139,7 +132,9 @@ def store_data(
             "home_score": home_score,
             "home_hits_errors": home_hits_errors 
         }
+
     results.append(data)
+
 
 def game_live_finished(game, game_state):
     away_team, home_team = get_team_names(game)
@@ -173,20 +168,77 @@ def game_live_finished(game, game_state):
                 home_team, [ '' for i in range(9)], '', ['','']
             )
 
-def get_standings():
-    raw_standings =  statsapi.standings()
-    standing_list = raw_standings.split('\n')
-    print(standing_list[1:7])
-    result = []
-    result.append(standing_list[1].split()[:-5]) #+ ' '.join(item.split()[6:7])] )
-    for item in standing_list[2:7]:
 
-        result += [[item.split()[0], ' '.join(item.split()[1:-7])] + item.split()[-7:-3]]
+def get_mlb_standings():
+    print('getting request')
+    r = requests.get(tags_dict['url_standings'])
+    print('got request...')
+    standings = BeautifulSoup(r.content, 'html5lib')
+    print(standings)
+
+    results = standings.find_all("div", {"class": tags_dict['division_containers_class']})
     
-    # result += [list(item.split()[0]) + list(item.split()[1:-7]) + list(item.split()[-4:]) for item in standing_list[2:7]]
-    # print(result)
-    return result
+    standing_teams_name = []
+    standing_teams_values = []
+    [standing_teams_name.append(item.find("span", {"class": tags_dict['get_long_name']}).text)
+     for item in results]
+    
+    table_standings = standings.find_all(
+        "div", {"class": tags_dict['table_standings']})
+    
+    for table_standing in table_standings:
+        values = table_standing.find_all(
+            "tr", {"class": tags_dict['team_values']})
+        for value in values:
+            team_stats = []
+            col_values = value.find_all("td", {"class": tags_dict["col_values"]})
+            [team_stats.append(item.text) for item in col_values]
+            standing_teams_values.append(team_stats)
+
+    for item in standing_teams_values:
+        if item[0] == 'W':
+            standings_header = item
+            standing_teams_values.remove(item)
+    for team in range(len(standing_teams_name)):
+        print(standing_teams_name[team])
+        print(standing_teams_values[team])
+
+    payload_dict = {
+        'standing_teams_name': standing_teams_name,
+        'standing_teams_values': standing_teams_values,
+        'standings_header': standings_header
+    }
+    
+    save_off_standings(payload_dict)
 
 
-orchastrate()
-# get_standings()
+def save_off_standings(standings):
+    with open( "standings.p", "wb" ) as f:
+        pickle.dump( standings, f)
+
+
+def get_standings():
+    with open( "standings.p", "rb" ) as f:
+        standings = pickle.load(f)
+        return standings
+
+
+def save_off_scores():
+    pass
+
+
+def did_game_state_change():
+    pass
+
+
+def get_active_game():
+    pass
+
+
+def main():
+    get_mlb_standings()
+
+
+if __name__ == '__main__':
+    main()
+    
