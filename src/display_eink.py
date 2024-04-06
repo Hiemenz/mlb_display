@@ -7,6 +7,17 @@ import os
 from regex import F
 import json
 
+import random
+
+
+standings_dict = {
+    1: 'American League East',
+    2: 'American League Central',
+    3: 'American League West',
+    4: 'National League East',
+    5: 'National League Central',
+    6: 'National League West',
+}
 
 picdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic')
 libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib')
@@ -166,10 +177,10 @@ def draw_boards():
         Himage.save('temp.bmp') 
         display_image(Himage)
         
-    save_off_results(new_image_dict, "old_image_state")
-    print('saving off image...')
+        save_off_results(new_image_dict, "old_image_state")
+        print('saving off image...')
     
-
+    
 
 def generate_image(Himage, col_start, row_start, away_team, home_team, away, home,
                    game_state, inning_header, first_base, second_base, third_base, outs, start_time, home_is_winner):
@@ -250,7 +261,11 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
 
 def generate_standings(Himage, col_start=100, row_start=320):
     data = load_json_file('standings.json')
-    teams_in_division = data.get('standings').get('American League East')
+    
+    ran_num = random.randint(1, 6)
+    
+    teams_in_division = data.get('standings').get(standings_dict.get(ran_num))
+    
     
     # standings_list = [[name] + value for name, value in zip(standing_teams_name, standing_teams_values)]
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
@@ -356,12 +371,6 @@ def draw_circle(Himage, center, radius, fill):
     else:
         draw.ellipse(bounding_box, outline='black')
     return Himage
-
-
-
-
-
-
 
 
 
