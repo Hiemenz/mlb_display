@@ -164,7 +164,7 @@ def draw_boards():
         print('image is different')
         
         Himage.save('temp.bmp') 
-        # display_image(Himage)
+        display_image(Himage)
         
     save_off_results(new_image_dict, "old_image_state")
     print('saving off image...')
