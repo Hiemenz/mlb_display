@@ -6,7 +6,6 @@ import json
 import os 
 import pytz
 
-BASE_URL = 'https://statsapi.mlb.com'
 
 def load_json_file(file_name):
     data_dict = {}
@@ -16,7 +15,6 @@ def load_json_file(file_name):
         data_dict = json.load(file)
         return data_dict
 
-    
 def save_off_results(data, output):
     with open( output + '.json', 'w') as f:
         json.dump(data, f, indent=4)
@@ -67,10 +65,8 @@ def parse_games(data):
             'detailed_state': game.get('status', {}).get('detailedState'), 
             }
            
-            
-        print(game.get('teams', {}).get('away', {}).get('team', {}).get('name'))
-        print(game.get('teams', {}).get('home', {}).get('team', {}).get('name'))
-
+        # print(game.get('teams', {}).get('away', {}).get('team', {}).get('name'))
+        # print(game.get('teams', {}).get('home', {}).get('team', {}).get('name'))
 
         extra_key = ''
         if game.get('doubleHeader') == 'Y' and game.get('gameNumber') == 2:
@@ -82,8 +78,6 @@ def parse_games(data):
         team_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
         home_abbrevation = standings_dict.get('team_abbreviation',{}).get(str(team_id))
 
-
-        
         team_abb_to_game_id_dict[away_abbrevation + extra_key] =  str(game.get('gamePk') )
 
         team_abb_to_game_id_dict[home_abbrevation + extra_key] =  str(game.get('gamePk'))
@@ -185,6 +179,7 @@ def parse_linescore(data):
         
 def get_linescore(game_id):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/game/{game_id}/linescore'
+    print(url_endpoint)
     response = requests.get(url_endpoint)
     data = response.json()
     
@@ -194,8 +189,15 @@ def get_linescore(game_id):
     return linescore_dict
     
     
-
-        
+def get_game_probables(game_id):
+    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?gamePk={game_id}&language=en&hydrate=story,xrefId,lineups,broadcasts(all),probablePitcher(note),game(content(media(epg)),tickets)&useLatestGames=true&fields=dates,games,teams,probablePitcher,note,id,dates,games,broadcasts,type,name,homeAway,language,isNational,callSign,mediaState,mediaStateCode,availableForStreaming,freeGame,mediaId,dates,games,game,tickets,ticketType,ticketLinks,dates,games,content,media,epg,dates,games,lineups,homePlayers,awayPlayers,useName,lastName,firstName,primaryPosition,abbreviation,dates,games,xrefIds,xrefId,xrefType,story'
+    response = requests.get(url_endpoint)
+    data = response.json()
+    
+    data.get()
+    
+    
+    
 
 def get_games(game_date):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1'
@@ -206,11 +208,12 @@ def get_games(game_date):
     parse_games(data)
 
     
-    
 def main():
     six_hours_ago = datetime.now() - timedelta(hours=6)
 
     get_games(six_hours_ago.date())
+    
+    
     
     config_data = load_json_file('config.json')
     
@@ -218,38 +221,67 @@ def main():
     games_scheduled_data = load_json_file('games_scheduled.json')
     
     linescore_dict = {}
-    print(config_data)
-    print(config_data.get('primary'))
     primary_game_id = games_scheduled_data.get('team_to_game_id').get(config_data.get('primary'))
-    
-    
-    print(primary_game_id)
     primary_backup_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary_backup'), {})
     primary_backup_2_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary_backup_2'), {})
     
+    loaded_json = load_json_file('linescore.json')
+    
     if primary_game_id:
-        linescore_dict[config_data.get('primary')] = get_linescore(primary_game_id)
+        if games_scheduled_data.get('games_scheduled').get(primary_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('primary')):
+            print('Game in progress')
+            linescore_dict[config_data.get('primary')] = get_linescore(primary_game_id)
+        else:
+            print('Game not in progress')
+            linescore_dict[config_data.get('primary')] = loaded_json.get(config_data.get('primary'))
     elif primary_backup_game_id:
-        linescore_dict[config_data.get('primary_backup')] = get_linescore(primary_backup_game_id)
+        if games_scheduled_data.get('games_scheduled').get(primary_backup_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('primary_backup'), False):
+            print('Game in progress')
+            linescore_dict[config_data.get('primary_backup')] = get_linescore(primary_backup_game_id)
+        else:
+            print('Game not in progress')
+            linescore_dict[config_data.get('primary_backup')] = loaded_json.get(config_data.get('primary_backup'))
+        
     elif primary_backup_2_game_id:
-        linescore_dict[config_data.get('primary_backup_2')] = get_linescore(primary_backup_2_game_id)
-
-
+        if games_scheduled_data.get('games_scheduled').get(primary_backup_2_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('primary_backup_2')):
+            print('Game in progress')
+            linescore_dict[config_data.get('primary_backup_2')] = get_linescore(primary_backup_2_game_id)
+        else:
+            print('Game not in progress')
+            linescore_dict[config_data.get('primary_backup_2')] = loaded_json.get(config_data.get('primary_backup_2'))
+        
     secondary_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('secondary'), {})
     secondary_backup_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('secondary_backup'), {})
     secondary_backup_2_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('secondary_backup_2'), {})
     
-
+    print(secondary_game_id)
     if secondary_game_id:
-        linescore_dict[config_data.get('secondary')] = get_linescore(secondary_game_id)
+        if games_scheduled_data.get('games_scheduled').get(secondary_game_id).get('detailed_state') == 'In Progress'  or not loaded_json.get(config_data.get('secondary')):
+            print('Game in progress')
+            linescore_dict[config_data.get('secondary')] = get_linescore(secondary_game_id)
+        else:
+            print('Game not in progress')
+            linescore_dict[config_data.get('secondary')] = loaded_json.get(config_data.get('secondary'))
+       
     elif secondary_backup_game_id:
-        linescore_dict[config_data.get('secondary_backup')] = get_linescore(secondary_backup_game_id)
+        if games_scheduled_data.get('games_scheduled').get(secondary_backup_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('secondary_backup')):
+            
+            print('Game in progress')
+            linescore_dict[config_data.get('secondary_backup')] = get_linescore(secondary_backup_game_id)
+        else:
+            print('Game not in progress')
+            linescore_dict[config_data.get('secondary_backup')] = loaded_json.get(config_data.get('secondary_backup'))
+       
     elif secondary_backup_2_game_id:
-        linescore_dict[config_data.get('secondary_backup_2')] = get_linescore(secondary_backup_2_game_id)
-    
-    
+        if games_scheduled_data.get('games_scheduled').get(secondary_backup_2_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('secondary_backup_2')):
+            print('Game in progress')
+            linescore_dict[config_data.get('secondary_backup_2')] = get_linescore(secondary_backup_2_game_id)
+        else:
+            print('Game not in progress')
+            linescore_dict[config_data.get('secondary_backup_2')] = loaded_json.get(config_data.get('secondary_backup_2'))
+           
     save_off_results(linescore_dict, 'linescore')
+    
+# main()
+get_game_probables()
 
-    
-    
-main()

@@ -23,7 +23,7 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import traceback
 
-# import game_data
+import game_data
 logging.basicConfig(level=logging.DEBUG)
 
 def load_json_file(file_name):
@@ -127,17 +127,20 @@ def draw_boards():
     col_start = 100
     row_start = 40
     
+    team_abbr = None
     if linescore_data.get(config_data.get('primary')):
         team_abbr = config_data.get('primary')
     elif linescore_data.get(config_data.get('primary_backup')):
         team_abbr = config_data.get('primary_backup')
     elif linescore_data.get(config_data.get('primary_backup_2')):
         team_abbr = config_data.get('primary_backup_2')
-        
-    Himage, new_image_dict = generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict)
     
+    if team_abbr:   
+        Himage, new_image_dict = generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict)
+    
+    team_abbr = None
     if linescore_data.get(config_data.get('secondary')):
-            team_abbr = config_data.get('secondary')
+        team_abbr = config_data.get('secondary')
     elif linescore_data.get(config_data.get('secondary_backup')):
         team_abbr = config_data.get('secondary_backup')
     elif linescore_data.get(config_data.get('secondary_backup_2')):
@@ -146,7 +149,8 @@ def draw_boards():
     col_start = 100
     row_start = 180
     
-    Himage, new_image_dict = generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict)
+    if team_abbr:
+        Himage, new_image_dict = generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict)
 
     Himage = generate_standings(Himage, col_start=100, row_start=320)
     
@@ -160,7 +164,7 @@ def draw_boards():
         print('image is different')
         
         Himage.save('temp.bmp') 
-        display_image(Himage)
+        # display_image(Himage)
         
     save_off_results(new_image_dict, "old_image_state")
     print('saving off image...')
