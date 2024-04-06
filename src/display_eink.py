@@ -382,7 +382,7 @@ def display_image(image_to_display):
         logging.info("1.Drawing on the Horizontal image...")
         
         epd.display(epd.getbuffer(image_to_display))
-        image_to_display.save('/home/pi/Documents/mlb_display/resulting_image.bmp') 
+        image_to_display.save('resulting_image.bmp') 
         # image_to_display.save('/Users/kevinhiemenz/Documents/python/mlb_display/resulting_image.bmp')
 
 
