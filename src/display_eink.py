@@ -23,7 +23,7 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import traceback
 
-import game_data
+
 logging.basicConfig(level=logging.DEBUG)
 
 def load_json_file(file_name):
