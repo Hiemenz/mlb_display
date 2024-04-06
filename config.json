@@ -1,8 +1,8 @@
 {
-  "primary": "NYY",
+  "primary": "HOU",
   "primary_backup": "BOS",
   "primary_backup_2": "NYM",
   "secondary": "NYY_DOUBLE",
-  "secondary_backup": "LAD", 
+  "secondary_backup": "COL", 
   "secondary_backup_2": "ATL"
 }
