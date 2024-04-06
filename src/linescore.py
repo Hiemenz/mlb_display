@@ -282,6 +282,6 @@ def main():
            
     save_off_results(linescore_dict, 'linescore')
     
-# main()
-get_game_probables()
+main()
+# get_game_probables()
 
