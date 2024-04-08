@@ -67,11 +67,15 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     data = load_json_file('games_scheduled.json')
     standings_data = load_json_file('standings.json')
 
+   
     
     game_id = data.get('team_to_game_id').get(team_abbr)
     
     game_info = data.get('games_scheduled').get(game_id)
+    away_probable = game_info.get('away_probable')
+    home_probable = game_info.get('home_probable')
     
+
     # magic string to account for extra innings
     if int(data_linescore.get('current_inning', 0)) > 9:
         start_inning = int(data_linescore.get('current_inning')) - 8
@@ -125,7 +129,7 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
         'outs': outs,
     }
     
-    Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away, home, game_state, inning_header, first_base, second_base, third_base, outs, start_time, home_is_winner)
+    Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away, home, game_state, inning_header, first_base, second_base, third_base, outs, start_time, home_is_winner, away_probable, home_probable)
     return Himage, new_image_dict
 
 def draw_boards():
@@ -183,7 +187,7 @@ def draw_boards():
     
 
 def generate_image(Himage, col_start, row_start, away_team, home_team, away, home,
-                   game_state, inning_header, first_base, second_base, third_base, outs, start_time, home_is_winner):
+                   game_state, inning_header, first_base, second_base, third_base, outs, start_time, home_is_winner, away_probable, home_probable):
     draw = ImageDraw.Draw(Himage)
 
     # bmp = Image.open(os.path.join('/home/pi/Documents/e-Paper/RaspberryPi_JetsonNano/python/examples/', 'qr.jpg'))
@@ -210,16 +214,27 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
     elif home_is_winner == 'W':
         draw_circle(Himage, (col_start + 12, row_start + 75), 8, True) 
 
-
-    if game_state == 'Delayed Start':
-        game_state = 'Delayed'     
+    if not away_probable:
+        away_probable = ''    
+    if not home_probable:
+        home_probable = ''
         
+    DISPLAY_PROBS = False
     if game_state == 'Scheduled' or game_state == 'Pre-Game':
+        innings = [None] * 12
+        away, home = innings, innings
         game_state = start_time 
+        DISPLAY_PROBS = True
+
+        draw.text((25 + col_start + 82, 30 + row_start), away_probable, font = font24, fill = 0)
+        draw.text((25 + col_start + 82, 60 + row_start), home_probable, font = font24, fill = 0)
         
     draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0)
     draw.text((25 + col_start, 30 + row_start), away_team, font = font24, fill = 0)
     draw.text((25 + col_start, 60 + row_start), home_team, font = font24, fill = 0)
+    
+    if game_state == 'Delayed Start':
+        game_state = 'Delayed'     
     
     # lines horizontal
     draw.line((col_start, 30 + row_start, 580 + col_start, 30 + row_start), fill = 0)
@@ -230,6 +245,8 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
         # inning
         sub_header, sub_away, sub_home = 0,0,0
         if i < 12:
+            
+            
             if 1 < len(str(inning_header[i])):
                 sub_header = -7
             if 1 < len(str(away[i])):
@@ -247,8 +264,11 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
             draw.text((115 + sub_away + (40*i) + col_start, 30 + row_start), str(away[i]), font = font24, fill = 0)
             draw.text((115 + sub_home + (40*i) + col_start, 60 + row_start), str(home[i]), font = font24, fill = 0)
         
-        # vertical line
+        # vertical line 
+        if i >= 1 and i <= 8 and DISPLAY_PROBS:
+            continue
         if i == 9 or i == 10:
+
             if i == 9:
                 draw.line((100 + (40*i) + col_start, 0 + row_start + 88, 100 + (40*i) + 40 + col_start, +88 + row_start), fill = 0)
                 draw.line((100 + (40*i) + col_start, 0 + row_start + 89, 100 + (40*i) + 40 + col_start, +89 + row_start), fill = 0)

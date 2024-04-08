@@ -31,8 +31,29 @@ def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
     cst_hour_minutes = cst_time.strftime("%-I:%M %p")
     return cst_hour_minutes
 
+def are_timestamps_separated_by(timestamp1, timestamp2, minutes):
+    # Convert timestamp strings to datetime objects
+    time_format = "%Y-%m-%dT%H:%M:%S"
+    if not timestamp1:
+        timestamp1 = timestamp2
+        
+    dt1 = datetime.strptime(timestamp1, time_format)
+    dt2 = datetime.strptime(timestamp2, time_format)
+    
+    # Calculate the absolute difference between the two datetime objects
+    time_diff = abs(dt2 - dt1)
+    
+    # Check if the difference is greater than the specified duration
+    return time_diff > timedelta(minutes=minutes)
+
+
+def get_current_time():
+    current_time = datetime.now()
+    return current_time.strftime("%Y-%m-%dT%H:%M:%S")
 
 def parse_games(data):
+    current_time  = get_current_time()
+    
     game_dates = data.get('dates', {})
     games = game_dates[0].get('games')
     
@@ -42,6 +63,12 @@ def parse_games(data):
     game_list = {}
     for game in games:
         game_id = game.get('gamePk')
+        probables_dict = {} 
+        detailed_state = game.get('status', {}).get('detailedState')
+        
+        if detailed_state == 'Scheduled' or detailed_state == 'Pre-Game':
+            probables_dict = get_game_probables(game_id)
+    
         game_dict = {
             'away_team_name': game.get('teams', {}).get('away', {}).get('team', {}).get('name'),
             'away_team_id': game.get('teams', {}).get('away', {}).get('team', {}).get('id'),
@@ -62,11 +89,11 @@ def parse_games(data):
             'games_in_series': game.get('gamesInSeries'), 
             'game_date': game.get('gameDate'), 
             'game_start': convert_time_z_to(game.get('gameDate')),
-            'detailed_state': game.get('status', {}).get('detailedState'), 
+            'detailed_state': detailed_state, 
+            'away_probable': probables_dict.get('away_probable'),
+            'home_probable': probables_dict.get('home_probable'),
             }
-           
-        # print(game.get('teams', {}).get('away', {}).get('team', {}).get('name'))
-        # print(game.get('teams', {}).get('home', {}).get('team', {}).get('name'))
+    
 
         extra_key = ''
         if game.get('doubleHeader') == 'Y' and game.get('gameNumber') == 2:
@@ -85,8 +112,13 @@ def parse_games(data):
         game_list[game_id] = game_dict
         
         
-        games_scheduled = {'games_scheduled': game_list, 'team_to_game_id': team_abb_to_game_id_dict}
-        save_off_results(games_scheduled, 'games_scheduled')
+        games_scheduled = {
+            'games_scheduled': game_list,
+            'team_to_game_id': team_abb_to_game_id_dict, 
+            'last_updated_time': current_time,
+            }
+        
+    save_off_results(games_scheduled, 'games_scheduled')
         
 
 def check_if_games_in_progress(data):
@@ -98,19 +130,13 @@ def check_if_games_in_progress(data):
 def pad_innings(innings):
     while len(innings) < 9:
         innings.append(None)
-        
-        
-        
+    
     return innings[-9::]
         
     
         
 def parse_linescore(data):
-    
-    
-    
     inning_list = []
-    
     away_runs = []
     home_runs = []
     
@@ -120,16 +146,11 @@ def parse_linescore(data):
         home_runs.append(inning.get('home', {}).get('runs'))
         
         inning_dict = {
-            
             'inning_num': inning.get('num'),
-            
-            
-            
             'home_runs': inning.get('home', {}).get('runs'),
             'home_hits': inning.get('home', {}).get('hits'),
             'home_errors': inning.get('home', {}).get('errors'),
             'home_left_on_base': inning.get('home', {}).get('leftOnBase'),
-
             'away_runs': inning.get('away', {}).get('runs'),
             'away_hits': inning.get('away', {}).get('hits'),
             'away_errors': inning.get('away', {}).get('errors'),
@@ -148,68 +169,90 @@ def parse_linescore(data):
         'current_inning_ordinal': data.get('currentInningOrdinal'),
         'current_inning': data.get('currentInning', 0),
         'inning_half': data.get('inningHalf'),
-        
-        
         'home_runs': data.get('teams', {}).get('home', {}).get('runs'),
         'home_hits': data.get('teams', {}).get('home', {}).get('hits'),
         'home_errors': data.get('teams', {}).get('home', {}).get('errors'),
-        
         'away_runs': data.get('teams', {}).get('away', {}).get('runs'),
         'away_hits': data.get('teams', {}).get('away', {}).get('hits'),
         'away_errors': data.get('teams', {}).get('away', {}).get('errors'),
-        
-        
-        
         'balls': data.get('balls'),
         'strikes': data.get('strikes'),
         'outs': data.get('outs', 0),
-        
         'away_runs_innings': away_runs,
         'home_runs_innings': home_runs,
-        
         'innings': inning_list,
-        
     }
-
-    
     return linescore_dict
     
-            
-        
         
 def get_linescore(game_id):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/game/{game_id}/linescore'
     print(url_endpoint)
     response = requests.get(url_endpoint)
     data = response.json()
-    
-    
     linescore_dict = parse_linescore(data)
-    
     return linescore_dict
     
     
+def get_player_name(person_id):
+    url_endpoint = f'https://statsapi.mlb.com/api/v1/people/{person_id}'
+    
+    if person_id:
+        data = requests.get(url_endpoint).json().get('people' )[0]
+        print(url_endpoint)
+
+        return data.get('fullName')
+    return None
+    
 def get_game_probables(game_id):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?gamePk={game_id}&language=en&hydrate=story,xrefId,lineups,broadcasts(all),probablePitcher(note),game(content(media(epg)),tickets)&useLatestGames=true&fields=dates,games,teams,probablePitcher,note,id,dates,games,broadcasts,type,name,homeAway,language,isNational,callSign,mediaState,mediaStateCode,availableForStreaming,freeGame,mediaId,dates,games,game,tickets,ticketType,ticketLinks,dates,games,content,media,epg,dates,games,lineups,homePlayers,awayPlayers,useName,lastName,firstName,primaryPosition,abbreviation,dates,games,xrefIds,xrefId,xrefType,story'
-    response = requests.get(url_endpoint)
-    data = response.json()
     
-    data.get()
+    games_scheduled_dict = load_json_file('games_scheduled.json')
+    away_probable = games_scheduled_dict.get('games_scheduled', {}).get(str(game_id), {}).get('away_probable')
+    home_probable = games_scheduled_dict.get('games_scheduled', {}).get(str(game_id), {}).get('home_probable')
+
+    if not away_probable or not home_probable:
+        response = requests.get(url_endpoint)
+        print(url_endpoint)
+        data = response.json().get('dates')[0]
+
+
+        player_id = data.get('games', {})[0].get('teams', {}).get('away', {}).get('probablePitcher', {}).get('id')
+        away_probable = get_player_name(player_id)
+
+        player_id = data.get('games', {})[0].get('teams', {}).get('home', {}).get('probablePitcher', {}).get('id')
+        home_probable = get_player_name(player_id) 
+        
+    probables_dict  = {
+        'away_probable': away_probable,
+        'home_probable': home_probable,
+    }
+    
+    return probables_dict
     
     
     
 
 def get_games(game_date):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1'
-    print(url_endpoint)
+    
 
+    games_scheduled_data = load_json_file('games_scheduled.json')
+    config_data = load_json_file('config.json')
+
+    
+    if are_timestamps_separated_by(games_scheduled_data.get('last_updated_time'), get_current_time() ,int(config_data.get('update_interval'))):
+        print('it has been more than ')
+    print(url_endpoint)
     response = requests.get(url_endpoint)
     data = response.json()
     parse_games(data)
 
-    
+
 def main():
     six_hours_ago = datetime.now() - timedelta(hours=6)
+    six_hours_ago = datetime.now() + timedelta(hours=24)
+
 
     get_games(six_hours_ago.date())
     
@@ -283,5 +326,4 @@ def main():
     save_off_results(linescore_dict, 'linescore')
     
 main()
-# get_game_probables()
 
