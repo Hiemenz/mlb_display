@@ -46,7 +46,6 @@ def are_timestamps_separated_by(timestamp1, timestamp2, minutes):
     # Check if the difference is greater than the specified duration
     return time_diff > timedelta(minutes=minutes)
 
-
 def get_current_time():
     current_time = datetime.now()
     return current_time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -74,14 +73,11 @@ def parse_games(data):
             'away_team_id': game.get('teams', {}).get('away', {}).get('team', {}).get('id'),
             'away_team_is_winner': game.get('teams', {}).get('away', {}).get('isWinner'),         
             'away_team_series_number': game.get('teams', {}).get('away', {}).get('seriesNumber'),
-            
             'home_team_name': game.get('teams', {}).get('home', {}).get('team', {}).get('name'),
             'home_team_id': game.get('teams', {}).get('home', {}).get('team', {}).get('id'),
             'home_team_is_winner': game.get('teams', {}).get('home', {}).get('isWinner'),     
             'home_team_series_number': game.get('teams', {}).get('home', {}).get('seriesNumber'), 
-            
             'double_header': game.get('doubleHeader'), 
-            
             'series_description': game.get('seriesDescription'), 
             'day_night': game.get('dayNight'), 
             'description': game.get('description'), 
@@ -93,7 +89,6 @@ def parse_games(data):
             'away_probable': probables_dict.get('away_probable'),
             'home_probable': probables_dict.get('home_probable'),
             }
-    
 
         extra_key = ''
         if game.get('doubleHeader') == 'Y' and game.get('gameNumber') == 2:
@@ -111,7 +106,6 @@ def parse_games(data):
 
         game_list[game_id] = game_dict
         
-        
         games_scheduled = {
             'games_scheduled': game_list,
             'team_to_game_id': team_abb_to_game_id_dict, 
@@ -120,7 +114,6 @@ def parse_games(data):
         
     save_off_results(games_scheduled, 'games_scheduled')
         
-
 def check_if_games_in_progress(data):
     if data.get('totalGamesInProgress', 0) > 0:
         print(f'{data.get("totalGamesInProgress")} games in progress.')
@@ -133,7 +126,6 @@ def pad_innings(innings):
     
     return innings[-9::]
         
-    
         
 def parse_linescore(data):
     inning_list = []
@@ -160,7 +152,6 @@ def parse_linescore(data):
         
     away_runs = pad_innings(away_runs)
     home_runs = pad_innings(home_runs)
-    
     
     linescore_dict = {
         'runner_first': data.get('offense', {}).get('first',{}).get('fullName'),
@@ -215,8 +206,6 @@ def get_game_probables(game_id):
         response = requests.get(url_endpoint)
         print(url_endpoint)
         data = response.json().get('dates')[0]
-
-
         player_id = data.get('games', {})[0].get('teams', {}).get('away', {}).get('probablePitcher', {}).get('id')
         away_probable = get_player_name(player_id)
 
@@ -230,17 +219,11 @@ def get_game_probables(game_id):
     
     return probables_dict
     
-    
-    
-
 def get_games(game_date):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1'
-    
-
     games_scheduled_data = load_json_file('games_scheduled.json')
     config_data = load_json_file('config.json')
 
-    
     if are_timestamps_separated_by(games_scheduled_data.get('last_updated_time'), get_current_time() ,int(config_data.get('update_interval'))):
         print('it has been more than ')
     print(url_endpoint)
@@ -251,23 +234,14 @@ def get_games(game_date):
 
 def main():
     six_hours_ago = datetime.now() - timedelta(hours=6)
-    six_hours_ago = datetime.now() + timedelta(hours=24)
-
-
     get_games(six_hours_ago.date())
-    
-    
-    
     config_data = load_json_file('config.json')
-    
-    
     games_scheduled_data = load_json_file('games_scheduled.json')
     
     linescore_dict = {}
     primary_game_id = games_scheduled_data.get('team_to_game_id').get(config_data.get('primary'))
     primary_backup_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary_backup'), {})
     primary_backup_2_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary_backup_2'), {})
-    
     loaded_json = load_json_file('linescore.json')
     
     if primary_game_id:
