@@ -3,7 +3,7 @@
   "primary_backup": "BOS",
   "primary_backup_2": "NYM",
   "secondary": "NYY_DOUBLE",
-  "secondary_backup": "COL", 
-  "secondary_backup_2": "ATL",
+  "secondary_backup": "LAD", 
+  "secondary_backup_2": "STL",
   "update_interval": "15"
 }

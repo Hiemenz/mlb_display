@@ -195,7 +195,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
 
-    if game_state != 'Final' and game_state != 'Game Over' and game_state != 'Scheduled' and game_state != 'Pre-Game' and game_state != 'Delayed' and game_state != 'Postponed' :
+    if game_state != 'Final' and game_state != 'Game Over' and game_state != 'Scheduled' and game_state != 'Pre-Game' and game_state != 'Delayed' and game_state != 'Postponed' and game_state != 'Warmup':
         outs_list = [None] * 3
         
         for i in range(1,4):
@@ -220,7 +220,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
         home_probable = ''
         
     DISPLAY_PROBS = False
-    if game_state == 'Scheduled' or game_state == 'Pre-Game':
+    if game_state == 'Scheduled' or game_state == 'Pre-Game' or game_state == 'Warmup':
         innings = [None] * 12
         away, home = innings, innings
         game_state = start_time 
