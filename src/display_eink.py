@@ -75,6 +75,8 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     away_probable = game_info.get('away_probable')
     home_probable = game_info.get('home_probable')
     
+    print(home_probable)
+    
 
     # magic string to account for extra innings
     if int(data_linescore.get('current_inning', 0)) > 9:
@@ -195,7 +197,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
 
-    if game_state != 'Final' and game_state != 'Game Over' and game_state != 'Scheduled' and game_state != 'Pre-Game' and game_state != 'Delayed' and game_state != 'Postponed' :
+    if game_state not in ('Final', 'Game Over','Scheduled','Pre-Game','Delayed','Postponed', 'Warmup') :
         outs_list = [None] * 3
         
         for i in range(1,4):
@@ -220,10 +222,12 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
         home_probable = ''
         
     DISPLAY_PROBS = False
-    if game_state == 'Scheduled' or game_state == 'Pre-Game' or 'Warmup':
+    
+    if game_state in ('Scheduled', 'Pre-Game', 'Warmup'):
         innings = [None] * 12
         away, home = innings, innings
-        game_state = start_time 
+        if game_state != 'Warmup':
+            game_state = start_time 
         DISPLAY_PROBS = True
 
         draw.text((25 + col_start + 82, 30 + row_start), away_probable, font = font24, fill = 0)
@@ -396,9 +400,6 @@ def draw_circle(Himage, center, radius, fill):
 
 
 def display_image(image_to_display):
-    
-
-
     try:
 
         # logging.info("epd7in5_V2 Demo")
