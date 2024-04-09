@@ -220,7 +220,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
         home_probable = ''
         
     DISPLAY_PROBS = False
-    if game_state == 'Scheduled' or game_state == 'Pre-Game':
+    if game_state == 'Scheduled' or game_state == 'Pre-Game' or 'Warmup':
         innings = [None] * 12
         away, home = innings, innings
         game_state = start_time 
