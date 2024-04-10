@@ -29,7 +29,7 @@ EPD_WIDTH = 800
 EPD_HEIGHT = 480
 
 import logging
-# from waveshare_epd import epd7in5_V2
+from waveshare_epd import epd7in5_V2
 import time
 from PIL import Image, ImageDraw, ImageFont
 import traceback
@@ -180,7 +180,7 @@ def draw_boards():
         print('image is different')
         
         Himage.save('temp.bmp') 
-        # display_image(Himage)
+        display_image(Himage)
         
         save_off_results(new_image_dict, "old_image_state")
         print('saving off image...')
