@@ -65,8 +65,8 @@ def parse_games(data):
         probables_dict = {} 
         detailed_state = game.get('status', {}).get('detailedState')
         
-        if detailed_state == 'Scheduled' or detailed_state == 'Pre-Game':
-            probables_dict = get_game_probables(game_id)
+
+        probables_dict = get_game_probables(game_id)
     
         game_dict = {
             'away_team_name': game.get('teams', {}).get('away', {}).get('team', {}).get('name'),
