@@ -29,7 +29,7 @@ EPD_WIDTH = 800
 EPD_HEIGHT = 480
 
 import logging
-from waveshare_epd import epd7in5_V2
+# from waveshare_epd import epd7in5_V2
 import time
 from PIL import Image, ImageDraw, ImageFont
 import traceback
@@ -62,22 +62,20 @@ def normalize_dict(d):
 
 
 def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
-    data_linescore = load_json_file('linescore.json').get(team_abbr)
     
+    data_linescore = load_json_file('linescore.json').get(team_abbr)
     data = load_json_file('games_scheduled.json')
     standings_data = load_json_file('standings.json')
-
-   
     
-    game_id = data.get('team_to_game_id').get(team_abbr)
+    if team_abbr == 'LIVE':
+        game_id = load_json_file('linescore.json').get('live_game_id')
+    else: 
+        game_id = data.get('team_to_game_id').get(team_abbr)
     
     game_info = data.get('games_scheduled').get(game_id)
     away_probable = game_info.get('away_probable')
     home_probable = game_info.get('home_probable')
     
-    print(home_probable)
-    
-
     # magic string to account for extra innings
     if int(data_linescore.get('current_inning', 0)) > 9:
         start_inning = int(data_linescore.get('current_inning')) - 8
@@ -159,13 +157,14 @@ def draw_boards():
     if linescore_data.get(config_data.get('secondary')):
         team_abbr = config_data.get('secondary')
     elif linescore_data.get(config_data.get('secondary_backup')):
+        
         team_abbr = config_data.get('secondary_backup')
+        
     elif linescore_data.get(config_data.get('secondary_backup_2')):
         team_abbr = config_data.get('secondary_backup_2')
         
     col_start = 100
     row_start = 180
-    
     if team_abbr:
         Himage, new_image_dict = generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict)
 
@@ -181,7 +180,7 @@ def draw_boards():
         print('image is different')
         
         Himage.save('temp.bmp') 
-        display_image(Himage)
+        # display_image(Himage)
         
         save_off_results(new_image_dict, "old_image_state")
         print('saving off image...')

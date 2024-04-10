@@ -43,6 +43,8 @@ def are_timestamps_separated_by(timestamp1, timestamp2, minutes):
     # Calculate the absolute difference between the two datetime objects
     time_diff = abs(dt2 - dt1)
     
+    print(time_diff)
+    
     # Check if the difference is greater than the specified duration
     return time_diff > timedelta(minutes=minutes)
 
@@ -226,11 +228,36 @@ def get_games(game_date):
 
     if are_timestamps_separated_by(games_scheduled_data.get('last_updated_time'), get_current_time() ,int(config_data.get('update_interval'))):
         print('it has been more than ')
-    print(url_endpoint)
-    response = requests.get(url_endpoint)
-    data = response.json()
-    parse_games(data)
+        print(url_endpoint)
+        response = requests.get(url_endpoint)
+        data = response.json()
+        parse_games(data)
 
+
+def find_game_in_progress(avoid_game_id):
+    
+    games_scheduled = load_json_file('games_scheduled.json').get('games_scheduled')
+    
+    # Initialize an empty list to hold games that are in progress
+    games_in_progress = []
+
+    # Iterate through each game in the games_scheduled dictionary
+    for game_id, game_info in games_scheduled.items():
+        # Check if the detailed_state of the game is "In Progress"
+        if game_info.get('detailed_state') == "In Progress":
+            # If the game is in progress, add it to the list
+            games_in_progress.append((game_id, game_info))
+
+    # Print out the games that are in progress
+    print(len(games_in_progress))
+    for game in games_in_progress:
+        game_id, game_info = game
+        print(f"Game ID: {game_id}, Away Team: {game_info['away_team_name']}, Home Team: {game_info['home_team_name']}")
+        if avoid_game_id == game_id:
+            continue
+        return game_id
+    
+    return None 
 
 def main():
     six_hours_ago = datetime.now() - timedelta(hours=6)
@@ -244,7 +271,10 @@ def main():
     primary_backup_2_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary_backup_2'), {})
     loaded_json = load_json_file('linescore.json')
     
+    
+    primary_id = None
     if primary_game_id:
+        primary_id = primary_game_id
         if games_scheduled_data.get('games_scheduled').get(primary_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('primary')):
             print('Game in progress')
             linescore_dict[config_data.get('primary')] = get_linescore(primary_game_id)
@@ -252,6 +282,7 @@ def main():
             print('Game not in progress')
             linescore_dict[config_data.get('primary')] = loaded_json.get(config_data.get('primary'))
     elif primary_backup_game_id:
+        primary_id = primary_backup_game_id
         if games_scheduled_data.get('games_scheduled').get(primary_backup_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('primary_backup'), False):
             print('Game in progress')
             linescore_dict[config_data.get('primary_backup')] = get_linescore(primary_backup_game_id)
@@ -260,6 +291,7 @@ def main():
             linescore_dict[config_data.get('primary_backup')] = loaded_json.get(config_data.get('primary_backup'))
         
     elif primary_backup_2_game_id:
+        primary_id = primary_backup_2_game_id
         if games_scheduled_data.get('games_scheduled').get(primary_backup_2_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('primary_backup_2')):
             print('Game in progress')
             linescore_dict[config_data.get('primary_backup_2')] = get_linescore(primary_backup_2_game_id)
@@ -269,6 +301,9 @@ def main():
         
     secondary_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('secondary'), {})
     secondary_backup_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('secondary_backup'), {})
+    if config_data.get('secondary_backup') == "LIVE":
+        secondary_backup_game_id = find_game_in_progress(primary_id)
+        print(secondary_backup_game_id)
     secondary_backup_2_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('secondary_backup_2'), {})
     
     print(secondary_game_id)
@@ -282,9 +317,11 @@ def main():
        
     elif secondary_backup_game_id:
         if games_scheduled_data.get('games_scheduled').get(secondary_backup_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('secondary_backup')):
-            
             print('Game in progress')
             linescore_dict[config_data.get('secondary_backup')] = get_linescore(secondary_backup_game_id)
+            linescore_dict['live_game_id'] = secondary_backup_game_id
+        # elif secondary_backup_game_id == 'LIVE':
+        #     linescore_dict[config_data.get('secondary_backup')] = get_linescore(live_game_id)
         else:
             print('Game not in progress')
             linescore_dict[config_data.get('secondary_backup')] = loaded_json.get(config_data.get('secondary_backup'))
@@ -296,8 +333,7 @@ def main():
         else:
             print('Game not in progress')
             linescore_dict[config_data.get('secondary_backup_2')] = loaded_json.get(config_data.get('secondary_backup_2'))
-           
+    
     save_off_results(linescore_dict, 'linescore')
     
 main()
-

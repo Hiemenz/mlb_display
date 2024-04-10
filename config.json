@@ -3,7 +3,7 @@
   "primary_backup": "BOS",
   "primary_backup_2": "NYM",
   "secondary": "NYY_DOUBLE",
-  "secondary_backup": "TEX", 
+  "secondary_backup": "LIVE", 
   "secondary_backup_2": "STL",
-  "update_interval": "15"
+  "update_interval": "8"
 }
