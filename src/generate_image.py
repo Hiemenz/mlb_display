@@ -187,7 +187,7 @@ def draw_boards():
 
     if n1 == n2:
         print('images the same')
-        new_image_dict['update_display'] = False
+        linescore_data['update_display'] = None
 
     else: 
         print('image is different')
@@ -195,10 +195,14 @@ def draw_boards():
         Himage.save('temp.bmp') 
         
         print('saving off image...')
-        new_image_dict['update_display'] = True
+        linescore_data['update_display'] = True
         
     
-    save_off_results(new_image_dict, "old_image_state")
+        save_off_results(new_image_dict, "old_image_state")
+    save_off_results(linescore_data, "linescore")
+
+        
+        
         
     
 

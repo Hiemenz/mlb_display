@@ -47,7 +47,7 @@ def display_image(image_to_display):
 
 
 def main():
-    data = load_json_file('old_image_state.json')
+    data = load_json_file('linescore.json')
         
     if data.get('update_display'):
 
