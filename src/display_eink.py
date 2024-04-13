@@ -5,6 +5,7 @@ import os
 from waveshare_epd import epd7in5_V2
 import json
 import logging
+from PIL import Image
 
 
 def load_json_file(file_name):
@@ -49,7 +50,8 @@ def main():
     data = load_json_file('old_image_state.json')
         
     if data.get('update_display'):
-        display_image('temp.bmp')
+
+        display_image(Image.open('temp.bmp'))
 
 
 main()
