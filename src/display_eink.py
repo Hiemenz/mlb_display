@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 
-
+import os
 from waveshare_epd import epd7in5_V2
 import json
 import logging
