@@ -210,10 +210,6 @@ def get_linescore(game_id):
     response = requests.get(url_endpoint)
     data = response.json()
     
-    
-    print(data)
-    
-    # if detailed_state == 'In Progress':
     probability_dict = get_win_probability(game_id)
     linescore_dict = parse_linescore(data, probability_dict)
     return linescore_dict
