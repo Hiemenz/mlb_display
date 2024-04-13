@@ -5,7 +5,7 @@ import requests
 import json
 import os 
 import pytz
-
+from generate_image import draw_boards
 
 def load_json_file(file_name):
     data_dict = {}
@@ -341,5 +341,7 @@ def main():
             linescore_dict[config_data.get('secondary_backup_2')] = loaded_json.get(config_data.get('secondary_backup_2'))
     
     save_off_results(linescore_dict, 'linescore')
+    
+    draw_boards()
     
 main()
