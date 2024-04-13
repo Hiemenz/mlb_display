@@ -115,10 +115,8 @@ def parse_games(data):
             }
 
         extra_key = ''
-        print( game.get('doubleHeader'), game.get('gameNumber'))
         if game.get('doubleHeader') in ('Y', 'S') and game.get('gameNumber') == 2:
             extra_key = '_DOUBLE'
-            print('hit')
         
         team_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
         away_abbrevation = standings_dict.get('team_abbreviation',{}).get(str(team_id))
