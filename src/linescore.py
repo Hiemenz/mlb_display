@@ -56,8 +56,6 @@ def get_current_time():
 
 def get_win_probability(game_id):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/game/{game_id}/winProbability'
-    
-    
     response = requests.get(url_endpoint)
     data = response.json()
     
@@ -65,9 +63,6 @@ def get_win_probability(game_id):
         return {}
     
     for item in data:
-        
-        print(item.get('homeTeamWinProbability'))
-
         temp_dict = {
             'home_team_win_probability': item.get('homeTeamWinProbability'), 
             'away_team_win_probability': item.get('awayTeamWinProbability'), 
@@ -76,7 +71,6 @@ def get_win_probability(game_id):
         }
         
     return temp_dict
-    
     
 def parse_games(data):
     current_time  = get_current_time()
