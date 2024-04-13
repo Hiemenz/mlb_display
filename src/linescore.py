@@ -36,6 +36,7 @@ def are_timestamps_separated_by(timestamp1, timestamp2, minutes):
     time_format = "%Y-%m-%dT%H:%M:%S"
     if not timestamp1:
         timestamp1 = timestamp2
+        return True
         
     dt1 = datetime.strptime(timestamp1, time_format)
     dt2 = datetime.strptime(timestamp2, time_format)
@@ -52,6 +53,31 @@ def get_current_time():
     current_time = datetime.now()
     return current_time.strftime("%Y-%m-%dT%H:%M:%S")
 
+
+def get_win_probability(game_id):
+    url_endpoint = f'https://statsapi.mlb.com/api/v1/game/{game_id}/winProbability'
+    
+    
+    response = requests.get(url_endpoint)
+    data = response.json()
+    
+    if type(data) != list:
+        return {}
+    
+    for item in data:
+        
+        print(item.get('homeTeamWinProbability'))
+
+        temp_dict = {
+            'home_team_win_probability': item.get('homeTeamWinProbability'), 
+            'away_team_win_probability': item.get('awayTeamWinProbability'), 
+            'home_team_win_probability_added': item.get('homeTeamWinProbabilityAdded'), 
+            'leverage_index': item.get('leverageIndex'), 
+        }
+        
+    return temp_dict
+    
+    
 def parse_games(data):
     current_time  = get_current_time()
     
@@ -67,17 +93,17 @@ def parse_games(data):
         probables_dict = {} 
         detailed_state = game.get('status', {}).get('detailedState')
         
-
-        probables_dict = get_game_probables(game_id)
     
         game_dict = {
             'away_team_name': game.get('teams', {}).get('away', {}).get('team', {}).get('name'),
             'away_team_id': game.get('teams', {}).get('away', {}).get('team', {}).get('id'),
             'away_team_is_winner': game.get('teams', {}).get('away', {}).get('isWinner'),         
+            'away_probable': game.get('teams', {}).get('away', {}).get('probablePitcher',{}).get('fullName'),         
             'away_team_series_number': game.get('teams', {}).get('away', {}).get('seriesNumber'),
             'home_team_name': game.get('teams', {}).get('home', {}).get('team', {}).get('name'),
             'home_team_id': game.get('teams', {}).get('home', {}).get('team', {}).get('id'),
             'home_team_is_winner': game.get('teams', {}).get('home', {}).get('isWinner'),     
+            'home_probable': game.get('teams', {}).get('home', {}).get('probablePitcher',{}).get('fullName'),         
             'home_team_series_number': game.get('teams', {}).get('home', {}).get('seriesNumber'), 
             'double_header': game.get('doubleHeader'), 
             'series_description': game.get('seriesDescription'), 
@@ -88,8 +114,10 @@ def parse_games(data):
             'game_date': game.get('gameDate'), 
             'game_start': convert_time_z_to(game.get('gameDate')),
             'detailed_state': detailed_state, 
-            'away_probable': probables_dict.get('away_probable'),
-            'home_probable': probables_dict.get('home_probable'),
+            'venue': game.get('venue',{}).get('name'),
+            'current_inning': game.get('linescore',{}).get('currentInning'),
+            'winner_name': game.get('decisions',{}).get('winner',{}).get('fullName'),
+            'loser_name': game.get('decisions',{}).get('loser',{}).get('fullName'),
             }
 
         extra_key = ''
@@ -129,7 +157,7 @@ def pad_innings(innings):
     return innings[-9::]
         
         
-def parse_linescore(data):
+def parse_linescore(data, probability_dict):
     inning_list = []
     away_runs = []
     home_runs = []
@@ -174,6 +202,10 @@ def parse_linescore(data):
         'away_runs_innings': away_runs,
         'home_runs_innings': home_runs,
         'innings': inning_list,
+        'home_team_win_probability': probability_dict.get('home_team_win_probability'),
+        'away_team_win_probability': probability_dict.get('away_team_win_probability'),
+        'home_team_win_probability_added': probability_dict.get('home_team_win_probability_added'),
+        'leverage_index': probability_dict.get('leverage_index'),
     }
     return linescore_dict
     
@@ -183,7 +215,13 @@ def get_linescore(game_id):
     print(url_endpoint)
     response = requests.get(url_endpoint)
     data = response.json()
-    linescore_dict = parse_linescore(data)
+    
+    
+    print(data)
+    
+    # if detailed_state == 'In Progress':
+    probability_dict = get_win_probability(game_id)
+    linescore_dict = parse_linescore(data, probability_dict)
     return linescore_dict
     
     
@@ -197,32 +235,10 @@ def get_player_name(person_id):
         return data.get('fullName')
     return None
     
-def get_game_probables(game_id):
-    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?gamePk={game_id}&language=en&hydrate=story,xrefId,lineups,broadcasts(all),probablePitcher(note),game(content(media(epg)),tickets)&useLatestGames=true&fields=dates,games,teams,probablePitcher,note,id,dates,games,broadcasts,type,name,homeAway,language,isNational,callSign,mediaState,mediaStateCode,availableForStreaming,freeGame,mediaId,dates,games,game,tickets,ticketType,ticketLinks,dates,games,content,media,epg,dates,games,lineups,homePlayers,awayPlayers,useName,lastName,firstName,primaryPosition,abbreviation,dates,games,xrefIds,xrefId,xrefType,story'
-    
-    games_scheduled_dict = load_json_file('games_scheduled.json')
-    away_probable = games_scheduled_dict.get('games_scheduled', {}).get(str(game_id), {}).get('away_probable')
-    home_probable = games_scheduled_dict.get('games_scheduled', {}).get(str(game_id), {}).get('home_probable')
 
-    if not away_probable or not home_probable:
-        response = requests.get(url_endpoint)
-        print(url_endpoint)
-        data = response.json().get('dates')[0]
-        player_id = data.get('games', {})[0].get('teams', {}).get('away', {}).get('probablePitcher', {}).get('id')
-        away_probable = get_player_name(player_id)
-
-        player_id = data.get('games', {})[0].get('teams', {}).get('home', {}).get('probablePitcher', {}).get('id')
-        home_probable = get_player_name(player_id) 
-        
-    probables_dict  = {
-        'away_probable': away_probable,
-        'home_probable': home_probable,
-    }
-    
-    return probables_dict
     
 def get_games(game_date):
-    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1'
+    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1&hydrate=decisions,probablePitcher(note),linescore'
     games_scheduled_data = load_json_file('games_scheduled.json')
     config_data = load_json_file('config.json')
 
@@ -236,8 +252,9 @@ def get_games(game_date):
 
 def find_game_in_progress(avoid_game_id):
     
-    games_scheduled = load_json_file('games_scheduled.json').get('games_scheduled')
-    
+    games_scheduled = load_json_file('games_scheduled.json').get('games_scheduled', {})
+    if not games_scheduled:
+        return None
     # Initialize an empty list to hold games that are in progress
     games_in_progress = []
 
@@ -266,7 +283,7 @@ def main():
     games_scheduled_data = load_json_file('games_scheduled.json')
     
     linescore_dict = {}
-    primary_game_id = games_scheduled_data.get('team_to_game_id').get(config_data.get('primary'))
+    primary_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary'))
     primary_backup_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary_backup'), {})
     primary_backup_2_game_id = games_scheduled_data.get('team_to_game_id', {}).get(config_data.get('primary_backup_2'), {})
     loaded_json = load_json_file('linescore.json')
@@ -289,7 +306,6 @@ def main():
         else:
             print('Game not in progress')
             linescore_dict[config_data.get('primary_backup')] = loaded_json.get(config_data.get('primary_backup'))
-        
     elif primary_backup_2_game_id:
         primary_id = primary_backup_2_game_id
         if games_scheduled_data.get('games_scheduled').get(primary_backup_2_game_id).get('detailed_state') == 'In Progress' or not loaded_json.get(config_data.get('primary_backup_2')):

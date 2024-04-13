@@ -75,7 +75,13 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     game_info = data.get('games_scheduled').get(game_id)
     away_probable = game_info.get('away_probable')
     home_probable = game_info.get('home_probable')
-    
+    winner_name = game_info.get('winner_name')
+    loser_name = game_info.get('loser_name')
+    venue = game_info.get('venue')
+    home_team_win_probability = str(data_linescore.get('home_team_win_probability'))[:4] + '%'
+    away_team_win_probability = str(data_linescore.get('away_team_win_probability'))[:4] + '%'
+
+
     # magic string to account for extra innings
     if int(data_linescore.get('current_inning', 0)) > 9:
         start_inning = int(data_linescore.get('current_inning')) - 8
@@ -108,8 +114,10 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     third_base = data_linescore.get('runner_third', None)
     outs = data_linescore.get('outs')
     
+    
     if game_state == 'In Progress' and  data_linescore.get('inning_half')[:3] == 'Top' and  outs == 3:
         game_state = 'Mid ' + data_linescore.get('current_inning_ordinal')
+        
     if game_state == 'In Progress' and  data_linescore.get('inning_half')[:3] == 'Bot' and  outs == 3:
         game_state = 'End ' + data_linescore.get('current_inning_ordinal')
     
@@ -127,9 +135,15 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
         'second_base': second_base,
         'third_base': third_base,
         'outs': outs,
+        'winner_name': winner_name,
+        'loser_name': loser_name, 
     }
     
-    Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away, home, game_state, inning_header, first_base, second_base, third_base, outs, start_time, home_is_winner, away_probable, home_probable)
+    Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away,
+                            home, game_state, inning_header, first_base, second_base,
+                            third_base, outs, start_time, home_is_winner, away_probable,
+                            home_probable, winner_name, loser_name, venue,
+                            home_team_win_probability, away_team_win_probability)
     return Himage, new_image_dict
 
 def draw_boards():
@@ -184,18 +198,22 @@ def draw_boards():
         
         save_off_results(new_image_dict, "old_image_state")
         print('saving off image...')
-    
+        
     
 
-def generate_image(Himage, col_start, row_start, away_team, home_team, away, home,
-                   game_state, inning_header, first_base, second_base, third_base, outs, start_time, home_is_winner, away_probable, home_probable):
+def generate_image(Himage, col_start, row_start, away_team, home_team, away,
+                   home, game_state, inning_header, first_base, second_base, 
+                   third_base, outs, start_time, home_is_winner, away_probable,
+                   home_probable,winner_name, loser_name,  venue,
+                            home_team_win_probability, away_team_win_probability):
     draw = ImageDraw.Draw(Himage)
 
     # bmp = Image.open(os.path.join('/home/pi/Documents/e-Paper/RaspberryPi_JetsonNano/python/examples/', 'qr.jpg'))
     # Himage.paste(bmp, (0,0))
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
-
+    
+    draw.text(( col_start + 460 , row_start + 93), venue, font = font18, fill = 0)
     if game_state not in ('Final', 'Game Over','Scheduled','Pre-Game','Delayed','Postponed', 'Warmup') :
         outs_list = [None] * 3
         
@@ -209,6 +227,9 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
         draw_diamond(Himage, (col_start + 70 - 95, row_start + 45), 20, first_base) # first base at (150, 100) with size 20
         draw_diamond(Himage, (col_start + 45 - 95, row_start + 20), 20, second_base) # second base 
         draw_diamond(Himage, (col_start + 20 - 95, row_start + 45), 20, third_base)  # third base 
+        
+        draw.text(( col_start + 585 , row_start + 63), home_team_win_probability, font = font24, fill = 0)
+        draw.text(( col_start + 585 , row_start + 30), away_team_win_probability, font = font24, fill = 0)
         
     if home_is_winner == 'L':
         draw_circle(Himage, (col_start + 12, row_start + 45), 8, True) 
@@ -231,6 +252,10 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away, hom
 
         draw.text((25 + col_start + 82, 30 + row_start), away_probable, font = font24, fill = 0)
         draw.text((25 + col_start + 82, 60 + row_start), home_probable, font = font24, fill = 0)
+        
+    elif game_state in ('Final'):
+        draw.text(( col_start + 0 , row_start + 93), f'WP: {winner_name}  LP: {loser_name}' , font = font18, fill = 0)
+
         
     draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0)
     draw.text((25 + col_start, 30 + row_start), away_team, font = font24, fill = 0)
