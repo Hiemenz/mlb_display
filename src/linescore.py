@@ -63,14 +63,43 @@ def get_win_probability(game_id):
         return {}
     
     for item in data:
+        print(item.get('homeTeamWinProbability'))
+        print(item.get('result',{}).get('description'))
         temp_dict = {
             'home_team_win_probability': item.get('homeTeamWinProbability'), 
             'away_team_win_probability': item.get('awayTeamWinProbability'), 
             'home_team_win_probability_added': item.get('homeTeamWinProbabilityAdded'), 
             'leverage_index': item.get('leverageIndex'), 
+            'result_event': item.get('result',{}).get('event'), 
+            'result_description': item.get('result',{}).get('description'), 
         }
         
     return temp_dict
+
+
+def get_weather_data(game_id):
+    url_endpoint = f'https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live'
+    
+    data = load_json_file('games_scheduled.json')
+    if data.get('games_scheduled', {}).get(str(game_id), {}).get('weather_condition'):
+        weather_dict = {
+            'weather_condition': data.get('games_scheduled', {}).get(str(game_id), {}).get('weather_condition'),
+            'weather_temp': data.get('games_scheduled', {}).get(str(game_id), {}).get('weather_temp'),
+            'weather_wind': data.get('games_scheduled', {}).get(str(game_id), {}).get('weather_wind'),
+        }
+        
+    else:
+        print(url_endpoint)
+        response = requests.get(url_endpoint)
+        data = response.json()
+    
+        weather_dict = {
+            'weather_condition': data.get('gameData',{}).get('weather',{}).get('condition'),
+            'weather_temp': data.get('gameData',{}).get('weather',{}).get('temp'),
+            'weather_wind': data.get('gameData',{}).get('weather',{}).get('wind'),
+        }
+    
+    return weather_dict
     
 def parse_games(data):
     current_time  = get_current_time()
@@ -84,9 +113,9 @@ def parse_games(data):
     game_list = {}
     for game in games:
         game_id = game.get('gamePk')
-        probables_dict = {} 
+
         detailed_state = game.get('status', {}).get('detailedState')
-        
+        weather_dict = get_weather_data(game_id)
     
         game_dict = {
             'away_team_name': game.get('teams', {}).get('away', {}).get('team', {}).get('name'),
@@ -109,6 +138,9 @@ def parse_games(data):
             'game_start': convert_time_z_to(game.get('gameDate')),
             'detailed_state': detailed_state, 
             'venue': game.get('venue',{}).get('name'),
+            'weather_condition':weather_dict.get('weather_condition'),
+            'weather_temp':weather_dict.get('weather_temp'),
+            'weather_wind':weather_dict.get('weather_wind'),
             'current_inning': game.get('linescore',{}).get('currentInning'),
             'winner_name': game.get('decisions',{}).get('winner',{}).get('fullName'),
             'loser_name': game.get('decisions',{}).get('loser',{}).get('fullName'),
@@ -200,6 +232,8 @@ def parse_linescore(data, probability_dict):
         'away_team_win_probability': probability_dict.get('away_team_win_probability'),
         'home_team_win_probability_added': probability_dict.get('home_team_win_probability_added'),
         'leverage_index': probability_dict.get('leverage_index'),
+        'result_event': probability_dict.get('result_event'),
+        'result_description': probability_dict.get('result_description'),
     }
     return linescore_dict
     
@@ -211,6 +245,8 @@ def get_linescore(game_id):
     data = response.json()
     
     probability_dict = get_win_probability(game_id)
+
+    
     linescore_dict = parse_linescore(data, probability_dict)
     return linescore_dict
     

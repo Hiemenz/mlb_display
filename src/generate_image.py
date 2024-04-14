@@ -32,7 +32,7 @@ from PIL import Image, ImageDraw, ImageFont
 import traceback
 
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 def load_json_file(file_name):
     data_dict = {}
@@ -77,7 +77,11 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     venue = game_info.get('venue')
     home_team_win_probability = str(data_linescore.get('home_team_win_probability'))[:4] + '%'
     away_team_win_probability = str(data_linescore.get('away_team_win_probability'))[:4] + '%'
-
+    result_event = data_linescore.get('result_event')
+    
+    weather_condition = game_info.get('weather_condition')
+    weather_temp = game_info.get('weather_temp')
+    weather_wind = game_info.get('weather_wind')
 
     # magic string to account for extra innings
     if int(data_linescore.get('current_inning', 0)) > 9:
@@ -140,7 +144,8 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
                             home, game_state, inning_header, first_base, second_base,
                             third_base, outs, start_time, home_is_winner, away_probable,
                             home_probable, winner_name, loser_name, venue,
-                            home_team_win_probability, away_team_win_probability)
+                            home_team_win_probability, away_team_win_probability, 
+                            result_event, weather_condition, weather_temp, weather_wind)
     return Himage, new_image_dict
 
 def draw_boards():
@@ -210,15 +215,18 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
                    home, game_state, inning_header, first_base, second_base, 
                    third_base, outs, start_time, home_is_winner, away_probable,
                    home_probable,winner_name, loser_name,  venue,
-                            home_team_win_probability, away_team_win_probability):
+                   home_team_win_probability, away_team_win_probability, result_event,
+                    weather_condition, weather_temp, weather_wind):
     draw = ImageDraw.Draw(Himage)
 
     # bmp = Image.open(os.path.join('/home/pi/Documents/e-Paper/RaspberryPi_JetsonNano/python/examples/', 'qr.jpg'))
     # Himage.paste(bmp, (0,0))
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
+    font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
     
-    draw.text(( col_start + 460 , row_start + 93), venue, font = font18, fill = 0)
+    
+    
     if game_state not in ('Final', 'Game Over','Scheduled','Pre-Game','Delayed','Postponed', 'Warmup') :
         outs_list = [None] * 3
         
@@ -235,7 +243,8 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
         
         draw.text(( col_start + 585 , row_start + 63), home_team_win_probability, font = font24, fill = 0)
         draw.text(( col_start + 585 , row_start + 30), away_team_win_probability, font = font24, fill = 0)
-        
+        draw.text(( col_start + 0 , row_start + 93), result_event , font = font14, fill = 0)
+
     if home_is_winner == 'L':
         draw_circle(Himage, (col_start + 12, row_start + 45), 8, True) 
     elif home_is_winner == 'W':
@@ -260,14 +269,18 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
         
     elif game_state in ('Final'):
         draw.text(( col_start + 0 , row_start + 93), f'WP: {winner_name}  LP: {loser_name}' , font = font18, fill = 0)
-
-        
+    
     draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0)
     draw.text((25 + col_start, 30 + row_start), away_team, font = font24, fill = 0)
     draw.text((25 + col_start, 60 + row_start), home_team, font = font24, fill = 0)
     
     if game_state == 'Delayed Start':
-        game_state = 'Delayed'     
+        game_state = 'Delayed'    
+         
+    if weather_temp and weather_condition and weather_wind:
+        draw.text(( col_start + 0 , row_start - 18), f'{weather_temp}°F | {weather_condition} | {weather_wind}', font = font14, fill = 0)
+    draw.text(( col_start + 460 , row_start + 93), venue, font = font14, fill = 0)
+    
     
     # lines horizontal
     draw.line((col_start, 30 + row_start, 580 + col_start, 30 + row_start), fill = 0)
