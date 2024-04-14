@@ -62,13 +62,19 @@ def get_win_probability_events(game_id):
     if type(data) != list:
         return {}
     
+    result_event = None
     for item in data:
+        
+        event_parsed = item.get('result',{}).get('event')
+        if event_parsed:
+            result_event = event_parsed
+
         temp_dict = {
             'home_team_win_probability': item.get('homeTeamWinProbability'), 
             'away_team_win_probability': item.get('awayTeamWinProbability'), 
             'home_team_win_probability_added': item.get('homeTeamWinProbabilityAdded'), 
             'leverage_index': item.get('leverageIndex'), 
-            'result_event': item.get('result',{}).get('event'), 
+            'result_event': result_event, 
             'result_description': item.get('result',{}).get('description'), 
         }
         

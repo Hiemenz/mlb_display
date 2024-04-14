@@ -79,9 +79,15 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     away_team_win_probability = str(data_linescore.get('away_team_win_probability'))[:4] + '%'
     result_event = data_linescore.get('result_event')
     
-    weather_condition = game_info.get('weather_condition')
-    weather_temp = game_info.get('weather_temp')
-    weather_wind = game_info.get('weather_wind')
+    weather_condition = game_info.get('weather_condition',)
+    weather_temp = game_info.get('weather_temp',)
+    weather_wind = game_info.get('weather_wind',)
+    
+    # result_event = 'temp'
+    # weather_condition =  'temp'
+    # weather_temp = 'temp'
+    # weather_wind = 'temp'
+
 
     # magic string to account for extra innings
     if int(data_linescore.get('current_inning', 0)) > 9:
@@ -243,6 +249,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
         
         draw.text(( col_start + 585 , row_start + 63), home_team_win_probability, font = font24, fill = 0)
         draw.text(( col_start + 585 , row_start + 30), away_team_win_probability, font = font24, fill = 0)
+
         draw.text(( col_start + 0 , row_start + 93), result_event , font = font18, fill = 0)
 
     if home_is_winner == 'L':
