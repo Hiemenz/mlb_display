@@ -54,7 +54,7 @@ def get_current_time():
     return current_time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def get_win_probability(game_id):
+def get_win_probability_events(game_id):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/game/{game_id}/winProbability'
     response = requests.get(url_endpoint)
     data = response.json()
@@ -63,8 +63,6 @@ def get_win_probability(game_id):
         return {}
     
     for item in data:
-        print(item.get('homeTeamWinProbability'))
-        print(item.get('result',{}).get('description'))
         temp_dict = {
             'home_team_win_probability': item.get('homeTeamWinProbability'), 
             'away_team_win_probability': item.get('awayTeamWinProbability'), 
@@ -183,7 +181,7 @@ def pad_innings(innings):
     return innings[-9::]
         
         
-def parse_linescore(data, probability_dict):
+def parse_linescore(data, probability_events_dict):
     inning_list = []
     away_runs = []
     home_runs = []
@@ -228,12 +226,12 @@ def parse_linescore(data, probability_dict):
         'away_runs_innings': away_runs,
         'home_runs_innings': home_runs,
         'innings': inning_list,
-        'home_team_win_probability': probability_dict.get('home_team_win_probability'),
-        'away_team_win_probability': probability_dict.get('away_team_win_probability'),
-        'home_team_win_probability_added': probability_dict.get('home_team_win_probability_added'),
-        'leverage_index': probability_dict.get('leverage_index'),
-        'result_event': probability_dict.get('result_event'),
-        'result_description': probability_dict.get('result_description'),
+        'home_team_win_probability': probability_events_dict.get('home_team_win_probability'),
+        'away_team_win_probability': probability_events_dict.get('away_team_win_probability'),
+        'home_team_win_probability_added': probability_events_dict.get('home_team_win_probability_added'),
+        'leverage_index': probability_events_dict.get('leverage_index'),
+        'result_event': probability_events_dict.get('result_event'),
+        'result_description': probability_events_dict.get('result_description'),
     }
     return linescore_dict
     
@@ -244,10 +242,10 @@ def get_linescore(game_id):
     response = requests.get(url_endpoint)
     data = response.json()
     
-    probability_dict = get_win_probability(game_id)
+    probability_events_dict = get_win_probability_events(game_id)
 
     
-    linescore_dict = parse_linescore(data, probability_dict)
+    linescore_dict = parse_linescore(data, probability_events_dict)
     return linescore_dict
     
     

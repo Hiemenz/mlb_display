@@ -243,7 +243,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
         
         draw.text(( col_start + 585 , row_start + 63), home_team_win_probability, font = font24, fill = 0)
         draw.text(( col_start + 585 , row_start + 30), away_team_win_probability, font = font24, fill = 0)
-        draw.text(( col_start + 0 , row_start + 93), result_event , font = font14, fill = 0)
+        draw.text(( col_start + 0 , row_start + 93), result_event , font = font18, fill = 0)
 
     if home_is_winner == 'L':
         draw_circle(Himage, (col_start + 12, row_start + 45), 8, True) 
@@ -279,7 +279,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
          
     if weather_temp and weather_condition and weather_wind:
         draw.text(( col_start + 0 , row_start - 18), f'{weather_temp}°F | {weather_condition} | {weather_wind}', font = font14, fill = 0)
-    draw.text(( col_start + 460 , row_start + 93), venue, font = font14, fill = 0)
+    draw.text(( col_start + 460 , row_start + 93), venue, font = font18, fill = 0)
     
     
     # lines horizontal
