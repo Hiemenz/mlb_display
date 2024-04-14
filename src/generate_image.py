@@ -77,6 +77,7 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     venue = game_info.get('venue')
     home_team_win_probability = str(data_linescore.get('home_team_win_probability'))[:4] + '%'
     away_team_win_probability = str(data_linescore.get('away_team_win_probability'))[:4] + '%'
+    
     result_event = data_linescore.get('result_event')
     
     weather_condition = game_info.get('weather_condition',)
@@ -144,6 +145,7 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
         'outs': outs,
         'winner_name': winner_name,
         'loser_name': loser_name, 
+        'result_event': result_event,
     }
     
     Himage = generate_image(Himage, col_start, row_start, away_team, home_team, away,
@@ -231,7 +233,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
     font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
     
-    
+
     
     if game_state not in ('Final', 'Game Over','Scheduled','Pre-Game','Delayed','Postponed', 'Warmup') :
         outs_list = [None] * 3
