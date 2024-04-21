@@ -150,7 +150,7 @@ def parse_games(data):
         
         team_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
         home_abbrevation = standings_dict.get('team_abbreviation',{}).get(str(team_id))
-
+            
         team_abb_to_game_id_dict[away_abbrevation + extra_key] =  str(game.get('gamePk') )
 
         team_abb_to_game_id_dict[home_abbrevation + extra_key] =  str(game.get('gamePk'))

@@ -32,6 +32,7 @@ from PIL import Image, ImageDraw, ImageFont
 import traceback
 
 
+
 # logging.basicConfig(level=logging.DEBUG)
 
 def normalize_dict(d):
@@ -146,7 +147,7 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
 def draw_boards():
     
     new_image_dict = {}
-    config_data = load_json_file('config.json')
+    config_data = load_json_file('config.json', 'config/')
     linescore_data = load_json_file('linescore.json')
     # epd = epd7in5_V2.EPD()
     Himage = Image.new('1', (800, 480), 255)  # 255: clear the frame
@@ -160,6 +161,8 @@ def draw_boards():
         team_abbr = config_data.get('primary_backup')
     elif linescore_data.get(config_data.get('primary_backup_2')):
         team_abbr = config_data.get('primary_backup_2')
+    
+    
     
     if team_abbr:   
         Himage, new_image_dict = generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict)
@@ -182,6 +185,8 @@ def draw_boards():
     Himage = generate_standings(Himage, col_start=100, row_start=320)
     
     data = load_json_file('old_image_state.json')
+    
+    
     n1 = normalize_dict(data)
     n2 = normalize_dict(new_image_dict)
 
@@ -192,13 +197,14 @@ def draw_boards():
     else: 
         print('image is different')
         
-        Himage.save('temp.bmp') 
-        
         print('saving off image...')
         linescore_data['update_display'] = True
-        
-    
         save_off_results(new_image_dict, "old_image_state")
+    Himage.save('temp.bmp') 
+    if not data:
+        save_off_results(new_image_dict, "old_image_state")
+        
+
     save_off_results(linescore_data, "linescore")
 
         
