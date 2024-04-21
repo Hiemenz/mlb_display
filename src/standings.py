@@ -1,13 +1,11 @@
 import requests
 import json
 
-    
-def save_off_results(data, output):
 
-    with open( output + '.json', 'w') as f:
-        json.dump(data, f, indent=4)
-        
-        
+from util import save_off_results
+
+    
+
 leauge_dict = {
     201:'American League East',
     202:'American League Central',

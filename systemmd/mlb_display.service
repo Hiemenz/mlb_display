@@ -1,0 +1,10 @@
+[Unit]
+Description=Run my Python script
+Wants=mlb_display.timer
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c "cd /home/pi/git/mlb_display && /home/pi/.poetry/bin/poetry run python src/linescore.py plays > /home/pi/Desktop/mlb_linescore_plays.log 2>&1 &&  cd /home/pi/git/mlb_display && /home/pi/.poetry/bin/poetry run python src/display_eink.py > /home/pi/Desktop/display.log 2>&1"
+
+[Install]
+WantedBy=multi-user.target

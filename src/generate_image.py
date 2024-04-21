@@ -6,7 +6,7 @@ from regex import F
 import json
 
 import random
-
+from util import load_json_file, save_off_results
 
 standings_dict = {
     1: 'American League East',
@@ -33,19 +33,6 @@ import traceback
 
 
 # logging.basicConfig(level=logging.DEBUG)
-
-def load_json_file(file_name):
-    data_dict = {}
-    if not os.path.isfile(file_name):
-        return data_dict
-    with open(file_name, 'r') as file:
-        data_dict = json.load(file)
-        return data_dict
-   
-def save_off_results(data, output):
-    with open( output + '.json', 'w') as f:
-        json.dump(data, f, indent=4)
-
 
 def normalize_dict(d):
     for key, value in d.items():

@@ -7,16 +7,9 @@ import json
 import logging
 from PIL import Image
 
+from util import load_json_file
 
-def load_json_file(file_name):
-    data_dict = {}
-    if not os.path.isfile(file_name):
-        return data_dict
-    with open(file_name, 'r') as file:
-        data_dict = json.load(file)
-        return data_dict
-   
-   
+
 def display_image(image_to_display):
     try:
 

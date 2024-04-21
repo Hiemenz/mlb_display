@@ -6,18 +6,9 @@ import json
 import os 
 import pytz
 from generate_image import draw_boards
+from util import load_json_file, save_off_results
 
-def load_json_file(file_name):
-    data_dict = {}
-    if not os.path.isfile(file_name):
-        return data_dict
-    with open(file_name, 'r') as file:
-        data_dict = json.load(file)
-        return data_dict
 
-def save_off_results(data, output):
-    with open( output + '.json', 'w') as f:
-        json.dump(data, f, indent=4)
         
 def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
     utc_time = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%SZ")
@@ -270,7 +261,7 @@ def get_player_name(person_id):
 def get_games(game_date):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1&hydrate=decisions,probablePitcher(note),linescore'
     games_scheduled_data = load_json_file('games_scheduled.json')
-    config_data = load_json_file('config.json')
+    config_data = load_json_file('config.json', 'config/')
 
     if are_timestamps_separated_by(games_scheduled_data.get('last_updated_time'), get_current_time() ,int(config_data.get('update_interval'))):
         print('it has been more than ')
@@ -309,7 +300,7 @@ def find_game_in_progress(avoid_game_id):
 def main():
     six_hours_ago = datetime.now() - timedelta(hours=6)
     get_games(six_hours_ago.date())
-    config_data = load_json_file('config.json')
+    config_data = load_json_file('config.json', 'config/')
     games_scheduled_data = load_json_file('games_scheduled.json')
     
     linescore_dict = {}
@@ -380,7 +371,7 @@ def main():
             print('Game not in progress')
             linescore_dict[config_data.get('secondary_backup_2')] = loaded_json.get(config_data.get('secondary_backup_2'))
     
-    save_off_results(linescore_dict, 'linescore')
+    save_off_results(linescore_dict, 'linescore', 'data/')
     
     draw_boards()
     
