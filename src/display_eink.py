@@ -41,10 +41,12 @@ def display_image(image_to_display):
 
 def main():
     data = load_json_file('linescore.json')
+    config_data = load_json_file('config.json', 'config/')
         
-    if data.get('update_display'):
+    # this is bad but i designed this two different ways
+    if data.get('update_display') and not config_data.get('scoreboard'):
 
         display_image(Image.open('temp.bmp'))
 
-
-main()
+if __name__ == '__main__':
+    main()

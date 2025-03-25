@@ -223,18 +223,6 @@ def get_standings():
         return standings
 
 
-def save_off_scores():
-    pass
-
-
-def did_game_state_change():
-    pass
-
-
-def get_active_game():
-    pass
-
-
 def main():
     get_mlb_standings()
 

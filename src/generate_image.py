@@ -7,6 +7,7 @@ import json
 
 import random
 from util import load_json_file, save_off_results
+from collections import OrderedDict
 
 standings_dict = {
     1: 'American League East',
@@ -440,3 +441,246 @@ def draw_circle(Himage, center, radius, fill):
         draw.ellipse(bounding_box, outline='black')
     return Himage
 
+def check_if_two_chars(num):
+    
+    if len(str(num)) == 2:
+        return -6
+    return 0
+
+def draw_box(Himage, start_x, start_y, game_data, team_data):
+    draw = ImageDraw.Draw(Himage)
+    font26 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 26)
+    font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
+    font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
+    font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
+
+    vertical_len = 110
+    horizonta_len = 135
+    
+    
+    # team names short
+    away_team_name =team_data['team_abbreviation'][str(game_data['away_team_id'])]
+    home_team_name = team_data['team_abbreviation'][str(game_data['home_team_id'])]
+    
+    # inning or game state
+    if game_data['detailed_state'] == 'Final':
+        # pitchers of record 
+        draw.text((start_x + 7 , start_y + 25 + 59), f'WP: {game_data.get("winner_name")}', font=font14, fill=0)
+        draw.text((start_x + 7 , start_y + 25 + 74), f'LP: {game_data.get("loser_name")}', font=font14, fill=0)
+        
+    elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
+        draw.text((start_x + 7 , start_y + 25 + 59), f'{away_team_name}: {game_data.get("away_probable")}', font=font14, fill=0)
+        draw.text((start_x + 7, start_y + 25 + 74), f'{home_team_name}: {game_data.get("home_probable")}', font=font14, fill=0)
+    elif game_data['detailed_state'] == 'In Progress':
+        draw.text((start_x + 5 , start_y + 30 + 74), f'P: {game_data.get("current_pitcher")}', font=font14, fill=0)
+        draw.text((start_x + 7, start_y + 30 + 89), f'AB: {game_data.get("current_hitter")}', font=font14, fill=0)
+        
+    if game_data['detailed_state'] == 'Final' or  game_data['detailed_state'] == 'Postponed' or  game_data['detailed_state'] == 'Delayed' or  game_data['detailed_state'] == 'Game Over':
+        game_state_str = game_data['detailed_state'] 
+        
+        
+        if game_data.get('current_inning') != 9:
+            game_state_str += '/' + str(game_data.get('current_inning'))
+            
+    elif game_data['detailed_state'] == 'Warmup':
+        game_state_str = game_data['detailed_state'] 
+        
+        
+    elif game_data['detailed_state'] == 'Scheduled'  or game_data['detailed_state'] == 'Pre-Game':
+        game_state_str = game_data['game_start'] 
+        
+    else:
+        extra = ''
+        if game_data.get('inningState'):
+            extra = game_data.get('inningState').upper()
+        
+        if game_data['inningState'] == 'Bottom':
+            extra = 'Bot'.upper()
+            
+        if game_data['inningState'] == 'Middle':
+            extra = 'Mid'.upper()
+            
+
+        game_state_str = extra + ' ' + str(game_data['current_inning'])
+    
+    # game state   
+    draw.text((start_x + 5, start_y + 3), game_state_str, font=font14, fill=0)
+    draw.text((start_x + 6, start_y + 3), game_state_str, font=font14, fill=0)
+    
+    # score 
+    if game_data['detailed_state'] == 'Final' or  game_data['detailed_state'] == 'Game Over' or game_data['detailed_state'] == 'In Progress':
+        away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
+        home_runs = str( game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
+        draw.text((start_x + 66 + check_if_two_chars(away_runs), start_y + 25), away_runs, font=font24, fill=0)
+        draw.text((start_x + 66 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
+
+        if game_data['detailed_state'] != 'In Progress':
+            # hits 
+            away_hits = str(game_data.get('away_hits', 0) if game_data.get('away_hits', 0) is not None else 0)
+            home_hits = str(game_data.get('home_hits', 0) if game_data.get('home_hits', 0) is not None else 0)
+            draw.text((start_x + 95 + check_if_two_chars(away_hits), start_y + 25),  away_hits, font=font24, fill=0)
+            draw.text((start_x + 95 + check_if_two_chars(home_hits), start_y + 55), home_hits , font=font24, fill=0)
+            
+            # errors
+            draw.text((start_x + 123, start_y + 25),  str(game_data.get('away_errors', 0) if game_data.get('away_errors', 0) is not None else 0), font=font24, fill=0)
+            draw.text((start_x + 123 , start_y + 55),  str( game_data.get('home_errors', 0) if game_data.get('home_errors', 0) is not None else 0), font=font24, fill=0)
+            
+            # header
+            header = 'R     H     E'
+            draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
+            draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
+            
+    else:
+        # team records
+        draw.text((start_x + 89, start_y + 31), f'{game_data.get("away_team_record_wins")} - {game_data.get("away_team_record_losses")}', font=font14, fill=0)
+        draw.text((start_x + 89, start_y + 61), f'{game_data.get("home_team_record_wins")} - {game_data.get("home_team_record_losses")}', font=font14, fill=0)
+        
+    # horizontal line
+    end_x = start_x + horizonta_len
+    end_y = start_y
+    draw.line((start_x, start_y, end_x, end_y), fill = 0)
+    draw.line((start_x, start_y + 20, end_x, end_y  + 20), fill = 0)
+
+    end_x = start_x + horizonta_len
+    end_y = start_y + vertical_len
+    # draw.line((start_x, start_y + vertical_len, end_x, end_y), fill = 0)
+    
+    
+    # vertical line
+    end_x = start_x
+    end_y = start_y + vertical_len
+    # draw.line((start_x, start_y, end_x, end_y), fill = 0)
+    
+    end_x = start_x + horizonta_len
+    end_y = start_y + vertical_len
+    # draw.line((start_x + horizonta_len , start_y, end_x, end_y), fill = 0)
+
+
+    # line down the middle
+    # vert_start_x =  start_x + horizonta_len / 2
+    # vert_start_y = start_y + 12
+    # end_x = vert_start_x
+    # end_y = vert_start_y + 85
+    
+    # draw.line((vert_start_x, vert_start_y, end_x, end_y), fill = 0)
+    
+        
+    if game_data['detailed_state'] == 'In Progress':
+        # bases
+        Himage = draw_diamond(Himage, (start_x + 22 + 75, start_y + 27 + 25), 10, isinstance(game_data['runner_on_third'], str))
+        Himage = draw_diamond(Himage, (start_x + 34 + 75, start_y + 15 + 25), 10, isinstance(game_data['runner_on_second'], str))
+        Himage = draw_diamond(Himage, (start_x + 46 + 75, start_y + 27 + 25), 10, isinstance(game_data['runner_on_first'], str))
+
+        # outs 
+        outs_list = [None] * 3
+        
+        for i in range(1,4):
+            outs_list[i-1] =  i <= game_data['num_of_outs']
+        
+        Himage = draw_circle(Himage, (start_x + 22 + 75, start_y + 25 + 48), 5, outs_list[0])
+        Himage = draw_circle(Himage, (start_x + 34 + 75, start_y + 25 + 48), 5, outs_list[1])
+        Himage = draw_circle(Himage, (start_x + 46 + 75, start_y + 25 + 48), 5, outs_list[2])
+        
+        balls_list = [None] * 4
+        for i in range(1,4):
+            balls_list[i-1] =  i <= game_data['balls']
+        
+        draw.text((start_x + 5 , start_y + 25 + 59), 'B', font=font14, fill=0)
+        Himage = draw_circle(Himage, (start_x + 22 , start_y + 25 + 68), 4, balls_list[0])
+        Himage = draw_circle(Himage, (start_x + 34, start_y + 25 + 68), 4, balls_list[1])
+        Himage = draw_circle(Himage, (start_x + 46, start_y + 25 + 68), 4, balls_list[2])
+            
+            
+        strikes_list = [None] * 3
+        for i in range(1,3):
+            strikes_list[i-1] =  i <= game_data['strikes']
+        
+        draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
+        Himage = draw_circle(Himage, (start_x + 22 + 63, start_y + 25 + 68), 4, strikes_list[0])
+        Himage = draw_circle(Himage, (start_x + 34 + 63, start_y + 25 + 68), 4, strikes_list[1])
+    else:
+        
+        # game no hitters
+        if game_data.get('no_hitter'):
+            draw.text((start_x + 79, start_y + 3), 'No Hitter', font=font14, fill=0)
+            
+        if game_data.get('perfect_game'):   
+            draw.text((start_x + 50, start_y + 3), 'Perfect Game', font=font14, fill=0)
+
+        
+
+
+    # teams names
+    draw.text((start_x + 5, start_y + 25), away_team_name, font=font24, fill=0)
+    draw.text((start_x + 5 , start_y + 55), home_team_name, font=font24, fill=0)
+
+
+
+    if game_data.get('away_team_is_winner'):
+        draw.text((start_x + 7, start_y + 25), away_team_name, font=font24, fill=0)
+        draw.text((start_x + 67 + check_if_two_chars(away_runs), start_y + 25), away_runs, font=font24, fill=0)
+
+        
+        # Himage = draw_circle(Himage, (start_x - 5, start_y + 38), 20, True)
+    if game_data.get('home_team_is_winner'):
+        draw.text((start_x + 7 , start_y + 55), home_team_name, font=font24, fill=0)
+        draw.text((start_x + 67 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
+
+        # Himage = draw_circle(Himage, (start_x -5, start_y + 68), 17, True)
+
+        
+    return Himage
+
+def draw_out_of_town_score_board(Himage, game_state_data, team_data):
+        
+    draw = ImageDraw.Draw(Himage)
+    
+    # draw.line((col_start, 60 + row_start, 580 + col_start, 60 + row_start), fill = 0)
+    # draw.line((col_start, 90 + row_start, 580 + col_start, 90 + row_start), fill = 0)
+    x_start = 32
+    y_start = 30
+    
+    game_list = game_state_data
+    
+    counter = 0
+    for y in range(0,3):
+        for x in range(0,5):
+            if counter > len(game_list) - 1:
+                continue
+            if game_list[counter]:            
+                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data)
+            counter += 1
+    Himage.save('score_board.bmp') 
+    return Himage
+
+def compare_json_dicts_sorted(dict1, dict2):
+    """Compare two JSON dictionaries to see if they are equal, ignoring key order."""
+    return json.dumps(dict1, sort_keys=True) == json.dumps(dict2, sort_keys=True)
+
+
+def load_and_sort_json(json_string):
+    """Load JSON data from a string and sort it."""
+    return json.loads(json_string, object_pairs_hook=OrderedDict)
+
+def  orchestrate_score_board(game_state_data, team_data):
+    
+    old_data = load_json_file('old_scoreboard_state.json')
+    
+    new_data_str = json.dumps(game_state_data)
+    old_data_str = json.dumps(old_data)
+    
+    
+    new_dict = load_and_sort_json(new_data_str)
+    old_dict = load_and_sort_json(old_data_str)
+    
+    save_off_results(game_state_data, "old_scoreboard_state")
+    
+    if compare_json_dicts_sorted(new_dict, old_dict):
+        print('images the same')
+        return None
+    
+    print('image is different') 
+    Himage = Image.new('1', (800, 480), 255)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data)
+    return Himage 
+    

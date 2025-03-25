@@ -6,10 +6,11 @@ authors = ["kah5161 <kah5161@rit.edu>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "=3.9.2"
 pytz = "^2024.1"
 gpiozero = "^2.0.1"
 lgpio = "^0.2.2"
+requests = "^2.31.0"
 
 
 [build-system]
