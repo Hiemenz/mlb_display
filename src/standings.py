@@ -1,5 +1,7 @@
 import requests
 import json
+import argparse
+from datetime import datetime
 
 
 from util import save_off_results
@@ -19,20 +21,37 @@ leauge_dict = {
 team_abbreviation_list = {}
 
 def get_teams(team_id):
-    response = requests.get(f'https://statsapi.mlb.com/api/v1/teams/{team_id}')
-        
-    data = response.json()
-    team_id = data.get('teams', {})[0].get('id')
-    team_abbreviation = data.get('teams', {})[0].get('abbreviation')
-    
-    team_abbreviation_list[team_id] = team_abbreviation
+    try:
+        response = requests.get(f'https://statsapi.mlb.com/api/v1/teams/{team_id}')
+        if response.status_code == 200:
+            data = response.json()
+            fetched_team_id = data.get('teams', [{}])[0].get('id')
+            team_abbreviation = data.get('teams', [{}])[0].get('abbreviation')
+
+            if fetched_team_id and team_abbreviation:
+                print(f'Adding team: {fetched_team_id} => {team_abbreviation}')
+                team_abbreviation_list[str(fetched_team_id)] = team_abbreviation
+            else:
+                print(f'Warning: Could not get abbreviation for team {team_id}, using fallback')
+                team_abbreviation_list[str(team_id)] = f'T{team_id}'
+        else:
+            print(f'Warning: API returned status {response.status_code} for team {team_id}')
+            team_abbreviation_list[str(team_id)] = f'T{team_id}'
+    except Exception as e:
+        print(f'Error fetching team {team_id}: {e}')
+        team_abbreviation_list[str(team_id)] = f'T{team_id}'
 
         
 
-def get_standings(league_id_list, season=2024):
+def get_standings(league_id_list, season=2025, date=None):
     division_standings_list = {}
     for league_id in league_id_list:
-        response = requests.get(f'https://statsapi.mlb.com/api/v1/standings?leagueId={league_id}&season={season}')
+        # Build the API URL with optional date parameter
+        url = f'https://statsapi.mlb.com/api/v1/standings?leagueId={league_id}&season={season}'
+        if date:
+            url += f'&date={date}'
+
+        response = requests.get(url)
         
         data = response.json()
         
@@ -94,15 +113,55 @@ def get_standings(league_id_list, season=2024):
                 division_team_list.append(team_standings) 
            
             division_standings_list[ division_id] = division_team_list 
-    # print(division_standings_list)
+
     
-    
-    standings = {'standings': division_standings_list, 'team_abbreviation':team_abbreviation_list ,'last_updated': last_updated, }
-    
+    standings = {'standings': division_standings_list, 'team_abbreviation': team_abbreviation_list, 'last_updated': last_updated}
+
     save_off_results(standings, 'standings')
+
+    # Also update the teams.json file to include these abbreviations
+    from util import load_json_file
+    teams_data = load_json_file('teams.json')
+    existing_abbreviations = teams_data.get('team_abbreviation', {})
+    existing_abbreviations.update(team_abbreviation_list)
+    save_off_results({'team_abbreviation': existing_abbreviations}, 'teams')
     
     
     
-get_standings([103,104])
+def main():
+    parser = argparse.ArgumentParser(description='Fetch MLB standings for a specific season or date')
+    parser.add_argument('--season', '-s', type=int, default=datetime.now().year,
+                        help='Season year (e.g., 2024, 2023). Default is current year.')
+    parser.add_argument('--date', '-d', type=str,
+                        help='Specific date for standings (format: YYYY-MM-DD or MM/DD/YYYY).')
+
+    args = parser.parse_args()
+
+    # If a specific date is provided, extract the year from it and format it properly
+    date_param = None
+    if args.date:
+        try:
+            # Try both date formats
+            try:
+                date_obj = datetime.strptime(args.date, '%Y-%m-%d')
+            except ValueError:
+                date_obj = datetime.strptime(args.date, '%m/%d/%Y')
+
+            season = date_obj.year
+            date_param = date_obj.strftime('%m/%d/%Y')  # MLB API uses MM/DD/YYYY format
+            print(f'Fetching standings for date: {date_param} (season {season})')
+        except ValueError:
+            print(f'Error: Invalid date format. Please use YYYY-MM-DD or MM/DD/YYYY')
+            return
+    else:
+        season = args.season
+        print(f'Fetching standings for season: {season}')
+
+    get_standings([103, 104], season=season, date=date_param)
+    print(f'\nTeam abbreviations loaded: {len(team_abbreviation_list)} teams')
+    print(f'Standings data saved to data/standings.json')
+
+if __name__ == '__main__':
+    main()
 
 

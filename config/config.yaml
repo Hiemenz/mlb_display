@@ -1,0 +1,27 @@
+# MLB Display Configuration
+# scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
+scoreboard: false
+primary: NYY
+primary_backup: BOS
+primary_backup_2: NYM
+secondary: NYY_DOUBLE
+secondary_backup: LIVE
+secondary_backup_2: STL
+update_interval: 14
+
+# Sport ID Priority List (checked in order, first with games is used)
+# 1  = MLB
+# 8  = World Baseball Classic
+# 11 = College Baseball
+# 12 = Triple-A (AAA)
+# 13 = Double-A (AA)
+# 14 = Winter Leagues
+# 16 = Spring Training
+# 51 = International
+sport_id_priority:
+  - 1   # MLB (highest priority)
+  - 8   # World Baseball Classic
+  - 16  # Spring Training
+  - 51
+  - 11
+  - 14

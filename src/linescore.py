@@ -6,7 +6,7 @@ import json
 import os 
 import pytz
 from generate_image import draw_boards
-from util import load_json_file, save_off_results
+from util import load_json_file, load_yaml_file, save_off_results
 from scoreboard_generate import scoreboard_generate
 
 
@@ -266,7 +266,7 @@ def get_games(game_date):
     url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1&hydrate=decisions,probablePitcher(note),linescore,flags'
     
     games_scheduled_data = load_json_file('games_scheduled.json')
-    config_data = load_json_file('config.json', 'config/')
+    config_data = load_yaml_file('config.yaml')
 
     if are_timestamps_separated_by(games_scheduled_data.get('last_updated_time'), get_current_time() ,int(config_data.get('update_interval'))):
         print('it has been more than ')
@@ -304,17 +304,32 @@ def find_game_in_progress(avoid_game_id):
     
     return None 
 
-def main():
-    six_hours_ago = datetime.now() - timedelta(hours=6)
-    game_data = get_games(six_hours_ago.date())
-    config_data = load_json_file('config.json', 'config/')
+def main(date_str=None):
+    """
+    Main function to generate linescore data.
+
+    Args:
+        date_str: Optional date string in format 'YYYY-MM-DD'. If None, uses current date minus 6 hours.
+    """
+    if date_str:
+        # Parse the provided date string
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        print(f"Using provided date: {target_date}")
+    else:
+        # Use current time minus 6 hours
+        six_hours_ago = datetime.now() - timedelta(hours=6)
+        target_date = six_hours_ago.date()
+        print(f"Using current date minus 6 hours: {target_date}")
+
+    game_data = get_games(target_date)
+    config_data = load_yaml_file('config.yaml')
     games_scheduled_data = load_json_file('games_scheduled.json')
     
     if config_data['scoreboard']:
-        
+
         # this is for the 15 minute refresh no mater what refresh the data
         if games_scheduled_data.get('games_in_progress') > 0 or game_data:
-            scoreboard_generate(six_hours_ago.date(), game_data)
+            scoreboard_generate(target_date, game_data)
         
     
     else:
@@ -392,5 +407,8 @@ def main():
         draw_boards()
     
 if __name__ == '__main__':
-    main()
+    import sys
+    # Check if a date was provided as a command-line argument
+    date_str = sys.argv[1] if len(sys.argv) > 1 else None
+    main(date_str)
     

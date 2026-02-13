@@ -2,15 +2,16 @@
 name = "mlb-display"
 version = "0.1.0"
 description = ""
-authors = ["kah5161 <kah5161@rit.edu>"]
+authors = ["hiemenz <kevinhiemenz1@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "=3.9.2"
-pytz = "^2024.1"
-gpiozero = "^2.0.1"
-lgpio = "^0.2.2"
+python = "^3.13"
+pillow = "^11.1.0"
 requests = "^2.31.0"
+pytz = "^2024.1"
+regex = "^2026.1.15"
+pyyaml = "^6.0.0"
 
 
 [build-system]
