@@ -9,8 +9,6 @@ from generate_image import draw_boards
 from util import load_json_file, load_yaml_file, save_off_results
 from scoreboard_generate import scoreboard_generate
 
-
-        
 def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
     utc_time = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%SZ")
 
