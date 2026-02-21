@@ -51,7 +51,7 @@ def display_image(image_to_display, output_filename='resulting_image.bmp'):
         epd = epd7in5_V2.EPD()
 
         logging.info("init and Clear")
-        epd.init_fast()
+        epd.init()
         # epd.Clear()
 
         logging.info("Drawing on the Horizontal image...")
