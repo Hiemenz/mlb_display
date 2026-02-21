@@ -456,6 +456,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
     font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
+    font11 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 11)
 
     vertical_len = 110
     horizonta_len = 135
@@ -476,8 +477,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
         draw.text((start_x + 7 , start_y + 25 + 74), f'LP: {game_data.get("loser_name")}', font=font14, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
-        draw.text((start_x + 7 , start_y + 25 + 59), f'{away_team_name}: {game_data.get("away_probable")}', font=font14, fill=0)
-        draw.text((start_x + 7, start_y + 25 + 74), f'{home_team_name}: {game_data.get("home_probable")}', font=font14, fill=0)
+        away_prob = game_data.get("away_probable") or ''
+        home_prob = game_data.get("home_probable") or ''
+        max_width = horizonta_len - 14
+
+        def fit_text(text, max_w):
+            try:
+                if font14.getlength(text) <= max_w:
+                    return text, font14
+                if font11.getlength(text) <= max_w:
+                    return text, font11
+                while text and font11.getlength(text) > max_w:
+                    text = text[:-1]
+                return text, font11
+            except AttributeError:
+                return text[:17], font14
+
+        away_prob, away_font = fit_text(away_prob, max_width)
+        home_prob, home_font = fit_text(home_prob, max_width)
+        draw.text((start_x + 7 , start_y + 25 + 59), away_prob, font=away_font, fill=0)
+        draw.text((start_x + 7, start_y + 25 + 74), home_prob, font=home_font, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
         # Show last play result if available, otherwise show pitcher/hitter
         last_play = game_data.get('last_play')
