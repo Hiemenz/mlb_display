@@ -460,8 +460,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
 
     vertical_len = 110
     horizonta_len = 135
-    
-    
+    max_text_width = horizonta_len - 14
+
+    def fit_text(text, max_w):
+        try:
+            if font14.getlength(text) <= max_w:
+                return text, font14
+            if font11.getlength(text) <= max_w:
+                return text, font11
+            while text and font11.getlength(text) > max_w:
+                text = text[:-1]
+            return text, font11
+        except AttributeError:
+            return text[:17], font14
+
     # team names short
     away_team_id = str(game_data['away_team_id'])
     home_team_id = str(game_data['home_team_id'])
@@ -472,44 +484,33 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
     
     # inning or game state
     if game_data['detailed_state'] == 'Final':
-        # pitchers of record 
-        draw.text((start_x + 7 , start_y + 25 + 59), f'WP: {game_data.get("winner_name")}', font=font14, fill=0)
-        draw.text((start_x + 7 , start_y + 25 + 74), f'LP: {game_data.get("loser_name")}', font=font14, fill=0)
+        # pitchers of record
+        wp_str, wp_font = fit_text(f'WP: {game_data.get("winner_name") or ""}', max_text_width)
+        lp_str, lp_font = fit_text(f'LP: {game_data.get("loser_name") or ""}', max_text_width)
+        draw.text((start_x + 7 , start_y + 25 + 59), wp_str, font=wp_font, fill=0)
+        draw.text((start_x + 7 , start_y + 25 + 74), lp_str, font=lp_font, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
         away_prob = game_data.get("away_probable") or ''
         home_prob = game_data.get("home_probable") or ''
-        max_width = horizonta_len - 14
-
-        def fit_text(text, max_w):
-            try:
-                if font14.getlength(text) <= max_w:
-                    return text, font14
-                if font11.getlength(text) <= max_w:
-                    return text, font11
-                while text and font11.getlength(text) > max_w:
-                    text = text[:-1]
-                return text, font11
-            except AttributeError:
-                return text[:17], font14
-
-        away_prob, away_font = fit_text(away_prob, max_width)
-        home_prob, home_font = fit_text(home_prob, max_width)
+        away_prob, away_font = fit_text(away_prob, max_text_width)
+        home_prob, home_font = fit_text(home_prob, max_text_width)
         draw.text((start_x + 7 , start_y + 25 + 59), away_prob, font=away_font, fill=0)
         draw.text((start_x + 7, start_y + 25 + 74), home_prob, font=home_font, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
         # Show last play result if available, otherwise show pitcher/hitter
         last_play = game_data.get('last_play')
         if last_play:
-            # Truncate long play descriptions to fit in the box
             if len(last_play) > 45:
                 last_play = last_play[:42] + '...'
             draw.text((start_x + 5, start_y + 25 + 59), 'Last:', font=font14, fill=0)
             draw.text((start_x + 5, start_y + 25 + 74), last_play, font=font14, fill=0)
         else:
             # Fallback to showing current matchup
-            draw.text((start_x + 5, start_y + 30 + 74), f'P: {game_data.get("current_pitcher")}', font=font14, fill=0)
-            draw.text((start_x + 7, start_y + 30 + 89), f'AB: {game_data.get("current_hitter")}', font=font14, fill=0)
+            pitcher_str, pitcher_font = fit_text(f'P: {game_data.get("current_pitcher") or ""}', max_text_width)
+            hitter_str, hitter_font = fit_text(f'AB: {game_data.get("current_hitter") or ""}', max_text_width)
+            draw.text((start_x + 5, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
+            draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
         
     if game_data['detailed_state'] == 'Final' or  game_data['detailed_state'] == 'Postponed' or  game_data['detailed_state'] == 'Delayed' or  game_data['detailed_state'] == 'Game Over':
         game_state_str = game_data['detailed_state'] 
@@ -539,9 +540,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
 
         game_state_str = extra + ' ' + str(game_data['current_inning'])
     
-    # game state
+    # game state — bold via double draw; append last play on same line for live games
     draw.text((start_x + 5, start_y + 3), game_state_str, font=font14, fill=0)
     draw.text((start_x + 6, start_y + 3), game_state_str, font=font14, fill=0)
+    if game_data['detailed_state'] == 'In Progress':
+        raw_play = game_data.get('last_play') or ''
+        if raw_play:
+            inline_play = raw_play if len(raw_play) <= 11 else raw_play[:10] + '…'
+            draw.text((start_x + 60, start_y + 5), inline_play, font=font11, fill=0)
 
     # Initialize score variables (will be used later for winner display)
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
@@ -662,12 +668,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
         draw.text((start_x + 67 + check_if_two_chars(away_runs), start_y + 25), away_runs, font=font24, fill=0)
 
         
-        # Himage = draw_circle(Himage, (start_x - 5, start_y + 38), 20, True)
+        # Himage = draw_circle(Himage, (start_x - 5, start_y + 25), 20, True)
     if game_data.get('home_team_is_winner'):
         draw.text((start_x + 7 , start_y + 55), home_team_name, font=font24, fill=0)
         draw.text((start_x + 67 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
 
-        # Himage = draw_circle(Himage, (start_x -5, start_y + 68), 17, True)
+        # Himage = draw_circle(Himage, (start_x -5, start_y + 55), 17, True)
 
         
     return Himage
