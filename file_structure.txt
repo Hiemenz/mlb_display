@@ -1,0 +1,29 @@
+/my-project/
+├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   └── other_module.py
+├── config/
+│   ├── default.config.ini
+│   ├── logging.config
+│   └── app_settings.json
+├── data/
+│   ├── database/
+│   │   └── app.db
+│   ├── json/
+│   │   └── sample_data.json
+│   └── csv/
+│       └── data_export.csv
+├── systemd/
+│   ├── user/
+│   │   ├── my_script.service
+│   │   └── my_script.timer
+├── docs/
+│   ├── API.md
+│   └── SETUP.md
+├── tests/
+│   ├── test_main.py
+│   └── test_other_module.py
+├── .venv/
+├── .gitignore
+└── README.md

@@ -1,0 +1,149 @@
+{
+    "NYY": {
+        "runner_first": null,
+        "runner_second": null,
+        "runner_third": null,
+        "current_inning_ordinal": "9th",
+        "current_inning": 9,
+        "inning_half": "Bottom",
+        "home_runs": 6,
+        "home_hits": 8,
+        "home_errors": 2,
+        "away_runs": 7,
+        "away_hits": 7,
+        "away_errors": 0,
+        "balls": 1,
+        "strikes": 3,
+        "outs": 3,
+        "away_runs_innings": [
+            0,
+            0,
+            0,
+            0,
+            5,
+            0,
+            0,
+            2,
+            0
+        ],
+        "home_runs_innings": [
+            3,
+            1,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0
+        ],
+        "innings": [
+            {
+                "inning_num": 1,
+                "home_runs": 3,
+                "home_hits": 2,
+                "home_errors": 0,
+                "home_left_on_base": 0,
+                "away_runs": 0,
+                "away_hits": 0,
+                "away_errors": 0,
+                "away_left_on_base": 0
+            },
+            {
+                "inning_num": 2,
+                "home_runs": 1,
+                "home_hits": 2,
+                "home_errors": 0,
+                "home_left_on_base": 3,
+                "away_runs": 0,
+                "away_hits": 0,
+                "away_errors": 0,
+                "away_left_on_base": 0
+            },
+            {
+                "inning_num": 3,
+                "home_runs": 1,
+                "home_hits": 1,
+                "home_errors": 0,
+                "home_left_on_base": 0,
+                "away_runs": 0,
+                "away_hits": 0,
+                "away_errors": 0,
+                "away_left_on_base": 1
+            },
+            {
+                "inning_num": 4,
+                "home_runs": 0,
+                "home_hits": 1,
+                "home_errors": 0,
+                "home_left_on_base": 2,
+                "away_runs": 0,
+                "away_hits": 0,
+                "away_errors": 0,
+                "away_left_on_base": 1
+            },
+            {
+                "inning_num": 5,
+                "home_runs": 0,
+                "home_hits": 1,
+                "home_errors": 2,
+                "home_left_on_base": 3,
+                "away_runs": 5,
+                "away_hits": 4,
+                "away_errors": 0,
+                "away_left_on_base": 2
+            },
+            {
+                "inning_num": 6,
+                "home_runs": 1,
+                "home_hits": 0,
+                "home_errors": 0,
+                "home_left_on_base": 2,
+                "away_runs": 0,
+                "away_hits": 0,
+                "away_errors": 0,
+                "away_left_on_base": 0
+            },
+            {
+                "inning_num": 7,
+                "home_runs": 0,
+                "home_hits": 0,
+                "home_errors": 0,
+                "home_left_on_base": 0,
+                "away_runs": 0,
+                "away_hits": 0,
+                "away_errors": 0,
+                "away_left_on_base": 2
+            },
+            {
+                "inning_num": 8,
+                "home_runs": 0,
+                "home_hits": 1,
+                "home_errors": 0,
+                "home_left_on_base": 2,
+                "away_runs": 2,
+                "away_hits": 2,
+                "away_errors": 0,
+                "away_left_on_base": 2
+            },
+            {
+                "inning_num": 9,
+                "home_runs": 0,
+                "home_hits": 0,
+                "home_errors": 0,
+                "home_left_on_base": 0,
+                "away_runs": 0,
+                "away_hits": 1,
+                "away_errors": 0,
+                "away_left_on_base": 2
+            }
+        ],
+        "home_team_win_probability": 0.0,
+        "away_team_win_probability": 100.0,
+        "home_team_win_probability_added": -4.7,
+        "leverage_index": 1.87,
+        "result_event": "Strikeout",
+        "result_description": "Alex Verdugo strikes out swinging."
+    },
+    "update_display": null
+}
