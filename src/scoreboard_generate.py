@@ -158,6 +158,7 @@ def parse_games(data):
     game_list = {}
 
     max_live_calls = config_data.get('max_live_game_calls', 5)
+    fetch_last_play = config_data.get('fetch_last_play', True)
     live_calls_made = 0
 
     # Load existing team abbreviations or create new dict
@@ -174,7 +175,7 @@ def parse_games(data):
 
         # For in-progress games, fetch the last play result (up to configured limit)
         last_play_result = None
-        if detailed_state == 'In Progress':
+        if fetch_last_play and detailed_state == 'In Progress':
             if live_calls_made < max_live_calls:
                 print(f"Fetching live game data for game {game_id} ({live_calls_made + 1}/{max_live_calls})")
                 last_play_result = get_last_play_result(game_id)
@@ -182,14 +183,14 @@ def parse_games(data):
             else:
                 print(f"Skipping live game data for game {game_id} (limit of {max_live_calls} reached)")
 
-        # Fetch abbreviations for any teams we haven't seen before
-        if away_team_id and str(away_team_id) not in team_abbreviations:
-            print(f"Fetching abbreviation for team ID {away_team_id}")
-            team_abbreviations[str(away_team_id)] = get_team_abbreviation(away_team_id)
+        # Read abbreviations from the hydrated team data in the schedule response
+        away_abbreviation = game.get('teams', {}).get('away', {}).get('team', {}).get('abbreviation')
+        home_abbreviation = game.get('teams', {}).get('home', {}).get('team', {}).get('abbreviation')
 
-        if home_team_id and str(home_team_id) not in team_abbreviations:
-            print(f"Fetching abbreviation for team ID {home_team_id}")
-            team_abbreviations[str(home_team_id)] = get_team_abbreviation(home_team_id)
+        if away_team_id and away_abbreviation:
+            team_abbreviations[str(away_team_id)] = away_abbreviation
+        if home_team_id and home_abbreviation:
+            team_abbreviations[str(home_team_id)] = home_abbreviation
 
         game_dict = {
             'away_team_name': game.get('teams', {}).get('away', {}).get('team', {}).get('name'),
@@ -353,7 +354,7 @@ def fetch_scoreboard_for_date(date, sport_id=None):
 
     endpoint_url = (
         'https://statsapi.mlb.com/api/v1/schedule?'
-        f'startDate={date}&endDate={date}&sportId={sport_id}&hydrate=decisions,probablePitcher(note),linescore,flags'
+        f'startDate={date}&endDate={date}&sportId={sport_id}&hydrate=decisions,probablePitcher(note),linescore,flags,team'
     )
     response = requests.get(endpoint_url)
     data = response.json()
