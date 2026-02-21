@@ -327,7 +327,7 @@ def main(date_str=None):
 
         # this is for the 15 minute refresh no mater what refresh the data
         if games_scheduled_data.get('games_in_progress') > 0 or game_data:
-            scoreboard_generate(target_date, game_data)
+            scoreboard_generate(str(target_date), game_data)
         
     
     else:
