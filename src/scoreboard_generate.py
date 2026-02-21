@@ -134,6 +134,9 @@ def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
 
 def parse_games(data):
 
+    config_data = load_yaml_file('config.yaml')
+    tz = config_data.get('timezone', 'America/Chicago')
+
     game_dates = data.get('dates', [])
 
     # Check if there are any games
@@ -199,7 +202,7 @@ def parse_games(data):
             'game_number': game.get('gameNumber'),
             'games_in_series': game.get('gamesInSeries'),
             'game_date': game.get('gameDate'),
-            'game_start': convert_time_z_to(game.get('gameDate')),
+            'game_start': convert_time_z_to(game.get('gameDate'), tz),
             'detailed_state': detailed_state,
             'venue': game.get('venue',{}).get('name'),
             'current_inning': game.get('linescore',{}).get('currentInning'),

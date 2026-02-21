@@ -1,6 +1,6 @@
 # MLB Display Configuration
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
-scoreboard: false
+scoreboard: true
 primary: NYY
 primary_backup: BOS
 primary_backup_2: NYM
@@ -8,6 +8,9 @@ secondary: NYY_DOUBLE
 secondary_backup: LIVE
 secondary_backup_2: STL
 update_interval: 14
+
+# Timezone for game start times (IANA timezone string, e.g. America/Chicago, America/New_York)
+timezone: America/Chicago
 
 # Sport ID Priority List (checked in order, first with games is used)
 # 1  = MLB
