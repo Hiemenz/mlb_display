@@ -528,9 +528,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
 
-    # Determine if game has started by checking if runs data exists
-    has_runs_data = game_data.get('away_runs') is not None or game_data.get('home_runs') is not None
-    is_game_started = has_runs_data or game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress']
+    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress']
     is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over']
 
     # Display score if game has started, otherwise show team records
