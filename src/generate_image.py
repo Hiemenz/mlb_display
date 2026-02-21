@@ -701,7 +701,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     # Add date in bottom right corner
     if date_str:
         font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
-        draw.text((690, 455), date_str, font=font18, fill=0)
+        draw.text((690, 462), date_str, font=font18, fill=0)
 
     Himage.save('score_board.bmp')
     return Himage

@@ -157,6 +157,9 @@ def parse_games(data):
     game_array = []
     game_list = {}
 
+    max_live_calls = config_data.get('max_live_game_calls', 5)
+    live_calls_made = 0
+
     # Load existing team abbreviations or create new dict
     team_abbreviations = load_json_file('teams.json').get('team_abbreviation', {})
 
@@ -169,11 +172,15 @@ def parse_games(data):
         away_team_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
         home_team_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
 
-        # For in-progress games, fetch the last play result
+        # For in-progress games, fetch the last play result (up to configured limit)
         last_play_result = None
         if detailed_state == 'In Progress':
-            print(f"Fetching live game data for game {game_id}")
-            last_play_result = get_last_play_result(game_id)
+            if live_calls_made < max_live_calls:
+                print(f"Fetching live game data for game {game_id} ({live_calls_made + 1}/{max_live_calls})")
+                last_play_result = get_last_play_result(game_id)
+                live_calls_made += 1
+            else:
+                print(f"Skipping live game data for game {game_id} (limit of {max_live_calls} reached)")
 
         # Fetch abbreviations for any teams we haven't seen before
         if away_team_id and str(away_team_id) not in team_abbreviations:
