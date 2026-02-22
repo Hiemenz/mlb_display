@@ -252,6 +252,7 @@ def parse_games(data):
             'current_pitcher': game.get('linescore',{}).get('defense',{}).get('pitcher', {}).get('fullName'),
             'last_play': last_play_result,
             'save_situation': save_situation,
+            'game_pk': game_id,
             }
 
         game_array.append(game_dict)
