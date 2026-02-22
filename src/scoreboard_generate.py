@@ -183,6 +183,16 @@ def parse_games(data):
             else:
                 print(f"Skipping live game data for game {game_id} (limit of {max_live_calls} reached)")
 
+        # Compute save situation flag
+        save_situation = False
+        if detailed_state == 'In Progress':
+            current_inning = game.get('linescore', {}).get('currentInning', 0) or 0
+            away_runs = game.get('linescore', {}).get('teams', {}).get('away', {}).get('runs') or 0
+            home_runs = game.get('linescore', {}).get('teams', {}).get('home', {}).get('runs') or 0
+            run_diff = abs(away_runs - home_runs)
+            if current_inning >= 7 and 1 <= run_diff <= 3:
+                save_situation = True
+
         # Read abbreviations from the hydrated team data in the schedule response
         away_abbreviation = game.get('teams', {}).get('away', {}).get('team', {}).get('abbreviation')
         home_abbreviation = game.get('teams', {}).get('home', {}).get('team', {}).get('abbreviation')
@@ -241,6 +251,7 @@ def parse_games(data):
             'current_hitter': game.get('linescore',{}).get('offense',{}).get('batter', {}).get('fullName'),
             'current_pitcher': game.get('linescore',{}).get('defense',{}).get('pitcher', {}).get('fullName'),
             'last_play': last_play_result,
+            'save_situation': save_situation,
             }
 
         game_array.append(game_dict)
@@ -442,6 +453,25 @@ Examples:
 
     # Read config to determine which sport to track
     config_data = load_yaml_file('config.yaml')
+
+    # Night mode check
+    night_mode = config_data.get('night_mode', False)
+    if night_mode:
+        night_start = config_data.get('night_start', 0)
+        night_end = config_data.get('night_end', 7)
+        tz = config_data.get('timezone', 'America/Chicago')
+        local_tz = pytz.timezone(tz)
+        now_local = datetime.now(local_tz)
+        current_hour = now_local.hour
+        if night_start >= night_end:
+            # Window crosses midnight (e.g. 22 to 6): active if hour >= start OR hour < end
+            in_night_window = current_hour >= night_start or current_hour < night_end
+        else:
+            # Window within same day (e.g. 0 to 7): active if start <= hour < end
+            in_night_window = night_start <= current_hour < night_end
+        if in_night_window:
+            print(f"Night mode: skipping refresh ({now_local.strftime('%H:%M')})")
+            return
 
     sport_names = {
         1: "MLB",
