@@ -577,7 +577,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
                 header = 'R     H     E'
                 draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
                 draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
-    else:
+    elif game_data['detailed_state'] in ['Scheduled', 'Pre-Game', 'Warmup']:
         # Game hasn't started - show team records
         draw.text((start_x + 89, start_y + 31), f'{game_data.get("away_team_record_wins", "0")} - {game_data.get("away_team_record_losses", "0")}', font=font14, fill=0)
         draw.text((start_x + 89, start_y + 61), f'{game_data.get("home_team_record_wins", "0")} - {game_data.get("home_team_record_losses", "0")}', font=font14, fill=0)
