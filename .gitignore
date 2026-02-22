@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Runtime output images
+*.bmp
+*.png
+
+# Runtime data / cache
+data/*.json
+
+# Environment
+.env
