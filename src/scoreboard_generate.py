@@ -570,7 +570,13 @@ Examples:
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    sccoreboard_image = orchestrate_score_board(game_state_data, team_data, date_str)
+    # Fetch transactions if enabled in config
+    transactions = None
+    if config_data.get('show_transactions', False):
+        from transactions import get_cached_or_fetch
+        transactions = get_cached_or_fetch()
+
+    sccoreboard_image = orchestrate_score_board(game_state_data, team_data, date_str, transactions=transactions)
 
     if sccoreboard_image:
         display_image(sccoreboard_image)
