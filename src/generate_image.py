@@ -689,9 +689,53 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             )
     return Himage
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None):
+
+def draw_transaction_ticker(Himage, transactions):
+    """
+    Draw a single transaction line at the top of the 800x480 scoreboard image.
+    Rotates through available transactions using a counter stored in data/ticker_state.json.
+    The ticker occupies y=0 to y=18 (18px strip at top).
+    """
+    if not transactions:
+        return Himage
+
+    # Load ticker position state
+    state = load_json_file('ticker_state.json') or {}
+    idx = state.get('idx', 0) % len(transactions)
+
+    # Save next position
+    save_off_results({'idx': (idx + 1) % len(transactions)}, 'ticker_state')
+
+    ticker_text = transactions[idx]
 
     draw = ImageDraw.Draw(Himage)
+    font11 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 11)
+    font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
+
+    # Draw separator line below ticker
+    draw.line((0, 18, 800, 18), fill=0)
+
+    # Prefix label
+    draw.text((2, 2), 'MOVES:', font=font11, fill=0)
+
+    # Transaction text — truncate to fit 800px width
+    text_x = 50
+    max_width = 800 - text_x - 5
+    text = ticker_text
+    while text and font14.getlength(text) > max_width:
+        text = text[:-1]
+    draw.text((text_x, 1), text, font=font14, fill=0)
+
+    return Himage
+
+
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, transactions=None):
+
+    draw = ImageDraw.Draw(Himage)
+
+    # Draw transaction ticker strip at top if provided
+    if transactions is not None:
+        Himage = draw_transaction_ticker(Himage, transactions)
 
     # draw.line((col_start, 60 + row_start, 580 + col_start, 60 + row_start), fill = 0)
     # draw.line((col_start, 90 + row_start, 580 + col_start, 90 + row_start), fill = 0)
@@ -728,7 +772,135 @@ def load_and_sort_json(json_string):
     """Load JSON data from a string and sort it."""
     return json.loads(json_string, object_pairs_hook=OrderedDict)
 
-def  orchestrate_score_board(game_state_data, team_data, date_str=None):
+
+
+def draw_leaders_panel(Himage, leaders_data, col_start=0, row_start=0):
+    """Render a compact league leaders panel on the 800x480 image.
+
+    Displays HR, AVG, and RBI leaders in 3 columns across the full width,
+    with pitching leaders (ERA, SO) in a 4th and 5th logical column if space allows.
+    Uses font14 for category headers and font11 for data rows.
+    """
+    draw = ImageDraw.Draw(Himage)
+    font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
+    font11 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 11)
+    font12 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 12)
+
+    # Category display config: (key, label, higher_is_better)
+    categories = [
+        ('homeRuns', 'HR LEADERS', True),
+        ('battingAverage', 'AVG LEADERS', True),
+        ('rbi', 'RBI LEADERS', True),
+        ('earnedRunAverage', 'ERA LEADERS', False),
+        ('strikeOuts', 'K LEADERS', True),
+    ]
+
+    num_cols = len(categories)
+    col_width = EPD_WIDTH // num_cols  # ~160px each
+
+    for col_idx, (key, label, _) in enumerate(categories):
+        col_x = col_start + col_idx * col_width
+
+        # Draw category header
+        draw.text((col_x + 2, row_start), label, font=font12, fill=0)
+
+        # Draw a separator line under the header
+        draw.line(
+            [(col_x + 1, row_start + 14), (col_x + col_width - 4, row_start + 14)],
+            fill=0,
+            width=1,
+        )
+
+        entries = leaders_data.get(key, [])
+        for row_idx, entry in enumerate(entries[:5]):
+            y = row_start + 17 + row_idx * 14
+            rank = entry.get('rank', row_idx + 1)
+            name = entry.get('name', '')
+            team = entry.get('team', '')
+            value = entry.get('value', '')
+
+            # Abbreviate first name to initial to save space
+            name_parts = name.split()
+            if len(name_parts) >= 2:
+                short_name = f"{name_parts[0][0]}. {' '.join(name_parts[1:])}"
+            else:
+                short_name = name
+
+            line = f"{rank}. {short_name} ({team}) {value}"
+
+            # Truncate if too wide
+            while line and font11.getlength(line) > col_width - 4:
+                # Shorten the name portion
+                if len(short_name) > 3:
+                    short_name = short_name[:-1]
+                    line = f"{rank}. {short_name} ({team}) {value}"
+                else:
+                    break
+
+            draw.text((col_x + 2, y), line, font=font11, fill=0)
+
+    return Himage
+
+
+def draw_hot_streaks_panel(Himage, hot_data, num_games=7, col_start=0, row_start=0):
+    """Render top hot-streak players in 2 columns of 5.
+
+    Header shows 'HOT LAST N GAMES'.
+    Each row: rank, abbreviated name, team, avg, hits/AB.
+    Uses font14 for header and font11 for rows.
+    """
+    draw = ImageDraw.Draw(Himage)
+    font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
+    font11 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 11)
+
+    header = f"HOT LAST {num_games} GAMES"
+    draw.text((col_start + 2, row_start), header, font=font14, fill=0)
+
+    # Separator line under header
+    draw.line(
+        [(col_start + 1, row_start + 15), (col_start + EPD_WIDTH - 2, row_start + 15)],
+        fill=0,
+        width=1,
+    )
+
+    col_width = EPD_WIDTH // 2
+    entries = hot_data[:10] if hot_data else []
+
+    for i, entry in enumerate(entries):
+        col_idx = i // 5
+        row_idx = i % 5
+        x = col_start + col_idx * col_width + 2
+        y = row_start + 18 + row_idx * 14
+
+        rank = entry.get('rank', i + 1)
+        name = entry.get('name', '')
+        team = entry.get('team', '')
+        avg = entry.get('avg', '.000')
+        hits = entry.get('hits', 0)
+        at_bats = entry.get('atBats', 0)
+
+        # Abbreviate first name
+        name_parts = name.split()
+        if len(name_parts) >= 2:
+            short_name = f"{name_parts[0][0]}. {' '.join(name_parts[1:])}"
+        else:
+            short_name = name
+
+        line = f"{rank}. {short_name} ({team}) {avg} ({hits}/{at_bats})"
+
+        # Truncate to fit column width
+        while line and font11.getlength(line) > col_width - 6:
+            if len(short_name) > 3:
+                short_name = short_name[:-1]
+                line = f"{rank}. {short_name} ({team}) {avg} ({hits}/{at_bats})"
+            else:
+                break
+
+        draw.text((x, y), line, font=font11, fill=0)
+
+    return Himage
+
+def  orchestrate_score_board(game_state_data, team_data, date_str=None, transactions=None):
 
     old_data = load_json_file('old_scoreboard_state.json')
 
@@ -766,6 +938,6 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
 
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, transactions=transactions)
     return Himage 
     

@@ -35,3 +35,7 @@ sport_id_priority:
 night_mode: true
 night_start: 0   # midnight (hour in 24h, local timezone)
 night_end: 7     # 7am
+
+# Leaders and hot streaks
+fetch_leaders: false  # Set to true to fetch/display league leaders and hot streaks
+leaders_refresh_hours: 6  # How often to refresh leaders data (hours)
