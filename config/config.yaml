@@ -7,7 +7,7 @@ primary_backup_2: NYM
 secondary: NYY_DOUBLE
 secondary_backup: LIVE
 secondary_backup_2: STL
-update_interval: 0
+update_interval: 14
 max_live_game_calls: 15
 fetch_last_play: true
 
