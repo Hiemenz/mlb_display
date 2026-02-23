@@ -7,7 +7,7 @@ primary_backup_2: NYM
 secondary: NYY_DOUBLE
 secondary_backup: LIVE
 secondary_backup_2: STL
-update_interval: 14
+update_interval: 0
 max_live_game_calls: 15
 fetch_last_play: true
 
@@ -30,3 +30,9 @@ sport_id_priority:
   - 51
   - 11
   - 14
+
+# Night mode: skip refreshes between night_start and night_end (24-hour format)
+night_mode: true
+night_start: 2   # midnight (hour in 24h, local timezone)
+night_end: 7     # 7am
+

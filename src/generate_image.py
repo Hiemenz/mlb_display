@@ -450,7 +450,7 @@ def check_if_two_chars(num):
         return -6
     return 0
 
-def draw_box(Himage, start_x, start_y, game_data, team_data):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False):
     draw = ImageDraw.Draw(Himage)
     font26 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 26)
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
@@ -512,10 +512,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
             draw.text((start_x + 5, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
             draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
         
-    if game_data['detailed_state'] == 'Final' or  game_data['detailed_state'] == 'Postponed' or  game_data['detailed_state'] == 'Delayed' or  game_data['detailed_state'] == 'Game Over':
-        game_state_str = game_data['detailed_state'] 
-        
-        
+    if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
+        # Normalize display labels
+        if game_data['detailed_state'] == 'Game Over':
+            game_state_str = 'Final'
+        elif game_data['detailed_state'] == 'Final: Tied':
+            game_state_str = 'Tied'
+        else:
+            game_state_str = game_data['detailed_state']
+
         if game_data.get('current_inning') != 9:
             game_state_str += '/' + str(game_data.get('current_inning'))
             
@@ -543,6 +548,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
     # game state — bold via double draw; append last play on same line for live games
     draw.text((start_x + 5, start_y + 3), game_state_str, font=font14, fill=0)
     draw.text((start_x + 6, start_y + 3), game_state_str, font=font14, fill=0)
+    if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
+        draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
     if game_data['detailed_state'] == 'In Progress':
         raw_play = game_data.get('last_play') or ''
         if raw_play:
@@ -553,8 +560,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
 
-    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress']
-    is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over']
+    # Also treat any state where runs data exists as started (covers Manager Challenge, mid-game Delay, etc.)
+    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress'] \
+        or game_data.get('away_runs') is not None
+    is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over', 'Final: Tied']
 
     # Display score if game has started, otherwise show team records
     if is_game_started:
@@ -676,9 +685,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data):
         # Himage = draw_circle(Himage, (start_x -5, start_y + 55), 17, True)
 
         
+    # Draw thick border if score changed during an active game (not for post-game stat corrections)
+    if score_changed and not is_game_finished:
+        draw = ImageDraw.Draw(Himage)
+        for offset in range(3):
+            draw.rectangle(
+                [start_x + offset, start_y + offset,
+                 start_x + 135 - offset, start_y + 135 - offset],
+                outline=0
+            )
     return Himage
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None):
+
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None):
 
     draw = ImageDraw.Draw(Himage)
 
@@ -695,13 +714,15 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             if counter > len(game_list) - 1:
                 continue
             if game_list[counter]:
-                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data)
+                game_pk_key = str(game_list[counter].get('game_pk', ''))
+                score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
+                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed)
             counter += 1
 
     # Add date in bottom right corner
     if date_str:
         font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
-        draw.text((690, 462), date_str, font=font18, fill=0)
+        draw.text((690, 461), date_str, font=font18, fill=0)
 
     Himage.save('score_board.bmp')
     return Himage
@@ -714,6 +735,8 @@ def compare_json_dicts_sorted(dict1, dict2):
 def load_and_sort_json(json_string):
     """Load JSON data from a string and sort it."""
     return json.loads(json_string, object_pairs_hook=OrderedDict)
+
+
 
 def  orchestrate_score_board(game_state_data, team_data, date_str=None):
 
@@ -728,12 +751,31 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
 
     save_off_results(game_state_data, "old_scoreboard_state")
 
+    # --- Score change detection ---
+    old_scores = load_json_file('score_alerts.json')
+    new_scores = {}
+    changed_game_ids = set()
+    for game in game_state_data:
+        pk = str(game.get('game_pk', ''))
+        if not pk:
+            continue
+        away_runs = game.get('away_runs')
+        home_runs = game.get('home_runs')
+        new_scores[pk] = {'away_runs': away_runs, 'home_runs': home_runs}
+        if pk in old_scores:
+            old_entry = old_scores[pk]
+            if away_runs != old_entry.get('away_runs') or home_runs != old_entry.get('home_runs'):
+                changed_game_ids.add(pk)
+                print(f'Score change detected for game {pk}: {old_entry} -> {new_scores[pk]}')
+    save_off_results(new_scores, 'score_alerts')
+    # --- End score change detection ---
+
     if compare_json_dicts_sorted(new_dict, old_dict):
         print('images the same')
         return None
 
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str)
-    return Himage 
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids)
+    return Himage
     
