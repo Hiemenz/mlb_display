@@ -9,7 +9,7 @@ secondary_backup: LIVE
 secondary_backup_2: STL
 update_interval: 14
 max_live_game_calls: 15
-fetch_last_play: true
+fetch_last_play: false 
 
 # Timezone for game start times (IANA timezone string, e.g. America/Chicago, America/New_York)
 timezone: America/Chicago
