@@ -146,11 +146,15 @@ def parse_games(data):
         if game.get('doubleHeader') in ('Y', 'S') and game.get('gameNumber') == 2:
             extra_key = '_DOUBLE'
         
-        team_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
-        away_abbrevation = standings_dict.get('team_abbreviation',{}).get(str(team_id))
-        
-        team_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
-        home_abbrevation = standings_dict.get('team_abbreviation',{}).get(str(team_id), 'unk')
+        away_team_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
+        away_abbrevation = (standings_dict.get('team_abbreviation', {}).get(str(away_team_id))
+                            or game.get('teams', {}).get('away', {}).get('team', {}).get('abbreviation')
+                            or f'T{away_team_id}')
+
+        home_team_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
+        home_abbrevation = (standings_dict.get('team_abbreviation', {}).get(str(home_team_id))
+                            or game.get('teams', {}).get('home', {}).get('team', {}).get('abbreviation')
+                            or f'T{home_team_id}')
             
         team_abb_to_game_id_dict[away_abbrevation + extra_key] =  str(game.get('gamePk') )
 

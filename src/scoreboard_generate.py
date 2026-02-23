@@ -1,4 +1,4 @@
-from generate_image import orchestrate_score_board, draw_leaders_panel, draw_hot_streaks_panel
+from generate_image import orchestrate_score_board
 
 from datetime import datetime
 import json
@@ -21,44 +21,6 @@ import pytz
 
 
 
-
-def generate_leaders_display():
-    """Fetch league leaders and hot streaks, then render an 800x480 image.
-
-    Splits the display vertically: top half for league leaders (HR, AVG, RBI, ERA, K),
-    bottom half for hot-streak players (best AVG over last 7 games).
-
-    Returns:
-        PIL Image (800x480) with the leaders/hot-streaks display, or None on error.
-    """
-    try:
-        from leaders import fetch_league_leaders, fetch_hot_streaks
-        from PIL import Image
-
-        leaders_data = fetch_league_leaders()
-        hot_data = fetch_hot_streaks()
-
-        Himage = Image.new('1', (800, 480), 255)  # white background
-
-        # Top half: league leaders (rows 0-239)
-        draw_leaders_panel(Himage, leaders_data, col_start=0, row_start=2)
-
-        # Divider line between the two panels
-        from PIL import ImageDraw
-        divider = ImageDraw.Draw(Himage)
-        divider.line([(0, 95), (799, 95)], fill=0, width=2)
-
-        num_games = hot_data[0].get('num_games', 7) if hot_data and isinstance(hot_data, list) and hot_data else 7
-
-        # Bottom section: hot streaks (rows 100-479)
-        draw_hot_streaks_panel(Himage, hot_data, num_games=7, col_start=0, row_start=100)
-
-        return Himage
-    except Exception as e:
-        print(f"Error generating leaders display: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
 
 def get_last_play_result(game_pk):
     """
@@ -436,7 +398,6 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-
     sccoreboard_image = orchestrate_score_board(game_state_data, team_data, date_str)
 
     if sccoreboard_image:
@@ -570,13 +531,7 @@ Examples:
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    # Fetch transactions if enabled in config
-    transactions = None
-    if config_data.get('show_transactions', False):
-        from transactions import get_cached_or_fetch
-        transactions = get_cached_or_fetch()
-
-    sccoreboard_image = orchestrate_score_board(game_state_data, team_data, date_str, transactions=transactions)
+    sccoreboard_image = orchestrate_score_board(game_state_data, team_data, date_str)
 
     if sccoreboard_image:
         display_image(sccoreboard_image)

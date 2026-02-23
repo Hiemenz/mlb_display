@@ -7,7 +7,7 @@ primary_backup_2: NYM
 secondary: NYY_DOUBLE
 secondary_backup: LIVE
 secondary_backup_2: STL
-update_interval: 14
+update_interval: 0
 max_live_game_calls: 15
 fetch_last_play: true
 
@@ -33,12 +33,6 @@ sport_id_priority:
 
 # Night mode: skip refreshes between night_start and night_end (24-hour format)
 night_mode: true
-night_start: 0   # midnight (hour in 24h, local timezone)
+night_start: 2   # midnight (hour in 24h, local timezone)
 night_end: 7     # 7am
 
-# Leaders and hot streaks
-fetch_leaders: false  # Set to true to fetch/display league leaders and hot streaks
-leaders_refresh_hours: 6  # How often to refresh leaders data (hours)
-
-# Transaction ticker
-show_transactions: false  # Show recent roster moves at top of scoreboard
