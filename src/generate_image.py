@@ -530,6 +530,23 @@ def _load_logo_gray(abbr, team_id):
                     b = b.point(lambda p: 255 - p)
                     img = Image.merge('RGBA', (r, g, b, a))
 
+                # For logos with white outlines/text on colored backgrounds,
+                # turn near-white visible pixels black so they show on e-ink
+                if abbr in invert_config.get('darken_white', []):
+                    r, g, b, a = img.split()
+                    pixels_r = list(r.getdata())
+                    pixels_g = list(g.getdata())
+                    pixels_b = list(b.getdata())
+                    pixels_a = list(a.getdata())
+                    new_r, new_g, new_b = [], [], []
+                    for rv, gv, bv, av in zip(pixels_r, pixels_g, pixels_b, pixels_a):
+                        if av > 32 and rv > 200 and gv > 200 and bv > 200:
+                            new_r.append(0); new_g.append(0); new_b.append(0)
+                        else:
+                            new_r.append(rv); new_g.append(gv); new_b.append(bv)
+                    r.putdata(new_r); g.putdata(new_g); b.putdata(new_b)
+                    img = Image.merge('RGBA', (r, g, b, a))
+
                 bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
                 bg.paste(img, mask=img.split()[3])
                 result = bg.convert('L')

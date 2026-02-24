@@ -1,6 +1,8 @@
 {
-  "_comment": "non_dark: teams that must use the mlb/500/ URL (not mlb/500-dark/) because the dark variant has white elements that disappear on a white e-ink background",
+  "_comment_non_dark": "non_dark: use mlb/500/ URL instead of mlb/500-dark/ — dark variant has white elements that disappear on white e-ink",
   "non_dark": ["ATH", "BAL", "BOS", "CLE", "COL", "MIL", "MIN", "NYM"],
+  "_comment_darken_white": "darken_white: turn near-white visible pixels black before compositing — logos with white outlines or text on colored backgrounds that vanish on white",
+  "darken_white": ["LAA", "CIN", "CHC", "ATH", "TEX", "STL", "NYM", "TOR"],
   "ATH": false,
   "ATL": true,
   "AZ": false,
