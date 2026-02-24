@@ -22,6 +22,7 @@ standings_dict = {
 picdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic')
 libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib')
 logodir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic', 'logos')
+logo_cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic', 'logos_cache')
 
 # ESPN CDN abbreviation overrides
 _ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh'}
@@ -476,17 +477,24 @@ def check_if_two_chars(num):
 def _load_logo_gray(abbr, team_id):
     """Load a team logo PNG and return it as a grayscale (L-mode) PIL Image, or None.
 
-    ESPN 'dark' variant logos are white/light-coloured on a transparent background
-    (designed for dark backgrounds).  We detect this by inspecting the brightness of
-    only the *visible* (non-transparent) pixels.  If they average above 200 the logo
-    is a light-on-transparent type and we invert the RGB channels before compositing
-    so the crest renders as dark-on-white on the e-ink display.
-
-    Results are cached in _logo_cache so each logo is only processed once per run.
+    Processed logos are saved to pic/logos_cache/ as grayscale PNGs so subsequent
+    runs skip all RGBA conversion and brightness detection — just a direct file load.
+    Results are also kept in _logo_cache for the lifetime of the process.
     """
     cache_key = (abbr, str(team_id))
     if cache_key in _logo_cache:
         return _logo_cache[cache_key]
+
+    # Check disk cache first
+    os.makedirs(logo_cache_dir, exist_ok=True)
+    disk_cache_path = os.path.join(logo_cache_dir, f'{abbr}.png')
+    if os.path.exists(disk_cache_path):
+        try:
+            result = Image.open(disk_cache_path).convert('L')
+            _logo_cache[cache_key] = result
+            return result
+        except Exception:
+            pass
 
     result = None
     for name in (abbr, str(team_id)):
@@ -517,6 +525,7 @@ def _load_logo_gray(abbr, team_id):
                 bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
                 bg.paste(img, mask=img.split()[3])
                 result = bg.convert('L')
+                result.save(disk_cache_path)
                 break
             except Exception:
                 pass
