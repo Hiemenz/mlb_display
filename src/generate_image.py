@@ -32,7 +32,9 @@ def _try_download_logo(abbr):
         path = os.path.join(logodir, f'{abbr}.png')
         os.makedirs(logodir, exist_ok=True)
         url = f'https://a.espncdn.com/i/teamlogos/mlb/500-dark/{espn}.png'
-        urllib.request.urlretrieve(url, path)
+        with urllib.request.urlopen(url, timeout=5) as response:
+            with open(path, 'wb') as f:
+                f.write(response.read())
         print(f'Auto-downloaded logo: {abbr}')
         return True
     except Exception as e:
