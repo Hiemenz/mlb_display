@@ -8,6 +8,8 @@ import random
 from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
 
+_logo_cache = {}  # (abbr, team_id) -> grayscale PIL Image or None
+
 standings_dict = {
     1: 'American League East',
     2: 'American League Central',
@@ -479,7 +481,14 @@ def _load_logo_gray(abbr, team_id):
     only the *visible* (non-transparent) pixels.  If they average above 200 the logo
     is a light-on-transparent type and we invert the RGB channels before compositing
     so the crest renders as dark-on-white on the e-ink display.
+
+    Results are cached in _logo_cache so each logo is only processed once per run.
     """
+    cache_key = (abbr, str(team_id))
+    if cache_key in _logo_cache:
+        return _logo_cache[cache_key]
+
+    result = None
     for name in (abbr, str(team_id)):
         path = os.path.join(logodir, f'{name}.png')
         if not os.path.exists(path):
@@ -491,16 +500,15 @@ def _load_logo_gray(abbr, team_id):
                 _alpha_bbox = img.split()[3].getbbox()
                 if _alpha_bbox:
                     img = img.crop(_alpha_bbox)
-                r, g, b, a = img.split()
 
-                # Sample brightness of visible pixels only
-                visible = [
-                    0.299 * rv + 0.587 * gv + 0.114 * bv
-                    for rv, gv, bv, av in zip(r.getdata(), g.getdata(), b.getdata(), a.getdata())
-                    if av > 32
-                ]
-                if visible and (sum(visible) / len(visible)) > 180:
+                # Sample brightness of visible pixels using ImageStat (C-level, fast)
+                from PIL import ImageStat
+                alpha_mask = img.split()[3].point(lambda p: 255 if p > 32 else 0)
+                avg_brightness = ImageStat.Stat(img.convert('L'), mask=alpha_mask).mean[0]
+
+                if avg_brightness > 180:
                     # White/light logo on transparent → invert RGB so it becomes dark on white
+                    r, g, b, a = img.split()
                     r = r.point(lambda p: 255 - p)
                     g = g.point(lambda p: 255 - p)
                     b = b.point(lambda p: 255 - p)
@@ -508,10 +516,13 @@ def _load_logo_gray(abbr, team_id):
 
                 bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
                 bg.paste(img, mask=img.split()[3])
-                return bg.convert('L')
+                result = bg.convert('L')
+                break
             except Exception:
                 pass
-    return None
+
+    _logo_cache[cache_key] = result
+    return result
 
 
 def _logo_small(abbr, team_id, size=28):
