@@ -9,9 +9,6 @@ __pycache__/
 *.bmp
 *.png
 
-# Allow pre-processed logo cache to be committed
-!pic/logos_cache/*.png
-
 # Runtime data / cache
 data/*.json
 

@@ -8,7 +8,20 @@ import random
 from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
 
-_logo_cache = {}  # (abbr, team_id) -> grayscale PIL Image or None
+_logo_cache = {}        # (abbr, team_id) -> grayscale PIL Image or None
+_logo_invert_config = None  # loaded once from pic/logo_render_config.json
+
+
+def _get_logo_invert_config():
+    global _logo_invert_config
+    if _logo_invert_config is None:
+        config_path = os.path.join(picdir, 'logo_render_config.json')
+        try:
+            with open(config_path) as f:
+                _logo_invert_config = json.load(f)
+        except Exception:
+            _logo_invert_config = {}
+    return _logo_invert_config
 
 standings_dict = {
     1: 'American League East',
@@ -477,24 +490,15 @@ def check_if_two_chars(num):
 def _load_logo_gray(abbr, team_id):
     """Load a team logo PNG and return it as a grayscale (L-mode) PIL Image, or None.
 
-    Processed logos are saved to pic/logos_cache/ as grayscale PNGs so subsequent
-    runs skip all RGBA conversion and brightness detection — just a direct file load.
-    Results are also kept in _logo_cache for the lifetime of the process.
+    Inversion is determined by pic/logo_render_config.json (committed to git) so
+    every machine renders logos identically. Falls back to brightness detection for
+    any team not in the config. Results are cached in _logo_cache per process.
     """
     cache_key = (abbr, str(team_id))
     if cache_key in _logo_cache:
         return _logo_cache[cache_key]
 
-    # Check disk cache first
-    os.makedirs(logo_cache_dir, exist_ok=True)
-    disk_cache_path = os.path.join(logo_cache_dir, f'{abbr}.png')
-    if os.path.exists(disk_cache_path):
-        try:
-            result = Image.open(disk_cache_path).convert('L')
-            _logo_cache[cache_key] = result
-            return result
-        except Exception:
-            pass
+    invert_config = _get_logo_invert_config()
 
     result = None
     for name in (abbr, str(team_id)):
@@ -504,18 +508,20 @@ def _load_logo_gray(abbr, team_id):
         if os.path.exists(path):
             try:
                 img = Image.open(path).convert('RGBA')
-                # Crop to non-transparent bounding box to remove excess padding
                 _alpha_bbox = img.split()[3].getbbox()
                 if _alpha_bbox:
                     img = img.crop(_alpha_bbox)
 
-                # Sample brightness of visible pixels using ImageStat (C-level, fast)
-                from PIL import ImageStat
-                alpha_mask = img.split()[3].point(lambda p: 255 if p > 32 else 0)
-                avg_brightness = ImageStat.Stat(img.convert('L'), mask=alpha_mask).mean[0]
+                # Use committed config if available, else fall back to brightness detection
+                if abbr in invert_config:
+                    should_invert = invert_config[abbr]
+                else:
+                    from PIL import ImageStat
+                    alpha_mask = img.split()[3].point(lambda p: 255 if p > 32 else 0)
+                    avg_brightness = ImageStat.Stat(img.convert('L'), mask=alpha_mask).mean[0]
+                    should_invert = avg_brightness > 180
 
-                if avg_brightness > 180:
-                    # White/light logo on transparent → invert RGB so it becomes dark on white
+                if should_invert:
                     r, g, b, a = img.split()
                     r = r.point(lambda p: 255 - p)
                     g = g.point(lambda p: 255 - p)
@@ -525,7 +531,6 @@ def _load_logo_gray(abbr, team_id):
                 bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
                 bg.paste(img, mask=img.split()[3])
                 result = bg.convert('L')
-                result.save(disk_cache_path)
                 break
             except Exception:
                 pass
