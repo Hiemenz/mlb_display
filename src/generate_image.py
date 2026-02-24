@@ -47,7 +47,9 @@ def _try_download_logo(abbr):
         espn = _ESPN_ABBR_MAP.get(abbr.upper(), abbr.lower())
         path = os.path.join(logodir, f'{abbr}.png')
         os.makedirs(logodir, exist_ok=True)
-        url = f'https://a.espncdn.com/i/teamlogos/mlb/500-dark/{espn}.png'
+        non_dark = _get_logo_invert_config().get('non_dark', [])
+        variant = 'mlb/500' if abbr.upper() in non_dark else 'mlb/500-dark'
+        url = f'https://a.espncdn.com/i/teamlogos/{variant}/{espn}.png'
         with urllib.request.urlopen(url, timeout=5) as response:
             with open(path, 'wb') as f:
                 f.write(response.read())
