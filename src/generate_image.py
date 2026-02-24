@@ -19,6 +19,25 @@ standings_dict = {
 
 picdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic')
 libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib')
+logodir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic', 'logos')
+
+# ESPN CDN abbreviation overrides
+_ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh'}
+
+def _try_download_logo(abbr):
+    """Download a missing team logo from ESPN CDN using stdlib only (no pip needed)."""
+    try:
+        import urllib.request
+        espn = _ESPN_ABBR_MAP.get(abbr.upper(), abbr.lower())
+        path = os.path.join(logodir, f'{abbr}.png')
+        os.makedirs(logodir, exist_ok=True)
+        url = f'https://a.espncdn.com/i/teamlogos/mlb/500-dark/{espn}.png'
+        urllib.request.urlretrieve(url, path)
+        print(f'Auto-downloaded logo: {abbr}')
+        return True
+    except Exception as e:
+        print(f'Could not auto-download logo for {abbr}: {e}')
+        return False
 
 if os.path.exists(libdir):
     sys.path.append(libdir)
@@ -28,7 +47,7 @@ EPD_HEIGHT = 480
 
 import logging
 import time
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
 import traceback
 
 
@@ -450,7 +469,80 @@ def check_if_two_chars(num):
         return -6
     return 0
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False):
+def _load_logo_gray(abbr, team_id):
+    """Load a team logo PNG and return it as a grayscale (L-mode) PIL Image, or None.
+
+    ESPN 'dark' variant logos are white/light-coloured on a transparent background
+    (designed for dark backgrounds).  We detect this by inspecting the brightness of
+    only the *visible* (non-transparent) pixels.  If they average above 200 the logo
+    is a light-on-transparent type and we invert the RGB channels before compositing
+    so the crest renders as dark-on-white on the e-ink display.
+    """
+    for name in (abbr, str(team_id)):
+        path = os.path.join(logodir, f'{name}.png')
+        if not os.path.exists(path):
+            _try_download_logo(name)
+        if os.path.exists(path):
+            try:
+                img = Image.open(path).convert('RGBA')
+                # Crop to non-transparent bounding box to remove excess padding
+                _alpha_bbox = img.split()[3].getbbox()
+                if _alpha_bbox:
+                    img = img.crop(_alpha_bbox)
+                r, g, b, a = img.split()
+
+                # Sample brightness of visible pixels only
+                visible = [
+                    0.299 * rv + 0.587 * gv + 0.114 * bv
+                    for rv, gv, bv, av in zip(r.getdata(), g.getdata(), b.getdata(), a.getdata())
+                    if av > 32
+                ]
+                if visible and (sum(visible) / len(visible)) > 180:
+                    # White/light logo on transparent → invert RGB so it becomes dark on white
+                    r = r.point(lambda p: 255 - p)
+                    g = g.point(lambda p: 255 - p)
+                    b = b.point(lambda p: 255 - p)
+                    img = Image.merge('RGBA', (r, g, b, a))
+
+                bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
+                bg.paste(img, mask=img.split()[3])
+                return bg.convert('L')
+            except Exception:
+                pass
+    return None
+
+
+def _logo_small(abbr, team_id, size=28):
+    """Small 1-bit logo for the team name row. Returns a '1'-mode image or None."""
+    gray = _load_logo_gray(abbr, team_id)
+    if gray is None:
+        return None
+    gray.thumbnail((size, size), Image.LANCZOS)
+    # Normalize histogram so inherently dark logos (like BAL/MIL) get lifted
+    # to a visible range before dithering, preserving internal detail.
+    gray = ImageOps.autocontrast(gray, cutoff=2)
+    gray = ImageEnhance.Contrast(gray).enhance(3.0)
+    return gray.convert('1')
+
+
+def _logo_ghost(abbr, team_id, size=110):
+    """Large, very-light ghost logo for the winner watermark on finished games.
+
+    The logo is dramatically brightened before Floyd-Steinberg dithering so only
+    ~30-35 % of the logo's darkest pixels survive as black dots — giving a clearly
+    recognisable watermark crest without obscuring the score text drawn on top.
+    Returns a '1'-mode image or None.
+    """
+    gray = _load_logo_gray(abbr, team_id)
+    if gray is None:
+        return None
+    gray.thumbnail((size, size), Image.LANCZOS)
+    # Lift dark pixels moderately so ~30-35% survive as black dots
+    gray = gray.point(lambda p: 255 if p > 180 else min(255, int(p * 0.3 + 160)))
+    return gray.convert('1')
+
+
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False):
     draw = ImageDraw.Draw(Himage)
     font26 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 26)
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
@@ -481,7 +573,23 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Handle missing team abbreviations gracefully
     away_team_name = team_data.get('team_abbreviation', {}).get(away_team_id, f'T{away_team_id}')
     home_team_name = team_data.get('team_abbreviation', {}).get(home_team_id, f'T{home_team_id}')
-    
+
+    # Winner ghost logo — drawn first so all text/scores render on top of it
+    if use_logos and game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
+        winner_abbr = winner_id = None
+        if game_data.get('away_team_is_winner'):
+            winner_abbr, winner_id = away_team_name, away_team_id
+        elif game_data.get('home_team_is_winner'):
+            winner_abbr, winner_id = home_team_name, home_team_id
+        if winner_abbr:
+            ghost = _logo_ghost(winner_abbr, winner_id)
+            if ghost:
+                gw, gh = ghost.size
+                gx = start_x + (135 - gw) // 2 + 20
+                gy = start_y + 5 + (vertical_len - gh) // 2
+                Himage.paste(ghost, (gx, gy))
+                draw = ImageDraw.Draw(Himage)
+
     # inning or game state
     if game_data['detailed_state'] == 'Final':
         # pitchers of record
@@ -666,23 +774,36 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         
 
 
-    # teams names
-    draw.text((start_x + 5, start_y + 25), away_team_name, font=font24, fill=0)
-    draw.text((start_x + 5 , start_y + 55), home_team_name, font=font24, fill=0)
+    # Team names / logos
+    if use_logos:
+        away_logo = _logo_small(away_team_name, away_team_id)
+        home_logo = _logo_small(home_team_name, home_team_id)
+        if away_logo:
+            lw, lh = away_logo.size
+            ly = start_y + 25 + (28 - lh) // 2
+            Himage.paste(away_logo, (start_x + 5, ly))
+        else:
+            draw.text((start_x + 5, start_y + 25), away_team_name, font=font24, fill=0)
+        if home_logo:
+            lw, lh = home_logo.size
+            ly = start_y + 55 + (28 - lh) // 2
+            Himage.paste(home_logo, (start_x + 5, ly))
+        else:
+            draw.text((start_x + 5, start_y + 55), home_team_name, font=font24, fill=0)
+    else:
+        draw.text((start_x + 5, start_y + 25), away_team_name, font=font24, fill=0)
+        draw.text((start_x + 5, start_y + 55), home_team_name, font=font24, fill=0)
+        # Bold-offset re-draw to emphasise winner name (text mode only)
+        if game_data.get('away_team_is_winner'):
+            draw.text((start_x + 7, start_y + 25), away_team_name, font=font24, fill=0)
+        if game_data.get('home_team_is_winner'):
+            draw.text((start_x + 7, start_y + 55), home_team_name, font=font24, fill=0)
 
-
-
+    # Bold-offset score for winner (both modes)
     if game_data.get('away_team_is_winner'):
-        draw.text((start_x + 7, start_y + 25), away_team_name, font=font24, fill=0)
         draw.text((start_x + 67 + check_if_two_chars(away_runs), start_y + 25), away_runs, font=font24, fill=0)
-
-        
-        # Himage = draw_circle(Himage, (start_x - 5, start_y + 25), 20, True)
     if game_data.get('home_team_is_winner'):
-        draw.text((start_x + 7 , start_y + 55), home_team_name, font=font24, fill=0)
         draw.text((start_x + 67 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
-
-        # Himage = draw_circle(Himage, (start_x -5, start_y + 55), 17, True)
 
         
     # Draw thick border if score changed during an active game (not for post-game stat corrections)
@@ -697,7 +818,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     return Himage
 
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None):
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False):
 
     draw = ImageDraw.Draw(Himage)
 
@@ -716,7 +837,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             if game_list[counter]:
                 game_pk_key = str(game_list[counter].get('game_pk', ''))
                 score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
-                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed)
+                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos)
             counter += 1
 
     # Add date in bottom right corner
@@ -739,6 +860,9 @@ def load_and_sort_json(json_string):
 
 
 def  orchestrate_score_board(game_state_data, team_data, date_str=None):
+
+    config = load_yaml_file('config.yaml')
+    use_logos = config.get('use_team_logos', False)
 
     old_data = load_json_file('old_scoreboard_state.json')
 
@@ -776,6 +900,6 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
 
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos)
     return Himage
     
