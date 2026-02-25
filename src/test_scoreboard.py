@@ -8,8 +8,8 @@ Run from project root: python3 src/test_scoreboard.py
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
-from PIL import Image
-from generate_image import draw_out_of_town_score_board
+from PIL import Image, ImageOps
+from generate_image import draw_out_of_town_score_board, load_yaml_file
 from datetime import date
 
 # 15 matchups covering all 30 teams
@@ -97,6 +97,9 @@ for flip, label, fname in [
         img, games, team_data, date_str,
         changed_game_ids=None, use_logos=True
     )
+    config = load_yaml_file('config.yaml')
+    if config.get('dark_mode', False):
+        img = ImageOps.invert(img)
     path = os.path.join(out_dir, f'{fname}.png')
     img.save(path)
     print(f'Saved {fname}.png  ({label})')

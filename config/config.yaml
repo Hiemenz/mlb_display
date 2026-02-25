@@ -36,16 +36,20 @@ night_mode: true
 night_start: 2   # midnight (hour in 24h, local timezone)
 night_end: 7     # 7am
 
+
+# Team emoji overrides: display emoji instead of logo for these teams
+# Dark mode: invert display (white on black instead of black on white)
+dark_mode: true
+
 # Team logos: display PNG logos instead of 3-letter abbreviations
 # Requires logo files in pic/logos/{ABBR}.png — run src/download_logos.py to fetch them
 # Falls back to text abbreviation when a logo file is missing
-use_team_logos: true
+use_team_logos: True
 
-# Team emoji overrides: display emoji instead of logo for these teams
 team_emojis:
   BOS: "💩"
-  # NYM: "💰"
-  # SD: "🇺🇸"
+  LAD: "💰"
+  ATL: "🇺🇸"
   WSH: "🍉"
   # LAA: "😂"
   # WSH: "🐾"
