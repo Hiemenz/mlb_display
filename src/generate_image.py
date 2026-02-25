@@ -10,6 +10,10 @@ from collections import OrderedDict
 
 _logo_cache = {}        # (abbr, team_id) -> grayscale PIL Image or None
 _logo_invert_config = None  # loaded once from pic/logo_render_config.json
+_emoji_cache = {}       # abbr -> grayscale PIL Image or None
+_team_emojis = None     # loaded once from config.yaml
+
+emojidir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic', 'emojis')
 
 
 def _get_logo_invert_config():
@@ -22,6 +26,87 @@ def _get_logo_invert_config():
         except Exception:
             _logo_invert_config = {}
     return _logo_invert_config
+
+def _get_team_emojis():
+    """Load team_emojis mapping from config.yaml, cached per process."""
+    global _team_emojis
+    if _team_emojis is None:
+        _team_emojis = load_yaml_file('config.yaml').get('team_emojis', {}) or {}
+    return _team_emojis
+
+
+def _emoji_codepoint(char):
+    """Convert an emoji character to its Twemoji hex filename (e.g. 💩 -> 1f4a9).
+
+    Strips variation selectors (U+FE0F) so compound emojis resolve correctly.
+    """
+    codepoints = [f'{ord(c):x}' for c in char if ord(c) != 0xfe0f]
+    return '-'.join(codepoints)
+
+
+def _try_download_emoji(emoji_char):
+    """Download an emoji PNG from the Twemoji CDN (via jsDelivr). Returns True on success."""
+    try:
+        import urllib.request
+        codepoint = _emoji_codepoint(emoji_char)
+        os.makedirs(emojidir, exist_ok=True)
+        path = os.path.join(emojidir, f'{codepoint}.png')
+        url = f'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/{codepoint}.png'
+        with urllib.request.urlopen(url, timeout=5) as response:
+            with open(path, 'wb') as f:
+                f.write(response.read())
+        print(f'Auto-downloaded emoji: {emoji_char} ({codepoint})')
+        return True
+    except Exception as e:
+        print(f'Could not auto-download emoji {emoji_char}: {e}')
+        return False
+
+
+def _load_emoji_gray(abbr):
+    """If abbr has an emoji mapping, load its PNG and return a grayscale Image, else None."""
+    if abbr in _emoji_cache:
+        return _emoji_cache[abbr]
+
+    emojis = _get_team_emojis()
+    emoji_char = emojis.get(abbr)
+    if not emoji_char:
+        _emoji_cache[abbr] = None
+        return None
+
+    codepoint = _emoji_codepoint(emoji_char)
+    path = os.path.join(emojidir, f'{codepoint}.png')
+    if not os.path.exists(path):
+        _try_download_emoji(emoji_char)
+
+    result = None
+    if os.path.exists(path):
+        try:
+            from PIL import ImageStat
+            img = Image.open(path).convert('RGBA')
+            # Detect predominantly white/bright emojis and invert so they
+            # don't vanish against the white e-ink background.
+            alpha_mask = img.split()[3].point(lambda p: 255 if p > 32 else 0)
+            avg_brightness = ImageStat.Stat(img.convert('L'), mask=alpha_mask).mean[0]
+            if avg_brightness > 180:
+                r, g, b, a = img.split()
+                r = r.point(lambda p: 255 - p)
+                g = g.point(lambda p: 255 - p)
+                b = b.point(lambda p: 255 - p)
+                img = Image.merge('RGBA', (r, g, b, a))
+            bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
+            bg.paste(img, mask=img.split()[3])
+            result = bg.convert('L')
+            # Sharpen edges (eyes, mouth) so they survive aggressive
+            # thumbnail + contrast dithering in _logo_small / _logo_ghost.
+            from PIL import ImageFilter
+            result = ImageOps.autocontrast(result, cutoff=1)
+            result = result.filter(ImageFilter.UnsharpMask(radius=2, percent=250, threshold=0))
+        except Exception:
+            pass
+
+    _emoji_cache[abbr] = result
+    return result
+
 
 standings_dict = {
     1: 'American League East',
@@ -496,6 +581,10 @@ def _load_logo_gray(abbr, team_id):
     every machine renders logos identically. Falls back to brightness detection for
     any team not in the config. Results are cached in _logo_cache per process.
     """
+    emoji_img = _load_emoji_gray(abbr)
+    if emoji_img is not None:
+        return emoji_img
+
     cache_key = (abbr, str(team_id))
     if cache_key in _logo_cache:
         return _logo_cache[cache_key]
@@ -563,6 +652,7 @@ def _logo_small(abbr, team_id, size=28):
     gray = _load_logo_gray(abbr, team_id)
     if gray is None:
         return None
+    gray = gray.copy()
     gray.thumbnail((size, size), Image.LANCZOS)
     # Normalize histogram so inherently dark logos (like BAL/MIL) get lifted
     # to a visible range before dithering, preserving internal detail.
@@ -582,6 +672,7 @@ def _logo_ghost(abbr, team_id, size=110):
     gray = _load_logo_gray(abbr, team_id)
     if gray is None:
         return None
+    gray = gray.copy()
     gray.thumbnail((size, size), Image.LANCZOS)
     # Lift dark pixels moderately so ~30-35% survive as black dots
     gray = gray.point(lambda p: 255 if p > 180 else min(255, int(p * 0.3 + 160)))

@@ -41,3 +41,15 @@ night_end: 7     # 7am
 # Falls back to text abbreviation when a logo file is missing
 use_team_logos: true
 
+# Team emoji overrides: display emoji instead of logo for these teams
+team_emojis:
+  BOS: "💩"
+  # NYM: "💰"
+  # SD: "🇺🇸"
+  WSH: "🍉"
+  # LAA: "😂"
+  # WSH: "🐾"
+  # CWS: "🏎️"
+  # PIT: "👨‍🚀"
+  # COL: "🌊"
+
