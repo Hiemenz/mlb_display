@@ -1048,6 +1048,23 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
 
     save_off_results(game_state_data, "old_scoreboard_state")
 
+    # Build map of old game data by game_pk for per-game comparison
+    old_by_pk = {}
+    if old_data and isinstance(old_data, list):
+        for g in old_data:
+            pk = str(g.get('game_pk', ''))
+            if pk:
+                old_by_pk[pk] = g
+
+    # Track all games with ANY data change (for partial refresh regions)
+    refreshed_game_ids = set()
+    for game in game_state_data:
+        pk = str(game.get('game_pk', ''))
+        if not pk:
+            continue
+        if old_by_pk.get(pk) != game:
+            refreshed_game_ids.add(pk)
+
     # --- Score change detection ---
     old_scores = load_json_file('score_alerts.json')
     new_scores = {}
@@ -1086,7 +1103,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
         if i >= 15:  # 5x3 grid max
             break
         pk = str(game.get('game_pk', ''))
-        if pk in changed_game_ids:
+        if pk in refreshed_game_ids:
             col = i % 5
             row = i // 5
             # Align x to 8-pixel boundary
