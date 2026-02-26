@@ -356,7 +356,9 @@ def draw_boards():
         # If we couldn't determine specific panels, empty list signals full refresh
 
         save_off_results(new_image_dict, "old_image_state")
-    Himage.save('temp.bmp') 
+    if config_data.get('dark_mode', False):
+        Himage = ImageOps.invert(Himage)
+    Himage.save('temp.bmp')
     if not data:
         save_off_results(new_image_dict, "old_image_state")
 
@@ -945,14 +947,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         home_logo = _logo_small(home_team_name, home_team_id)
         if away_logo:
             lw, lh = away_logo.size
+            lx = start_x + 5 + (28 - lw) // 2
             ly = start_y + 25 + (28 - lh) // 2
-            Himage.paste(away_logo, (start_x + 5, ly))
+            Himage.paste(away_logo, (lx, ly))
         else:
             draw.text((start_x + 5, start_y + 25), away_team_name, font=font24, fill=0)
         if home_logo:
             lw, lh = home_logo.size
+            lx = start_x + 5 + (28 - lw) // 2
             ly = start_y + 55 + (28 - lh) // 2
-            Himage.paste(home_logo, (start_x + 5, ly))
+            Himage.paste(home_logo, (lx, ly))
         else:
             draw.text((start_x + 5, start_y + 55), home_team_name, font=font24, fill=0)
     else:
@@ -1070,6 +1074,9 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
     Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos)
+    if config.get('dark_mode', False):
+        Himage = ImageOps.invert(Himage)
+
     # --- Compute changed regions from changed_game_ids ---
     x_start = 32
     y_start = 30
