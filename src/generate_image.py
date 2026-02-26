@@ -313,28 +313,56 @@ def draw_boards():
     Himage = generate_standings(Himage, col_start=100, row_start=320)
     
     data = load_json_file('old_image_state.json')
-    
-    
+
+
     n1 = normalize_dict(data)
     n2 = normalize_dict(new_image_dict)
+
+    changed_regions = []
 
     if n1 == n2:
         print('images the same')
         linescore_data['update_display'] = None
 
-    else: 
+    else:
         print('image is different')
-        
+
         print('saving off image...')
         linescore_data['update_display'] = True
+
+        # Compute per-panel changed regions
+        # Panel layout: primary (y:0-179), secondary (y:180-319), standings (y:320-480)
+        panels = [
+            (0, 0, 800, 180),    # primary game
+            (0, 180, 800, 140),  # secondary game
+            (0, 320, 800, 160),  # standings
+        ]
+        old_flat = json.dumps(n1, sort_keys=True) if n1 else ''
+        new_flat = json.dumps(n2, sort_keys=True)
+        # Simple heuristic: check which keys changed and map to panels
+        old_keys = set(data.keys()) if data else set()
+        new_keys = set(new_image_dict.keys())
+        all_keys = old_keys | new_keys
+        for key in all_keys:
+            old_val = data.get(key) if data else None
+            new_val = new_image_dict.get(key)
+            if old_val != new_val:
+                # Map key to panel by checking row_start used in generate_linescore calls
+                # Primary panel uses row_start=40, secondary uses row_start=180
+                # Standings uses row_start=320
+                # Since we can't easily map keys to panels, mark all panels changed
+                changed_regions = []
+                break
+        # If we couldn't determine specific panels, empty list signals full refresh
+
         save_off_results(new_image_dict, "old_image_state")
     if config_data.get('dark_mode', False):
         Himage = ImageOps.invert(Himage)
     Himage.save('temp.bmp')
     if not data:
         save_off_results(new_image_dict, "old_image_state")
-        
 
+    linescore_data['changed_regions'] = changed_regions
     save_off_results(linescore_data, "linescore")
 
         
@@ -1001,7 +1029,11 @@ def load_and_sort_json(json_string):
 
 
 def  orchestrate_score_board(game_state_data, team_data, date_str=None):
+    """Returns (image, changed_regions) or None if nothing changed.
 
+    changed_regions is a list of (x, y, w, h) tuples for partial refresh.
+    An empty list signals that a full refresh should be used.
+    """
     config = load_yaml_file('config.yaml')
     use_logos = config.get('use_team_logos', False)
 
@@ -1044,5 +1076,29 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
     Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos)
     if config.get('dark_mode', False):
         Himage = ImageOps.invert(Himage)
-    return Himage
+
+    # --- Compute changed regions from changed_game_ids ---
+    x_start = 32
+    y_start = 30
+    changed_regions = []
+    # Build map of game_pk -> grid index
+    for i, game in enumerate(game_state_data):
+        if i >= 15:  # 5x3 grid max
+            break
+        pk = str(game.get('game_pk', ''))
+        if pk in changed_game_ids:
+            col = i % 5
+            row = i // 5
+            # Align x to 8-pixel boundary
+            rx = (col * 150 + x_start) // 8 * 8
+            ry = row * 150 + y_start
+            rw = 152  # slightly wider to cover alignment rounding (divisible by 8)
+            rh = 150
+            changed_regions.append((rx, ry, rw, rh))
+
+    # If too many regions changed, signal full refresh with empty list
+    if len(changed_regions) > 5:
+        changed_regions = []
+
+    return (Himage, changed_regions)
     
