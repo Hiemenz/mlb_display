@@ -6,7 +6,8 @@ import requests
 import platform
 import argparse
 
-from display_eink import display_image
+from display_eink import display_image, display_partial_regions
+from refresh_tracker import needs_full_refresh
 from util import load_json_file, load_yaml_file, save_off_results
 import pytz
 
@@ -398,17 +399,20 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    sccoreboard_image = orchestrate_score_board(game_state_data, team_data, date_str)
+    result = orchestrate_score_board(game_state_data, team_data, date_str)
 
-    if sccoreboard_image:
-        display_image(sccoreboard_image)
+    if result:
+        sccoreboard_image, changed_regions = result
+        if needs_full_refresh() or not changed_regions:
+            print("Scoreboard: full refresh")
+            display_image(sccoreboard_image)
+        else:
+            print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
+            display_partial_regions(sccoreboard_image, changed_regions)
     else:
         print("No display update needed - image unchanged")
-    
-    
-    
-    
-    
+
+
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -531,10 +535,16 @@ Examples:
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    sccoreboard_image = orchestrate_score_board(game_state_data, team_data, date_str)
+    result = orchestrate_score_board(game_state_data, team_data, date_str)
 
-    if sccoreboard_image:
-        display_image(sccoreboard_image)
+    if result:
+        sccoreboard_image, changed_regions = result
+        if needs_full_refresh() or not changed_regions:
+            print("Scoreboard: full refresh")
+            display_image(sccoreboard_image)
+        else:
+            print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
+            display_partial_regions(sccoreboard_image, changed_regions)
         print(f"\n✓ Scoreboard generated successfully!")
         print(f"  View image at: resulting_image.bmp")
     else:
