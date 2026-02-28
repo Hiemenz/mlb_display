@@ -710,6 +710,11 @@ def _logo_ghost(abbr, team_id, size=110):
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False):
+    # Normalize early-completion states (e.g. spring training games called after 6 innings)
+    if game_data.get('detailed_state', '').startswith('Completed Early'):
+        game_data = dict(game_data)
+        game_data['detailed_state'] = 'Final'
+
     draw = ImageDraw.Draw(Himage)
     font26 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 26)
     font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
