@@ -46,11 +46,11 @@ dark_mode: true
 # Falls back to text abbreviation when a logo file is missing
 use_team_logos: True
 
-team_emojis:
-  BOS: "💩"
-  LAD: "💰"
-  ATL: "🇺🇸"
-  WSH: "🍉"
+# team_emojis:
+  # BOS: "💩"
+  # LAD: "💰"
+  # ATL: "🇺🇸"
+  # WSH: "🍉"
   # LAA: "😂"
   # WSH: "🐾"
   # CWS: "🏎️"
