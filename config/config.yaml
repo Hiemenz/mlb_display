@@ -46,6 +46,10 @@ dark_mode: true
 # Falls back to text abbreviation when a logo file is missing
 use_team_logos: True
 
+# Small logo X offset: pixels from the left edge of each score box where the small logo is placed.
+# Set to 2 to align with the box edge. Increase to shift the logo right.
+small_logo_x_offset: 2
+
 # team_emojis:
   # BOS: "💩"
   # LAD: "💰"
