@@ -265,7 +265,7 @@ def get_player_name(person_id):
 
     
 def get_games(game_date):
-    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1&hydrate=decisions,probablePitcher(note),linescore,flags'
+    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1&hydrate=decisions,probablePitcher(note),linescore,flags,team'
     
     games_scheduled_data = load_json_file('games_scheduled.json')
     config_data = load_yaml_file('config.yaml')

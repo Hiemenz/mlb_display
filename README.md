@@ -83,6 +83,41 @@ Each linescore shows:
 
 The standings section rotates through a randomly selected division on each refresh.
 
+## Team Logos
+
+Team logos are displayed in each game tile when `use_team_logos: true` is set in config. Logos are fetched automatically from ESPN's CDN on first use, or downloaded in bulk:
+
+```bash
+# Download all MLB logos
+python3 src/download_logos.py
+
+# Download World Baseball Classic logos
+python3 src/download_logos.py --wbc
+
+# Download logos for any sport
+python3 src/download_logos.py --sport-id 8 --fetch-teams
+```
+
+Logos are stored in `pic/logos/{ABBR}.png`. The scoreboard falls back to the 3-letter abbreviation for any missing logo.
+
+When logos are enabled, each tile shows the small team logo alongside the abbreviation:
+```
+┌─────────────┐
+│Final         │
+│             │
+│[🦅] BAL  5  │
+│[⚾] NYY  3  │
+│             │
+│WP: C.Burnes │
+│LP: G.Cole   │
+└─────────────┘
+```
+
+The logo position is configurable:
+```yaml
+small_logo_x_offset: 2   # pixels from left edge of each tile (default: 2)
+```
+
 ## Installation
 
 ```bash
@@ -132,6 +167,11 @@ sport_id_priority:
   - 51   # International
   - 11   # College Baseball
   - 14   # Winter Leagues
+
+# Display
+dark_mode: false          # invert display (white on black)
+use_team_logos: true      # show PNG logos instead of 3-letter abbreviations
+small_logo_x_offset: 2    # logo X position in each tile (pixels from left edge)
 ```
 
 ## Usage
@@ -166,6 +206,7 @@ mlb_display/
 │   ├── scoreboard_generate.py  # Scoreboard mode entry point
 │   ├── linescore.py            # Linescore mode entry point
 │   ├── generate_image.py       # Image rendering (both modes)
+│   ├── download_logos.py       # Bulk logo downloader (MLB + WBC)
 │   ├── game_data.py            # MLB API data fetching
 │   ├── standings.py            # Standings data fetching
 │   ├── display_eink.py         # Waveshare e-ink driver wrapper
@@ -175,7 +216,9 @@ mlb_display/
 │   └── config.yaml
 ├── data/                       # Runtime cache (gitignored)
 └── pic/
-    └── Font.ttc
+    ├── Font.ttc
+    ├── logo_render_config.json  # per-team logo invert/darken settings
+    └── logos/                   # team logo PNGs (auto-downloaded)
 ```
 
 ## Contributing

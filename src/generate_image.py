@@ -126,12 +126,23 @@ logo_cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(_
 _ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh'}
 
 def _try_download_logo(abbr):
-    """Download a missing team logo from ESPN CDN using stdlib only (no pip needed)."""
+    """Download a missing team logo from ESPN CDN using stdlib only (no pip needed).
+
+    Tries MLB CDN first, then falls back to countries CDN for international/WBC teams.
+    Skips numeric or T{id} fallback abbreviations — those are unknown spring training
+    teams that won't exist on any CDN.
+    """
+    # Skip fallback IDs like "T792" or pure numeric strings — no logo exists for them
+    if abbr.isdigit() or (abbr.startswith('T') and abbr[1:].isdigit()):
+        return False
+
+    import urllib.request
+    path = os.path.join(logodir, f'{abbr}.png')
+    os.makedirs(logodir, exist_ok=True)
+
+    # Try MLB CDN first
     try:
-        import urllib.request
         espn = _ESPN_ABBR_MAP.get(abbr.upper(), abbr.lower())
-        path = os.path.join(logodir, f'{abbr}.png')
-        os.makedirs(logodir, exist_ok=True)
         non_dark = _get_logo_invert_config().get('non_dark', [])
         variant = 'mlb/500' if abbr.upper() in non_dark else 'mlb/500-dark'
         url = f'https://a.espncdn.com/i/teamlogos/{variant}/{espn}.png'
@@ -139,6 +150,18 @@ def _try_download_logo(abbr):
             with open(path, 'wb') as f:
                 f.write(response.read())
         print(f'Auto-downloaded logo: {abbr}')
+        return True
+    except Exception:
+        pass
+
+    # Fallback: try ESPN countries CDN for international/WBC teams
+    try:
+        espn = abbr.lower()
+        url = f'https://a.espncdn.com/i/teamlogos/countries/500/{espn}.png'
+        with urllib.request.urlopen(url, timeout=5) as response:
+            with open(path, 'wb') as f:
+                f.write(response.read())
+        print(f'Auto-downloaded country logo: {abbr}')
         return True
     except Exception as e:
         print(f'Could not auto-download logo for {abbr}: {e}')
@@ -357,7 +380,7 @@ def draw_boards():
 
         save_off_results(new_image_dict, "old_image_state")
     if config_data.get('dark_mode', False):
-        Himage = ImageOps.invert(Himage)
+        Himage = ImageOps.invert(Himage.convert('L')).convert('1')
     Himage.save('temp.bmp')
     if not data:
         save_off_results(new_image_dict, "old_image_state")
@@ -709,7 +732,7 @@ def _logo_ghost(abbr, team_id, size=110):
     return gray.convert('1')
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2):
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
         game_data = dict(game_data)
@@ -947,21 +970,32 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
 
     # Team names / logos
+    _LOGO_SIZE = 28  # matches _logo_small default size
     if use_logos:
         away_logo = _logo_small(away_team_name, away_team_id)
         home_logo = _logo_small(home_team_name, home_team_id)
         if away_logo:
             lw, lh = away_logo.size
-            lx = start_x + 5 + (28 - lw) // 2
-            ly = start_y + 25 + (28 - lh) // 2
+            lx = start_x + logo_x_offset + (_LOGO_SIZE - lw) // 2
+            ly = start_y + 25 + (_LOGO_SIZE - lh) // 2
             Himage.paste(away_logo, (lx, ly))
+            # Abbreviation next to logo (double-draw for bold effect)
+            abbr_x = start_x + logo_x_offset + _LOGO_SIZE + 2
+            abbr_y = start_y + 25 + (_LOGO_SIZE - 14) // 2
+            draw.text((abbr_x, abbr_y), away_team_name, font=font14, fill=0)
+            draw.text((abbr_x + 1, abbr_y), away_team_name, font=font14, fill=0)
         else:
             draw.text((start_x + 5, start_y + 25), away_team_name, font=font24, fill=0)
         if home_logo:
             lw, lh = home_logo.size
-            lx = start_x + 5 + (28 - lw) // 2
-            ly = start_y + 55 + (28 - lh) // 2
+            lx = start_x + logo_x_offset + (_LOGO_SIZE - lw) // 2
+            ly = start_y + 55 + (_LOGO_SIZE - lh) // 2
             Himage.paste(home_logo, (lx, ly))
+            # Abbreviation next to logo (double-draw for bold effect)
+            abbr_x = start_x + logo_x_offset + _LOGO_SIZE + 2
+            abbr_y = start_y + 55 + (_LOGO_SIZE - 14) // 2
+            draw.text((abbr_x, abbr_y), home_team_name, font=font14, fill=0)
+            draw.text((abbr_x + 1, abbr_y), home_team_name, font=font14, fill=0)
         else:
             draw.text((start_x + 5, start_y + 55), home_team_name, font=font24, fill=0)
     else:
@@ -992,7 +1026,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     return Himage
 
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False):
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2):
 
     draw = ImageDraw.Draw(Himage)
 
@@ -1011,7 +1045,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             if game_list[counter]:
                 game_pk_key = str(game_list[counter].get('game_pk', ''))
                 score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
-                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos)
+                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos, logo_x_offset=logo_x_offset)
             counter += 1
 
     # Add date in bottom right corner
@@ -1041,6 +1075,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
     """
     config = load_yaml_file('config.yaml')
     use_logos = config.get('use_team_logos', False)
+    logo_x_offset = config.get('small_logo_x_offset', 2)
 
     old_data = load_json_file('old_scoreboard_state.json')
 
@@ -1095,9 +1130,9 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
 
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset)
     if config.get('dark_mode', False):
-        Himage = ImageOps.invert(Himage)
+        Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 
     # --- Compute changed regions from changed_game_ids ---
     x_start = 32
