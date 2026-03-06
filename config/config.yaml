@@ -1,6 +1,12 @@
 # MLB Display Configuration
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
 scoreboard: true
+
+# Display mode: "scoreboard" | "linescore" | "field" | "scorecard"
+# If set, overrides the scoreboard: true/false flag above.
+# "field" = single-game field diagram with hit location + game info
+# "scorecard" = official scorer-style scorecard for both teams
+# display_mode: "scoreboard"
 primary: NYY
 primary_backup: BOS
 primary_backup_2: NYM

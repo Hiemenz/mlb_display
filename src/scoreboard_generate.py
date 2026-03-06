@@ -9,6 +9,9 @@ import argparse
 from display_eink import display_image, display_partial_regions
 from refresh_tracker import needs_full_refresh
 from util import load_json_file, load_yaml_file, save_off_results
+from game_detail_fetch import select_game, fetch_field_view_data, fetch_scorecard_data
+from field_view import render_field_view
+from scorecard_view import render_scorecard_view
 import pytz
 
 # Spring Training Support:
@@ -378,6 +381,54 @@ def fetch_scoreboard_for_date(date, sport_id=None):
     
     
 
+def _get_display_mode(config):
+    """Determine display mode from config. Returns 'scoreboard', 'linescore', 'field', or 'scorecard'."""
+    mode = config.get('display_mode')
+    if mode and mode in ('scoreboard', 'linescore', 'field', 'scorecard'):
+        return mode
+    # Backward compat: use scoreboard flag
+    if config.get('scoreboard', True):
+        return 'scoreboard'
+    return 'linescore'
+
+
+def _run_single_game_mode(mode, game_state_data, team_data, config):
+    """Run field or scorecard mode for a single game."""
+    favorite = config.get('primary', '')
+    game = select_game(game_state_data, favorite, team_data)
+    if not game:
+        print("No game found for single-game display mode")
+        return
+
+    game_pk = game.get('game_pk')
+    if not game_pk:
+        print("No game_pk found")
+        return
+
+    dark_mode = config.get('dark_mode', False)
+
+    away_id = str(game.get('away_team_id', ''))
+    home_id = str(game.get('home_team_id', ''))
+    away_abbr = team_data.get('team_abbreviation', {}).get(away_id, '')
+    home_abbr = team_data.get('team_abbreviation', {}).get(home_id, '')
+    print(f"Selected game: {away_abbr} @ {home_abbr} (pk={game_pk}, mode={mode})")
+
+    try:
+        if mode == 'field':
+            data = fetch_field_view_data(game_pk)
+            image = render_field_view(data, dark_mode=dark_mode)
+        else:
+            data = fetch_scorecard_data(game_pk)
+            image = render_scorecard_view(data, dark_mode=dark_mode)
+
+        display_image(image)
+        print(f"{mode.title()} view generated successfully")
+    except Exception as e:
+        print(f"Error generating {mode} view: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def scoreboard_generate(date_str, game_data, sport_id=None):
     """
     Generate scoreboard for a specific date and sport.
@@ -398,6 +449,13 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
     # Ensure team_data has the required structure
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
+
+    config_data = load_yaml_file('config.yaml')
+    mode = _get_display_mode(config_data)
+
+    if mode in ('field', 'scorecard'):
+        _run_single_game_mode(mode, game_state_data, team_data, config_data)
+        return
 
     result = orchestrate_score_board(game_state_data, team_data, date_str)
 
@@ -534,6 +592,14 @@ Examples:
     # Ensure team_data has the required structure
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
+
+    mode = _get_display_mode(config_data)
+
+    if mode in ('field', 'scorecard'):
+        _run_single_game_mode(mode, game_state_data, team_data, config_data)
+        print(f"\n✓ {mode.title()} view generated successfully!")
+        print(f"  View image at: resulting_image.bmp")
+        return
 
     result = orchestrate_score_board(game_state_data, team_data, date_str)
 
