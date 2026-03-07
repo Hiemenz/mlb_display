@@ -758,22 +758,48 @@ Examples:
         date_str = now.strftime('%Y-%m-%d')
         print(f"Using today's date: {date_str}")
 
-    # --- Smart polling: skip API calls when no games scheduled ---
+    # --- Smart polling: rate-limit MLB API calls based on game state ---
     # Only applies when running on today's date (not a manual --date override)
     if not args.date:
-        schedule_state = load_schedule_state()
-        next_game_date = schedule_state.get('next_game_date')
+        sched = load_schedule_state()
+
+        # Skip entirely if next game is a future date
+        next_game_date = sched.get('next_game_date')
         if next_game_date and next_game_date > date_str:
             print(f"No games until {next_game_date} — skipping API call")
             return
-        if next_game_date == date_str:
-            # Game day: only poll once per hour until a game starts
-            last_fetch = schedule_state.get('last_game_fetch')
+
+        # Determine polling interval from cached game state
+        try:
+            cached_games = (read_json_file('data/games.json') or {}).get('games', [])
+        except Exception:
+            cached_games = []
+
+        _final_states = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed', 'Completed Early'}
+        any_live = any(g.get('detailed_state') == 'In Progress' for g in cached_games)
+        all_done = bool(cached_games) and all(g.get('detailed_state') in _final_states for g in cached_games)
+
+        if any_live:
+            # Game in progress — always fetch, no throttle
+            interval_min = 0
+        elif all_done:
+            # All games finished — check once per hour (scores won't change)
+            interval_min = 60
+        elif not cached_games:
+            # No cached data yet today — use hourly until we confirm games exist
+            interval_min = 60
+        else:
+            # Pre-game / scheduled — respect update_interval from config
+            interval_min = config_data.get('update_interval', 14)
+
+        if interval_min > 0:
+            last_fetch = sched.get('last_game_fetch')
             if last_fetch:
                 try:
-                    last_dt = datetime.fromisoformat(last_fetch)
-                    if datetime.now() - last_dt < timedelta(hours=1):
-                        print(f"Game day but no game yet — last fetch was {last_fetch}, waiting 1h")
+                    elapsed = datetime.now() - datetime.fromisoformat(last_fetch)
+                    if elapsed < timedelta(minutes=interval_min):
+                        mins = int(elapsed.total_seconds() // 60)
+                        print(f"Throttled — {mins}min since last fetch (interval={interval_min}min, state={'all_done' if all_done else 'pre-game'})")
                         return
                 except Exception:
                     pass
@@ -787,24 +813,23 @@ Examples:
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    # After fetching: if no games at all today, find and store the next game date
-    if not args.date and not game_state_data:
+    # After fetching: update schedule state
+    if not args.date:
         sched = load_schedule_state()
-        priority = config_data.get('sport_id_priority', [1, 8, 16])
-        tomorrow = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
-        next_date = find_next_game_date(priority, tomorrow)
-        sched['next_game_date'] = next_date
         sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
-        save_schedule_state(sched)
-        if next_date:
-            print(f"No games today. Next games: {next_date}")
-        return
-    elif not args.date:
-        # Games exist today — clear any stored next_game_date and record fetch time
-        sched = load_schedule_state()
-        sched.pop('next_game_date', None)
-        sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
-        save_schedule_state(sched)
+        if not game_state_data:
+            # No games today — find and store the next game date
+            priority = config_data.get('sport_id_priority', [1, 8, 16])
+            tomorrow = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
+            next_date = find_next_game_date(priority, tomorrow)
+            sched['next_game_date'] = next_date
+            save_schedule_state(sched)
+            if next_date:
+                print(f"No games today. Next games: {next_date}")
+            return
+        else:
+            sched.pop('next_game_date', None)
+            save_schedule_state(sched)
 
     mode = _get_display_mode(config_data)
 
