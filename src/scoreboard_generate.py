@@ -9,9 +9,10 @@ import argparse
 from display_eink import display_image, display_partial_regions
 from refresh_tracker import needs_full_refresh
 from util import load_json_file, load_yaml_file, save_off_results
-from game_detail_fetch import select_game, fetch_field_view_data, fetch_scorecard_data
+from game_detail_fetch import select_game, fetch_field_view_data, fetch_scorecard_data, fetch_pitch_view_data
 from field_view import render_field_view
 from scorecard_view import render_scorecard_view
+from pitch_view import render_pitch_view
 import pytz
 
 # Spring Training Support:
@@ -384,7 +385,7 @@ def fetch_scoreboard_for_date(date, sport_id=None):
 def _get_display_mode(config):
     """Determine display mode from config. Returns 'scoreboard', 'linescore', 'field', or 'scorecard'."""
     mode = config.get('display_mode')
-    if mode and mode in ('scoreboard', 'linescore', 'field', 'scorecard'):
+    if mode and mode in ('scoreboard', 'linescore', 'field', 'scorecard', 'pitch'):
         return mode
     # Backward compat: use scoreboard flag
     if config.get('scoreboard', True):
@@ -417,6 +418,9 @@ def _run_single_game_mode(mode, game_state_data, team_data, config):
         if mode == 'field':
             data = fetch_field_view_data(game_pk)
             image = render_field_view(data, dark_mode=dark_mode)
+        elif mode == 'pitch':
+            data = fetch_pitch_view_data(game_pk)
+            image = render_pitch_view(data, dark_mode=dark_mode)
         else:
             data = fetch_scorecard_data(game_pk)
             image = render_scorecard_view(data, dark_mode=dark_mode)
@@ -453,7 +457,7 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
     config_data = load_yaml_file('config.yaml')
     mode = _get_display_mode(config_data)
 
-    if mode in ('field', 'scorecard'):
+    if mode in ('field', 'scorecard', 'pitch'):
         _run_single_game_mode(mode, game_state_data, team_data, config_data)
         return
 
@@ -595,7 +599,7 @@ Examples:
 
     mode = _get_display_mode(config_data)
 
-    if mode in ('field', 'scorecard'):
+    if mode in ('field', 'scorecard', 'pitch'):
         _run_single_game_mode(mode, game_state_data, team_data, config_data)
         print(f"\n✓ {mode.title()} view generated successfully!")
         print(f"  View image at: resulting_image.bmp")

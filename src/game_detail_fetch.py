@@ -49,6 +49,80 @@ def fetch_live_feed(game_pk):
     return resp.json()
 
 
+def _extract_pitches_detailed(plays):
+    """Extract pitch data with velocity and pitch type from current or last at-bat."""
+    sources = [plays.get('currentPlay', {})]
+    all_plays = plays.get('allPlays', [])
+    if all_plays:
+        sources.append(all_plays[-1])
+
+    for play in sources:
+        pitches = []
+        seq = 0
+        for event in play.get('playEvents', []):
+            if not event.get('isPitch'):
+                continue
+            seq += 1
+            pitch_data = event.get('pitchData', {})
+            coords = pitch_data.get('coordinates', {})
+            px = coords.get('pX')
+            pz = coords.get('pZ')
+            if px is None or pz is None:
+                continue
+            details = event.get('details', {})
+            pitches.append({
+                'seq': seq,
+                'px': px,
+                'pz': pz,
+                'code': details.get('type', {}).get('code', ''),
+                'pitch_type': details.get('type', {}).get('description', ''),
+                'description': details.get('description', ''),
+                'is_strike': details.get('isStrike', False),
+                'is_ball': details.get('isBall', False),
+                'speed': pitch_data.get('startSpeed'),
+            })
+        if pitches:
+            return pitches
+    return []
+
+
+def fetch_pitch_view_data(game_pk):
+    """Extract pitch view data from the live feed."""
+    data = fetch_live_feed(game_pk)
+    game_data = data.get('gameData', {})
+    live_data = data.get('liveData', {})
+    plays = live_data.get('plays', {})
+    linescore = live_data.get('linescore', {})
+    boxscore = live_data.get('boxscore', {})
+
+    status = game_data.get('status', {})
+    teams = game_data.get('teams', {})
+    away_team = teams.get('away', {})
+    home_team = teams.get('home', {})
+
+    offense = linescore.get('offense', {})
+    batter_id = offense.get('batter', {}).get('id')
+    pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
+
+    return {
+        'detailed_state': status.get('detailedState', ''),
+        'away_abbr': away_team.get('abbreviation', ''),
+        'home_abbr': home_team.get('abbreviation', ''),
+        'away_id': away_team.get('id', 0),
+        'home_id': home_team.get('id', 0),
+        'away_runs': linescore.get('teams', {}).get('away', {}).get('runs', 0),
+        'home_runs': linescore.get('teams', {}).get('home', {}).get('runs', 0),
+        'inning_ordinal': linescore.get('currentInningOrdinal', ''),
+        'inning_state': linescore.get('inningState', ''),
+        'balls': linescore.get('balls', 0) or 0,
+        'strikes': linescore.get('strikes', 0) or 0,
+        'outs': linescore.get('outs', 0) or 0,
+        'batter': _get_player_info(boxscore, batter_id, 'batting'),
+        'pitcher': _get_player_info(boxscore, pitcher_id, 'pitching'),
+        'pitches': _extract_pitches_detailed(plays),
+    }
+
+
 def _extract_pitches(plays):
     """Extract pitch locations from the current at-bat, falling back to the last completed at-bat."""
     sources = [plays.get('currentPlay', {})]
