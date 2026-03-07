@@ -8,6 +8,8 @@ __pycache__/
 # Runtime output images
 *.bmp
 *.png
+# Exception: README screenshots in docs/
+!docs/*.png
 
 # Runtime data / cache
 data/*.json

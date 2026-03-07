@@ -1,7 +1,8 @@
 from generate_image import orchestrate_score_board
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
+import os
 import requests
 import platform
 import argparse
@@ -14,6 +15,7 @@ from field_view import render_field_view
 from scorecard_view import render_scorecard_view
 from pitch_view import render_pitch_view
 import pytz
+from PIL import Image, ImageDraw, ImageFont
 
 # Spring Training Support:
 # This module automatically fetches team abbreviations for any teams encountered in games,
@@ -288,6 +290,155 @@ def read_json_file(file_name):
 
 
 
+def _data_path(filename):
+    """Return absolute path to a file in the data/ directory."""
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, 'data', filename)
+
+
+def _config_path():
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, 'config', 'config.yaml')
+
+
+def load_discord_state():
+    """Load pending Discord display change, or return None if none pending."""
+    path = _data_path('discord_state.json')
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            state = json.load(f)
+        if not state.get('applied', True):
+            return state
+    except Exception:
+        pass
+    return None
+
+
+def mark_discord_state_applied():
+    path = _data_path('discord_state.json')
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path) as f:
+            state = json.load(f)
+        state['applied'] = True
+        with open(path, 'w') as f:
+            json.dump(state, f, indent=2)
+    except Exception:
+        pass
+
+
+def apply_discord_change(state, config_data):
+    """Apply pending Discord changes to in-memory config and persist to config.yaml."""
+    import yaml
+    changed = False
+    if state.get('pending_mode') and state['pending_mode'] in ('scoreboard', 'linescore', 'field', 'scorecard', 'pitch'):
+        config_data['display_mode'] = state['pending_mode']
+        changed = True
+    if state.get('pending_team'):
+        config_data['primary'] = state['pending_team'].upper()
+        changed = True
+    if changed:
+        try:
+            with open(_config_path(), 'w') as f:
+                yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
+        except Exception as e:
+            print(f"Warning: could not save config.yaml after Discord change: {e}")
+    return changed
+
+
+def render_discord_overlay(state, dark_mode=False):
+    """Render an 800x480 announcement image for a Discord display change."""
+    picdir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'pic')
+    img = Image.new('1', (800, 480), 255)
+    draw = ImageDraw.Draw(img)
+    try:
+        font_lg = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 48)
+        font_md = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 28)
+        font_sm = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 22)
+    except Exception:
+        font_lg = font_md = font_sm = ImageFont.load_default()
+
+    mode = state.get('pending_mode', '').upper()
+    team = state.get('pending_team', '').upper()
+    user = state.get('requested_by', '')
+
+    lines = [
+        ('Display Changing', font_md, 120),
+        (mode or team, font_lg, 185),
+    ]
+    if mode and team:
+        lines.append((f'Team: {team}', font_md, 265))
+    lines.append((f'Requested by @{user}', font_sm, 340))
+
+    for text, font, y in lines:
+        try:
+            w = font.getlength(text)
+        except AttributeError:
+            w = len(text) * 12
+        draw.text(((800 - w) // 2, y), text, font=font, fill=0)
+
+    # Border
+    draw.rectangle([10, 10, 789, 469], outline=0, width=3)
+
+    if dark_mode:
+        img = img.point(lambda p: 0 if p == 255 else 255)
+    return img
+
+
+def find_next_game_date(sport_id_priority, from_date_str):
+    """
+    Search up to 30 days ahead for the next date with games.
+    Returns 'YYYY-MM-DD' string or None.
+    """
+    from_date = datetime.strptime(from_date_str, '%Y-%m-%d').date()
+    end_date = from_date + timedelta(days=30)
+    end_str = end_date.strftime('%Y-%m-%d')
+
+    for sid in sport_id_priority:
+        endpoint = (
+            f'https://statsapi.mlb.com/api/v1/schedule?'
+            f'startDate={from_date_str}&endDate={end_str}&sportId={sid}'
+        )
+        try:
+            resp = requests.get(endpoint, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                for date_entry in data.get('dates', []):
+                    games = date_entry.get('games', [])
+                    if sid == 1:
+                        games = [g for g in games if g.get('gameType') not in ('S', 'E')]
+                    if games:
+                        found = date_entry['date']
+                        if found != from_date_str:
+                            print(f"Next game date: {found} (sport_id={sid})")
+                            return found
+        except Exception as e:
+            print(f"Error searching for next game date: {e}")
+
+    return None
+
+
+def load_schedule_state():
+    path = _data_path('schedule_state.json')
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def save_schedule_state(state):
+    path = _data_path('schedule_state.json')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(state, f, indent=2)
+
+
 def check_games_for_sport(date, sport_id):
     """
     Check if there are games for a specific sport on a date.
@@ -310,6 +461,10 @@ def check_games_for_sport(date, sport_id):
             game_dates = data.get('dates', [])
             if game_dates and len(game_dates) > 0:
                 games = game_dates[0].get('games', [])
+                # For MLB (sport_id=1), only count regular/postseason games — not spring training ('S')
+                # This allows WBC (sport_id=8) to take priority during spring training period
+                if sport_id == 1:
+                    games = [g for g in games if g.get('gameType') not in ('S', 'E')]
                 return len(games)
     except Exception as e:
         print(f"Error checking games for sport {sport_id}: {e}")
@@ -552,6 +707,21 @@ Examples:
         51: "International"
     }
 
+    dark_mode = config_data.get('dark_mode', False)
+
+    # --- Discord state check ---
+    # Apply any pending changes from the Discord bot before doing anything else
+    discord_state = load_discord_state()
+    if discord_state:
+        user = discord_state.get('requested_by', 'unknown')
+        mode_req = discord_state.get('pending_mode', '')
+        team_req = discord_state.get('pending_team', '')
+        print(f"Discord change requested by @{user}: mode={mode_req or '(unchanged)'} team={team_req or '(unchanged)'}")
+        apply_discord_change(discord_state, config_data)
+        overlay = render_discord_overlay(discord_state, dark_mode=dark_mode)
+        display_image(overlay)
+        mark_discord_state_applied()
+
     # Handle --sport-id override or --fetch-teams flag
     if args.sport_id:
         sport_id = args.sport_id
@@ -588,6 +758,52 @@ Examples:
         date_str = now.strftime('%Y-%m-%d')
         print(f"Using today's date: {date_str}")
 
+    # --- Smart polling: rate-limit MLB API calls based on game state ---
+    # Only applies when running on today's date (not a manual --date override)
+    if not args.date:
+        sched = load_schedule_state()
+
+        # Skip entirely if next game is a future date
+        next_game_date = sched.get('next_game_date')
+        if next_game_date and next_game_date > date_str:
+            print(f"No games until {next_game_date} — skipping API call")
+            return
+
+        # Determine polling interval from cached game state
+        try:
+            cached_games = (read_json_file('data/games.json') or {}).get('games', [])
+        except Exception:
+            cached_games = []
+
+        _final_states = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed', 'Completed Early'}
+        any_live = any(g.get('detailed_state') == 'In Progress' for g in cached_games)
+        all_done = bool(cached_games) and all(g.get('detailed_state') in _final_states for g in cached_games)
+
+        if any_live:
+            # Game in progress — always fetch, no throttle
+            interval_min = 0
+        elif all_done:
+            # All games finished — check once per hour (scores won't change)
+            interval_min = 60
+        elif not cached_games:
+            # No cached data yet today — use hourly until we confirm games exist
+            interval_min = 60
+        else:
+            # Pre-game / scheduled — respect update_interval from config
+            interval_min = config_data.get('update_interval', 14)
+
+        if interval_min > 0:
+            last_fetch = sched.get('last_game_fetch')
+            if last_fetch:
+                try:
+                    elapsed = datetime.now() - datetime.fromisoformat(last_fetch)
+                    if elapsed < timedelta(minutes=interval_min):
+                        mins = int(elapsed.total_seconds() // 60)
+                        print(f"Throttled — {mins}min since last fetch (interval={interval_min}min, state={'all_done' if all_done else 'pre-game'})")
+                        return
+                except Exception:
+                    pass
+
     fetch_scoreboard_for_date(date_str, sport_id)
 
     game_state_data = read_json_file('data/games.json')['games']
@@ -596,6 +812,24 @@ Examples:
     # Ensure team_data has the required structure
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
+
+    # After fetching: update schedule state
+    if not args.date:
+        sched = load_schedule_state()
+        sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
+        if not game_state_data:
+            # No games today — find and store the next game date
+            priority = config_data.get('sport_id_priority', [1, 8, 16])
+            tomorrow = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
+            next_date = find_next_game_date(priority, tomorrow)
+            sched['next_game_date'] = next_date
+            save_schedule_state(sched)
+            if next_date:
+                print(f"No games today. Next games: {next_date}")
+            return
+        else:
+            sched.pop('next_game_date', None)
+            save_schedule_state(sched)
 
     mode = _get_display_mode(config_data)
 

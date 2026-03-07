@@ -901,8 +901,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     draw.line((start_x, start_y + 20, end_x, end_y  + 20), fill = 0)
 
     end_x = start_x + horizonta_len
-    end_y = start_y + vertical_len
-    # draw.line((start_x, start_y + vertical_len, end_x, end_y), fill = 0)
+    end_y = start_y + vertical_len + 5
+    draw.line((start_x, start_y + vertical_len + 5, end_x, end_y), fill=0)
     
     
     # vertical line
@@ -924,8 +924,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # draw.line((vert_start_x, vert_start_y, end_x, end_y), fill = 0)
     
 
-    # Show bases/outs/count if game is in progress (started but not finished)
-    if is_game_started and not is_game_finished:
+    # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
+    if game_data['detailed_state'] == 'In Progress':
         # bases
         Himage = draw_diamond(Himage, (start_x + 22 + 75, start_y + 27 + 25), 10, isinstance(game_data['runner_on_third'], str))
         Himage = draw_diamond(Himage, (start_x + 34 + 75, start_y + 15 + 25), 10, isinstance(game_data['runner_on_second'], str))
