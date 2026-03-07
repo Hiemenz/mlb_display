@@ -1,6 +1,13 @@
 # MLB Display Configuration
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
 scoreboard: true
+
+# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch"
+# If set, overrides the scoreboard: true/false flag above.
+# "field"     = single-game field diagram with runners, hit location, strike zone overlay
+# "scorecard" = official scorer-style per-batter at-bat grid for both teams
+# "pitch"     = full strike zone with pitch locations for current at-bat
+# display_mode: "scoreboard"
 primary: NYY
 primary_backup: BOS
 primary_backup_2: NYM
