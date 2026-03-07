@@ -57,6 +57,13 @@ use_team_logos: True
 # Set to 2 to align with the box edge. Increase to shift the logo right.
 small_logo_x_offset: 2
 
+# Discord bot configuration
+# Get token from https://discord.com/developers/applications
+# Set channel_id to restrict commands to one channel (0 = any channel)
+discord_token: ""
+discord_guild_id: 0
+discord_channel_id: 0
+
 # team_emojis:
   # BOS: "💩"
   # LAD: "💰"
