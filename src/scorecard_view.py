@@ -6,18 +6,21 @@ from generate_image import picdir, _logo_small
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
 
+PITCHER_PANEL_WIDTH = 160
+SCORECARD_WIDTH = 640          # EPD_WIDTH - PITCHER_PANEL_WIDTH
+
 # Column layout constants
 COL_ORDER = 16
-COL_NAME = 140
+COL_NAME = 120
 COL_POS = 24
-COL_INNING = 50
+COL_INNING = 44
 COL_RHE = 28
 
 # Row layout constants
 ROW_HEADER = 14
-ROW_INN_HEADER = 16
+ROW_INN_HEADER = 14
 ROW_BATTER = 21
-ROW_TOTALS = 16
+ROW_TOTALS = 14
 TEAM_HEIGHT = 238
 
 
@@ -30,7 +33,20 @@ def _load_fonts():
     }
 
 
-def _draw_mini_diamond(draw, x, y, bases, size=4):
+def _draw_pitch_dots(draw, x, y, balls, strikes):
+    """Draw filled circles for balls, outline circles for strikes."""
+    r = 2  # radius → 4px diameter
+    dx = x
+    for _ in range(min(balls, 4)):
+        draw.ellipse([dx, y, dx + r * 2, y + r * 2], fill=0)
+        dx += r * 2 + 1
+    dx += 2
+    for _ in range(min(strikes, 3)):
+        draw.ellipse([dx, y, dx + r * 2, y + r * 2], outline=0)
+        dx += r * 2 + 1
+
+
+def _draw_mini_diamond(draw, x, y, bases, size=8):
     """Draw a tiny diamond showing bases reached. bases=0-4."""
     # Draw empty diamond outline
     pts = [(x, y - size), (x + size, y), (x, y + size), (x - size, y)]
@@ -97,7 +113,7 @@ def _draw_team_scorecard(img, draw, fonts, y_offset, team_data, team_abbr, team_
     y += ROW_INN_HEADER
 
     # Horizontal line under header
-    draw.line([(x, y), (EPD_WIDTH, y)], fill=0)
+    draw.line([(x, y), (SCORECARD_WIDTH, y)], fill=0)
 
     # Batter rows
     lineup = team_data
@@ -117,12 +133,18 @@ def _draw_team_scorecard(img, draw, fonts, y_offset, team_data, team_abbr, team_
             order_str = f"{'*' if sub else ''}{order}"
             draw.text((x + 2, by + 2), order_str, font=fonts['f9'], fill=0)
 
-            # Player name (truncate if needed)
-            display_name = name[:16]
-            draw.text((x + COL_ORDER, by + 2), display_name, font=fonts['f11'], fill=0)
-
-            # Position
-            draw.text((x + COL_ORDER + COL_NAME, by + 2), pos, font=fonts['f9'], fill=0)
+            # Player name / substitution display
+            display_name = name[:17]
+            orig = entry.get('sub_original')
+            if orig:
+                orig_name = orig['name'].split()[-1][:14]
+                draw.text((x + COL_ORDER, by), orig_name, font=fonts['f9'], fill=0)
+                draw.text((x + COL_ORDER + COL_NAME, by), orig['position'], font=fonts['f9'], fill=0)
+                draw.text((x + COL_ORDER, by + 11), '\u2192' + display_name[:15], font=fonts['f9'], fill=0)
+                draw.text((x + COL_ORDER + COL_NAME, by + 11), pos, font=fonts['f9'], fill=0)
+            else:
+                draw.text((x + COL_ORDER, by + 2), display_name, font=fonts['f11'], fill=0)
+                draw.text((x + COL_ORDER + COL_NAME, by + 2), pos, font=fonts['f9'], fill=0)
 
             # Per-inning at-bat cells
             for inn_num in range(1, display_innings + 1):
@@ -133,9 +155,14 @@ def _draw_team_scorecard(img, draw, fonts, y_offset, team_data, team_abbr, team_
                     ab = abs_list[-1]
                     code = ab.get('code', '')
                     bases = ab.get('bases', 0)
-                    draw.text((col_x + 4, by + 2), code, font=fonts['f11'], fill=0)
-                    # Mini diamond
-                    _draw_mini_diamond(draw, col_x + COL_INNING - 8, by + ROW_BATTER - 7, bases)
+                    balls = ab.get('balls', 0)
+                    strikes = ab.get('strikes', 0)
+                    # Outcome code top-left
+                    draw.text((col_x + 2, by + 1), code, font=fonts['f11'], fill=0)
+                    # Pitch count dots to the right of code
+                    _draw_pitch_dots(draw, col_x + 14, by + 3, balls, strikes)
+                    # Bigger diamond centered bottom of cell
+                    _draw_mini_diamond(draw, col_x + COL_INNING // 2, by + ROW_BATTER - 5, bases)
 
             # Extra innings summary
             if has_extras:
@@ -152,7 +179,7 @@ def _draw_team_scorecard(img, draw, fonts, y_offset, team_data, team_abbr, team_
             draw.text((rhe_x + 10 + COL_RHE, by + 2), str(totals.get('hits', 0)), font=fonts['f11'], fill=0)
 
         # Horizontal grid line
-        draw.line([(ix, by + ROW_BATTER), (EPD_WIDTH, by + ROW_BATTER)], fill=0)
+        draw.line([(ix, by + ROW_BATTER), (SCORECARD_WIDTH, by + ROW_BATTER)], fill=0)
 
     # Vertical grid lines for inning columns
     grid_top = y
@@ -168,7 +195,7 @@ def _draw_team_scorecard(img, draw, fonts, y_offset, team_data, team_abbr, team_
 
     # Totals row
     ty = y + 9 * ROW_BATTER
-    draw.line([(x, ty), (EPD_WIDTH, ty)], fill=0, width=2)
+    draw.line([(x, ty), (SCORECARD_WIDTH, ty)], fill=0, width=2)
 
     for inn_num in range(1, display_innings + 1):
         col_x = ix + (inn_num - 1) * COL_INNING
@@ -183,6 +210,32 @@ def _draw_team_scorecard(img, draw, fonts, y_offset, team_data, team_abbr, team_
     draw.text((rhe_x + 10, ty + 2), str(runs), font=fonts['f11'], fill=0)
     draw.text((rhe_x + 10 + COL_RHE, ty + 2), str(hits), font=fonts['f11'], fill=0)
     draw.text((rhe_x + 10 + 2 * COL_RHE, ty + 2), str(errors), font=fonts['f11'], fill=0)
+
+
+def _draw_pitcher_panel(draw, fonts, away_pitchers, home_pitchers):
+    """Draw the right-side pitcher panel."""
+    px = SCORECARD_WIDTH + 4
+    draw.line([(SCORECARD_WIDTH, 0), (SCORECARD_WIDTH, EPD_HEIGHT)], fill=0)
+
+    def _draw_side(pitchers, y_start, y_end, label):
+        y = y_start
+        draw.text((px, y), label, font=fonts['f11'], fill=0)
+        y += 12
+        draw.text((px, y), 'Name       IP  H ER  K', font=fonts['f9'], fill=0)
+        y += 10
+        draw.line([(SCORECARD_WIDTH, y), (EPD_WIDTH, y)], fill=0)
+        y += 2
+        for p in pitchers:
+            if y + 11 > y_end:
+                break
+            name = p['name'][:10].ljust(10)
+            line = f"{name} {p['ip']:>3} {p['hits']:>2} {p['er']:>2} {p['k']:>2}"
+            draw.text((px, y), line, font=fonts['f9'], fill=0)
+            y += 11
+
+    _draw_side(away_pitchers, 2, TEAM_HEIGHT - 2, 'AWAY')
+    draw.line([(SCORECARD_WIDTH, TEAM_HEIGHT), (EPD_WIDTH, TEAM_HEIGHT)], fill=0, width=2)
+    _draw_side(home_pitchers, TEAM_HEIGHT + 2, EPD_HEIGHT - 2, 'HOME')
 
 
 def render_scorecard_view(data, dark_mode=False):
@@ -207,7 +260,7 @@ def render_scorecard_view(data, dark_mode=False):
         errors=data.get('away_errors', 0),
     )
 
-    # Divider
+    # Full-width divider (spans scorecard + pitcher panel)
     draw.line([(0, TEAM_HEIGHT), (EPD_WIDTH, TEAM_HEIGHT)], fill=0, width=2)
 
     # Home team (bottom half: y=240 to 479)
@@ -222,6 +275,12 @@ def render_scorecard_view(data, dark_mode=False):
         runs=data.get('home_runs', 0),
         hits=data.get('home_hits', 0),
         errors=data.get('home_errors', 0),
+    )
+
+    _draw_pitcher_panel(
+        draw, fonts,
+        away_pitchers=data.get('away_pitchers', []),
+        home_pitchers=data.get('home_pitchers', []),
     )
 
     if dark_mode:

@@ -18,7 +18,7 @@ Shows two detailed game scoreboards plus a live division standings table. Includ
 
 ### Field View
 
-Single-game display showing a baseball field diagram with runner positions, hit location marker, and a mini strike zone overlay with the last pitch location. Right side shows score, inning/count/outs, batter/pitcher matchup, last play, and a mini linescore.
+Single-game display showing a baseball field diagram with venue-specific outfield dimensions. The outfield fence is drawn as a multi-segment wall reflecting the actual LF/LCF/CF/RCF/RF distances for the ballpark being played in (all 30 MLB parks supported, with distance labels). All batted balls from the game are plotted on the field — the most recent hit shows as a filled circle with a crosshair, earlier hits as small open circles. Bases fill in solid when runners are on. A mini strike zone overlay in the upper-left shows pitches for the current at-bat (count label is hidden when the game is final). Right side shows score, inning/count/outs (hidden when final), batter/pitcher matchup (WP/LP/SV when final), last play, and a mini linescore.
 
 ![Field View](docs/field_mode.png)
 

@@ -23,6 +23,7 @@ ESPN_ABBR_OVERRIDES = {
     'AZ':  'ari',   # Arizona Diamondbacks
     'CWS': 'chw',   # Chicago White Sox
     'WSH': 'wsh',   # Washington Nationals
+    'CLM': 'col',   # Colombia (WBC) — ESPN uses 'col'
 }
 
 ESPN_LOGO_URL_DARK      = 'https://a.espncdn.com/i/teamlogos/mlb/500-dark/{abbr}.png'
@@ -34,7 +35,7 @@ ESPN_COUNTRIES_LOGO_URL = 'https://a.espncdn.com/i/teamlogos/countries/500/{abbr
 WBC_ESPN_ABBR = {
     'USA': 'usa', 'DOM': 'dom', 'JPN': 'jpn', 'MEX': 'mex', 'KOR': 'kor',
     'PUR': 'pur', 'CUB': 'cub', 'AUS': 'aus', 'NED': 'ned', 'ITA': 'ita',
-    'CAN': 'can', 'VEN': 'ven', 'PAN': 'pan', 'COL': 'col', 'GBR': 'gbr',
+    'CAN': 'can', 'VEN': 'ven', 'PAN': 'pan', 'CLM': 'col', 'GBR': 'gbr',
     'ISR': 'isr', 'CZE': 'cze', 'NIC': 'nic', 'TPE': 'tpe', 'CHN': 'chn',
 }
 

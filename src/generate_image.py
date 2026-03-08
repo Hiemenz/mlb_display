@@ -125,6 +125,14 @@ logo_cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(_
 # ESPN CDN abbreviation overrides
 _ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh', 'CLM': 'col'}
 
+# Font cache — avoids re-parsing Font.ttc on every draw_box() call (called once per game cell)
+_font_cache: dict = {}
+
+def _get_font(size: int):
+    if size not in _font_cache:
+        _font_cache[size] = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), size)
+    return _font_cache[size]
+
 def _try_download_logo(abbr):
     """Download a missing team logo from ESPN CDN using stdlib only (no pip needed).
 
@@ -739,11 +747,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] = 'Final'
 
     draw = ImageDraw.Draw(Himage)
-    font26 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 26)
-    font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
-    font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
-    font14 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
-    font11 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 11)
+    font26 = _get_font(26)
+    font24 = _get_font(24)
+    font18 = _get_font(18)
+    font14 = _get_font(14)
+    font11 = _get_font(11)
 
     vertical_len = 110
     horizonta_len = 135
