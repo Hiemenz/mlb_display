@@ -123,7 +123,7 @@ logodir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__
 logo_cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic', 'logos_cache')
 
 # ESPN CDN abbreviation overrides
-_ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh'}
+_ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh', 'CLM': 'col'}
 
 def _try_download_logo(abbr):
     """Download a missing team logo from ESPN CDN using stdlib only (no pip needed).
@@ -863,9 +863,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
 
-    # Also treat any state where runs data exists as started (covers Manager Challenge, mid-game Delay, etc.)
-    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress'] \
-        or game_data.get('away_runs') is not None
+    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress', 'Final: Tied']
     is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over', 'Final: Tied']
 
     # Display score if game has started, otherwise show team records
@@ -901,8 +899,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     draw.line((start_x, start_y + 20, end_x, end_y  + 20), fill = 0)
 
     end_x = start_x + horizonta_len
-    end_y = start_y + vertical_len + 5
-    draw.line((start_x, start_y + vertical_len + 5, end_x, end_y), fill=0)
+    end_y = start_y + vertical_len + 20
+    draw.line((start_x, start_y + vertical_len + 20, end_x, end_y), fill=0)
     
     
     # vertical line
@@ -1014,15 +1012,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 67 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
 
         
-    # Draw thick border if score changed during an active game (not for post-game stat corrections)
-    if score_changed and not is_game_finished:
-        draw = ImageDraw.Draw(Himage)
-        for offset in range(3):
-            draw.rectangle(
-                [start_x + offset, start_y + offset,
-                 start_x + 135 - offset, start_y + 135 - offset],
-                outline=0
-            )
+    # Invert header to indicate a score change during an active game
+    if score_changed and is_game_started and not is_game_finished:
+        header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1, start_y + 21))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
     return Himage
 
 
