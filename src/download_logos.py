@@ -23,6 +23,7 @@ ESPN_ABBR_OVERRIDES = {
     'AZ':  'ari',   # Arizona Diamondbacks
     'CWS': 'chw',   # Chicago White Sox
     'WSH': 'wsh',   # Washington Nationals
+    'CLM': 'col',   # Colombia (WBC) — ESPN uses 'col'
 }
 
 ESPN_LOGO_URL_DARK      = 'https://a.espncdn.com/i/teamlogos/mlb/500-dark/{abbr}.png'

@@ -17,6 +17,12 @@ from pitch_view import render_pitch_view
 import pytz
 from PIL import Image, ImageDraw, ImageFont
 
+SPORT_NAMES = {
+    1: "MLB", 8: "World Baseball Classic", 11: "College Baseball",
+    12: "Triple-A", 13: "Double-A", 14: "Winter Leagues",
+    16: "Spring Training", 51: "International"
+}
+
 # Spring Training Support:
 # This module automatically fetches team abbreviations for any teams encountered in games,
 # including spring training games with minor league affiliates or split-squad teams.
@@ -187,9 +193,20 @@ def parse_games(data):
 
         detailed_state = game.get('status', {}).get('detailedState')
 
+        # Extract nested dicts once to avoid repeated .get() chains
+        game_teams = game.get('teams', {})
+        away_team = game_teams.get('away', {})
+        home_team = game_teams.get('home', {})
+        away_team_info = away_team.get('team', {})
+        home_team_info = home_team.get('team', {})
+        linescore = game.get('linescore', {})
+        ls_teams = linescore.get('teams', {})
+        ls_away = ls_teams.get('away', {})
+        ls_home = ls_teams.get('home', {})
+
         # Get team IDs
-        away_team_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
-        home_team_id = game.get('teams', {}).get('home', {}).get('team', {}).get('id')
+        away_team_id = away_team_info.get('id')
+        home_team_id = home_team_info.get('id')
 
         # For in-progress games, fetch the last play result (up to configured limit)
         last_play_result = None
@@ -204,33 +221,38 @@ def parse_games(data):
         # Compute save situation flag
         save_situation = False
         if detailed_state == 'In Progress':
-            current_inning = game.get('linescore', {}).get('currentInning', 0) or 0
-            away_runs = game.get('linescore', {}).get('teams', {}).get('away', {}).get('runs') or 0
-            home_runs = game.get('linescore', {}).get('teams', {}).get('home', {}).get('runs') or 0
+            current_inning = linescore.get('currentInning', 0) or 0
+            away_runs = ls_away.get('runs') or 0
+            home_runs = ls_home.get('runs') or 0
             run_diff = abs(away_runs - home_runs)
             if current_inning >= 7 and 1 <= run_diff <= 3:
                 save_situation = True
 
         # Read abbreviations from the hydrated team data in the schedule response
-        away_abbreviation = game.get('teams', {}).get('away', {}).get('team', {}).get('abbreviation')
-        home_abbreviation = game.get('teams', {}).get('home', {}).get('team', {}).get('abbreviation')
+        away_abbreviation = away_team_info.get('abbreviation')
+        home_abbreviation = home_team_info.get('abbreviation')
 
         if away_team_id and away_abbreviation:
             team_abbreviations[str(away_team_id)] = away_abbreviation
         if home_team_id and home_abbreviation:
             team_abbreviations[str(home_team_id)] = home_abbreviation
 
+        ls_offense = linescore.get('offense', {})
+        decisions = game.get('decisions', {})
+        away_record = away_team.get('leagueRecord', {})
+        home_record = home_team.get('leagueRecord', {})
+
         game_dict = {
-            'away_team_name': game.get('teams', {}).get('away', {}).get('team', {}).get('name'),
+            'away_team_name': away_team_info.get('name'),
             'away_team_id': away_team_id,
-            'away_team_is_winner': game.get('teams', {}).get('away', {}).get('isWinner'),
-            'away_probable': game.get('teams', {}).get('away', {}).get('probablePitcher',{}).get('fullName'),
-            'away_team_series_number': game.get('teams', {}).get('away', {}).get('seriesNumber'),
-            'home_team_name': game.get('teams', {}).get('home', {}).get('team', {}).get('name'),
+            'away_team_is_winner': away_team.get('isWinner'),
+            'away_probable': away_team.get('probablePitcher', {}).get('fullName'),
+            'away_team_series_number': away_team.get('seriesNumber'),
+            'home_team_name': home_team_info.get('name'),
             'home_team_id': home_team_id,
-            'home_team_is_winner': game.get('teams', {}).get('home', {}).get('isWinner'),
-            'home_probable': game.get('teams', {}).get('home', {}).get('probablePitcher',{}).get('fullName'),
-            'home_team_series_number': game.get('teams', {}).get('home', {}).get('seriesNumber'),
+            'home_team_is_winner': home_team.get('isWinner'),
+            'home_probable': home_team.get('probablePitcher', {}).get('fullName'),
+            'home_team_series_number': home_team.get('seriesNumber'),
             'double_header': game.get('doubleHeader'),
             'series_description': game.get('seriesDescription'),
             'day_night': game.get('dayNight'),
@@ -240,38 +262,38 @@ def parse_games(data):
             'game_date': game.get('gameDate'),
             'game_start': convert_time_z_to(game.get('gameDate'), tz),
             'detailed_state': detailed_state,
-            'venue': game.get('venue',{}).get('name'),
-            'current_inning': game.get('linescore',{}).get('currentInning'),
-            'currentInningOrdinal': game.get('linescore',{}).get('currentInningOrdinal'),
-            'inningState': game.get('linescore',{}).get('inningState'),
-            'winner_name': game.get('decisions',{}).get('winner',{}).get('fullName'),
-            'loser_name': game.get('decisions',{}).get('loser',{}).get('fullName'),
-            'num_of_outs': game.get('linescore',{}).get('outs'),
-            'balls': game.get('linescore',{}).get('balls'),
-            'strikes': game.get('linescore',{}).get('strikes'),
-            'away_runs': game.get('linescore',{}).get('teams',{}).get('away',{}).get('runs'),
-            'home_runs': game.get('linescore',{}).get('teams',{}).get('home',{}).get('runs'),
-            'away_hits': game.get('linescore',{}).get('teams',{}).get('away',{}).get('hits'),
-            'home_hits': game.get('linescore',{}).get('teams',{}).get('home',{}).get('hits'),
-            'away_errors': game.get('linescore',{}).get('teams',{}).get('away',{}).get('errors'),
-            'home_errors': game.get('linescore',{}).get('teams',{}).get('home',{}).get('errors'),
-            'away_left_on_base': game.get('linescore',{}).get('teams',{}).get('away',{}).get('leftOnBase'),
-            'home_left_on_base': game.get('linescore',{}).get('teams',{}).get('home',{}).get('leftOnBase'),
-            'runner_on_first': game.get('linescore',{}).get('offense',{}).get('first',{}).get('fullName'),
-            'runner_on_second': game.get('linescore',{}).get('offense',{}).get('second',{}).get('fullName'),
-            'runner_on_third': game.get('linescore',{}).get('offense',{}).get('third',{}).get('fullName'),
-            'away_team_record_wins': game.get('teams',{}).get('away',{}).get('leagueRecord',{}).get('wins'),
-            'away_team_record_losses': game.get('teams',{}).get('away',{}).get('leagueRecord',{}).get('losses'),
-            'home_team_record_wins': game.get('teams',{}).get('home',{}).get('leagueRecord',{}).get('wins'),
-            'home_team_record_losses': game.get('teams',{}).get('home',{}).get('leagueRecord',{}).get('losses'),
-            'no_hitter': game.get('flags',{}).get('noHitter'),
-            'perfect_game': game.get('flags',{}).get('perfectGame'),
-            'current_hitter': game.get('linescore',{}).get('offense',{}).get('batter', {}).get('fullName'),
-            'current_pitcher': game.get('linescore',{}).get('defense',{}).get('pitcher', {}).get('fullName'),
+            'venue': game.get('venue', {}).get('name'),
+            'current_inning': linescore.get('currentInning'),
+            'currentInningOrdinal': linescore.get('currentInningOrdinal'),
+            'inningState': linescore.get('inningState'),
+            'winner_name': decisions.get('winner', {}).get('fullName'),
+            'loser_name': decisions.get('loser', {}).get('fullName'),
+            'num_of_outs': linescore.get('outs'),
+            'balls': linescore.get('balls'),
+            'strikes': linescore.get('strikes'),
+            'away_runs': ls_away.get('runs'),
+            'home_runs': ls_home.get('runs'),
+            'away_hits': ls_away.get('hits'),
+            'home_hits': ls_home.get('hits'),
+            'away_errors': ls_away.get('errors'),
+            'home_errors': ls_home.get('errors'),
+            'away_left_on_base': ls_away.get('leftOnBase'),
+            'home_left_on_base': ls_home.get('leftOnBase'),
+            'runner_on_first': ls_offense.get('first', {}).get('fullName'),
+            'runner_on_second': ls_offense.get('second', {}).get('fullName'),
+            'runner_on_third': ls_offense.get('third', {}).get('fullName'),
+            'away_team_record_wins': away_record.get('wins'),
+            'away_team_record_losses': away_record.get('losses'),
+            'home_team_record_wins': home_record.get('wins'),
+            'home_team_record_losses': home_record.get('losses'),
+            'no_hitter': game.get('flags', {}).get('noHitter'),
+            'perfect_game': game.get('flags', {}).get('perfectGame'),
+            'current_hitter': ls_offense.get('batter', {}).get('fullName'),
+            'current_pitcher': linescore.get('defense', {}).get('pitcher', {}).get('fullName'),
             'last_play': last_play_result,
             'save_situation': save_situation,
             'game_pk': game_id,
-            }
+        }
 
         game_array.append(game_dict)
 
@@ -313,29 +335,25 @@ def _config_path():
 def load_discord_state():
     """Load pending Discord display change, or return None if none pending."""
     path = _data_path('discord_state.json')
-    if not os.path.exists(path):
-        return None
     try:
         with open(path) as f:
             state = json.load(f)
         if not state.get('applied', True):
             return state
-    except Exception:
+    except (FileNotFoundError, Exception):
         pass
     return None
 
 
 def mark_discord_state_applied():
     path = _data_path('discord_state.json')
-    if not os.path.exists(path):
-        return
     try:
         with open(path) as f:
             state = json.load(f)
         state['applied'] = True
         with open(path, 'w') as f:
             json.dump(state, f, indent=2)
-    except Exception:
+    except (FileNotFoundError, Exception):
         pass
 
 
@@ -507,28 +525,21 @@ def fetch_scoreboard_for_date(date, sport_id=None):
         sport_id_priority = config_data.get('sport_id_priority')
 
         if sport_id_priority and isinstance(sport_id_priority, list):
-            # Check each sport in priority order
-            sport_names = {
-                1: "MLB", 8: "World Baseball Classic", 11: "College Baseball",
-                12: "Triple-A", 13: "Double-A", 14: "Winter Leagues",
-                16: "Spring Training", 51: "International"
-            }
-
-            print(f"Checking sports in priority order: {[sport_names.get(sid, f'Sport {sid}') for sid in sport_id_priority]}")
+            print(f"Checking sports in priority order: {[SPORT_NAMES.get(sid, f'Sport {sid}') for sid in sport_id_priority]}")
 
             for sid in sport_id_priority:
                 game_count = check_games_for_sport(date, sid)
                 if game_count > 0:
-                    print(f"✓ Found {game_count} game(s) for {sport_names.get(sid, f'Sport {sid}')}")
+                    print(f"✓ Found {game_count} game(s) for {SPORT_NAMES.get(sid, f'Sport {sid}')}")
                     sport_id = sid
                     break
                 else:
-                    print(f"  No games for {sport_names.get(sid, f'Sport {sid}')}")
+                    print(f"  No games for {SPORT_NAMES.get(sid, f'Sport {sid}')}")
 
             # If no games found for any sport, use the first priority
             if sport_id is None:
                 sport_id = sport_id_priority[0]
-                print(f"No games found, defaulting to {sport_names.get(sport_id, f'Sport {sport_id}')}")
+                print(f"No games found, defaulting to {SPORT_NAMES.get(sport_id, f'Sport {sport_id}')}")
         else:
             # Fall back to single sport_id
             sport_id = config_data.get('sport_id', 1)
@@ -713,17 +724,6 @@ Examples:
                 print(f"Night mode: skipping refresh ({now_local.strftime('%H:%M')})")
                 return
 
-    sport_names = {
-        1: "MLB",
-        8: "World Baseball Classic",
-        11: "College Baseball",
-        12: "Triple-A",
-        13: "Double-A",
-        14: "Winter Leagues",
-        16: "Spring Training",
-        51: "International"
-    }
-
     dark_mode = config_data.get('dark_mode', False)
 
     # --- Discord state check ---
@@ -742,7 +742,7 @@ Examples:
     # Handle --sport-id override or --fetch-teams flag
     if args.sport_id:
         sport_id = args.sport_id
-        print(f"Using specified sport: {sport_names.get(sport_id, f'Sport ID {sport_id}')}")
+        print(f"Using specified sport: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
 
         # If --fetch-teams flag is set, fetch all teams and exit
         if args.fetch_teams:
@@ -752,17 +752,17 @@ Examples:
         # Check if using priority list
         sport_id_priority = config_data.get('sport_id_priority')
         if sport_id_priority and isinstance(sport_id_priority, list):
-            print(f"Using sport priority: {' > '.join([sport_names.get(sid, str(sid)) for sid in sport_id_priority])}")
+            print(f"Using sport priority: {' > '.join([SPORT_NAMES.get(sid, str(sid)) for sid in sport_id_priority])}")
             sport_id = None  # Let fetch_scoreboard_for_date handle priority
         else:
             sport_id = config_data.get('sport_id', 1)
-            print(f"Tracking: {sport_names.get(sport_id, f'Sport ID {sport_id}')}")
+            print(f"Tracking: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
 
         # If --fetch-teams flag is set with priority list, fetch for first priority
         if args.fetch_teams:
             if sport_id_priority:
                 sport_id = sport_id_priority[0]
-                print(f"Fetching teams for: {sport_names.get(sport_id, f'Sport ID {sport_id}')}")
+                print(f"Fetching teams for: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
             fetch_all_team_abbreviations(sport_id if sport_id else config_data.get('sport_id', 1))
             return
 

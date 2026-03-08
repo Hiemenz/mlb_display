@@ -47,22 +47,20 @@ def _get_display_image_path():
     """Return path to the current display image (BMP → converted to PNG for Discord)."""
     bmp = os.path.join(_BASE_DIR, 'resulting_image.bmp')
     png = os.path.join(_BASE_DIR, 'data', 'discord_preview.png')
-    if os.path.exists(bmp):
-        try:
-            from PIL import Image
-            img = Image.open(bmp).convert('RGB')
-            os.makedirs(os.path.dirname(png), exist_ok=True)
-            img.save(png)
-            return png
-        except Exception:
-            pass
-    return None
+    try:
+        from PIL import Image
+        img = Image.open(bmp).convert('RGB')
+        os.makedirs(os.path.dirname(png), exist_ok=True)
+        img.save(png)
+        return png
+    except Exception:
+        return None
 
 
 async def _post_display_image(ctx):
     """Post the current display image as a PNG to the channel."""
     img_path = _get_display_image_path()
-    if img_path and os.path.exists(img_path):
+    if img_path:
         await ctx.send(file=discord.File(img_path, filename='display.png'))
 
 
@@ -148,21 +146,19 @@ async def cmd_status(ctx):
 
     # Check for pending change
     pending = ''
-    path = _data_path('discord_state.json')
-    if os.path.exists(path):
-        try:
-            with open(path) as f:
-                ds = json.load(f)
-            if not ds.get('applied', True):
-                parts = []
-                if ds.get('pending_mode'):
-                    parts.append(f"mode→{ds['pending_mode']}")
-                if ds.get('pending_team'):
-                    parts.append(f"team→{ds['pending_team']}")
-                by = ds.get('requested_by', '?')
-                pending = f'\n⏳ Pending change by @{by}: {", ".join(parts)}'
-        except Exception:
-            pass
+    try:
+        with open(_data_path('discord_state.json')) as f:
+            ds = json.load(f)
+        if not ds.get('applied', True):
+            parts = []
+            if ds.get('pending_mode'):
+                parts.append(f"mode→{ds['pending_mode']}")
+            if ds.get('pending_team'):
+                parts.append(f"team→{ds['pending_team']}")
+            by = ds.get('requested_by', '?')
+            pending = f'\n⏳ Pending change by @{by}: {", ".join(parts)}'
+    except (FileNotFoundError, Exception):
+        pass
 
     await ctx.send(
         f'**MLB Display Status**\n'
