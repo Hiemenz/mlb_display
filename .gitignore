@@ -11,6 +11,9 @@ __pycache__/
 # Exception: README screenshots in docs/
 !docs/*.png
 
+# Test output directory
+output/
+
 # Runtime data / cache
 data/*.json
 

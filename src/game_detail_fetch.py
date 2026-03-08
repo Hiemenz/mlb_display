@@ -153,23 +153,47 @@ def _extract_pitches(plays):
     return []
 
 
-def _extract_hit_coordinates(plays):
-    """Walk backward through allPlays to find most recent play with hitData coordinates."""
+_HIT_EVENTS = {'Single', 'Double', 'Triple', 'Home Run'}
+
+
+def _extract_all_hit_coordinates(plays):
+    """Collect all hit coordinates from allPlays in chronological order.
+    Returns list of dicts: {x, y, is_hr, is_hit, is_out, player (last name)}.
+    is_hit = ball in play resulting in a hit (incl. HR).
+    is_out = ball in play resulting in an out.
+    """
     all_plays = plays.get('allPlays', [])
-    for play in reversed(all_plays):
+    hits = []
+    for play in all_plays:
+        result = play.get('result', {})
+        event = result.get('event', '')
+        is_hr = event == 'Home Run'
+        is_hit = event in _HIT_EVENTS
+        is_out = not is_hit
+        full_name = play.get('matchup', {}).get('batter', {}).get('fullName', '')
+        last_name = full_name.split()[-1] if full_name else ''
+
+        about = play.get('about', {})
+        hit_inning = about.get('inning', 0)
+        hit_half = about.get('halfInning', '')  # 'top' or 'bottom'
+
         hit_data = play.get('hitData', {})
         cx = hit_data.get('coordinates', {}).get('coordX')
         cy = hit_data.get('coordinates', {}).get('coordY')
         if cx is not None and cy is not None:
-            return (cx, cy)
-        # Also check playEvents for hit data
-        for event in reversed(play.get('playEvents', [])):
-            hit_data = event.get('hitData', {})
+            hits.append({'x': cx, 'y': cy, 'is_hr': is_hr, 'is_hit': is_hit, 'is_out': is_out,
+                         'player': last_name, 'inning': hit_inning, 'half': hit_half})
+            continue
+        # Fall back to playEvents
+        for ev in play.get('playEvents', []):
+            hit_data = ev.get('hitData', {})
             cx = hit_data.get('coordinates', {}).get('coordX')
             cy = hit_data.get('coordinates', {}).get('coordY')
             if cx is not None and cy is not None:
-                return (cx, cy)
-    return None
+                hits.append({'x': cx, 'y': cy, 'is_hr': is_hr, 'is_hit': is_hit, 'is_out': is_out,
+                             'player': last_name, 'inning': hit_inning, 'half': hit_half})
+                break
+    return hits
 
 
 def fetch_field_view_data(game_pk):
@@ -217,12 +241,17 @@ def fetch_field_view_data(game_pk):
     batter_id = offense.get('batter', {}).get('id')
     pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
 
+    on_deck_id = offense.get('onDeck', {}).get('id')
+
     batter_info = _get_player_info(boxscore, batter_id, 'batting')
     pitcher_info = _get_player_info(boxscore, pitcher_id, 'pitching')
+    on_deck_info = _get_player_info(boxscore, on_deck_id, 'batting')
 
     # Pitch locations and hit coordinates
     pitches = _extract_pitches(plays)
-    hit_coords = _extract_hit_coordinates(plays)
+    all_hits = _extract_all_hit_coordinates(plays)
+    last_hit = all_hits[-1] if all_hits else None
+    hit_coords = (last_hit['x'], last_hit['y']) if last_hit else None
 
     # Last play description
     current_play = plays.get('currentPlay', {})
@@ -281,8 +310,11 @@ def fetch_field_view_data(game_pk):
         'runner_third': runner_third,
         'batter': batter_info,
         'pitcher': pitcher_info,
+        'on_deck': on_deck_info,
         'pitches': pitches,
         'hit_coords': hit_coords,
+        'all_hits': all_hits,
+        'venue_id': game_data.get('venue', {}).get('id', 0),
         'last_play': last_play_desc,
         'innings': innings,
         'winner': winner,
@@ -385,9 +417,6 @@ def _build_lineup_at_bats(boxscore, plays, team_side):
         pdata = player_map.get(pid, {})
         person = pdata.get('person', {})
         name = person.get('fullName', '')
-        # Shorten to last name
-        parts = name.split()
-        last_name = parts[-1] if parts else name
         position = pdata.get('position', {}).get('abbreviation', '')
         bat_order = pdata.get('battingOrder', '')
         order_slot = int(str(bat_order)[:1]) if bat_order else len(lineup) + 1
@@ -395,7 +424,7 @@ def _build_lineup_at_bats(boxscore, plays, team_side):
         bat_stats = pdata.get('stats', {}).get('batting', {})
 
         entry = {
-            'name': last_name,
+            'name': name,
             'position': position,
             'order': order_slot,
             'player_id': pid,
@@ -410,7 +439,9 @@ def _build_lineup_at_bats(boxscore, plays, team_side):
         if order_slot in seen_orders:
             # Substitution — replace the player in that slot
             idx = seen_orders[order_slot]
+            original = lineup[idx]
             entry['sub'] = True
+            entry['sub_original'] = {'name': original['name'], 'position': original['position']}
             lineup[idx] = entry
         else:
             seen_orders[order_slot] = len(lineup)
@@ -467,11 +498,23 @@ def _build_lineup_at_bats(boxscore, plays, team_side):
                 slot = seen_orders[order_slot]
 
         if slot is not None and slot < len(lineup):
+            ball_count = 0
+            strike_count = 0
+            for evt in play.get('playEvents', []):
+                if not evt.get('isPitch'):
+                    continue
+                details = evt.get('details', {})
+                if details.get('isBall'):
+                    ball_count += 1
+                elif details.get('isStrike'):
+                    strike_count += 1
             if inning not in lineup[slot]['at_bats']:
                 lineup[slot]['at_bats'][inning] = []
             lineup[slot]['at_bats'][inning].append({
                 'code': code,
                 'bases': bases,
+                'balls': ball_count,
+                'strikes': strike_count,
             })
 
     # Build inning totals
@@ -499,6 +542,28 @@ def _build_lineup_at_bats(boxscore, plays, team_side):
     return lineup[:9], inning_totals
 
 
+def _extract_pitchers(boxscore, team_side):
+    """Return ordered list of pitchers used with game stats."""
+    team_box = boxscore.get('teams', {}).get(team_side, {})
+    pitcher_ids = team_box.get('pitchers', [])
+    players = team_box.get('players', {})
+    pitchers = []
+    for pid in pitcher_ids:
+        pdata = players.get(f'ID{pid}', {})
+        full = pdata.get('person', {}).get('fullName', '')
+        parts = full.split()
+        last = parts[-1] if parts else full
+        stats = pdata.get('stats', {}).get('pitching', {})
+        pitchers.append({
+            'name': last,
+            'ip': stats.get('inningsPitched', '0.0'),
+            'hits': stats.get('hits', 0),
+            'er': stats.get('earnedRuns', 0),
+            'k': stats.get('strikeOuts', 0),
+        })
+    return pitchers
+
+
 def fetch_scorecard_data(game_pk):
     """Extract scorecard data from the live feed."""
     data = fetch_live_feed(game_pk)
@@ -522,6 +587,8 @@ def fetch_scorecard_data(game_pk):
     # Build lineups
     away_lineup, away_inning_totals = _build_lineup_at_bats(boxscore, plays, 'away')
     home_lineup, home_inning_totals = _build_lineup_at_bats(boxscore, plays, 'home')
+    away_pitchers = _extract_pitchers(boxscore, 'away')
+    home_pitchers = _extract_pitchers(boxscore, 'home')
 
     # Count innings
     innings_list = linescore.get('innings', [])
@@ -544,4 +611,6 @@ def fetch_scorecard_data(game_pk):
         'home_runs': home_ls.get('runs', 0),
         'home_hits': home_ls.get('hits', 0),
         'home_errors': home_ls.get('errors', 0),
+        'away_pitchers': away_pitchers,
+        'home_pitchers': home_pitchers,
     }

@@ -71,6 +71,13 @@ def get_last_play_result(game_pk):
     return None
 
 
+# WBC abbreviations that collide with MLB team abbreviations.
+# Colombia (ISO/ESPN: COL) conflicts with Colorado Rockies (MLB: COL).
+_WBC_ABBR_OVERRIDES = {
+    'COL': 'CLM',  # Colombia WBC → CLM to avoid collision with Colorado Rockies
+}
+
+
 def fetch_all_team_abbreviations(sport_id=1):
     """
     Fetch all team abbreviations for a given sport from MLB API.
@@ -93,6 +100,8 @@ def fetch_all_team_abbreviations(sport_id=1):
                 team_id = str(team.get('id'))
                 abbreviation = team.get('abbreviation')
                 if team_id and abbreviation:
+                    if sport_id == 8:
+                        abbreviation = _WBC_ABBR_OVERRIDES.get(abbreviation, abbreviation)
                     team_abbreviations[team_id] = abbreviation
                     print(f"  {abbreviation}: {team.get('name')}")
 
@@ -665,6 +674,11 @@ Examples:
         action='store_true',
         help='Fetch and cache all team abbreviations for the sport, then exit'
     )
+    parser.add_argument(
+        '--local',
+        action='store_true',
+        help='Local dev mode: bypass night mode and smart polling, auto-open output image'
+    )
 
     args = parser.parse_args()
 
@@ -693,8 +707,11 @@ Examples:
             # Window within same day (e.g. 0 to 7): active if start <= hour < end
             in_night_window = night_start <= current_hour < night_end
         if in_night_window:
-            print(f"Night mode: skipping refresh ({now_local.strftime('%H:%M')})")
-            return
+            if args.local:
+                print(f"Night mode: bypassed for local testing ({now_local.strftime('%H:%M')})")
+            else:
+                print(f"Night mode: skipping refresh ({now_local.strftime('%H:%M')})")
+                return
 
     sport_names = {
         1: "MLB",
@@ -759,8 +776,8 @@ Examples:
         print(f"Using today's date: {date_str}")
 
     # --- Smart polling: rate-limit MLB API calls based on game state ---
-    # Only applies when running on today's date (not a manual --date override)
-    if not args.date:
+    # Only applies when running on today's date (not a manual --date override or --local)
+    if not args.date and not args.local:
         sched = load_schedule_state()
 
         # Skip entirely if next game is a future date
@@ -814,7 +831,7 @@ Examples:
         team_data = {'team_abbreviation': {}}
 
     # After fetching: update schedule state
-    if not args.date:
+    if not args.date and not args.local:
         sched = load_schedule_state()
         sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
         if not game_state_data:
@@ -837,6 +854,9 @@ Examples:
         _run_single_game_mode(mode, game_state_data, team_data, config_data)
         print(f"\n✓ {mode.title()} view generated successfully!")
         print(f"  View image at: resulting_image.bmp")
+        if args.local and platform.system() == 'Darwin':
+            import subprocess
+            subprocess.run(['open', 'resulting_image.bmp'], check=False)
         return
 
     result = orchestrate_score_board(game_state_data, team_data, date_str)
@@ -851,6 +871,9 @@ Examples:
             display_partial_regions(sccoreboard_image, changed_regions)
         print(f"\n✓ Scoreboard generated successfully!")
         print(f"  View image at: resulting_image.bmp")
+        if args.local and platform.system() == 'Darwin':
+            import subprocess
+            subprocess.run(['open', 'resulting_image.bmp'], check=False)
     else:
         print("No display update needed - image unchanged")
 
