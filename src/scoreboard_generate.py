@@ -156,7 +156,7 @@ def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
     return cst_hour_minutes
 
 
-def parse_games(data):
+def parse_games(data, sport_id=None):
 
     config_data = load_yaml_file('config.yaml')
     tz = config_data.get('timezone', 'America/Chicago')
@@ -232,6 +232,11 @@ def parse_games(data):
         away_abbreviation = away_team_info.get('abbreviation')
         home_abbreviation = home_team_info.get('abbreviation')
 
+        # Apply WBC abbreviation overrides (e.g. COL→CLM for Colombia) when sport is WBC
+        if sport_id == 8:
+            away_abbreviation = _WBC_ABBR_OVERRIDES.get(away_abbreviation, away_abbreviation)
+            home_abbreviation = _WBC_ABBR_OVERRIDES.get(home_abbreviation, home_abbreviation)
+
         if away_team_id and away_abbreviation:
             team_abbreviations[str(away_team_id)] = away_abbreviation
         if home_team_id and home_abbreviation:
@@ -268,6 +273,7 @@ def parse_games(data):
             'inningState': linescore.get('inningState'),
             'winner_name': decisions.get('winner', {}).get('fullName'),
             'loser_name': decisions.get('loser', {}).get('fullName'),
+            'saver_name': decisions.get('save', {}).get('fullName'),
             'num_of_outs': linescore.get('outs'),
             'balls': linescore.get('balls'),
             'strikes': linescore.get('strikes'),
@@ -553,9 +559,9 @@ def fetch_scoreboard_for_date(date, sport_id=None):
     response = requests.get(endpoint_url)
     data = response.json()
 
-    parse_games(data)
-    
-    
+    parse_games(data, sport_id)
+
+
 
 def _get_display_mode(config):
     """Determine display mode from config. Returns 'scoreboard', 'linescore', 'field', or 'scorecard'."""
@@ -618,7 +624,7 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
         sport_id: Sport ID to fetch (if None, reads from config)
     """
     if game_data:
-        parse_games(game_data)
+        parse_games(game_data, sport_id)
     else:
         fetch_scoreboard_for_date(date_str, sport_id)
 

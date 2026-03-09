@@ -123,7 +123,11 @@ logodir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__
 logo_cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic', 'logos_cache')
 
 # ESPN CDN abbreviation overrides
-_ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh', 'CLM': 'col'}
+_ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh'}
+# Maps our internal WBC abbreviations to ESPN's country CDN slug (used in fallback path)
+_COUNTRY_ESPN_MAP = {'CLM': 'col'}  # Colombia WBC uses 'col' on ESPN countries CDN
+# Team IDs whose cached abbreviation must be overridden (WBC teams that collide with MLB)
+_TEAM_ID_ABBR_OVERRIDE = {'792': 'CLM'}  # Colombia WBC team ID → CLM
 
 # Font cache — avoids re-parsing Font.ttc on every draw_box() call (called once per game cell)
 _font_cache: dict = {}
@@ -164,7 +168,7 @@ def _try_download_logo(abbr):
 
     # Fallback: try ESPN countries CDN for international/WBC teams
     try:
-        espn = abbr.lower()
+        espn = _COUNTRY_ESPN_MAP.get(abbr.upper(), abbr.lower())
         url = f'https://a.espncdn.com/i/teamlogos/countries/500/{espn}.png'
         with urllib.request.urlopen(url, timeout=5) as response:
             with open(path, 'wb') as f:
@@ -774,8 +778,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     home_team_id = str(game_data['home_team_id'])
 
     # Handle missing team abbreviations gracefully
-    away_team_name = team_data.get('team_abbreviation', {}).get(away_team_id, f'T{away_team_id}')
-    home_team_name = team_data.get('team_abbreviation', {}).get(home_team_id, f'T{home_team_id}')
+    abbr_map = team_data.get('team_abbreviation', {})
+    away_team_name = _TEAM_ID_ABBR_OVERRIDE.get(away_team_id) or abbr_map.get(away_team_id, f'T{away_team_id}')
+    home_team_name = _TEAM_ID_ABBR_OVERRIDE.get(home_team_id) or abbr_map.get(home_team_id, f'T{home_team_id}')
 
     # Winner ghost logo — drawn first so all text/scores render on top of it
     if use_logos and game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
@@ -795,11 +800,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # inning or game state
     if game_data['detailed_state'] == 'Final':
-        # pitchers of record
-        wp_str, wp_font = fit_text(f'WP: {game_data.get("winner_name") or ""}', max_text_width)
-        lp_str, lp_font = fit_text(f'LP: {game_data.get("loser_name") or ""}', max_text_width)
-        draw.text((start_x + 7 , start_y + 25 + 59), wp_str, font=wp_font, fill=0)
-        draw.text((start_x + 7 , start_y + 25 + 74), lp_str, font=lp_font, fill=0)
+        # Pitchers of record — anchored to bottom of box, working upward
+        # bottom border is at start_y + vertical_len + 20 = start_y + 130
+        LINE_H = 15
+        BOTTOM_Y = start_y + vertical_len + 20 - 3  # 3px margin above bottom border
+        saver = game_data.get('saver_name')
+        lines = []
+        lines.append(fit_text(f'LP: {game_data.get("loser_name") or ""}', max_text_width))
+        lines.append(fit_text(f'WP: {game_data.get("winner_name") or ""}', max_text_width))
+        if saver:
+            lines.append(fit_text(f'SV: {saver}', max_text_width))
+        # Draw from bottom up
+        for i, (txt, fnt) in enumerate(reversed(lines)):
+            y = BOTTOM_Y - LINE_H * (i + 1)
+            draw.text((start_x + 7, y), txt, font=fnt, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
         away_prob = game_data.get("away_probable") or ''
