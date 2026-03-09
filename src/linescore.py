@@ -7,7 +7,7 @@ import os
 import pytz
 from generate_image import draw_boards
 from util import load_json_file, load_yaml_file, save_off_results
-from scoreboard_generate import scoreboard_generate
+from scoreboard_generate import scoreboard_generate, check_games_for_sport
 
 def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
     utc_time = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%SZ")
@@ -265,19 +265,27 @@ def get_player_name(person_id):
 
     
 def get_games(game_date):
-    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId=1&hydrate=decisions,probablePitcher(note),linescore,flags,team'
-    
     games_scheduled_data = load_json_file('games_scheduled.json')
     config_data = load_yaml_file('config.yaml')
 
-    if are_timestamps_separated_by(games_scheduled_data.get('last_updated_time'), get_current_time() ,int(config_data.get('update_interval'))):
-        print('it has been more than ')
-        print(url_endpoint)
-        response = requests.get(url_endpoint)
-        data = response.json()
-        parse_games(data)
-        return data
-    return None
+    if not are_timestamps_separated_by(games_scheduled_data.get('last_updated_time'), get_current_time(), int(config_data.get('update_interval'))):
+        return None
+
+    # Use sport_id_priority to pick WBC over spring training, same as scoreboard mode
+    sport_id = 1
+    sport_id_priority = config_data.get('sport_id_priority')
+    if sport_id_priority and isinstance(sport_id_priority, list):
+        for sid in sport_id_priority:
+            if check_games_for_sport(str(game_date), sid) > 0:
+                sport_id = sid
+                break
+
+    url_endpoint = f'https://statsapi.mlb.com/api/v1/schedule?startDate={game_date}&endDate={game_date}&sportId={sport_id}&hydrate=decisions,probablePitcher(note),linescore,flags,team'
+    print(url_endpoint)
+    response = requests.get(url_endpoint)
+    data = response.json()
+    parse_games(data)
+    return data
 
 
 def find_game_in_progress(avoid_game_id):
