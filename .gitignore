@@ -16,6 +16,8 @@ output/
 
 # Runtime data / cache
 data/*.json
+# Exception: generated stadium polygon dataset
+!data/stadium_polygons.json
 
 # Environment
 .env
