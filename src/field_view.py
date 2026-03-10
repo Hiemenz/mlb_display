@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from generate_image import (
     picdir, _logo_small, _load_logo_gray, draw_diamond, draw_circle,
 )
+from stadium_polygons import get_polygon, dimensions_to_polygon
 
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
@@ -24,76 +25,11 @@ MOUND = (200, 375)
 # Pixels per foot for field rendering
 FIELD_SCALE = 0.75
 
-# Ballpark wall definitions: list of (distance_ft, angle_deg) pairs.
-# angle_deg: negative=LF side, 0=straight CF, positive=RF side.
-# Standard 9-point helper: LF pole, LF corner, LCF, L-CF, CF, R-CF, RCF, RF corner, RF pole
-# angles: -45, -33, -22.5, -11, 0, +11, +22.5, +33, +45
-_w = lambda a, b, c, d, e, f, g, h, i: [
-    (a, -45), (b, -33), (c, -22.5), (d, -11), (e, 0), (f, 11), (g, 22.5), (h, 33), (i, 45)
-]
-
-BALLPARK_DIMENSIONS = {
-    # AL East
-    'Yankee Stadium':  _w(318, 390, 399, 405, 408, 400, 385, 353, 314),
-    'Fenway Park': [
-        # Green Monster: nearly-straight wall from LF foul pole (310) to LCF corner (379).
-        # No straight-away CF — wall angles sharply from LCF to the Triangle (420),
-        # then cuts back to the RC bullpen before the short Pesky Pole (302).
-        (310, -45),   # LF foul pole (Green Monster base)
-        (379, -25),   # LCF corner — end of Green Monster
-        (390, -12),   # Left-center
-        (420,  -4),   # Triangle — deepest (just left of dead center)
-        (380,  17),   # Right-center (bullpen)
-        (302,  45),   # Pesky Pole (RF foul pole)
-    ],
-    'Camden Yards':              _w(333, 357, 364, 390, 410, 390, 373, 347, 318),
-    'Rogers Centre':             _w(328, 356, 375, 393, 400, 393, 375, 356, 328),
-    'Tropicana Field':           _w(315, 345, 370, 392, 404, 392, 370, 348, 322),
-    # AL Central
-    'Guaranteed Rate Field':     _w(330, 357, 377, 392, 400, 387, 372, 356, 335),
-    'Progressive Field':         _w(325, 350, 370, 393, 405, 390, 375, 352, 325),
-    'Comerica Park':             _w(345, 360, 370, 403, 420, 395, 365, 352, 330),
-    'Kauffman Stadium':          _w(330, 357, 375, 398, 410, 398, 375, 357, 330),
-    'Target Field':              _w(339, 361, 377, 395, 404, 387, 367, 350, 328),
-    # AL West
-    'Minute Maid Park':          _w(315, 339, 362, 418, 435, 400, 373, 350, 326),
-    'Angel Stadium':             _w(330, 360, 383, 397, 400, 388, 370, 353, 330),
-    'Oakland Coliseum':          _w(330, 362, 388, 396, 400, 382, 362, 349, 330),
-    'T-Mobile Park':             _w(331, 356, 378, 393, 401, 393, 381, 354, 326),
-    'Globe Life Field':          _w(329, 355, 374, 396, 407, 396, 374, 352, 326),
-    # NL East
-    'Truist Park':               _w(335, 361, 380, 393, 400, 390, 375, 352, 325),
-    'Citi Field':                _w(335, 348, 358, 390, 408, 393, 375, 354, 330),
-    'Citizens Bank Park':        _w(329, 352, 369, 390, 401, 390, 369, 352, 330),
-    'Nationals Park':            _w(336, 360, 377, 393, 402, 388, 370, 355, 335),
-    'loanDepot park':            _w(344, 368, 386, 400, 407, 400, 392, 366, 335),
-    # NL Central
-    'Wrigley Field':             _w(355, 363, 368, 385, 400, 385, 368, 363, 353),
-    'Great American Ball Park':  _w(328, 356, 379, 395, 404, 388, 370, 350, 325),
-    'American Family Field':     _w(344, 361, 371, 390, 400, 390, 374, 363, 345),
-    'PNC Park':                  _w(325, 360, 389, 396, 399, 390, 375, 350, 320),
-    'Busch Stadium':             _w(336, 360, 375, 392, 400, 392, 375, 360, 335),
-    # NL West
-    'Dodger Stadium':            _w(330, 360, 375, 392, 400, 392, 375, 360, 330),
-    'Chase Field':               _w(330, 357, 374, 396, 407, 396, 374, 358, 335),
-    'Coors Field':               _w(347, 372, 390, 407, 415, 395, 375, 366, 350),
-    'Oracle Park': [
-        # Deep right-center (McCovey Cove) creates a distinctive bulge at RCF
-        # before dropping sharply back to the short RF (309) foul pole.
-        (339, -45),   # LF foul pole
-        (362, -33),   # LF area
-        (382, -22.5), # LCF
-        (396, -11),   # Left-CF
-        (399,   0),   # CF
-        (410,  11),   # Right-CF toward Cove
-        (421,  22.5), # Deep RCF — McCovey Cove (labeled '421')
-        (360,  35),   # Sharp curve back toward RF pole
-        (309,  45),   # RF foul pole (labeled '309')
-    ],
-    'Petco Park':                _w(336, 354, 367, 385, 396, 392, 391, 360, 322),
-}
-
-_DEFAULT_WALL = _w(330, 360, 375, 392, 400, 392, 375, 360, 330)
+# Fallback wall polygon used when the venue isn't recognized.
+# Cartesian (x_ft, y_ft) with home plate at origin, +Y toward CF.
+_DEFAULT_WALL_POLY = dimensions_to_polygon(
+    [(330,-45),(360,-33),(375,-22.5),(392,-11),(400,0),(392,11),(375,22.5),(360,33),(330,45)]
+)
 
 
 def _load_fonts():
@@ -107,15 +43,12 @@ def _load_fonts():
     }
 
 
-def _field_pt(dist_ft, angle_deg):
-    """Convert (feet from home plate, angle from center field) to pixel coords.
-    angle_deg: negative = left/LF side, positive = right/RF side.
+def _poly_pt(x_ft, y_ft):
+    """Convert Cartesian field feet to pixel coords.
+    x_ft: positive = RF/1B side; y_ft: positive = toward CF.
     """
     hx, hy = HOME_PLATE
-    rad = math.radians(angle_deg)
-    px = hx + dist_ft * FIELD_SCALE * math.sin(rad)
-    py = hy - dist_ft * FIELD_SCALE * math.cos(rad)
-    return int(px), int(py)
+    return (int(hx + x_ft * FIELD_SCALE), int(hy - y_ft * FIELD_SCALE))
 
 
 def _draw_field(draw, data, fonts=None):
@@ -125,15 +58,18 @@ def _draw_field(draw, data, fonts=None):
     hx, hy = HOME_PLATE
 
     venue = data.get('venue', '')
-    dims = BALLPARK_DIMENSIONS.get(venue, _DEFAULT_WALL)
+    wall_poly = get_polygon(venue) or _DEFAULT_WALL_POLY  # [(x_ft, y_ft), ...]
 
-    # Compute wall points from (distance, angle) pairs
-    wall_pts = [_field_pt(dist, ang) for dist, ang in dims]
-    lf_pole = wall_pts[0]
-    rf_pole = wall_pts[-1]
+    wall_pts = [_poly_pt(x, y) for x, y in wall_poly]
+    lf_pole  = wall_pts[0]
+    rf_pole  = wall_pts[-1]
 
     # Warning track: 15ft inside the outfield wall (thin inner arc)
-    track_pts = [_field_pt(max(dist - 15, 50), ang) for dist, ang in dims]
+    track_pts = []
+    for x_ft, y_ft in wall_poly:
+        dist   = math.sqrt(x_ft ** 2 + y_ft ** 2)
+        factor = max(dist - 15, 50) / dist if dist > 0 else 1.0
+        track_pts.append(_poly_pt(x_ft * factor, y_ft * factor))
     for i in range(len(track_pts) - 1):
         draw.line([track_pts[i], track_pts[i + 1]], fill=0, width=1)
 
@@ -182,11 +118,14 @@ def _draw_field(draw, data, fonts=None):
     # Distance labels: foul poles + deepest CF point + intermediate labeled points
     font_tiny = fonts.get('f9') if fonts else None
     if font_tiny:
+        def _dist(xy):
+            return round(math.sqrt(xy[0] ** 2 + xy[1] ** 2))
+
         deepest_idx = min(range(len(wall_pts)), key=lambda i: wall_pts[i][1])
         cf_pt   = wall_pts[deepest_idx]
-        cf_dist = dims[deepest_idx][0]
-        lf_dist = dims[0][0]
-        rf_dist = dims[-1][0]
+        cf_dist = _dist(wall_poly[deepest_idx])
+        lf_dist = _dist(wall_poly[0])
+        rf_dist = _dist(wall_poly[-1])
 
         # Always label: LF pole, deepest point, RF pole
         draw.text((cf_pt[0] - 10, cf_pt[1] - 10), str(cf_dist), font=font_tiny, fill=0)
@@ -194,19 +133,19 @@ def _draw_field(draw, data, fonts=None):
         draw.text((rf_pole[0] - 18, rf_pole[1]),   str(rf_dist), font=font_tiny, fill=0)
 
         # For parks with 8+ wall points, also label 2 intermediate ones:
-        # pick the most-left-of-center non-pole point and most-right-of-center non-pole point
-        if len(dims) >= 8:
-            inner = [(dims[i][0], dims[i][1], wall_pts[i])
-                     for i in range(1, len(dims) - 1)
+        # pick the most-LF non-pole point (x_ft most negative) and most-RF (x_ft most positive)
+        if len(wall_poly) >= 8:
+            inner = [(wall_poly[i], wall_pts[i])
+                     for i in range(1, len(wall_poly) - 1)
                      if i != deepest_idx]
-            lf_mid = min(inner, key=lambda t: t[1], default=None)   # most-negative angle
-            rf_mid = max(inner, key=lambda t: t[1], default=None)   # most-positive angle
+            lf_mid = min(inner, key=lambda t: t[0][0], default=None)   # most-negative x
+            rf_mid = max(inner, key=lambda t: t[0][0], default=None)   # most-positive x
             if lf_mid:
-                pt = lf_mid[2]
-                draw.text((pt[0] + 2, pt[1] - 2), str(lf_mid[0]), font=font_tiny, fill=0)
+                pt = lf_mid[1]
+                draw.text((pt[0] + 2, pt[1] - 2), str(_dist(lf_mid[0])), font=font_tiny, fill=0)
             if rf_mid:
-                pt = rf_mid[2]
-                draw.text((pt[0] - 18, pt[1] - 2), str(rf_mid[0]), font=font_tiny, fill=0)
+                pt = rf_mid[1]
+                draw.text((pt[0] - 18, pt[1] - 2), str(_dist(rf_mid[0])), font=font_tiny, fill=0)
 
 
 def _draw_runners(draw, data):

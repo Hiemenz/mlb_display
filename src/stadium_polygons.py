@@ -5,7 +5,7 @@ Coordinate system (feet, home plate = origin):
   x negative → third base / LF side
   y positive → center field direction
 
-Conversion from field_view.py BALLPARK_DIMENSIONS (dist_ft, angle_deg):
+Conversion from BALLPARK_DIMENSIONS (dist_ft, angle_deg):
   x = dist_ft * sin(radians(angle_deg))
   y = dist_ft * cos(radians(angle_deg))
 """
@@ -15,7 +15,8 @@ import math
 import os
 
 # ---------------------------------------------------------------------------
-# Raw ballpark wall data (mirrored from field_view.py to avoid PIL dependency).
+# Raw ballpark wall data — canonical source for all 30 MLB stadiums.
+# field_view.py imports get_polygon() from here rather than maintaining its own copy.
 # Each value is a list of (distance_ft, angle_deg) pairs.
 # angle_deg: -45 = LF foul pole, 0 = straight CF, +45 = RF foul pole.
 # ---------------------------------------------------------------------------
