@@ -9,18 +9,20 @@ from generate_image import (
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
 
-# Field geometry constants
-# Diamond is a square rotated 45°: equal x/y offsets of 65px from home plate.
-# Home↔Second diagonal = 130px, First↔Third diagonal = 130px (both equal).
-# Mound at 60.5/127.3 ≈ 47.5% of home-to-second distance = 62px from home.
+# Field geometry constants — derived from FIELD_SCALE = 0.75 px/ft.
+# 0.75 is the maximum scale that keeps every MLB ballpark on the 400 px wide panel
+# (binding constraint: Wrigley LF foul pole at 355 ft, -45° lands at x ≈ 12 px).
+# Base paths: 90 ft × 0.75 = 67.5 px per side; at 45° → x/y offset ≈ 47.7 px.
+# Home↔Second diagonal: 90√2 ≈ 127.3 ft × 0.75 ≈ 95.5 px straight up.
+# Mound: 60.5 ft × 0.75 ≈ 45.4 px from home (47.5% of home-to-second).
 HOME_PLATE = (200, 420)
-FIRST_BASE = (265, 355)
-SECOND_BASE = (200, 290)
-THIRD_BASE = (135, 355)
-MOUND = (200, 358)
+FIRST_BASE = (248, 372)
+SECOND_BASE = (200, 325)
+THIRD_BASE = (152, 372)
+MOUND = (200, 375)
 
 # Pixels per foot for field rendering
-FIELD_SCALE = 0.70
+FIELD_SCALE = 0.75
 
 # Ballpark wall definitions: list of (distance_ft, angle_deg) pairs.
 # angle_deg: negative=LF side, 0=straight CF, positive=RF side.
@@ -145,8 +147,8 @@ def _draw_field(draw, data, fonts=None):
 
     # Infield arc: edge of infield grass, arcing from 3B side to 1B side through CF
     # PIL arc angles: 0=east, 90=south, 180=west, 270=north (up on screen = toward CF)
-    # Second base is 130px from home plate, so radius > 130 ensures the arc clears it.
-    r_arc = 145
+    # Second base is ~95 px from home plate (127.3 ft × 0.75), so radius > 95 clears it.
+    r_arc = 110  # ~15 px past second base (95 px from home)
     bb_arc = [hx - r_arc, hy - r_arc, hx + r_arc, hy + r_arc]
     draw.arc(bb_arc, start=225, end=315, fill=0, width=1)
 

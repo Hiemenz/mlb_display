@@ -46,7 +46,7 @@ def _draw_pitch_dots(draw, x, y, balls, strikes):
         dx += r * 2 + 1
 
 
-def _draw_mini_diamond(draw, x, y, bases, size=8):
+def _draw_mini_diamond(draw, x, y, bases, size=10):
     """Draw a tiny diamond showing bases reached. bases=0-4."""
     # Draw empty diamond outline
     pts = [(x, y - size), (x + size, y), (x, y + size), (x - size, y)]
