@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="480" viewBox="0 0 840 480">
+<rect x="0" y="0" width="840" height="480" fill="white"/>
+<line x1="420.0" y1="440.0" x2="187.4" y2="207.4" stroke="black" stroke-width="1"/><line x1="420.0" y1="440.0" x2="650.5" y2="209.5" stroke="black" stroke-width="1"/>
+<polyline points="198.0,218.0 234.8,154.9 282.6,108.3 347.3,66.0 420.0,48.0 492.7,66.0 557.4,108.3 603.5,157.4 639.9,220.1" fill="none" stroke="black" stroke-width="1" stroke-dasharray="4 4"/>
+<polyline points="187.4,207.4 226.7,142.3 276.9,94.5 344.4,51.3 420.0,33.0 495.6,51.3 563.1,94.5 611.7,144.8 650.5,209.5" fill="none" stroke="black" stroke-width="2.5" stroke-linejoin="round"/>
+<polyline points="352.8,507.2 354.5,508.8 356.2,510.4 357.9,511.9 359.7,513.4 361.6,514.9 363.4,516.3 365.3,517.7 367.2,519.0 369.2,520.3 371.2,521.5 373.2,522.7 375.2,523.8 377.3,524.9 379.4,525.9 381.5,526.8 383.6,527.8 385.8,528.6 388.0,529.4 390.2,530.2 392.4,530.9 394.7,531.6 396.9,532.2 399.2,532.7 401.5,533.2 403.8,533.6 406.1,534.0 408.4,534.3 410.7,534.5 413.0,534.7 415.3,534.9 417.7,535.0 420.0,535.0 422.3,535.0 424.7,534.9 427.0,534.7 429.3,534.5 431.6,534.3 433.9,534.0 436.2,533.6 438.5,533.2 440.8,532.7 443.1,532.2 445.3,531.6 447.6,530.9 449.8,530.2 452.0,529.4 454.2,528.6 456.4,527.8 458.5,526.8 460.6,525.9 462.7,524.9 464.8,523.8 466.8,522.7 468.8,521.5 470.8,520.3 472.8,519.0 474.7,517.7 476.6,516.3 478.4,514.9 480.3,513.4 482.1,511.9 483.8,510.4 485.5,508.8 487.2,507.2" fill="none" stroke="black" stroke-width="1"/>
+<polygon points="483.6,376.4 420.0,312.7 356.4,376.4 420.0,440.0" fill="none" stroke="black" stroke-width="1.5"/>
+<polygon points="483.64,371.36 488.64,376.36 483.64,381.36 478.64,376.36" fill="none" stroke="black" stroke-width="1.5"/>
+<polygon points="420,307.72 425,312.72 420,317.72 415,312.72" fill="none" stroke="black" stroke-width="1.5"/>
+<polygon points="356.36,371.36 361.36,376.36 356.36,381.36 351.36,376.36" fill="none" stroke="black" stroke-width="1.5"/>
+<polygon points="420,445 415,440 417,435 423,435 425,440" fill="none" stroke="black" stroke-width="1.5"/>
+<circle cx="420.0" cy="379.5" r="6" fill="none" stroke="black" stroke-width="1"/>
+<text x="191.4" y="203.4" font-family="Arial,Helvetica,sans-serif" font-size="13" text-anchor="start" fill="black">329</text>
+<text x="230.7" y="138.3" font-family="Arial,Helvetica,sans-serif" font-size="13" text-anchor="start" fill="black">355</text>
+<text x="420.0" y="27.0" font-family="Arial,Helvetica,sans-serif" font-size="13" text-anchor="middle" fill="black">407</text>
+<text x="607.7" y="140.8" font-family="Arial,Helvetica,sans-serif" font-size="13" text-anchor="end" fill="black">352</text>
+<text x="646.5" y="205.5" font-family="Arial,Helvetica,sans-serif" font-size="13" text-anchor="end" fill="black">326</text>
+<text x="420.0" y="22" font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="bold" text-anchor="middle" fill="black">Globe Life Field</text><text x="420.0" y="38" font-family="Arial,Helvetica,sans-serif" font-size="13" text-anchor="middle" fill="black">Texas Rangers</text>
+</svg>
