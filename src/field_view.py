@@ -9,15 +9,15 @@ from generate_image import (
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
 
-# Field geometry constants
-# Diamond is a square rotated 45°: equal x/y offsets of 65px from home plate.
-# Home↔Second diagonal = 130px, First↔Third diagonal = 130px (both equal).
-# Mound at 60.5/127.3 ≈ 47.5% of home-to-second distance = 62px from home.
+# Field geometry constants — derived from FIELD_SCALE = 0.70 px/ft.
+# Base paths: 90 ft × 0.70 = 63 px per side; at 45° → x/y offset ≈ 44.5 px.
+# Home↔Second diagonal: 90√2 ≈ 127.3 ft × 0.70 ≈ 89 px straight up.
+# Mound: 60.5 ft × 0.70 ≈ 42 px from home (47.5% of home-to-second).
 HOME_PLATE = (200, 420)
-FIRST_BASE = (265, 355)
-SECOND_BASE = (200, 290)
-THIRD_BASE = (135, 355)
-MOUND = (200, 358)
+FIRST_BASE = (245, 375)
+SECOND_BASE = (200, 331)
+THIRD_BASE = (155, 375)
+MOUND = (200, 378)
 
 # Pixels per foot for field rendering
 FIELD_SCALE = 0.70
@@ -145,8 +145,8 @@ def _draw_field(draw, data, fonts=None):
 
     # Infield arc: edge of infield grass, arcing from 3B side to 1B side through CF
     # PIL arc angles: 0=east, 90=south, 180=west, 270=north (up on screen = toward CF)
-    # Second base is 130px from home plate, so radius > 130 ensures the arc clears it.
-    r_arc = 145
+    # Second base is ~89 px from home plate (127.3 ft × 0.70), so radius > 89 clears it.
+    r_arc = 104  # ~15 px past second base (89 px from home)
     bb_arc = [hx - r_arc, hy - r_arc, hx + r_arc, hy + r_arc]
     draw.arc(bb_arc, start=225, end=315, fill=0, width=1)
 
