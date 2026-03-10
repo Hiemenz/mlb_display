@@ -52,16 +52,16 @@ def _draw_mini_diamond(draw, x, y, bases, size=10):
     pts = [(x, y - size), (x + size, y), (x, y + size), (x - size, y)]
     draw.polygon(pts, outline=0)
 
-    # Fill segments based on bases reached
+    # Fill segments based on bases reached (runner path: home→1B→2B→3B)
     if bases >= 1:
-        # First base side
-        draw.line([(x + size, y), (x, y - size)], fill=0, width=2)
+        # Home to first base
+        draw.line([(x, y + size), (x + size, y)], fill=0, width=2)
     if bases >= 2:
-        # Second base side
-        draw.line([(x, y - size), (x - size, y)], fill=0, width=2)
+        # First to second base
+        draw.line([(x + size, y), (x, y - size)], fill=0, width=2)
     if bases >= 3:
-        # Third base side
-        draw.line([(x - size, y), (x, y + size)], fill=0, width=2)
+        # Second to third base
+        draw.line([(x, y - size), (x - size, y)], fill=0, width=2)
     if bases >= 4:
         # Home (fill entire diamond)
         draw.polygon(pts, fill=0, outline=0)
