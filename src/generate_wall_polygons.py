@@ -460,11 +460,11 @@ def _eval_distance(theta_deg, coeffs, dform):
 def _polar_to_cartesian(dist, theta_deg):
     """Convert (distance, FanGraphs angle) to (x_ft, y_ft).
 
-    FanGraphs: 0°=LF foul line, 45°≈CF, 90°=RF foul line.
+    FanGraphs piecewise coefficients: 0°=RF foul line, 45°≈CF, 90°=LF foul line.
     Our coords: x+=RF, x-=LF, y+=CF.
-    Bearing from CF = theta - 45°.
+    Bearing from CF = 45 - theta (positive theta goes toward LF).
     """
-    bearing = math.radians(theta_deg - 45)
+    bearing = math.radians(45 - theta_deg)
     x = round(dist * math.sin(bearing), 1)
     y = round(dist * math.cos(bearing), 1)
     return x, y
@@ -592,6 +592,8 @@ def generate_all():
             if d is not None:
                 x, y = _polar_to_cartesian(d, theta)
                 pts.append((x, y))
+        # theta=0 → RF (positive x), theta=90 → LF (negative x); reverse for LF→RF order
+        pts.reverse()
         all_polygons[name] = pts
 
     # 2 calibrated parks (not in FanGraphs dataset)
