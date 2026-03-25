@@ -494,10 +494,13 @@ def check_games_for_sport(date, sport_id):
             game_dates = data.get('dates', [])
             if game_dates and len(game_dates) > 0:
                 games = game_dates[0].get('games', [])
-                # For MLB (sport_id=1), only count regular/postseason games — not spring training ('S')
-                # This allows WBC (sport_id=8) to take priority during spring training period
+                # For MLB (sport_id=1), prefer regular/postseason games over spring training ('S')
+                # but fall back to spring training if no regular games exist (avoids picking up
+                # college baseball when spring training is the only MLB-affiliated action).
                 if sport_id == 1:
-                    games = [g for g in games if g.get('gameType') not in ('S', 'E')]
+                    regular = [g for g in games if g.get('gameType') not in ('S', 'E')]
+                    if regular:
+                        games = regular
                 return len(games)
     except Exception as e:
         print(f"Error checking games for sport {sport_id}: {e}")
