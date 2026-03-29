@@ -66,6 +66,29 @@ def get_last_play_result(game_pk):
     return None
 
 
+def fetch_win_probability(game_pk):
+    """Return (away_wp, home_wp) as floats 0-100 for the most recent play, or (None, None)."""
+    try:
+        url = f'https://statsapi.mlb.com/api/v1/game/{game_pk}/winProbability'
+        response = requests.get(url, timeout=5)
+        data = response.json()
+        if not isinstance(data, list) or not data:
+            return None, None
+        last = data[-1]
+        away_wp = last.get('awayTeamWinProbability')
+        home_wp = last.get('homeTeamWinProbability')
+        if away_wp is not None and home_wp is not None:
+            away_wp = float(away_wp)
+            home_wp = float(home_wp)
+            if away_wp + home_wp <= 1.5:  # API returns 0-1 fractions
+                away_wp *= 100
+                home_wp *= 100
+            return away_wp, home_wp
+        return None, None
+    except Exception:
+        return None, None
+
+
 def fetch_all_team_abbreviations(sport_id=1):
     """Fetch all team abbreviations for a given sport and cache to data/teams.json."""
     team_abbreviations = {}
@@ -294,6 +317,10 @@ def parse_games(data, sport_id=None, config=None):
             'save_situation': save_situation,
             'game_pk': game_id,
         }
+        if config.get('scoreboard_win_probability', False) and game_dict.get('detailed_state') == 'In Progress':
+            away_wp, home_wp = fetch_win_probability(game_id)
+            game_dict['away_win_probability'] = away_wp
+            game_dict['home_win_probability'] = home_wp
         game_array.append(game_dict)
 
     save_off_results({'games': game_array}, 'games')

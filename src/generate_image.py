@@ -793,7 +793,7 @@ def _pitcher_line(name, note):
     return last_name
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False):
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
         game_data = dict(game_data)
@@ -974,6 +974,47 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     draw.line((start_x, start_y, end_x, end_y), fill = 0)
     draw.line((start_x, start_y + 20, end_x, end_y  + 20), fill = 0)
 
+    # Win probability bar — live games only, when show_win_prob enabled
+    if show_win_prob and game_data['detailed_state'] == 'In Progress':
+        away_wp = game_data.get('away_win_probability')
+        home_wp = game_data.get('home_win_probability')
+        if away_wp is not None and home_wp is not None:
+            try:
+                away_wp = float(away_wp)
+                home_wp = float(home_wp)
+                if away_wp + home_wp <= 1.5:
+                    away_wp *= 100
+                    home_wp *= 100
+            except (ValueError, TypeError):
+                away_wp, home_wp = 50.0, 50.0
+
+            LOGO_SZ = 8
+            BAR_X = start_x + 2
+            BAR_W = horizonta_len - 4        # 131px
+            BAR_H = LOGO_SZ
+            BAR_Y = start_y + vertical_len + 20 - BAR_H - 2  # 2px above bottom border
+
+            draw.rectangle([BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H], outline=0)
+
+            logo_y = BAR_Y
+
+            away_px = BAR_X + int(BAR_W * away_wp / 100.0)
+            away_logo_x = max(BAR_X, min(BAR_X + BAR_W - LOGO_SZ, away_px - LOGO_SZ // 2))
+
+            home_px = BAR_X + int(BAR_W * home_wp / 100.0)
+            home_logo_x = max(BAR_X, min(BAR_X + BAR_W - LOGO_SZ, home_px - LOGO_SZ // 2))
+
+            if use_logos:
+                away_logo = _logo_small(away_team_name, away_team_id, size=LOGO_SZ)
+                home_logo = _logo_small(home_team_name, home_team_id, size=LOGO_SZ)
+                if away_logo:
+                    Himage.paste(away_logo, (away_logo_x, logo_y))
+                if home_logo:
+                    Himage.paste(home_logo, (home_logo_x, logo_y))
+            else:
+                draw.line((away_px, BAR_Y, away_px, BAR_Y + BAR_H), fill=0)
+                draw.line((home_px, BAR_Y, home_px, BAR_Y + BAR_H), fill=0)
+
     end_x = start_x + horizonta_len
     end_y = start_y + vertical_len + 20
     draw.line((start_x, start_y + vertical_len + 20, end_x, end_y), fill=0)
@@ -1095,7 +1136,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     return Himage
 
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2):
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False):
 
     draw = ImageDraw.Draw(Himage)
 
@@ -1114,7 +1155,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             if game_list[counter]:
                 game_pk_key = str(game_list[counter].get('game_pk', ''))
                 score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
-                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos, logo_x_offset=logo_x_offset)
+                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
             counter += 1
 
     # Add date in bottom right corner
@@ -1145,6 +1186,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
     config = load_yaml_file('config.yaml')
     use_logos = config.get('use_team_logos', False)
     logo_x_offset = config.get('small_logo_x_offset', 2)
+    show_win_prob = config.get('scoreboard_win_probability', False)
 
     old_data = load_json_file('old_scoreboard_state.json')
 
@@ -1199,7 +1241,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
 
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
     if config.get('dark_mode', False):
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 

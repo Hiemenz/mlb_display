@@ -58,6 +58,10 @@ use_team_logos: True
 # Set to 2 to align with the box edge. Increase to shift the logo right.
 small_logo_x_offset: 2
 
+# Win probability bar in scoreboard mode: show team logos at their win probability position during live games
+# Left edge = 0% (certain loss), right edge = 100% (certain win). Only shown for In Progress games.
+scoreboard_win_probability: false
+
 # Discord bot configuration
 # Get token from https://discord.com/developers/applications
 # Set channel_id to restrict commands to one channel (0 = any channel)
