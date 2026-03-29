@@ -9,7 +9,7 @@ scoreboard: true
 # "pitch"     = full strike zone with pitch locations for current at-bat
 display_mode: "scoreboard"
 
-primary: BOS
+primary: NYY
 primary_backup: BOS
 primary_backup_2: NYM
 secondary: NYY_DOUBLE
@@ -60,7 +60,7 @@ small_logo_x_offset: 2
 
 # Win probability bar in scoreboard mode: show team logos at their win probability position during live games
 # Left edge = 0% (certain loss), right edge = 100% (certain win). Only shown for In Progress games.
-scoreboard_win_probability: false
+scoreboard_win_probability: true
 
 # Discord bot configuration
 # Get token from https://discord.com/developers/applications
