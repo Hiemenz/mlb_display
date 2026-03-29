@@ -988,7 +988,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             except (ValueError, TypeError):
                 away_wp, home_wp = 50.0, 50.0
 
-            LOGO_SZ = 8
+            LOGO_SZ = 14
             BAR_X = start_x + 2
             BAR_W = horizonta_len - 4        # 131px
             BAR_H = LOGO_SZ
