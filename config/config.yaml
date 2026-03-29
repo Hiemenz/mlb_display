@@ -7,8 +7,9 @@ scoreboard: true
 # "field"     = single-game field diagram with runners, hit location, strike zone overlay
 # "scorecard" = official scorer-style per-batter at-bat grid for both teams
 # "pitch"     = full strike zone with pitch locations for current at-bat
-# display_mode: "scoreboard"
-primary: NYY
+display_mode: "scoreboard"
+
+primary: BOS
 primary_backup: BOS
 primary_backup_2: NYM
 secondary: NYY_DOUBLE
