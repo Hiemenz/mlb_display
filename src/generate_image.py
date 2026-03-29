@@ -994,8 +994,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             BAR_H = LOGO_SZ
             BAR_Y = start_y + vertical_len + 21  # 1px below bottom border, in the inter-row gap
 
-            draw.rectangle([BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H], outline=0)
-
             logo_y = BAR_Y
 
             away_px = BAR_X + int(BAR_W * away_wp / 100.0)
