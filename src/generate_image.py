@@ -992,7 +992,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             BAR_X = start_x + 2
             BAR_W = horizonta_len - 4        # 131px
             BAR_H = LOGO_SZ
-            BAR_Y = start_y + vertical_len + 20 - BAR_H - 2  # 2px above bottom border
+            BAR_Y = start_y + vertical_len + 21  # 1px below bottom border, in the inter-row gap
 
             draw.rectangle([BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H], outline=0)
 
