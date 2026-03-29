@@ -303,8 +303,9 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
                             home, game_state, inning_header, first_base, second_base,
                             third_base, outs, start_time, home_is_winner, away_probable,
                             home_probable, winner_name, loser_name, venue,
-                            home_team_win_probability, away_team_win_probability, 
-                            result_event, weather_condition, weather_temp, weather_wind)
+                            home_team_win_probability, away_team_win_probability,
+                            result_event, weather_condition, weather_temp, weather_wind,
+                            home_team_id=home_team_id, away_team_id=away_team_id)
     return Himage, new_image_dict
 
 def draw_boards():
@@ -406,11 +407,12 @@ def draw_boards():
     
 
 def generate_image(Himage, col_start, row_start, away_team, home_team, away,
-                   home, game_state, inning_header, first_base, second_base, 
+                   home, game_state, inning_header, first_base, second_base,
                    third_base, outs, start_time, home_is_winner, away_probable,
                    home_probable,winner_name, loser_name,  venue,
                    home_team_win_probability, away_team_win_probability, result_event,
-                    weather_condition, weather_temp, weather_wind):
+                    weather_condition, weather_temp, weather_wind,
+                   home_team_id=None, away_team_id=None):
     draw = ImageDraw.Draw(Himage)
 
     # bmp = Image.open(os.path.join('/home/pi/Documents/e-Paper/RaspberryPi_JetsonNano/python/examples/', 'qr.jpg'))
@@ -435,10 +437,39 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
         draw_diamond(Himage, (col_start + 45 - 95, row_start + 20), 20, second_base) # second base 
         draw_diamond(Himage, (col_start + 20 - 95, row_start + 45), 20, third_base)  # third base 
         
-        draw.text(( col_start + 585 , row_start + 63), home_team_win_probability, font = font24, fill = 0)
-        draw.text(( col_start + 585 , row_start + 30), away_team_win_probability, font = font24, fill = 0)
-
         draw.text(( col_start + 0 , row_start + 93), result_event , font = font18, fill = 0)
+
+        # Win probability bar — away (left) filled, home (right) outlined
+        try:
+            home_wp = float(str(home_team_win_probability).replace('%', '').strip())
+            away_wp = float(str(away_team_win_probability).replace('%', '').strip())
+            if home_wp + away_wp <= 1.5:   # API returned 0-1 decimals
+                home_wp *= 100
+                away_wp *= 100
+        except (ValueError, AttributeError):
+            home_wp, away_wp = 50.0, 50.0
+
+        BAR_X, BAR_Y, BAR_W, BAR_H = col_start, row_start + 113, 580, 14
+        away_fill_px = max(0, min(BAR_W, int(BAR_W * away_wp / 100.0)))
+
+        if away_fill_px > 0:
+            draw.rectangle([BAR_X, BAR_Y, BAR_X + away_fill_px, BAR_Y + BAR_H], fill=0)
+        draw.rectangle([BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H], outline=0)
+
+        LOGO_SZ = 12
+        logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2
+        if home_wp >= away_wp:
+            # Home leads — logo on right (white) side
+            logo = _logo_small(home_team, home_team_id or 0, size=LOGO_SZ)
+            if logo:
+                Himage.paste(logo, (BAR_X + BAR_W - LOGO_SZ - 2, logo_y))
+        else:
+            # Away leads — logo on left (dark) side, inverted to white-on-black
+            logo = _logo_small(away_team, away_team_id or 0, size=LOGO_SZ)
+            if logo:
+                white_patch = Image.new('1', logo.size, 255)
+                mask = ImageOps.invert(logo.convert('L'))
+                Himage.paste(white_patch, (BAR_X + 2, logo_y), mask=mask)
 
     if home_is_winner == 'L':
         draw_circle(Himage, (col_start + 12, row_start + 45), 8, True) 
