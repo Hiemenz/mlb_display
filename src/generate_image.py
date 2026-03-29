@@ -750,6 +750,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data = dict(game_data)
         game_data['detailed_state'] = 'Final'
 
+    # Normalize mid-game review/challenge states to In Progress
+    if game_data.get('detailed_state') in ('Player challenge', 'Manager challenge'):
+        game_data = dict(game_data)
+        game_data['detailed_state'] = 'In Progress'
+
     draw = ImageDraw.Draw(Himage)
     font26 = _get_font(26)
     font24 = _get_font(24)

@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from generate_image import (
     picdir, _logo_small, _load_logo_gray, draw_diamond, draw_circle,
 )
-from stadium_polygons import get_polygon, dimensions_to_polygon
+from stadium_polygons import get_polygon
 
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
@@ -26,10 +26,14 @@ MOUND = (200, 375)
 FIELD_SCALE = 0.75
 
 # Fallback wall polygon used when the venue isn't recognized.
-# Cartesian (x_ft, y_ft) with home plate at origin, +Y toward CF.
-_DEFAULT_WALL_POLY = dimensions_to_polygon(
-    [(330,-45),(360,-33),(375,-22.5),(392,-11),(400,0),(392,11),(375,22.5),(360,33),(330,45)]
-)
+# Generic symmetric 400-ft park. Cartesian (x_ft, y_ft), home plate at origin.
+_DEFAULT_WALL_POLY = [
+    (-233.3, 233.3),   # LF foul pole, 330 ft
+    (-109.6, 343.6),   # LF-CF gap, 360 ft
+    (0.0,    400.0),   # deep CF, 400 ft
+    (109.6,  343.6),   # RF-CF gap, 360 ft
+    (233.3,  233.3),   # RF foul pole, 330 ft
+]
 
 
 def _load_fonts():
@@ -115,12 +119,17 @@ def _draw_field(draw, data, fonts=None):
             (bx, by + base_size), (bx - base_size, by),
         ], outline=0)
 
-    # Distance labels: foul poles + deepest CF point + intermediate labeled points
+    # Distance labels: foul poles, deepest CF, and power alleys
     font_tiny = fonts.get('f9') if fonts else None
     if font_tiny:
         def _dist(xy):
             return round(math.sqrt(xy[0] ** 2 + xy[1] ** 2))
 
+        def _angle(xy):
+            """Bearing in degrees from CF axis: -45=LF pole, 0=CF, +45=RF pole."""
+            return math.degrees(math.atan2(xy[0], xy[1]))
+
+        # Deepest CF point (highest y on screen = lowest pixel y)
         deepest_idx = min(range(len(wall_pts)), key=lambda i: wall_pts[i][1])
         cf_pt   = wall_pts[deepest_idx]
         cf_dist = _dist(wall_poly[deepest_idx])
@@ -132,20 +141,19 @@ def _draw_field(draw, data, fonts=None):
         draw.text((lf_pole[0] + 2, lf_pole[1]),    str(lf_dist), font=font_tiny, fill=0)
         draw.text((rf_pole[0] - 18, rf_pole[1]),   str(rf_dist), font=font_tiny, fill=0)
 
-        # For parks with 8+ wall points, also label 2 intermediate ones:
-        # pick the most-LF non-pole point (x_ft most negative) and most-RF (x_ft most positive)
-        if len(wall_poly) >= 8:
-            inner = [(wall_poly[i], wall_pts[i])
+        # Label power alleys: find points closest to ±22° bearing (LF/RF alleys)
+        if len(wall_poly) >= 5:
+            inner = [(i, wall_poly[i], wall_pts[i])
                      for i in range(1, len(wall_poly) - 1)
                      if i != deepest_idx]
-            lf_mid = min(inner, key=lambda t: t[0][0], default=None)   # most-negative x
-            rf_mid = max(inner, key=lambda t: t[0][0], default=None)   # most-positive x
-            if lf_mid:
-                pt = lf_mid[1]
-                draw.text((pt[0] + 2, pt[1] - 2), str(_dist(lf_mid[0])), font=font_tiny, fill=0)
-            if rf_mid:
-                pt = rf_mid[1]
-                draw.text((pt[0] - 18, pt[1] - 2), str(_dist(rf_mid[0])), font=font_tiny, fill=0)
+            lf_alley = min(inner, key=lambda t: abs(_angle(t[1]) - (-22)), default=None)
+            rf_alley = min(inner, key=lambda t: abs(_angle(t[1]) - 22), default=None)
+            if lf_alley:
+                pt = lf_alley[2]
+                draw.text((pt[0] + 2, pt[1] - 2), str(_dist(lf_alley[1])), font=font_tiny, fill=0)
+            if rf_alley:
+                pt = rf_alley[2]
+                draw.text((pt[0] - 18, pt[1] - 2), str(_dist(rf_alley[1])), font=font_tiny, fill=0)
 
 
 def _draw_runners(draw, data):

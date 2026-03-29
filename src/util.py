@@ -2,13 +2,19 @@ import os
 import json
 import yaml
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DATA_DIR = os.path.join(_REPO_ROOT, 'data')
+_CONFIG_DIR = os.path.join(_REPO_ROOT, 'config')
 
-def load_json_file(file_name, file_path='data/'):
+
+def load_json_file(file_name, file_path=None):
+    base = file_path if file_path is not None else _DATA_DIR
+    full = os.path.join(base, file_name)
     data_dict = {}
     try:
-        if not os.path.isfile(file_path + file_name):
+        if not os.path.isfile(full):
             return data_dict
-        with open(file_path + file_name, 'r') as file:
+        with open(full, 'r') as file:
             data_dict = json.load(file)
             return data_dict
     except:
@@ -16,22 +22,25 @@ def load_json_file(file_name, file_path='data/'):
         return data_dict
 
 
-def load_yaml_file(file_name, file_path='config/'):
+def load_yaml_file(file_name, file_path=None):
+    base = file_path if file_path is not None else _CONFIG_DIR
+    full = os.path.join(base, file_name)
     data_dict = {}
     try:
-        if not os.path.isfile(file_path + file_name):
+        if not os.path.isfile(full):
             return data_dict
-        with open(file_path + file_name, 'r') as file:
+        with open(full, 'r') as file:
             data_dict = yaml.safe_load(file)
             return data_dict if data_dict else {}
     except Exception as e:
         print(f'Error parsing YAML file: {e}')
         return data_dict
 
-   
-def save_off_results(data, output, file_path='data/'):
-    os.makedirs(file_path, exist_ok=True)
-    with open(file_path + output + '.json', 'w') as f:
+
+def save_off_results(data, output, file_path=None):
+    base = file_path if file_path is not None else _DATA_DIR
+    os.makedirs(base, exist_ok=True)
+    with open(os.path.join(base, output + '.json'), 'w') as f:
         json.dump(data, f, indent=4)
 
 

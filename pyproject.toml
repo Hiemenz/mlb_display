@@ -12,6 +12,7 @@ requests = "^2.31.0"
 pytz = "^2024.1"
 regex = "^2026.1.15"
 pyyaml = "^6.0.0"
+pyreadr = "^0.5.4"
 
 
 [build-system]
