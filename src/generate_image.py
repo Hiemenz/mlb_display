@@ -744,6 +744,24 @@ def _logo_ghost(abbr, team_id, size=110):
     return gray.convert('1')
 
 
+def _pitcher_line(name, note):
+    """Format 'LastName ERA' for probable pitcher display.
+
+    note is the MLB Stats API probablePitcher.note, e.g. '2-1, 3.45 ERA'.
+    Returns just the last name if ERA is unavailable.
+    """
+    if not name:
+        return 'TBD'
+    last_name = name.split()[-1]
+    if note:
+        parts = note.split(', ')
+        if len(parts) >= 2:
+            era_str = parts[1].replace(' ERA', '').strip()
+            if era_str and not era_str.startswith('-'):
+                return f'{last_name} {era_str}'
+    return last_name
+
+
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2):
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
@@ -821,8 +839,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((start_x + 7, y), txt, font=fnt, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
-        away_prob = game_data.get("away_probable") or ''
-        home_prob = game_data.get("home_probable") or ''
+        away_prob = _pitcher_line(game_data.get("away_probable"), game_data.get("away_probable_note"))
+        home_prob = _pitcher_line(game_data.get("home_probable"), game_data.get("home_probable_note"))
         away_prob, away_font = fit_text(away_prob, max_text_width)
         home_prob, home_font = fit_text(home_prob, max_text_width)
         draw.text((start_x + 7 , start_y + 25 + 59), away_prob, font=away_font, fill=0)
