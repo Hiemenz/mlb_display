@@ -775,22 +775,121 @@ def _logo_ghost(abbr, team_id, size=110):
     return gray.convert('1')
 
 
+_NAME_SUFFIXES = {'jr', 'sr', 'ii', 'iii', 'iv', 'v'}
+
+def _format_player_name(name):
+    """Return 'F. Lastname' for a full player name, skipping suffixes like Jr./Sr./II."""
+    if not name:
+        return ''
+    parts = name.split()
+    last_name = parts[-1]
+    for i in range(len(parts) - 1, 0, -1):
+        if parts[i].lower().strip('.') not in _NAME_SUFFIXES:
+            last_name = parts[i]
+            break
+    first_initial = parts[0][0] + '.' if len(parts) > 1 else ''
+    return f'{first_initial} {last_name}' if first_initial else last_name
+
+
 def _pitcher_line(name, note):
-    """Format 'LastName ERA' for probable pitcher display.
+    """Format 'F. Lastname ERA' for probable pitcher display.
 
     note is the MLB Stats API probablePitcher.note, e.g. '2-1, 3.45 ERA'.
-    Returns just the last name if ERA is unavailable.
+    Returns 'F. Lastname' if ERA is unavailable.
     """
     if not name:
         return 'TBD'
-    last_name = name.split()[-1]
+    display_name = _format_player_name(name)
     if note:
         parts = note.split(', ')
         if len(parts) >= 2:
             era_str = parts[1].replace(' ERA', '').strip()
             if era_str and not era_str.startswith('-'):
-                return f'{last_name} {era_str}'
-    return last_name
+                return f'{display_name} {era_str}'
+    return display_name
+
+
+_VENUE_OVERRIDES = {
+    'loanDepot park': 'LoanDepot Park',
+    'Daikin Park': 'Minute Maid Park',
+    'Guaranteed Rate Field': 'Guaranteed Rate',
+    'American Family Field': 'Am. Family Field',
+    'Great American Ball Park': 'Great American',
+}
+
+def _clean_venue_name(venue):
+    """Return a short, ad-free venue name for display in the scoreboard header."""
+    if not venue:
+        return venue
+    # Check for known overrides first
+    if venue in _VENUE_OVERRIDES:
+        return _VENUE_OVERRIDES[venue]
+    # Strip 'X at Y' qualifiers (e.g. 'Oriole Park at Camden Yards' → 'Camden Yards')
+    if ' at ' in venue:
+        venue = venue.split(' at ', 1)[1]
+    return venue
+
+
+_AL_DIV_ORDER = [
+    'American League East',
+    'American League Central',
+    'American League West',
+]
+_NL_DIV_ORDER = [
+    'National League East',
+    'National League Central',
+    'National League West',
+]
+_SIDEBAR_LOGO_SIZE = 26
+_SIDEBAR_ROW_Y     = [30, 180, 330]   # y start for each division row (matches grid row spacing)
+_SIDEBAR_ROW_H     = 150              # height per division section (grid row spacing)
+
+
+def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
+    """Draw a vertical strip of division-standings logos on the left (AL) or right (NL) edge.
+
+    Logos are 26px, ordered 1st place (top) to 5th place (bottom) within each
+    division section. Three sections align with the three scoreboard game rows:
+      section 0 = East   (y=30–180)
+      section 1 = Central (y=180–330)
+      section 2 = West   (y=330–480)
+
+    side='left'  → AL divisions, logo_x=3  (fits in 32px left margin)
+    side='right' → NL divisions, logo_x=771 (fits in 33px right margin)
+    """
+    divisions = _AL_DIV_ORDER if side == 'left' else _NL_DIV_ORDER
+    abbr_map  = {**standings_data.get('team_abbreviation', {}),
+                 **team_data.get('team_abbreviation', {})}
+
+    logo_x = 3 if side == 'left' else (800 - 3 - _SIDEBAR_LOGO_SIZE)
+    sep_x0, sep_x1 = (0, 31) if side == 'left' else (768, 800)
+
+    draw = ImageDraw.Draw(Himage)
+
+    for row_idx, div_name in enumerate(divisions):
+        teams = standings_data.get('standings', {}).get(div_name, [])
+        teams = sorted(teams, key=lambda t: int(t.get('divisionRank', 99)))
+        y_section = _SIDEBAR_ROW_Y[row_idx]
+        slot_h    = _SIDEBAR_ROW_H // 5   # 30px per team slot
+
+        for slot_idx, team in enumerate(teams[:5]):
+            team_id = str(team.get('team_id', ''))
+            abbr    = abbr_map.get(team_id, f'T{team_id}')
+            logo_y  = y_section + slot_idx * slot_h + 2   # 2px top margin
+
+            logo_img = _logo_small(abbr, team_id, size=_SIDEBAR_LOGO_SIZE)
+            if logo_img is not None:
+                Himage.paste(logo_img, (logo_x, logo_y))
+            else:
+                font = _get_font(9)
+                draw.text((logo_x, logo_y + 8), abbr[:3], font=font, fill=0)
+
+        # Thin separator between division sections (not after the last one)
+        if row_idx < 2:
+            sep_y = y_section + _SIDEBAR_ROW_H
+            draw.line((sep_x0, sep_y, sep_x1, sep_y), fill=0, width=1)
+
+    return Himage
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False):
@@ -810,6 +909,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font18 = _get_font(18)
     font14 = _get_font(14)
     font11 = _get_font(11)
+    font9 = _get_font(9)
 
     vertical_len = 110
     horizonta_len = 135
@@ -860,10 +960,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         BOTTOM_Y = start_y + vertical_len + 20 - 3  # 3px margin above bottom border
         saver = game_data.get('saver_name')
         lines = []
-        lines.append(fit_text(f'LP: {game_data.get("loser_name") or ""}', max_text_width))
-        lines.append(fit_text(f'WP: {game_data.get("winner_name") or ""}', max_text_width))
+        lines.append(fit_text(f'LP: {_format_player_name(game_data.get("loser_name") or "")}', max_text_width))
+        lines.append(fit_text(f'WP: {_format_player_name(game_data.get("winner_name") or "")}', max_text_width))
         if saver:
-            lines.append(fit_text(f'SV: {saver}', max_text_width))
+            lines.append(fit_text(f'SV: {_format_player_name(saver)}', max_text_width))
         # Draw from bottom up
         for i, (txt, fnt) in enumerate(reversed(lines)):
             y = BOTTOM_Y - LINE_H * (i + 1)
@@ -876,6 +976,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         home_prob, home_font = fit_text(home_prob, max_text_width)
         draw.text((start_x + 7 , start_y + 25 + 59), away_prob, font=away_font, fill=0)
         draw.text((start_x + 7, start_y + 25 + 74), home_prob, font=home_font, fill=0)
+    elif game_data['detailed_state'] == 'Postponed':
+        reason = game_data.get('postpone_reason') or game_data.get('description') or ''
+        postponed_line, postponed_fnt = fit_text(f'PPD: {reason}' if reason else 'Postponed', max_text_width)
+        draw.text((start_x + 7, start_y + 25 + 59), postponed_line, font=postponed_fnt, fill=0)
+        venue_ppd = _clean_venue_name(game_data.get('venue'))
+        if venue_ppd:
+            venue_ppd_txt, venue_ppd_fnt = fit_text(venue_ppd, max_text_width)
+            draw.text((start_x + 7, start_y + 25 + 74), venue_ppd_txt, font=venue_ppd_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
         # Show last play result if available, otherwise show pitcher/hitter
         last_play = game_data.get('last_play')
@@ -900,7 +1008,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         else:
             game_state_str = game_data['detailed_state']
 
-        if game_data.get('current_inning') != 9:
+        if game_data.get('current_inning') and game_data.get('current_inning') != 9:
             game_state_str += '/' + str(game_data.get('current_inning'))
             
     elif game_data['detailed_state'] == 'Warmup':
@@ -924,11 +1032,42 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
         game_state_str = extra + ' ' + str(game_data['current_inning'])
     
+    # Strip AM/PM from pre-game time display
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
+        game_state_str = game_state_str.replace(' PM', '').replace(' AM', '')
+
     # game state — bold via double draw; append last play on same line for live games
-    draw.text((start_x + 5, start_y + 3), game_state_str, font=font14, fill=0)
-    draw.text((start_x + 6, start_y + 3), game_state_str, font=font14, fill=0)
+    draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
+    draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
     if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
         draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
+
+    # Venue — right-aligned in header for pre-game and postponed states
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
+        venue_clean = _clean_venue_name(game_data.get('venue'))
+        if venue_clean:
+            try:
+                state_w = int(font14.getlength(game_state_str))
+                max_venue_w = horizonta_len - state_w - 5
+                if max_venue_w > 10:
+                    # Pick largest font that fits
+                    for vfont, vy in ((font14, 3), (font11, 5), (font9, 6)):
+                        vw = vfont.getlength(venue_clean)
+                        if vw <= max_venue_w:
+                            break
+                        # truncate to fit this font before trying next
+                        name = venue_clean
+                        while vfont.getlength(name) > max_venue_w and len(name) > 1:
+                            name = name[:-1]
+                        if len(name) >= 4:  # meaningful truncation
+                            venue_clean = name
+                            vw = vfont.getlength(venue_clean)
+                            break
+                    vx = start_x + horizonta_len - int(vw) - 2
+                    draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
+                    draw.text((vx + 1, start_y + vy), venue_clean, font=vfont, fill=0)
+            except AttributeError:
+                pass
     if game_data['detailed_state'] == 'In Progress':
         raw_play = game_data.get('last_play') or ''
         if raw_play:
@@ -1235,6 +1374,13 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
     Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
+
+    if config.get('show_standings_sidebar', False):
+        standings_data = load_json_file('standings.json')
+        if standings_data and 'standings' in standings_data:
+            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left')
+            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right')
+
     if config.get('dark_mode', False):
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 

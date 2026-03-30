@@ -213,6 +213,7 @@ def parse_games(data, sport_id=None, config=None):
     for game in games:
         game_id = game.get('gamePk')
         detailed_state = game.get('status', {}).get('detailedState')
+        postpone_reason = game.get('status', {}).get('reason')
 
         game_teams = game.get('teams', {})
         away_team = game_teams.get('away', {})
@@ -279,6 +280,7 @@ def parse_games(data, sport_id=None, config=None):
             'series_description': game.get('seriesDescription'),
             'day_night': game.get('dayNight'),
             'description': game.get('description'),
+            'postpone_reason': postpone_reason,
             'game_number': game.get('gameNumber'),
             'games_in_series': game.get('gamesInSeries'),
             'game_date': game.get('gameDate'),

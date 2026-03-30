@@ -21,6 +21,7 @@ from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations,
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
+from standings import get_standings
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +147,29 @@ def _save_schedule_state(state):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
         json.dump(state, f, indent=2)
+
+
+_STANDINGS_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Completed Early'}
+
+
+def _should_refresh_standings(sched):
+    """Return True if standings.json needs a refresh.
+
+    True when the file is missing, or when any game_pk that is now Final
+    was not Final during the last standings refresh.
+    """
+    if not os.path.exists(_data_path('standings.json')):
+        return True
+    try:
+        games = load_json_file('games.json').get('games', [])
+    except Exception:
+        return False
+    current_finals = {
+        str(g['game_pk']) for g in games
+        if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
+    }
+    known_finals = set(sched.get('standings_final_pks', []))
+    return bool(current_finals - known_finals)
 
 
 def _should_skip_poll(date_str, config, sched):
@@ -306,6 +330,21 @@ Examples:
         no_games = _update_schedule_state(game_state_data, date_str, config, sched)
         if no_games:
             return
+
+    # 7b. Standings auto-refresh (only on live runs, not historical --date replays)
+    if not args.date and config.get('show_standings_sidebar', False):
+        if _should_refresh_standings(sched):
+            print("Refreshing standings (new Finals detected or no cache)...")
+            try:
+                get_standings([103, 104], season=datetime.now().year)
+                games = load_json_file('games.json').get('games', [])
+                sched['standings_final_pks'] = [
+                    str(g['game_pk']) for g in games
+                    if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
+                ]
+                _save_schedule_state(sched)
+            except Exception as e:
+                print(f"Warning: standings refresh failed: {e}")
 
     # 8. Render
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
