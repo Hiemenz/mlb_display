@@ -1058,17 +1058,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
         draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
 
-    # Venue — placed right after the time, smaller font, full name no truncation
+    # Venue — right-anchored in header, bold, smaller font to fit full name
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
         venue_clean = _clean_venue_name(game_data.get('venue'))
         if venue_clean:
             try:
-                vx = start_x + 2 + _total_time_w + 3
-                max_venue_w = start_x + horizonta_len - vx - 2
+                max_venue_w = horizonta_len - _total_time_w - 6
                 for vfont, vy in ((font9, 6), (_get_font(5), 8)):
                     if vfont.getlength(venue_clean) <= max_venue_w:
                         break
+                vw = int(vfont.getlength(venue_clean))
+                vx = start_x + horizonta_len - vw - 2
                 draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
+                draw.text((vx + 1, start_y + vy), venue_clean, font=vfont, fill=0)
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress':
