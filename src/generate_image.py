@@ -841,7 +841,7 @@ _NL_DIV_ORDER = [
     'National League West',
 ]
 _SIDEBAR_LOGO_SIZE = 20
-_SIDEBAR_ROW_Y     = [24, 174, 324]   # y start for each division row (matches grid row spacing)
+_SIDEBAR_ROW_Y     = [25, 175, 325]   # y start for each division row (matches grid row spacing)
 _SIDEBAR_ROW_H     = 150              # height per division section (grid row spacing)
 _SIDEBAR_VERTICAL_PADDING = 5
 
