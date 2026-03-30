@@ -1039,9 +1039,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_state_str = extra + ' ' + str(game_data['current_inning'])
     
 
-    # game state — bold via double draw; always shown including pre-game time
-    draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
-    draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
+    # game state — bold via double draw; for pre-game times render AM/PM smaller
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
+        _time_parts = game_state_str.rsplit(' ', 1)
+        _time_main, _time_ampm = _time_parts[0], _time_parts[1].lower()
+        for _dx in (2, 3):
+            draw.text((start_x + _dx, start_y + 3), _time_main, font=font14, fill=0)
+        _main_w = int(font14.getlength(_time_main))
+        draw.text((start_x + 3 + _main_w + 1, start_y + 6), _time_ampm, font=font9, fill=0)
+    else:
+        draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
+        draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
     if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
         draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
 
@@ -1269,25 +1277,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 67 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
 
         
-    # Bottom-right game time for upcoming games
-    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
-        try:
-            from datetime import datetime
-            dt = datetime.strptime(game_data['game_start'], "%Y-%m-%dT%H:%M:%SZ")
-            time_str = dt.strftime("%I:%M %p").lstrip("0")
-        except Exception:
-            time_str = game_data.get('game_start', '')
-
-        try:
-            bbox = draw.textbbox((0, 0), time_str, font=font14)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-        except Exception:
-            text_w, text_h = (40, 12)
-
-        time_x = start_x + horizonta_len - text_w - 4
-        time_y = start_y + vertical_len + 20 - text_h - 4
-        draw.text((time_x, time_y), time_str, font=font14, fill=0)
 
     # Invert header to indicate a score change during an active game
     if score_changed and is_game_started and not is_game_finished:
