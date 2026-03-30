@@ -1039,10 +1039,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_state_str = extra + ' ' + str(game_data['current_inning'])
     
 
-    # game state — bold via double draw; append last play on same line for live games
-    if game_data['detailed_state'] not in ('Scheduled', 'Pre-Game', 'Warmup'):
-        draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
-        draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
+    # game state — bold via double draw; always shown including pre-game time
+    draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
+    draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
     if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
         draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
 
@@ -1055,7 +1054,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 max_venue_w = horizonta_len - state_w - 5
                 if max_venue_w > 10:
                     # Pick largest font that fits
-                    for vfont, vy in ((font14, 3), (font11, 5), (font9, 6)):
+                    for vfont, vy in ((font14, 3), (font11, 5), (font9, 6), (_get_font(5), 7)):
                         vw = vfont.getlength(venue_clean)
                         if vw <= max_venue_w:
                             break
