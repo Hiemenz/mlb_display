@@ -217,8 +217,8 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
         game_id = data.get('team_to_game_id').get(team_abbr)
     
     game_info = data.get('games_scheduled').get(game_id)
-    away_probable = game_info.get('away_probable')
-    home_probable = game_info.get('home_probable')
+    away_probable = _pitcher_line(game_info.get('away_probable'), game_info.get('away_probable_note'))
+    home_probable = _pitcher_line(game_info.get('home_probable'), game_info.get('home_probable_note'))
     winner_name = game_info.get('winner_name')
     loser_name = game_info.get('loser_name')
     venue = game_info.get('venue')
@@ -496,16 +496,21 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
     elif game_state in ('Final'):
         draw.text(( col_start + 0 , row_start + 93), f'WP: {winner_name}  LP: {loser_name}' , font = font18, fill = 0)
     
-    draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0)
+    draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0, stroke_width=1, stroke_fill=0)
     draw.text((25 + col_start, 30 + row_start), away_team, font = font24, fill = 0)
     draw.text((25 + col_start, 60 + row_start), home_team, font = font24, fill = 0)
-    
+
     if game_state == 'Delayed Start':
-        game_state = 'Delayed'    
-         
+        game_state = 'Delayed'
+
     if weather_temp and weather_condition and weather_wind:
         draw.text(( col_start + 0 , row_start - 18), f'{weather_temp}°F | {weather_condition} | {weather_wind}', font = font14, fill = 0)
-    draw.text(( col_start + 460 , row_start + 93), venue, font = font18, fill = 0)
+    _venue_str = _clean_venue_name(venue) or (venue or '')
+    _venue_max_x = 800 - (col_start + 460)
+    for _vfont in (font18, font14, _get_font(5)):
+        if _vfont.getlength(_venue_str) <= _venue_max_x:
+            break
+    draw.text((col_start + 460, row_start + 93), _venue_str, font=_vfont, fill=0)
     
     
     # lines horizontal
