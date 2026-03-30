@@ -840,9 +840,10 @@ _NL_DIV_ORDER = [
     'National League Central',
     'National League West',
 ]
-_SIDEBAR_LOGO_SIZE = 26
-_SIDEBAR_ROW_Y     = [30, 180, 330]   # y start for each division row (matches grid row spacing)
+_SIDEBAR_LOGO_SIZE = 20
+_SIDEBAR_ROW_Y     = [25, 175, 325]   # y start for each division row (matches grid row spacing)
 _SIDEBAR_ROW_H     = 150              # height per division section (grid row spacing)
+_SIDEBAR_VERTICAL_PADDING = 5
 
 
 def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
@@ -870,12 +871,12 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
         teams = standings_data.get('standings', {}).get(div_name, [])
         teams = sorted(teams, key=lambda t: int(t.get('divisionRank', 99)))
         y_section = _SIDEBAR_ROW_Y[row_idx]
-        slot_h    = _SIDEBAR_ROW_H // 5   # 30px per team slot
+        slot_h    = (_SIDEBAR_ROW_H - (_SIDEBAR_VERTICAL_PADDING * 2)) // 5
 
         for slot_idx, team in enumerate(teams[:5]):
             team_id = str(team.get('team_id', ''))
             abbr    = abbr_map.get(team_id, f'T{team_id}')
-            logo_y  = y_section + slot_idx * slot_h + 2   # 2px top margin
+            logo_y  = y_section + _SIDEBAR_VERTICAL_PADDING + slot_idx * slot_h
 
             logo_img = _logo_small(abbr, team_id, size=_SIDEBAR_LOGO_SIZE)
             if logo_img is not None:
@@ -884,10 +885,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
                 font = _get_font(9)
                 draw.text((logo_x, logo_y + 8), abbr[:3], font=font, fill=0)
 
-        # Thin separator between division sections (not after the last one)
-        if row_idx < 2:
-            sep_y = y_section + _SIDEBAR_ROW_H
-            draw.line((sep_x0, sep_y, sep_x1, sep_y), fill=0, width=1)
+        # Removed separator lines between division sections
 
     return Himage
 
@@ -1014,10 +1012,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     elif game_data['detailed_state'] == 'Warmup':
         game_state_str = game_data['detailed_state'] 
         
-        
     elif game_data['detailed_state'] == 'Scheduled'  or game_data['detailed_state'] == 'Pre-Game':
-        game_state_str = game_data['game_start'] 
-        
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(game_data['game_start'], "%Y-%m-%dT%H:%M:%SZ")
+            game_state_str = dt.strftime("%I:%M %p").lstrip("0")
+        except Exception:
+            game_state_str = game_data['game_start']
     else:
         extra = ''
         if game_data.get('inningState'):
@@ -1032,13 +1033,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
         game_state_str = extra + ' ' + str(game_data['current_inning'])
     
-    # Strip AM/PM from pre-game time display
-    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
-        game_state_str = game_state_str.replace(' PM', '').replace(' AM', '')
 
     # game state — bold via double draw; append last play on same line for live games
-    draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
-    draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
+    if game_data['detailed_state'] not in ('Scheduled', 'Pre-Game', 'Warmup'):
+        draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
+        draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
     if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
         draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
 
@@ -1266,6 +1265,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 67 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
 
         
+    # Bottom-right game time for upcoming games
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(game_data['game_start'], "%Y-%m-%dT%H:%M:%SZ")
+            time_str = dt.strftime("%I:%M %p").lstrip("0")
+        except Exception:
+            time_str = game_data.get('game_start', '')
+
+        try:
+            bbox = draw.textbbox((0, 0), time_str, font=font14)
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
+        except Exception:
+            text_w, text_h = (40, 12)
+
+        time_x = start_x + horizonta_len - text_w - 4
+        time_y = start_y + vertical_len + 20 - text_h - 4
+        draw.text((time_x, time_y), time_str, font=font14, fill=0)
+
     # Invert header to indicate a score change during an active game
     if score_changed and is_game_started and not is_game_finished:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1, start_y + 21))

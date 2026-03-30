@@ -1,6 +1,6 @@
 # MLB Display Configuration
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
-scoreboard: true
+scoreboard: false
 
 # Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch"
 # If set, overrides the scoreboard: true/false flag above.
@@ -47,7 +47,7 @@ night_end: 7     # 7am
 
 # Team emoji overrides: display emoji instead of logo for these teams
 # Dark mode: invert display (white on black instead of black on white)
-dark_mode: true
+dark_mode: false
 
 # Team logos: display PNG logos instead of 3-letter abbreviations
 # Requires logo files in pic/logos/{ABBR}.png — run src/download_logos.py to fetch them
