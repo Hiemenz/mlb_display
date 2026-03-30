@@ -1039,44 +1039,36 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_state_str = extra + ' ' + str(game_data['current_inning'])
     
 
-    # game state — bold via double draw; for pre-game times render AM/PM smaller
+    # game state — bold via double draw; for pre-game times render AM/PM smaller + bold
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
         _time_parts = game_state_str.rsplit(' ', 1)
         _time_main, _time_ampm = _time_parts[0], _time_parts[1].lower()
         for _dx in (2, 3):
             draw.text((start_x + _dx, start_y + 3), _time_main, font=font14, fill=0)
         _main_w = int(font14.getlength(_time_main))
-        draw.text((start_x + 3 + _main_w + 1, start_y + 6), _time_ampm, font=font9, fill=0)
+        _ampm_x = start_x + 3 + _main_w + 1
+        _ampm_y = start_y + 8
+        draw.text((_ampm_x, _ampm_y), _time_ampm, font=font9, fill=0)
+        draw.text((_ampm_x + 1, _ampm_y), _time_ampm, font=font9, fill=0)
+        _total_time_w = _main_w + int(font9.getlength(_time_ampm)) + 2
     else:
         draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
         draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
+        _total_time_w = int(font14.getlength(game_state_str))
     if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
         draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
 
-    # Venue — right-aligned in header for pre-game and postponed states
+    # Venue — placed right after the time, smaller font, full name no truncation
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
         venue_clean = _clean_venue_name(game_data.get('venue'))
         if venue_clean:
             try:
-                state_w = int(font14.getlength(game_state_str))
-                max_venue_w = horizonta_len - state_w - 5
-                if max_venue_w > 10:
-                    # Pick largest font that fits
-                    for vfont, vy in ((font14, 3), (font11, 5), (font9, 6), (_get_font(5), 7)):
-                        vw = vfont.getlength(venue_clean)
-                        if vw <= max_venue_w:
-                            break
-                        # truncate to fit this font before trying next
-                        name = venue_clean
-                        while vfont.getlength(name) > max_venue_w and len(name) > 1:
-                            name = name[:-1]
-                        if len(name) >= 4:  # meaningful truncation
-                            venue_clean = name
-                            vw = vfont.getlength(venue_clean)
-                            break
-                    vx = start_x + horizonta_len - int(vw) - 2
-                    draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
-                    draw.text((vx + 1, start_y + vy), venue_clean, font=vfont, fill=0)
+                vx = start_x + 2 + _total_time_w + 3
+                max_venue_w = start_x + horizonta_len - vx - 2
+                for vfont, vy in ((font9, 6), (_get_font(5), 8)):
+                    if vfont.getlength(venue_clean) <= max_venue_w:
+                        break
+                draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress':
