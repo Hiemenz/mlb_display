@@ -217,8 +217,8 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
         game_id = data.get('team_to_game_id').get(team_abbr)
     
     game_info = data.get('games_scheduled').get(game_id)
-    away_probable = game_info.get('away_probable')
-    home_probable = game_info.get('home_probable')
+    away_probable = _pitcher_line(game_info.get('away_probable'), game_info.get('away_probable_note'))
+    home_probable = _pitcher_line(game_info.get('home_probable'), game_info.get('home_probable_note'))
     winner_name = game_info.get('winner_name')
     loser_name = game_info.get('loser_name')
     venue = game_info.get('venue')
@@ -496,16 +496,21 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
     elif game_state in ('Final'):
         draw.text(( col_start + 0 , row_start + 93), f'WP: {winner_name}  LP: {loser_name}' , font = font18, fill = 0)
     
-    draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0)
+    draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0, stroke_width=1, stroke_fill=0)
     draw.text((25 + col_start, 30 + row_start), away_team, font = font24, fill = 0)
     draw.text((25 + col_start, 60 + row_start), home_team, font = font24, fill = 0)
-    
+
     if game_state == 'Delayed Start':
-        game_state = 'Delayed'    
-         
+        game_state = 'Delayed'
+
     if weather_temp and weather_condition and weather_wind:
         draw.text(( col_start + 0 , row_start - 18), f'{weather_temp}°F | {weather_condition} | {weather_wind}', font = font14, fill = 0)
-    draw.text(( col_start + 460 , row_start + 93), venue, font = font18, fill = 0)
+    _venue_str = _clean_venue_name(venue) or (venue or '')
+    _venue_max_x = 800 - (col_start + 460)
+    for _vfont in (font18, font14, _get_font(5)):
+        if _vfont.getlength(_venue_str) <= _venue_max_x:
+            break
+    draw.text((col_start + 460, row_start + 93), _venue_str, font=_vfont, fill=0)
     
     
     # lines horizontal
@@ -1034,37 +1039,37 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_state_str = extra + ' ' + str(game_data['current_inning'])
     
 
-    # game state — bold via double draw; append last play on same line for live games
-    if game_data['detailed_state'] not in ('Scheduled', 'Pre-Game', 'Warmup'):
+    # game state — bold via double draw; for pre-game times render AM/PM smaller + bold
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
+        _time_parts = game_state_str.rsplit(' ', 1)
+        _time_main, _time_ampm = _time_parts[0], _time_parts[1].lower()
+        for _dx in (2, 3):
+            draw.text((start_x + _dx, start_y + 3), _time_main, font=font14, fill=0)
+        _main_w = int(font14.getlength(_time_main))
+        _ampm_x = start_x + 3 + _main_w + 1
+        _ampm_y = start_y + 8
+        draw.text((_ampm_x, _ampm_y), _time_ampm, font=font9, fill=0)
+        draw.text((_ampm_x + 1, _ampm_y), _time_ampm, font=font9, fill=0)
+        _total_time_w = _main_w + int(font9.getlength(_time_ampm)) + 2
+    else:
         draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
         draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
+        _total_time_w = int(font14.getlength(game_state_str))
     if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
         draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
 
-    # Venue — right-aligned in header for pre-game and postponed states
+    # Venue — right-anchored in header, bold, smaller font to fit full name
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
         venue_clean = _clean_venue_name(game_data.get('venue'))
         if venue_clean:
             try:
-                state_w = int(font14.getlength(game_state_str))
-                max_venue_w = horizonta_len - state_w - 5
-                if max_venue_w > 10:
-                    # Pick largest font that fits
-                    for vfont, vy in ((font14, 3), (font11, 5), (font9, 6)):
-                        vw = vfont.getlength(venue_clean)
-                        if vw <= max_venue_w:
-                            break
-                        # truncate to fit this font before trying next
-                        name = venue_clean
-                        while vfont.getlength(name) > max_venue_w and len(name) > 1:
-                            name = name[:-1]
-                        if len(name) >= 4:  # meaningful truncation
-                            venue_clean = name
-                            vw = vfont.getlength(venue_clean)
-                            break
-                    vx = start_x + horizonta_len - int(vw) - 2
-                    draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
-                    draw.text((vx + 1, start_y + vy), venue_clean, font=vfont, fill=0)
+                max_venue_w = horizonta_len - _total_time_w - 6
+                for vfont, vy in ((_get_font(10), 5), (font9, 6), (_get_font(8), 6), (_get_font(7), 7)):
+                    if vfont.getlength(venue_clean) <= max_venue_w:
+                        break
+                vw = int(vfont.getlength(venue_clean))
+                vx = start_x + horizonta_len - vw - 2
+                draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress':
@@ -1265,25 +1270,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 67 + check_if_two_chars(home_runs), start_y + 55), home_runs, font=font24, fill=0)
 
         
-    # Bottom-right game time for upcoming games
-    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
-        try:
-            from datetime import datetime
-            dt = datetime.strptime(game_data['game_start'], "%Y-%m-%dT%H:%M:%SZ")
-            time_str = dt.strftime("%I:%M %p").lstrip("0")
-        except Exception:
-            time_str = game_data.get('game_start', '')
-
-        try:
-            bbox = draw.textbbox((0, 0), time_str, font=font14)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-        except Exception:
-            text_w, text_h = (40, 12)
-
-        time_x = start_x + horizonta_len - text_w - 4
-        time_y = start_y + vertical_len + 20 - text_h - 4
-        draw.text((time_x, time_y), time_str, font=font14, fill=0)
 
     # Invert header to indicate a score change during an active game
     if score_changed and is_game_started and not is_game_finished:
