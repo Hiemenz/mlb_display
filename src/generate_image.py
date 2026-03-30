@@ -1064,7 +1064,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if venue_clean:
             try:
                 max_venue_w = horizonta_len - _total_time_w - 6
-                for vfont, vy in ((_get_font(10), 5), (font9, 6), (_get_font(6), 8)):
+                for vfont, vy in ((_get_font(10), 5), (font9, 6), (_get_font(8), 6), (_get_font(7), 7), (_get_font(6), 8)):
                     if vfont.getlength(venue_clean) <= max_venue_w:
                         break
                 vw = int(vfont.getlength(venue_clean))
