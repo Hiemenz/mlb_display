@@ -54,6 +54,12 @@ dark_mode: true
 # Falls back to text abbreviation when a logo file is missing
 use_team_logos: True
 
+# Show AL/NL division standings as vertical logo strips on the left/right edges of the scoreboard.
+# AL (East/Central/West) on the left, NL on the right. Teams ordered 1st (top) to 5th (bottom).
+# Standings are cached in data/standings.json and only re-fetched when a game goes Final.
+# Run `python src/standings.py` once to seed the cache before enabling this.
+show_standings_sidebar: true
+
 # Small logo X offset: pixels from the left edge of each score box where the small logo is placed.
 # Set to 2 to align with the box edge. Increase to shift the logo right.
 small_logo_x_offset: 2
