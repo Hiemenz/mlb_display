@@ -38,55 +38,38 @@ def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
     return local_time.strftime("%-I:%M %p")
 
 
-def get_last_play_result(game_pk):
-    """Fetch the last play result for a game in progress."""
-    try:
-        response = requests.get(f'https://statsapi.mlb.com/api/v1/game/{game_pk}/feed/live')
-        if response.status_code == 200:
-            data = response.json()
-            plays_data = data.get('liveData', {}).get('plays', {})
-            current_play = plays_data.get('currentPlay', {})
-            result = current_play.get('result', {}).get('description', '')
-            if result:
-                return result
-            event = current_play.get('result', {}).get('event', '')
-            if event:
-                return event
-            all_plays = plays_data.get('allPlays', [])
-            if all_plays:
-                last_play = all_plays[-1]
-                result = last_play.get('result', {}).get('description', '')
-                if result:
-                    return result
-                event = last_play.get('result', {}).get('event', '')
-                if event:
-                    return event
-    except Exception as e:
-        print(f"Error fetching last play for game {game_pk}: {e}")
-    return None
-
+_SUBSTITUTION_TYPES = ('substitution', 'timeout', 'advisory')
 
 def fetch_win_probability(game_pk):
-    """Return (away_wp, home_wp) as floats 0-100 for the most recent play, or (None, None)."""
+    """Return (away_wp, home_wp, last_play) from the winProbability endpoint, or (None, None, None)."""
     try:
         url = f'https://statsapi.mlb.com/api/v1/game/{game_pk}/winProbability'
         response = requests.get(url, timeout=5)
         data = response.json()
         if not isinstance(data, list) or not data:
-            return None, None
+            return None, None, None
         last = data[-1]
         away_wp = last.get('awayTeamWinProbability')
         home_wp = last.get('homeTeamWinProbability')
+        # Scan backwards for the last real play (skip substitutions/challenges)
+        last_play = None
+        for entry in reversed(data):
+            event_type = (entry.get('result', {}).get('eventType') or '').lower()
+            event = entry.get('result', {}).get('event') or ''
+            if event and not any(s in event_type for s in _SUBSTITUTION_TYPES):
+                last_play = event
+                break
         if away_wp is not None and home_wp is not None:
             away_wp = float(away_wp)
             home_wp = float(home_wp)
             if away_wp + home_wp <= 1.5:  # API returns 0-1 fractions
                 away_wp *= 100
                 home_wp *= 100
-            return away_wp, home_wp
-        return None, None
+        else:
+            away_wp, home_wp = None, None
+        return away_wp, home_wp, last_play
     except Exception:
-        return None, None
+        return None, None, None
 
 
 def fetch_all_team_abbreviations(sport_id=1):
@@ -205,7 +188,6 @@ def parse_games(data, sport_id=None, config=None):
 
     game_array = []
     max_live_calls = config.get('max_live_game_calls', 5)
-    fetch_last_play = config.get('fetch_last_play', True)
     live_calls_made = 0
 
     team_abbreviations = load_json_file('teams.json').get('team_abbreviation', {})
@@ -229,13 +211,6 @@ def parse_games(data, sport_id=None, config=None):
         home_team_id = home_team_info.get('id')
 
         last_play_result = None
-        if fetch_last_play and detailed_state == 'In Progress':
-            if live_calls_made < max_live_calls:
-                print(f"Fetching live game data for game {game_id} ({live_calls_made + 1}/{max_live_calls})")
-                last_play_result = get_last_play_result(game_id)
-                live_calls_made += 1
-            else:
-                print(f"Skipping live game data for game {game_id} (limit of {max_live_calls} reached)")
 
         save_situation = False
         if detailed_state == 'In Progress':
@@ -319,10 +294,13 @@ def parse_games(data, sport_id=None, config=None):
             'save_situation': save_situation,
             'game_pk': game_id,
         }
-        if config.get('scoreboard_win_probability', False) and game_dict.get('detailed_state') == 'In Progress':
-            away_wp, home_wp = fetch_win_probability(game_id)
-            game_dict['away_win_probability'] = away_wp
-            game_dict['home_win_probability'] = home_wp
+        if game_dict.get('detailed_state') == 'In Progress' and live_calls_made < max_live_calls:
+            away_wp, home_wp, last_play = fetch_win_probability(game_id)
+            live_calls_made += 1
+            game_dict['last_play'] = last_play
+            if config.get('scoreboard_win_probability', False):
+                game_dict['away_win_probability'] = away_wp
+                game_dict['home_win_probability'] = home_wp
         game_array.append(game_dict)
 
     save_off_results({'games': game_array}, 'games')

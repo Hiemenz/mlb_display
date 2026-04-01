@@ -988,19 +988,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             venue_ppd_txt, venue_ppd_fnt = fit_text(venue_ppd, max_text_width)
             draw.text((start_x + 7, start_y + 25 + 74), venue_ppd_txt, font=venue_ppd_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
-        # Show last play result if available, otherwise show pitcher/hitter
-        last_play = game_data.get('last_play')
-        if last_play:
-            if len(last_play) > 45:
-                last_play = last_play[:42] + '...'
-            draw.text((start_x + 5, start_y + 25 + 59), 'Last:', font=font14, fill=0)
-            draw.text((start_x + 5, start_y + 25 + 74), last_play, font=font14, fill=0)
-        else:
-            # Fallback to showing current matchup
-            pitcher_str, pitcher_font = fit_text(f'P: {game_data.get("current_pitcher") or ""}', max_text_width)
-            hitter_str, hitter_font = fit_text(f'AB: {game_data.get("current_hitter") or ""}', max_text_width)
-            draw.text((start_x + 5, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
-            draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
+        pitcher_str, pitcher_font = fit_text(f'P: {game_data.get("current_pitcher") or ""}', max_text_width)
+        hitter_str, hitter_font = fit_text(f'AB: {game_data.get("current_hitter") or ""}', max_text_width)
+        draw.text((start_x + 5, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
+        draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
         
     if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
         # Normalize display labels
@@ -1075,12 +1066,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if raw_play:
             max_play_w = horizonta_len - _total_time_w - 10
             play_text = raw_play
-            while play_text and int(font11.getlength(play_text)) > max_play_w:
+            _play_font = _get_font(12)
+            while play_text and int(_play_font.getlength(play_text)) > max_play_w:
                 play_text = play_text[:-2] + '…'
             if play_text:
-                pw = int(font11.getlength(play_text))
+                pw = int(_play_font.getlength(play_text))
                 px = start_x + horizonta_len - pw - 2
-                draw.text((px, start_y + 5), play_text, font=font11, fill=0)
+                draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
+                draw.text((px + 1, start_y + 4), play_text, font=_play_font, fill=0)
 
     # Initialize score variables (will be used later for winner display)
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
@@ -1221,7 +1214,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
         if game_data.get('save_situation'):
             sv_w = int(font11.getlength('SV'))
-            draw.text((start_x + horizonta_len - sv_w - 2, start_y + 25 + 59), 'SV', font=font11, fill=0)
+            draw.text((start_x + horizonta_len - sv_w - 2, start_y + 25 + 61), 'SV', font=font11, fill=0)
     else:
 
         # Perfect game takes precedence over no-hitter display

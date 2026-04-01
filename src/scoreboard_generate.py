@@ -304,10 +304,12 @@ def parse_games(data, sport_id=None):
             'game_pk': game_id,
         }
 
-        if config_data.get('scoreboard_win_probability', False) and game_dict.get('detailed_state') == 'In Progress':
-            away_wp, home_wp = fetch_win_probability(game_id)
-            game_dict['away_win_probability'] = away_wp
-            game_dict['home_win_probability'] = home_wp
+        if game_dict.get('detailed_state') == 'In Progress':
+            away_wp, home_wp, last_play = fetch_win_probability(game_id)
+            game_dict['last_play'] = last_play
+            if config_data.get('scoreboard_win_probability', False):
+                game_dict['away_win_probability'] = away_wp
+                game_dict['home_win_probability'] = home_wp
 
         game_array.append(game_dict)
 
