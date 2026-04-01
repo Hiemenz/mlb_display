@@ -1055,8 +1055,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
         draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
         _total_time_w = int(font14.getlength(game_state_str))
-    if game_data['detailed_state'] == 'In Progress' and game_data.get('save_situation'):
-        draw.text((start_x + 112, start_y + 3), 'SV', font=font11, fill=0)
 
     # Venue — right-anchored in header, bold, smaller font to fit full name
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
@@ -1075,8 +1073,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if game_data['detailed_state'] == 'In Progress':
         raw_play = game_data.get('last_play') or ''
         if raw_play:
-            inline_play = raw_play if len(raw_play) <= 11 else raw_play[:10] + '…'
-            draw.text((start_x + 60, start_y + 5), inline_play, font=font11, fill=0)
+            max_play_w = horizonta_len - _total_time_w - 10
+            play_text = raw_play
+            while play_text and int(font11.getlength(play_text)) > max_play_w:
+                play_text = play_text[:-2] + '…'
+            if play_text:
+                pw = int(font11.getlength(play_text))
+                px = start_x + horizonta_len - pw - 2
+                draw.text((px, start_y + 5), play_text, font=font11, fill=0)
 
     # Initialize score variables (will be used later for winner display)
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
@@ -1214,6 +1218,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
         Himage = draw_circle(Himage, (start_x + 22 + 63, start_y + 25 + 68), 4, strikes_list[0])
         Himage = draw_circle(Himage, (start_x + 34 + 63, start_y + 25 + 68), 4, strikes_list[1])
+
+        if game_data.get('save_situation'):
+            sv_w = int(font11.getlength('SV'))
+            draw.text((start_x + horizonta_len - sv_w - 2, start_y + 25 + 59), 'SV', font=font11, fill=0)
     else:
 
         # Perfect game takes precedence over no-hitter display
