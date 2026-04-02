@@ -159,6 +159,10 @@ def fetch_wildcard_standings(season=None, date=None):
 
             for record in data.get('records', []):
                 for team_record in record.get('teamRecords', []):
+                    # Skip division leaders — they aren't competing for the wildcard
+                    if team_record.get('divisionLeader', False):
+                        continue
+
                     team_id = str(team_record.get('team', {}).get('id', ''))
                     abbr = team_abbreviation_list.get(team_id)
                     if not abbr:

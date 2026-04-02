@@ -21,7 +21,7 @@ from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations,
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
-from standings import get_standings, fetch_wildcard_standings
+from standings import get_standings
 
 
 # ---------------------------------------------------------------------------
@@ -347,11 +347,6 @@ Examples:
             except Exception as e:
                 print(f"Warning: standings refresh failed: {e}")
 
-        if config.get('show_wildcard_standings', False):
-            try:
-                fetch_wildcard_standings(season=datetime.now().year)
-            except Exception as e:
-                print(f"Warning: wildcard standings refresh failed: {e}")
 
     # 8. Render
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
