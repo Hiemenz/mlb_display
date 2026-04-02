@@ -9,7 +9,8 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from PIL import Image, ImageOps
-from generate_image import draw_out_of_town_score_board, load_yaml_file
+from generate_image import draw_out_of_town_score_board, draw_wildcard_header, draw_standings_sidebar, derive_wildcard_from_standings, load_yaml_file
+from util import load_json_file
 from datetime import date
 
 # 15 matchups covering all 30 teams
@@ -84,6 +85,33 @@ def make_games(flip=False):
         })
     return games
 
+FAKE_WILDCARD = {
+    'AL': [
+        {'abbr': 'NYY', 'rank': 1, 'gb': '-'},
+        {'abbr': 'BOS', 'rank': 2, 'gb': '+1.0'},
+        {'abbr': 'TB',  'rank': 3, 'gb': '+2.5'},
+        {'abbr': 'CLE', 'rank': 4, 'gb': '+3.0'},
+        {'abbr': 'HOU', 'rank': 5, 'gb': '+4.0'},
+        {'abbr': 'SEA', 'rank': 6, 'gb': '+5.5'},
+        {'abbr': 'MIN', 'rank': 7, 'gb': '+6.0'},
+        {'abbr': 'TEX', 'rank': 8, 'gb': '+7.5'},
+        {'abbr': 'DET', 'rank': 9, 'gb': '+9.0'},
+        {'abbr': 'TOR', 'rank':10, 'gb': '+10.5'},
+    ],
+    'NL': [
+        {'abbr': 'NYM', 'rank': 1, 'gb': '-'},
+        {'abbr': 'ATL', 'rank': 2, 'gb': '+1.5'},
+        {'abbr': 'PHI', 'rank': 3, 'gb': '+2.0'},
+        {'abbr': 'MIL', 'rank': 4, 'gb': '+3.5'},
+        {'abbr': 'CHC', 'rank': 5, 'gb': '+4.0'},
+        {'abbr': 'SF',  'rank': 6, 'gb': '+5.0'},
+        {'abbr': 'SD',  'rank': 7, 'gb': '+6.5'},
+        {'abbr': 'AZ',  'rank': 8, 'gb': '+8.0'},
+        {'abbr': 'STL', 'rank': 9, 'gb': '+9.5'},
+        {'abbr': 'CIN', 'rank':10, 'gb': '+11.0'},
+    ],
+}
+
 date_str = str(date.today())
 out_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -98,6 +126,12 @@ for flip, label, fname in [
         changed_game_ids=None, use_logos=True
     )
     config = load_yaml_file('config.yaml')
+    standings_data = load_json_file('standings.json')
+    if config.get('show_wildcard_standings', False) and standings_data and 'standings' in standings_data:
+        img = draw_wildcard_header(img, derive_wildcard_from_standings(standings_data))
+    if config.get('show_standings_sidebar', False) and standings_data and 'standings' in standings_data:
+        img = draw_standings_sidebar(img, standings_data, team_data, side='left')
+        img = draw_standings_sidebar(img, standings_data, team_data, side='right')
     if config.get('dark_mode', False):
         img = ImageOps.invert(img)
     path = os.path.join(out_dir, f'{fname}.png')

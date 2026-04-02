@@ -128,6 +128,68 @@ def get_standings(league_id_list, season=2025, date=None):
     
     
     
+def fetch_wildcard_standings(season=None, date=None):
+    """Fetch wildcard standings for AL (103) and NL (104), save data/wildcard_standings.json.
+
+    Returns {'AL': [...], 'NL': [...]} where each entry has:
+        abbr, team_id, rank (int), gb (str e.g. '-' or '+1.5')
+    """
+    if season is None:
+        season = datetime.now().year
+
+    result = {'AL': [], 'NL': []}
+    league_map = {103: 'AL', 104: 'NL'}
+
+    for league_id, league_key in league_map.items():
+        url = (
+            f'https://statsapi.mlb.com/api/v1/standings'
+            f'?leagueId={league_id}&standingsType=wildCard&season={season}'
+        )
+        if date:
+            url += f'&date={date}'
+
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code != 200:
+                print(f'Warning: wildcard standings API returned {response.status_code} for league {league_id}')
+                continue
+
+            data = response.json()
+            teams = []
+
+            for record in data.get('records', []):
+                for team_record in record.get('teamRecords', []):
+                    # Skip division leaders — they aren't competing for the wildcard
+                    if team_record.get('divisionLeader', False):
+                        continue
+
+                    team_id = str(team_record.get('team', {}).get('id', ''))
+                    abbr = team_abbreviation_list.get(team_id)
+                    if not abbr:
+                        abbr = team_record.get('team', {}).get('abbreviation', f'T{team_id}')
+                        if team_id:
+                            team_abbreviation_list[team_id] = abbr
+
+                    wc_rank = team_record.get('wildCardRank')
+                    wc_gb = team_record.get('wildCardGamesBack') or '-'
+
+                    teams.append({
+                        'abbr': abbr,
+                        'team_id': team_id,
+                        'rank': int(wc_rank) if wc_rank else 99,
+                        'gb': wc_gb,
+                    })
+
+            teams.sort(key=lambda t: t['rank'])
+            result[league_key] = teams[:10]
+
+        except Exception as e:
+            print(f'Error fetching wildcard standings for league {league_id}: {e}')
+
+    save_off_results(result, 'wildcard_standings')
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description='Fetch MLB standings for a specific season or date')
     parser.add_argument('--season', '-s', type=int, default=datetime.now().year,

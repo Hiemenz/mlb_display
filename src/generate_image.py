@@ -851,6 +851,95 @@ _SIDEBAR_ROW_H     = 150              # height per division section (grid row sp
 _SIDEBAR_VERTICAL_PADDING = 5
 
 
+# Wildcard header strip — aligned directly over the score boxes (x=32..767)
+# Corners (x=0..31 and x=768..799) are left as dead space for the sidebar logos.
+_WC_BOX_X_START = 32                              # matches x_start in draw_out_of_town_score_board
+_WC_BOX_X_END   = 767                             # right edge of last box column (632+135)
+_WC_MID         = (_WC_BOX_X_START + _WC_BOX_X_END) // 2   # = 399
+_WC_SLOT_W      = 24                                        # px per slot (2px padding around 20px logo)
+_WC_STRIP_H     = 30                              # matches y_start of boxes
+_WC_LOGO_SZ     = _SIDEBAR_LOGO_SIZE              # same 20px as the sidebar
+
+_AL_DIVISIONS = ['American League East', 'American League Central', 'American League West']
+_NL_DIVISIONS = ['National League East', 'National League Central', 'National League West']
+
+
+def derive_wildcard_from_standings(standings_data):
+    """Build {'AL': [...], 'NL': [...]} from standings.json.
+
+    Collects all non-division-leader teams per league, sorts by league_rank
+    (overall AL/NL rank already accounts for wildcard position correctly),
+    returns the top 10 per league.
+    Each entry: {'abbr': str, 'team_id': str, 'gb': str}.
+    """
+    abbr_map = standings_data.get('team_abbreviation', {})
+    divisions = standings_data.get('standings', {})
+    result = {}
+
+    for league_key, div_names in (('AL', _AL_DIVISIONS), ('NL', _NL_DIVISIONS)):
+        teams = []
+        for div in div_names:
+            for t in divisions.get(div, []):
+                if str(t.get('divisionRank', '')) == '1':
+                    continue  # skip division leaders
+                team_id = str(t.get('team_id', ''))
+                abbr = abbr_map.get(team_id, t.get('team_name', '???')[:3].upper())
+                try:
+                    rank = int(t.get('league_rank', 999))
+                except (ValueError, TypeError):
+                    rank = 999
+                teams.append({
+                    'abbr': abbr,
+                    'team_id': team_id,
+                    'gb': t.get('wild_card_games_back') or '-',
+                    'rank': rank,
+                })
+        teams.sort(key=lambda t: t['rank'])
+        result[league_key] = teams[:10]
+
+    return result
+
+
+def draw_wildcard_header(Himage, wildcard_data):
+    """Draw a compact wildcard standings strip across the top of the display (y=0..30).
+
+    AL wildcard (10 teams) left-to-right in the left half (rank 1 at left edge).
+    NL wildcard (10 teams) right-to-left in the right half (rank 1 at right edge).
+    Each slot shows only the team logo, centered vertically and horizontally.
+    Falls back to 3-letter abbreviation (font9) when no logo is available.
+    No separator lines are drawn.
+    """
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9)
+
+    def _draw_slot(slot_x, team):
+        abbr    = (team.get('abbr') or '???')[:4]
+        team_id = str(team.get('team_id', ''))
+
+        logo = _logo_small(abbr, team_id, size=_WC_LOGO_SZ)
+        if logo is not None:
+            lw, lh = logo.size
+            logo_x = slot_x + (_WC_SLOT_W - lw) // 2
+            logo_y = (_WC_STRIP_H - lh) // 2
+            Himage.paste(logo, (logo_x, logo_y))
+        else:
+            abbr_w = int(font.getlength(abbr))
+            draw.text((slot_x + (_WC_SLOT_W - abbr_w) // 2, (_WC_STRIP_H - 9) // 2), abbr, font=font, fill=0)
+
+    al_teams = wildcard_data.get('AL', [])
+    nl_teams = wildcard_data.get('NL', [])
+
+    # AL: rank 1 at left box edge (x=32), rank 10 toward center
+    for i, team in enumerate(al_teams[:10]):
+        _draw_slot(_WC_BOX_X_START + i * _WC_SLOT_W, team)
+
+    # NL: rank 1 at right box edge (x=767), rank 10 toward center
+    for i, team in enumerate(nl_teams[:10]):
+        _draw_slot(_WC_BOX_X_END - (i + 1) * _WC_SLOT_W, team)
+
+    return Himage
+
+
 def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
     """Draw a vertical strip of division-standings logos on the left (AL) or right (NL) edge.
 
@@ -1381,8 +1470,16 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
     Himage = Image.new('1', (800, 480), 255)
     Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
-    if config.get('show_standings_sidebar', False):
+    standings_data = None
+    if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
         standings_data = load_json_file('standings.json')
+
+    if config.get('show_wildcard_standings', False):
+        if standings_data and 'standings' in standings_data:
+            wildcard_data = derive_wildcard_from_standings(standings_data)
+            Himage = draw_wildcard_header(Himage, wildcard_data)
+
+    if config.get('show_standings_sidebar', False):
         if standings_data and 'standings' in standings_data:
             Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left')
             Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right')
