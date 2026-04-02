@@ -21,7 +21,7 @@ from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations,
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
-from standings import get_standings
+from standings import get_standings, fetch_wildcard_standings
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +332,8 @@ Examples:
             return
 
     # 7b. Standings auto-refresh (only on live runs, not historical --date replays)
-    if not args.date and config.get('show_standings_sidebar', False):
+    _needs_standings = config.get('show_standings_sidebar', False) or config.get('show_wildcard_standings', False)
+    if not args.date and _needs_standings:
         if _should_refresh_standings(sched):
             print("Refreshing standings (new Finals detected or no cache)...")
             try:
@@ -345,6 +346,12 @@ Examples:
                 _save_schedule_state(sched)
             except Exception as e:
                 print(f"Warning: standings refresh failed: {e}")
+
+        if config.get('show_wildcard_standings', False):
+            try:
+                fetch_wildcard_standings(season=datetime.now().year)
+            except Exception as e:
+                print(f"Warning: wildcard standings refresh failed: {e}")
 
     # 8. Render
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')

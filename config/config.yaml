@@ -59,6 +59,13 @@ use_team_logos: True
 # Run `python src/standings.py` once to seed the cache before enabling this.
 show_standings_sidebar: true
 
+# Show AL/NL wildcard standings as a compact horizontal strip at the very top of the scoreboard.
+# AL top-10 left-to-right on the left half, NL top-10 right-to-left on the right half.
+# Rank 1 is at the outer edge; teams converge toward center. Shows abbr + games back per slot.
+# When enabled, replaces the standings sidebar. Seeded by the same standings refresh cycle.
+# Run `python src/standings.py` once to seed the cache, then wildcard refreshes automatically.
+show_wildcard_standings: true
+
 # Small logo X offset: pixels from the left edge of each score box where the small logo is placed.
 # Set to 2 to align with the box edge. Increase to shift the logo right.
 small_logo_x_offset: 2

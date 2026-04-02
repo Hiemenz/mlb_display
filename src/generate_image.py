@@ -851,6 +851,53 @@ _SIDEBAR_ROW_H     = 150              # height per division section (grid row sp
 _SIDEBAR_VERTICAL_PADDING = 5
 
 
+_WC_SLOT_W = 40          # px per team slot in the wildcard header strip
+_WC_STRIP_H = 28         # total height of the wildcard header strip
+_WC_Y_ABBR  = 2          # y offset for team abbreviation text within the strip
+_WC_Y_GB    = 14         # y offset for GB text within the strip
+
+
+def draw_wildcard_header(Himage, wildcard_data):
+    """Draw a compact wildcard standings strip across the top of the display (y=0..28).
+
+    AL wildcard (10 teams) left-to-right in the left half.
+    NL wildcard (10 teams) right-to-left in the right half (rank 1 at right edge).
+    Each slot shows team abbreviation on top and games-back on the bottom.
+    A separator line is drawn at y=_WC_STRIP_H and a vertical divider at x=400.
+    """
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9)
+
+    al_teams = wildcard_data.get('AL', [])
+    nl_teams = wildcard_data.get('NL', [])
+
+    # AL: rank 1 at x=0, rank 10 at x=360
+    for i, team in enumerate(al_teams[:10]):
+        slot_x = i * _WC_SLOT_W
+        abbr = (team.get('abbr') or '???')[:4]
+        gb   = (team.get('gb')   or '-')[:5]
+        abbr_w = int(font.getlength(abbr))
+        gb_w   = int(font.getlength(gb))
+        draw.text((slot_x + (_WC_SLOT_W - abbr_w) // 2, _WC_Y_ABBR), abbr, font=font, fill=0)
+        draw.text((slot_x + (_WC_SLOT_W - gb_w)   // 2, _WC_Y_GB),   gb,   font=font, fill=0)
+
+    # NL: rank 1 at x=760, rank 10 at x=400 (right-to-left)
+    for i, team in enumerate(nl_teams[:10]):
+        slot_x = 800 - (i + 1) * _WC_SLOT_W
+        abbr = (team.get('abbr') or '???')[:4]
+        gb   = (team.get('gb')   or '-')[:5]
+        abbr_w = int(font.getlength(abbr))
+        gb_w   = int(font.getlength(gb))
+        draw.text((slot_x + (_WC_SLOT_W - abbr_w) // 2, _WC_Y_ABBR), abbr, font=font, fill=0)
+        draw.text((slot_x + (_WC_SLOT_W - gb_w)   // 2, _WC_Y_GB),   gb,   font=font, fill=0)
+
+    # Bottom separator and AL/NL center divider
+    draw.line((0, _WC_STRIP_H, 800, _WC_STRIP_H), fill=0)
+    draw.line((400, 0, 400, _WC_STRIP_H), fill=0)
+
+    return Himage
+
+
 def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
     """Draw a vertical strip of division-standings logos on the left (AL) or right (NL) edge.
 
@@ -1381,7 +1428,11 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
     Himage = Image.new('1', (800, 480), 255)
     Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
-    if config.get('show_standings_sidebar', False):
+    if config.get('show_wildcard_standings', False):
+        wildcard_data = load_json_file('wildcard_standings.json')
+        if wildcard_data and ('AL' in wildcard_data or 'NL' in wildcard_data):
+            Himage = draw_wildcard_header(Himage, wildcard_data)
+    elif config.get('show_standings_sidebar', False):
         standings_data = load_json_file('standings.json')
         if standings_data and 'standings' in standings_data:
             Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left')
