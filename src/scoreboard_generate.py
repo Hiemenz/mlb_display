@@ -684,63 +684,276 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
         print("No display update needed - image unchanged")
 
 
-def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame_delay_ms, sport_id, config_data):
-    """Generate an animated GIF of the scoreboard between two local times on a given date.
+_INNING_ORDINALS = {
+    1:'1st', 2:'2nd', 3:'3rd', 4:'4th', 5:'5th', 6:'6th',
+    7:'7th', 8:'8th', 9:'9th', 10:'10th', 11:'11th', 12:'12th',
+    13:'13th', 14:'14th', 15:'15th', 16:'16th', 17:'17th', 18:'18th',
+}
 
-    Fetches game state at each interval step via the MLB API timecode parameter,
-    renders each frame using orchestrate_score_board(bypass_cache=True), and
-    assembles all frames into an animated GIF.
+def _ordinal(n):
+    try:
+        return _INNING_ORDINALS.get(int(n), f'{n}th')
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_mlb_time(time_str):
+    """Parse an MLB API ISO timestamp to a UTC-aware datetime."""
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return pytz.utc.localize(datetime.strptime(time_str, fmt))
+        except ValueError:
+            continue
+    raise ValueError(f"Cannot parse MLB timestamp: {time_str!r}")
+
+
+def _fetch_game_timeline(game_pk):
+    """Fetch the full live feed for one game and return a play-by-play timeline.
+
+    Returns a dict:
+      scheduled_start_utc — UTC-aware datetime of scheduled first pitch
+      first_pitch_utc     — UTC-aware datetime when first play began (or None)
+      last_play_utc       — UTC-aware datetime when last play completed (or None)
+      plays               — list of dicts sorted by end_time, each:
+                              end_time, away_score, home_score, inning,
+                              half_inning ('top'|'bottom'), outs
+    """
+    url = f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
+    resp = requests.get(url, timeout=20)
+    data = resp.json()
+
+    scheduled_start = None
+    dt_str = data.get('gameData', {}).get('datetime', {}).get('dateTime', '')
+    if dt_str:
+        try:
+            scheduled_start = _parse_mlb_time(dt_str)
+        except ValueError:
+            pass
+
+    all_plays = data.get('liveData', {}).get('plays', {}).get('allPlays', [])
+    timeline = []
+    first_pitch = None
+
+    for play in all_plays:
+        about  = play.get('about', {})
+        result = play.get('result', {})
+
+        if first_pitch is None:
+            st = about.get('startTime', '')
+            if st:
+                try:
+                    first_pitch = _parse_mlb_time(st)
+                except ValueError:
+                    pass
+
+        if not about.get('isComplete', False):
+            continue
+        end_str = about.get('endTime', '')
+        if not end_str:
+            continue
+        try:
+            end_time = _parse_mlb_time(end_str)
+        except ValueError:
+            continue
+
+        timeline.append({
+            'end_time':    end_time,
+            'away_score':  result.get('awayScore', 0) or 0,
+            'home_score':  result.get('homeScore', 0) or 0,
+            'inning':      about.get('inning', 1),
+            'half_inning': about.get('halfInning', 'top'),
+            'outs':        about.get('outs', 0),
+        })
+
+    timeline.sort(key=lambda p: p['end_time'])
+
+    return {
+        'scheduled_start_utc': scheduled_start,
+        'first_pitch_utc':     first_pitch,
+        'last_play_utc':       timeline[-1]['end_time'] if timeline else None,
+        'plays':               timeline,
+    }
+
+
+def _game_state_at_time(base_game, tl, target_utc):
+    """Return a copy of base_game with dynamic fields set to game state at target_utc."""
+    state = dict(base_game)
+
+    scheduled_start = tl.get('scheduled_start_utc')
+    first_pitch     = tl.get('first_pitch_utc') or scheduled_start
+    last_play_time  = tl.get('last_play_utc')
+    plays           = tl.get('plays', [])
+
+    # --- Before first pitch ---
+    if first_pitch and target_utc < first_pitch - timedelta(seconds=30):
+        state.update({
+            'detailed_state': 'Scheduled',
+            'away_runs': None, 'home_runs': None,
+            'current_inning': None, 'currentInningOrdinal': None, 'inningState': None,
+            'num_of_outs': None, 'balls': None, 'strikes': None,
+            'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+            'away_win_probability': None, 'home_win_probability': None, 'last_play': None,
+        })
+        return state
+
+    # --- After last play with buffer ---
+    if last_play_time and target_utc > last_play_time + timedelta(minutes=5):
+        final = plays[-1] if plays else None
+        state['detailed_state'] = 'Final'
+        if final:
+            state['away_runs']      = final['away_score']
+            state['home_runs']      = final['home_score']
+            state['current_inning'] = final['inning']
+        state.update({
+            'num_of_outs': None, 'balls': None, 'strikes': None,
+            'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+            'inningState': None, 'away_win_probability': None,
+            'home_win_probability': None, 'last_play': None,
+        })
+        return state
+
+    # --- In Progress: find last completed play before target_utc ---
+    state['detailed_state'] = 'In Progress'
+    last_play = None
+    for play in plays:
+        if play['end_time'] <= target_utc:
+            last_play = play
+        else:
+            break
+
+    if last_play:
+        state['away_runs']            = last_play['away_score']
+        state['home_runs']            = last_play['home_score']
+        state['current_inning']       = last_play['inning']
+        state['currentInningOrdinal'] = _ordinal(last_play['inning'])
+        half = last_play.get('half_inning', 'top')
+        state['inningState']          = 'Top' if half == 'top' else 'Bottom'
+        state['num_of_outs']          = last_play.get('outs', 0)
+    else:
+        state.update({
+            'away_runs': 0, 'home_runs': 0,
+            'current_inning': 1, 'currentInningOrdinal': '1st',
+            'inningState': 'Top', 'num_of_outs': 0,
+        })
+
+    # balls/strikes default to 0 so draw_box comparisons don't fail
+    state.update({
+        'balls': 0, 'strikes': 0,
+        'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+        'away_win_probability': None, 'home_win_probability': None, 'last_play': None,
+    })
+    return state
+
+
+def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame_delay_ms, sport_id, config_data):
+    """Generate an animated GIF of the scoreboard for a game day.
+
+    Fetches each game's full play-by-play feed once (O(N_games) API calls),
+    then reconstructs game state at every minute in memory — no per-minute
+    API calls.  Time window is auto-detected from first pitch / last play
+    when --gif-start / --gif-end are not provided.
     """
     from generate_image import orchestrate_score_board
 
-    tz_str = config_data.get('timezone', 'America/Chicago')
+    tz_str   = config_data.get('timezone', 'America/Chicago')
     local_tz = pytz.timezone(tz_str)
 
-    start_dt = local_tz.localize(datetime.strptime(f"{date_str} {gif_start}", "%Y-%m-%d %H:%M"))
-    end_dt   = local_tz.localize(datetime.strptime(f"{date_str} {gif_end}",   "%Y-%m-%d %H:%M"))
+    # --- Step 1: Fetch base schedule (final/current state for team/game metadata) ---
+    print(f"Fetching schedule for {date_str}...")
+    fetch_scoreboard_for_date(date_str, sport_id)
+    base_games = read_json_file('data/games.json').get('games', [])
+    team_data  = read_json_file('data/teams.json') or {}
+    if 'team_abbreviation' not in team_data:
+        team_data = {'team_abbreviation': {}}
+
+    if not base_games:
+        print(f"No games found for {date_str}")
+        return
+
+    # --- Step 2: Fetch play-by-play timeline once per game ---
+    print(f"Fetching play-by-play for {len(base_games)} game(s)...")
+    game_timelines   = {}
+    all_first_pitches = []
+    all_last_plays    = []
+
+    for game in base_games:
+        game_pk = game.get('game_pk')
+        if not game_pk:
+            continue
+        print(f"  game {game_pk}...", end=' ', flush=True)
+        try:
+            tl = _fetch_game_timeline(game_pk)
+            game_timelines[str(game_pk)] = tl
+            anchor = tl.get('first_pitch_utc') or tl.get('scheduled_start_utc')
+            if anchor:
+                all_first_pitches.append(anchor)
+            if tl.get('last_play_utc'):
+                all_last_plays.append(tl['last_play_utc'])
+            print("ok")
+        except Exception as e:
+            print(f"error: {e}")
+
+    if not game_timelines:
+        print("No timeline data fetched — aborting.")
+        return
+
+    # --- Step 3: Determine time window ---
+    if gif_start and gif_end:
+        start_dt = local_tz.localize(datetime.strptime(f"{date_str} {gif_start}", "%Y-%m-%d %H:%M"))
+        end_dt   = local_tz.localize(datetime.strptime(f"{date_str} {gif_end}",   "%Y-%m-%d %H:%M"))
+    else:
+        if not all_first_pitches:
+            print("Cannot determine start time — provide --gif-start/--gif-end")
+            return
+        start_utc = min(all_first_pitches) - timedelta(minutes=5)
+        end_utc   = (max(all_last_plays) + timedelta(minutes=5)) if all_last_plays \
+                    else max(all_first_pitches) + timedelta(hours=4)
+        start_dt = start_utc.astimezone(local_tz)
+        end_dt   = end_utc.astimezone(local_tz)
+        print(f"Auto-detected window: {start_dt.strftime('%H:%M')}–{end_dt.strftime('%H:%M')} {tz_str}")
 
     if end_dt <= start_dt:
-        print("Error: --gif-end must be after --gif-start")
+        print("End time is before start time — aborting.")
         return
 
     total_steps = int((end_dt - start_dt).total_seconds() / 60 / interval_min) + 1
     print(f"Generating {total_steps}-frame GIF ({interval_min}min intervals, {frame_delay_ms}ms/frame)")
-    print(f"  Date: {date_str}  {gif_start}–{gif_end} {tz_str}")
     print(f"  Output: {output_path}")
 
+    # --- Step 4: Render each frame from in-memory timelines ---
     frames = []
     current_dt = start_dt
     step = 0
 
     while current_dt <= end_dt:
         step += 1
-        time_label = current_dt.strftime("%H:%M")
-        timecode = _local_time_to_timecode(date_str, time_label, tz_str)
+        current_utc = current_dt.astimezone(pytz.utc)
+        time_label  = current_dt.strftime("%H:%M")
 
-        print(f"  [{step:3d}/{total_steps}] {time_label} → {timecode} ET ...", end=' ', flush=True)
+        print(f"  [{step:4d}/{total_steps}] {time_label}...", end=' ', flush=True)
+
+        frame_games = []
+        for game in base_games:
+            pk_str = str(game.get('game_pk', ''))
+            tl = game_timelines.get(pk_str)
+            frame_games.append(_game_state_at_time(game, tl, current_utc) if tl else dict(game))
 
         try:
-            fetch_scoreboard_for_date(date_str, sport_id, timecode=timecode)
-            game_state_data = read_json_file('data/games.json').get('games', [])
-            team_data = read_json_file('data/teams.json') or {}
-            if 'team_abbreviation' not in team_data:
-                team_data = {'team_abbreviation': {}}
-
-            result = orchestrate_score_board(game_state_data, team_data, date_str, bypass_cache=True)
+            result = orchestrate_score_board(frame_games, team_data, date_str, bypass_cache=True)
             if result:
                 image, _ = result
-                # PIL GIF requires palette ('P') mode; convert via 'L' to preserve bilevel look
                 frames.append(image.convert('L').convert('P'))
                 print("ok")
             else:
-                print("no image")
+                print("skip")
         except Exception as e:
             print(f"error: {e}")
 
         current_dt += timedelta(minutes=interval_min)
 
+    # --- Step 5: Save GIF ---
     if not frames:
-        print("No frames were generated — GIF not saved.")
+        print("No frames generated — GIF not saved.")
         return
 
     print(f"Assembling {len(frames)}-frame GIF...")
@@ -771,11 +984,11 @@ Examples:
   # Time-travel: show scoreboard as it appeared at 7:32 PM local time
   python scoreboard_generate.py --date 2025-04-01 --time 19:32
 
-  # Generate an animated GIF of the scoreboard from 6 PM to 11 PM
-  python scoreboard_generate.py --date 2025-04-01 --gif-start 18:00 --gif-end 23:00
+  # Generate a GIF for the full game day (auto-detects first pitch to last out)
+  python scoreboard_generate.py --date 2025-04-01 --gif
 
-  # GIF with 5-minute intervals and faster playback
-  python scoreboard_generate.py --date 2025-04-01 --gif-start 19:00 --gif-end 22:30 --gif-interval 5 --gif-delay 300
+  # GIF with manual window override
+  python scoreboard_generate.py --date 2025-04-01 --gif --gif-start 18:00 --gif-end 23:00 --gif-interval 5 --gif-delay 300
 
   # World Baseball Classic game from 2023
   python scoreboard_generate.py --date 2023-03-21 --sport-id 8
@@ -796,10 +1009,15 @@ Examples:
         help='Time-travel: show the scoreboard as it appeared at this local time on --date'
     )
     parser.add_argument(
+        '--gif',
+        action='store_true',
+        help='Generate a GIF for --date (auto-detects time window from first pitch to last out)'
+    )
+    parser.add_argument(
         '--gif-start',
         type=str,
         metavar='HH:MM',
-        help='GIF start time (local, HH:MM). Requires --date and --gif-end.'
+        help='GIF start time override (local HH:MM). Auto-detected if omitted.'
     )
     parser.add_argument(
         '--gif-end',
@@ -846,17 +1064,19 @@ Examples:
 
     args = parser.parse_args()
 
-    # --gif-start and --gif-end must be used together with --date
+    # --gif-start and --gif-end must always be used together
     if bool(args.gif_start) != bool(args.gif_end):
         parser.error("--gif-start and --gif-end must be used together")
-    if (args.gif_start or args.gif_end) and not args.date:
-        parser.error("--gif-start/--gif-end require --date")
+    # --gif / --gif-start / --gif-end all require --date
+    gif_mode = args.gif or bool(args.gif_start)
+    if gif_mode and not args.date:
+        parser.error("--gif / --gif-start / --gif-end require --date")
     if args.time and not args.date:
         parser.error("--time requires --date")
 
     # Time-travel and GIF modes are treated as explicit offline requests — bypass
     # night mode, smart polling, and Discord state checks.
-    offline_mode = bool(args.time or args.gif_start or args.local)
+    offline_mode = bool(args.time or gif_mode or args.local)
 
     # Display platform information
     system_platform = platform.system()
@@ -941,9 +1161,11 @@ Examples:
         print(f"Using today's date: {date_str}")
 
     # --- GIF generation mode ---
-    if args.gif_start and args.gif_end:
+    if gif_mode:
         _generate_gif(
-            date_str, args.gif_start, args.gif_end,
+            date_str,
+            args.gif_start or None,  # None triggers auto-detection
+            args.gif_end   or None,
             args.gif_output, args.gif_interval, args.gif_delay,
             sport_id, config_data,
         )
