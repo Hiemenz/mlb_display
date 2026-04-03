@@ -518,13 +518,25 @@ def check_games_for_sport(date, sport_id):
     return 0
 
 
-def fetch_scoreboard_for_date(date, sport_id=None):
+def _local_time_to_timecode(date_str, time_str, timezone_str):
+    """Convert local date+time to MLB API timecode in Eastern Time (YYYYMMDD_HHMMSS)."""
+    eastern = pytz.timezone('America/New_York')
+    local_tz = pytz.timezone(timezone_str)
+    dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    dt_local = local_tz.localize(dt)
+    dt_eastern = dt_local.astimezone(eastern)
+    return dt_eastern.strftime("%Y%m%d_%H%M%S")
+
+
+def fetch_scoreboard_for_date(date, sport_id=None, timecode=None):
     """
     Fetch scoreboard for a specific date and sport.
 
     Args:
         date: Date string in format 'YYYY-MM-DD'
         sport_id: Sport ID (1=MLB, 8=WBC, 11=College, etc.). If None, reads from config.
+        timecode: Optional MLB API timecode (YYYYMMDD_HHMMSS in Eastern Time) to fetch
+                  historical game state at a specific minute.
 
     Sport IDs:
         1  = MLB (default)
@@ -563,12 +575,15 @@ def fetch_scoreboard_for_date(date, sport_id=None):
             # Fall back to single sport_id
             sport_id = config_data.get('sport_id', 1)
 
-    print(f"Fetching games for {date} (sportId={sport_id})")
+    tc_info = f" @ {timecode}" if timecode else ""
+    print(f"Fetching games for {date}{tc_info} (sportId={sport_id})")
 
     endpoint_url = (
         'https://statsapi.mlb.com/api/v1/schedule?'
         f'startDate={date}&endDate={date}&sportId={sport_id}&hydrate=decisions,probablePitcher(note),linescore,flags,team'
     )
+    if timecode:
+        endpoint_url += f'&timecode={timecode}'
     response = requests.get(endpoint_url)
     data = response.json()
 
@@ -669,6 +684,77 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
         print("No display update needed - image unchanged")
 
 
+def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame_delay_ms, sport_id, config_data):
+    """Generate an animated GIF of the scoreboard between two local times on a given date.
+
+    Fetches game state at each interval step via the MLB API timecode parameter,
+    renders each frame using orchestrate_score_board(bypass_cache=True), and
+    assembles all frames into an animated GIF.
+    """
+    from generate_image import orchestrate_score_board
+
+    tz_str = config_data.get('timezone', 'America/Chicago')
+    local_tz = pytz.timezone(tz_str)
+
+    start_dt = local_tz.localize(datetime.strptime(f"{date_str} {gif_start}", "%Y-%m-%d %H:%M"))
+    end_dt   = local_tz.localize(datetime.strptime(f"{date_str} {gif_end}",   "%Y-%m-%d %H:%M"))
+
+    if end_dt <= start_dt:
+        print("Error: --gif-end must be after --gif-start")
+        return
+
+    total_steps = int((end_dt - start_dt).total_seconds() / 60 / interval_min) + 1
+    print(f"Generating {total_steps}-frame GIF ({interval_min}min intervals, {frame_delay_ms}ms/frame)")
+    print(f"  Date: {date_str}  {gif_start}–{gif_end} {tz_str}")
+    print(f"  Output: {output_path}")
+
+    frames = []
+    current_dt = start_dt
+    step = 0
+
+    while current_dt <= end_dt:
+        step += 1
+        time_label = current_dt.strftime("%H:%M")
+        timecode = _local_time_to_timecode(date_str, time_label, tz_str)
+
+        print(f"  [{step:3d}/{total_steps}] {time_label} → {timecode} ET ...", end=' ', flush=True)
+
+        try:
+            fetch_scoreboard_for_date(date_str, sport_id, timecode=timecode)
+            game_state_data = read_json_file('data/games.json').get('games', [])
+            team_data = read_json_file('data/teams.json') or {}
+            if 'team_abbreviation' not in team_data:
+                team_data = {'team_abbreviation': {}}
+
+            result = orchestrate_score_board(game_state_data, team_data, date_str, bypass_cache=True)
+            if result:
+                image, _ = result
+                # PIL GIF requires palette ('P') mode; convert via 'L' to preserve bilevel look
+                frames.append(image.convert('L').convert('P'))
+                print("ok")
+            else:
+                print("no image")
+        except Exception as e:
+            print(f"error: {e}")
+
+        current_dt += timedelta(minutes=interval_min)
+
+    if not frames:
+        print("No frames were generated — GIF not saved.")
+        return
+
+    print(f"Assembling {len(frames)}-frame GIF...")
+    frames[0].save(
+        output_path,
+        save_all=True,
+        append_images=frames[1:],
+        optimize=False,
+        duration=frame_delay_ms,
+        loop=0,
+    )
+    print(f"✓ GIF saved to {output_path}")
+
+
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -682,6 +768,15 @@ Examples:
   # Specify a date
   python scoreboard_generate.py --date 2024-07-26
 
+  # Time-travel: show scoreboard as it appeared at 7:32 PM local time
+  python scoreboard_generate.py --date 2025-04-01 --time 19:32
+
+  # Generate an animated GIF of the scoreboard from 6 PM to 11 PM
+  python scoreboard_generate.py --date 2025-04-01 --gif-start 18:00 --gif-end 23:00
+
+  # GIF with 5-minute intervals and faster playback
+  python scoreboard_generate.py --date 2025-04-01 --gif-start 19:00 --gif-end 22:30 --gif-interval 5 --gif-delay 300
+
   # World Baseball Classic game from 2023
   python scoreboard_generate.py --date 2023-03-21 --sport-id 8
 
@@ -693,6 +788,45 @@ Examples:
         '--date',
         type=str,
         help='Date to fetch games for (format: YYYY-MM-DD). Default: today'
+    )
+    parser.add_argument(
+        '--time',
+        type=str,
+        metavar='HH:MM',
+        help='Time-travel: show the scoreboard as it appeared at this local time on --date'
+    )
+    parser.add_argument(
+        '--gif-start',
+        type=str,
+        metavar='HH:MM',
+        help='GIF start time (local, HH:MM). Requires --date and --gif-end.'
+    )
+    parser.add_argument(
+        '--gif-end',
+        type=str,
+        metavar='HH:MM',
+        help='GIF end time (local, HH:MM). Requires --date and --gif-start.'
+    )
+    parser.add_argument(
+        '--gif-output',
+        type=str,
+        metavar='FILE',
+        default='scoreboard_timelapse.gif',
+        help='Output path for the generated GIF (default: scoreboard_timelapse.gif)'
+    )
+    parser.add_argument(
+        '--gif-interval',
+        type=int,
+        metavar='MINUTES',
+        default=1,
+        help='Minutes between each GIF frame (default: 1)'
+    )
+    parser.add_argument(
+        '--gif-delay',
+        type=int,
+        metavar='MS',
+        default=500,
+        help='Delay between GIF frames in milliseconds (default: 500)'
     )
     parser.add_argument(
         '--sport-id',
@@ -711,6 +845,18 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # --gif-start and --gif-end must be used together with --date
+    if bool(args.gif_start) != bool(args.gif_end):
+        parser.error("--gif-start and --gif-end must be used together")
+    if (args.gif_start or args.gif_end) and not args.date:
+        parser.error("--gif-start/--gif-end require --date")
+    if args.time and not args.date:
+        parser.error("--time requires --date")
+
+    # Time-travel and GIF modes are treated as explicit offline requests — bypass
+    # night mode, smart polling, and Discord state checks.
+    offline_mode = bool(args.time or args.gif_start or args.local)
 
     # Display platform information
     system_platform = platform.system()
@@ -737,8 +883,8 @@ Examples:
             # Window within same day (e.g. 0 to 7): active if start <= hour < end
             in_night_window = night_start <= current_hour < night_end
         if in_night_window:
-            if args.local:
-                print(f"Night mode: bypassed for local testing ({now_local.strftime('%H:%M')})")
+            if offline_mode:
+                print(f"Night mode: bypassed for offline/local request ({now_local.strftime('%H:%M')})")
             else:
                 print(f"Night mode: skipping refresh ({now_local.strftime('%H:%M')})")
                 return
@@ -746,8 +892,8 @@ Examples:
     dark_mode = config_data.get('dark_mode', False)
 
     # --- Discord state check ---
-    # Apply any pending changes from the Discord bot before doing anything else
-    discord_state = load_discord_state()
+    # Skip Discord changes for offline/time-travel/GIF modes — they're historical queries.
+    discord_state = None if offline_mode else load_discord_state()
     if discord_state:
         user = discord_state.get('requested_by', 'unknown')
         mode_req = discord_state.get('pending_mode', '')
@@ -794,9 +940,18 @@ Examples:
         date_str = now.strftime('%Y-%m-%d')
         print(f"Using today's date: {date_str}")
 
+    # --- GIF generation mode ---
+    if args.gif_start and args.gif_end:
+        _generate_gif(
+            date_str, args.gif_start, args.gif_end,
+            args.gif_output, args.gif_interval, args.gif_delay,
+            sport_id, config_data,
+        )
+        return
+
     # --- Smart polling: rate-limit MLB API calls based on game state ---
-    # Only applies when running on today's date (not a manual --date override or --local)
-    if not args.date and not args.local:
+    # Only applies when running on today's date without any offline/explicit flags
+    if not args.date and not offline_mode:
         sched = load_schedule_state()
 
         # Skip entirely if next game is a future date
@@ -817,30 +972,37 @@ Examples:
 
         if any_live:
             # Game in progress — always fetch, no throttle
-            interval_min = 0
+            polling_interval = 0
         elif all_done:
             # All games finished — check once per hour (scores won't change)
-            interval_min = 60
+            polling_interval = 60
         elif not cached_games:
             # No cached data yet today — use hourly until we confirm games exist
-            interval_min = 60
+            polling_interval = 60
         else:
             # Pre-game / scheduled — respect update_interval from config
-            interval_min = config_data.get('update_interval', 14)
+            polling_interval = config_data.get('update_interval', 14)
 
-        if interval_min > 0:
+        if polling_interval > 0:
             last_fetch = sched.get('last_game_fetch')
             if last_fetch:
                 try:
                     elapsed = datetime.now() - datetime.fromisoformat(last_fetch)
-                    if elapsed < timedelta(minutes=interval_min):
+                    if elapsed < timedelta(minutes=polling_interval):
                         mins = int(elapsed.total_seconds() // 60)
-                        print(f"Throttled — {mins}min since last fetch (interval={interval_min}min, state={'all_done' if all_done else 'pre-game'})")
+                        print(f"Throttled — {mins}min since last fetch (interval={polling_interval}min, state={'all_done' if all_done else 'pre-game'})")
                         return
                 except Exception:
                     pass
 
-    fetch_scoreboard_for_date(date_str, sport_id)
+    # --- Time-travel: convert local HH:MM to MLB API timecode ---
+    timecode = None
+    if args.time:
+        tz_str = config_data.get('timezone', 'America/Chicago')
+        timecode = _local_time_to_timecode(date_str, args.time, tz_str)
+        print(f"Time-travel: {date_str} {args.time} ({tz_str}) → timecode {timecode} ET")
+
+    fetch_scoreboard_for_date(date_str, sport_id, timecode=timecode)
 
     game_state_data = read_json_file('data/games.json')['games']
     team_data = read_json_file('data/teams.json')
@@ -849,8 +1011,8 @@ Examples:
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    # After fetching: update schedule state
-    if not args.date and not args.local:
+    # After fetching: update schedule state (only for normal live-polling runs)
+    if not args.date and not offline_mode:
         sched = load_schedule_state()
         sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
         if not game_state_data:
@@ -873,24 +1035,31 @@ Examples:
         _run_single_game_mode(mode, game_state_data, team_data, config_data)
         print(f"\n✓ {mode.title()} view generated successfully!")
         print(f"  View image at: resulting_image.bmp")
-        if args.local and platform.system() == 'Darwin':
+        if offline_mode and platform.system() == 'Darwin':
             import subprocess
             subprocess.run(['open', 'resulting_image.bmp'], check=False)
         return
 
-    result = orchestrate_score_board(game_state_data, team_data, date_str)
+    # bypass_cache=True for time-travel so the image always renders (no stale-state skip)
+    result = orchestrate_score_board(game_state_data, team_data, date_str,
+                                     bypass_cache=bool(args.time))
 
     if result:
         sccoreboard_image, changed_regions = result
-        if needs_full_refresh() or not changed_regions:
-            print("Scoreboard: full refresh")
-            display_image(sccoreboard_image)
+        if args.time:
+            # Time-travel: just save the image, no e-ink update
+            sccoreboard_image.save('resulting_image.bmp')
+            print(f"\n✓ Time-travel snapshot saved to resulting_image.bmp")
         else:
-            print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
-            display_partial_regions(sccoreboard_image, changed_regions)
-        print(f"\n✓ Scoreboard generated successfully!")
-        print(f"  View image at: resulting_image.bmp")
-        if args.local and platform.system() == 'Darwin':
+            if needs_full_refresh() or not changed_regions:
+                print("Scoreboard: full refresh")
+                display_image(sccoreboard_image)
+            else:
+                print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
+                display_partial_regions(sccoreboard_image, changed_regions)
+            print(f"\n✓ Scoreboard generated successfully!")
+            print(f"  View image at: resulting_image.bmp")
+        if offline_mode and platform.system() == 'Darwin':
             import subprocess
             subprocess.run(['open', 'resulting_image.bmp'], check=False)
     else:

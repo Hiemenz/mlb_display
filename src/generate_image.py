@@ -868,8 +868,8 @@ def derive_wildcard_from_standings(standings_data):
     """Build {'AL': [...], 'NL': [...]} from standings.json.
 
     Collects all non-division-leader teams per league, sorts by league_rank
-    (overall AL/NL rank already accounts for wildcard position correctly),
-    returns the top 10 per league.
+    (overall AL/NL rank already accounts for wildcard position correctly).
+    Returns all eligible wildcard teams (max 12: 15 teams minus 3 division leaders).
     Each entry: {'abbr': str, 'team_id': str, 'gb': str}.
     """
     abbr_map = standings_data.get('team_abbreviation', {})
@@ -881,7 +881,7 @@ def derive_wildcard_from_standings(standings_data):
         for div in div_names:
             for t in divisions.get(div, []):
                 if str(t.get('divisionRank', '')) == '1':
-                    continue  # skip division leaders
+                    continue  # skip division leaders — they aren't competing for the wildcard
                 team_id = str(t.get('team_id', ''))
                 abbr = abbr_map.get(team_id, t.get('team_name', '???')[:3].upper())
                 try:
@@ -895,19 +895,22 @@ def derive_wildcard_from_standings(standings_data):
                     'rank': rank,
                 })
         teams.sort(key=lambda t: t['rank'])
-        result[league_key] = teams[:10]
+        result[league_key] = teams  # all eligible, no cap
 
     return result
+
+
+_WC_WILDCARD_SPOTS = 3   # number of wildcard playoff berths per league
+_WC_MAX_TEAMS      = 12  # max eligible per league (15 teams - 3 division leaders)
 
 
 def draw_wildcard_header(Himage, wildcard_data):
     """Draw a compact wildcard standings strip across the top of the display (y=0..30).
 
-    AL wildcard (10 teams) left-to-right in the left half (rank 1 at left edge).
-    NL wildcard (10 teams) right-to-left in the right half (rank 1 at right edge).
-    Each slot shows only the team logo, centered vertically and horizontally.
+    AL wildcard (all eligible, up to 12) left-to-right in the left half, rank 1 at left edge.
+    NL wildcard (all eligible, up to 12) right-to-left in the right half, rank 1 at right edge.
+    A rounded rectangle is drawn around the top-3 wildcard leaders on each side.
     Falls back to 3-letter abbreviation (font9) when no logo is available.
-    No separator lines are drawn.
     """
     draw = ImageDraw.Draw(Himage)
     font = _get_font(9)
@@ -926,16 +929,36 @@ def draw_wildcard_header(Himage, wildcard_data):
             abbr_w = int(font.getlength(abbr))
             draw.text((slot_x + (_WC_SLOT_W - abbr_w) // 2, (_WC_STRIP_H - 9) // 2), abbr, font=font, fill=0)
 
-    al_teams = wildcard_data.get('AL', [])
-    nl_teams = wildcard_data.get('NL', [])
+    al_teams = wildcard_data.get('AL', [])[:_WC_MAX_TEAMS]
+    nl_teams = wildcard_data.get('NL', [])[:_WC_MAX_TEAMS]
 
-    # AL: rank 1 at left box edge (x=32), rank 10 toward center
-    for i, team in enumerate(al_teams[:10]):
+    # AL: rank 1 at left box edge (x=32), higher ranks toward center
+    for i, team in enumerate(al_teams):
         _draw_slot(_WC_BOX_X_START + i * _WC_SLOT_W, team)
 
-    # NL: rank 1 at right box edge (x=767), rank 10 toward center
-    for i, team in enumerate(nl_teams[:10]):
+    # NL: rank 1 at right box edge (x=767), higher ranks toward center
+    for i, team in enumerate(nl_teams):
         _draw_slot(_WC_BOX_X_END - (i + 1) * _WC_SLOT_W, team)
+
+    # Draw a rounded box around the wildcard leaders (top _WC_WILDCARD_SPOTS per league)
+    n_al = min(len(al_teams), _WC_WILDCARD_SPOTS)
+    n_nl = min(len(nl_teams), _WC_WILDCARD_SPOTS)
+
+    if n_al > 0:
+        box_x0 = _WC_BOX_X_START
+        box_x1 = _WC_BOX_X_START + n_al * _WC_SLOT_W
+        try:
+            draw.rounded_rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], radius=3, outline=0, width=1)
+        except AttributeError:
+            draw.rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], outline=0, width=1)
+
+    if n_nl > 0:
+        box_x0 = _WC_BOX_X_END - n_nl * _WC_SLOT_W
+        box_x1 = _WC_BOX_X_END
+        try:
+            draw.rounded_rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], radius=3, outline=0, width=1)
+        except AttributeError:
+            draw.rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], outline=0, width=1)
 
     return Himage
 
@@ -1404,35 +1427,41 @@ def load_and_sort_json(json_string):
 
 
 
-def  orchestrate_score_board(game_state_data, team_data, date_str=None):
+def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_cache=False):
     """Returns (image, changed_regions) or None if nothing changed.
 
     changed_regions is a list of (x, y, w, h) tuples for partial refresh.
     An empty list signals that a full refresh should be used.
+
+    bypass_cache=True skips the unchanged-image check and state persistence.
+    Use this when generating GIFs or rendering historical snapshots.
     """
     config = load_yaml_file('config.yaml')
     use_logos = config.get('use_team_logos', False)
     logo_x_offset = config.get('small_logo_x_offset', 2)
     show_win_prob = config.get('scoreboard_win_probability', False)
 
-    old_data = load_json_file('old_scoreboard_state.json')
+    if bypass_cache:
+        new_dict = old_dict = None  # skip comparison below
+    else:
+        old_data = load_json_file('old_scoreboard_state.json')
 
-    new_data_str = json.dumps(game_state_data)
-    old_data_str = json.dumps(old_data)
+        new_data_str = json.dumps(game_state_data)
+        old_data_str = json.dumps(old_data)
 
+        new_dict = load_and_sort_json(new_data_str)
+        old_dict = load_and_sort_json(old_data_str)
 
-    new_dict = load_and_sort_json(new_data_str)
-    old_dict = load_and_sort_json(old_data_str)
-
-    save_off_results(game_state_data, "old_scoreboard_state")
+        save_off_results(game_state_data, "old_scoreboard_state")
 
     # Build map of old game data by game_pk for per-game comparison
     old_by_pk = {}
-    if old_data and isinstance(old_data, list):
-        for g in old_data:
-            pk = str(g.get('game_pk', ''))
-            if pk:
-                old_by_pk[pk] = g
+    if not bypass_cache:
+        if old_data and isinstance(old_data, list):
+            for g in old_data:
+                pk = str(g.get('game_pk', ''))
+                if pk:
+                    old_by_pk[pk] = g
 
     # Track all games with ANY data change (for partial refresh regions)
     refreshed_game_ids = set()
@@ -1443,28 +1472,29 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None):
         if old_by_pk.get(pk) != game:
             refreshed_game_ids.add(pk)
 
-    # --- Score change detection ---
-    old_scores = load_json_file('score_alerts.json')
-    new_scores = {}
     changed_game_ids = set()
-    for game in game_state_data:
-        pk = str(game.get('game_pk', ''))
-        if not pk:
-            continue
-        away_runs = game.get('away_runs')
-        home_runs = game.get('home_runs')
-        new_scores[pk] = {'away_runs': away_runs, 'home_runs': home_runs}
-        if pk in old_scores:
-            old_entry = old_scores[pk]
-            if away_runs != old_entry.get('away_runs') or home_runs != old_entry.get('home_runs'):
-                changed_game_ids.add(pk)
-                print(f'Score change detected for game {pk}: {old_entry} -> {new_scores[pk]}')
-    save_off_results(new_scores, 'score_alerts')
-    # --- End score change detection ---
+    if not bypass_cache:
+        # --- Score change detection ---
+        old_scores = load_json_file('score_alerts.json')
+        new_scores = {}
+        for game in game_state_data:
+            pk = str(game.get('game_pk', ''))
+            if not pk:
+                continue
+            away_runs = game.get('away_runs')
+            home_runs = game.get('home_runs')
+            new_scores[pk] = {'away_runs': away_runs, 'home_runs': home_runs}
+            if pk in old_scores:
+                old_entry = old_scores[pk]
+                if away_runs != old_entry.get('away_runs') or home_runs != old_entry.get('home_runs'):
+                    changed_game_ids.add(pk)
+                    print(f'Score change detected for game {pk}: {old_entry} -> {new_scores[pk]}')
+        save_off_results(new_scores, 'score_alerts')
+        # --- End score change detection ---
 
-    if compare_json_dicts_sorted(new_dict, old_dict):
-        print('images the same')
-        return None
+        if compare_json_dicts_sorted(new_dict, old_dict):
+            print('images the same')
+            return None
 
     print('image is different')
     Himage = Image.new('1', (800, 480), 255)
