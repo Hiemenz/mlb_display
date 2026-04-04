@@ -12,6 +12,10 @@ display_mode: "scoreboard"
 primary: NYY
 primary_backup: BOS
 primary_backup_2: NYM
+
+# Favorite team first: when true, the primary team's game is always shown
+# in the top-left slot of the scoreboard grid.
+favorite_team_first: true
 secondary: NYY_DOUBLE
 secondary_backup: LIVE
 secondary_backup_2: STL

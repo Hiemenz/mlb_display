@@ -1439,7 +1439,19 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     x_start = 32
     y_start = 30
 
-    game_list = game_state_data
+    # Reorder games so the primary team's game appears first in the grid
+    config = load_yaml_file('config.yaml')
+    game_list = list(game_state_data)
+    if config.get('favorite_team_first', False):
+        primary = config.get('primary', '')
+        if primary:
+            abbr_map = team_data.get('team_abbreviation', {})
+            for i, g in enumerate(game_list):
+                away_abbr = abbr_map.get(str(g.get('away_team_id', '')), '')
+                home_abbr = abbr_map.get(str(g.get('home_team_id', '')), '')
+                if primary in (away_abbr, home_abbr):
+                    game_list.insert(0, game_list.pop(i))
+                    break
 
     counter = 0
     for y in range(0,3):
