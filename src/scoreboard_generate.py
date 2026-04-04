@@ -518,13 +518,25 @@ def check_games_for_sport(date, sport_id):
     return 0
 
 
-def fetch_scoreboard_for_date(date, sport_id=None):
+def _local_time_to_timecode(date_str, time_str, timezone_str):
+    """Convert local date+time to MLB API timecode in Eastern Time (YYYYMMDD_HHMMSS)."""
+    eastern = pytz.timezone('America/New_York')
+    local_tz = pytz.timezone(timezone_str)
+    dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    dt_local = local_tz.localize(dt)
+    dt_eastern = dt_local.astimezone(eastern)
+    return dt_eastern.strftime("%Y%m%d_%H%M%S")
+
+
+def fetch_scoreboard_for_date(date, sport_id=None, timecode=None):
     """
     Fetch scoreboard for a specific date and sport.
 
     Args:
         date: Date string in format 'YYYY-MM-DD'
         sport_id: Sport ID (1=MLB, 8=WBC, 11=College, etc.). If None, reads from config.
+        timecode: Optional MLB API timecode (YYYYMMDD_HHMMSS in Eastern Time) to fetch
+                  historical game state at a specific minute.
 
     Sport IDs:
         1  = MLB (default)
@@ -563,12 +575,15 @@ def fetch_scoreboard_for_date(date, sport_id=None):
             # Fall back to single sport_id
             sport_id = config_data.get('sport_id', 1)
 
-    print(f"Fetching games for {date} (sportId={sport_id})")
+    tc_info = f" @ {timecode}" if timecode else ""
+    print(f"Fetching games for {date}{tc_info} (sportId={sport_id})")
 
     endpoint_url = (
         'https://statsapi.mlb.com/api/v1/schedule?'
         f'startDate={date}&endDate={date}&sportId={sport_id}&hydrate=decisions,probablePitcher(note),linescore,flags,team'
     )
+    if timecode:
+        endpoint_url += f'&timecode={timecode}'
     response = requests.get(endpoint_url)
     data = response.json()
 
@@ -669,6 +684,519 @@ def scoreboard_generate(date_str, game_data, sport_id=None):
         print("No display update needed - image unchanged")
 
 
+_INNING_ORDINALS = {
+    1:'1st', 2:'2nd', 3:'3rd', 4:'4th', 5:'5th', 6:'6th',
+    7:'7th', 8:'8th', 9:'9th', 10:'10th', 11:'11th', 12:'12th',
+    13:'13th', 14:'14th', 15:'15th', 16:'16th', 17:'17th', 18:'18th',
+}
+
+def _ordinal(n):
+    try:
+        return _INNING_ORDINALS.get(int(n), f'{n}th')
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_mlb_time(time_str):
+    """Parse an MLB API ISO timestamp to a UTC-aware datetime."""
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return pytz.utc.localize(datetime.strptime(time_str, fmt))
+        except ValueError:
+            continue
+    raise ValueError(f"Cannot parse MLB timestamp: {time_str!r}")
+
+
+_WP_SKIP_TYPES = ('substitution', 'timeout', 'advisory')
+
+
+def _fetch_game_timeline(game_pk):
+    """Fetch the full live feed for one game and return a play-by-play timeline.
+
+    Returns a dict:
+      scheduled_start_utc — UTC-aware datetime of scheduled first pitch
+      first_pitch_utc     — UTC-aware datetime when first play began (or None)
+      last_play_utc       — UTC-aware datetime when last play completed (or None)
+      plays               — list of dicts sorted by end_time, each:
+                              end_time, away_score, home_score, inning,
+                              half_inning ('top'|'bottom'), outs
+      pitch_events        — list of dicts sorted by time, one per pitch/action event:
+                              time, balls, strikes, outs, inning, half_inning,
+                              away_score, home_score
+                            Used to reconstruct mid-at-bat state minute by minute.
+      wp_events           — list of dicts sorted by time, one per completed play:
+                              time, away_wp, home_wp, last_play
+                            Win probability and last-play description at each play boundary.
+    """
+    url = f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
+    resp = requests.get(url, timeout=20)
+    data = resp.json()
+
+    scheduled_start = None
+    dt_str = data.get('gameData', {}).get('datetime', {}).get('dateTime', '')
+    if dt_str:
+        try:
+            scheduled_start = _parse_mlb_time(dt_str)
+        except ValueError:
+            pass
+
+    all_plays = data.get('liveData', {}).get('plays', {}).get('allPlays', [])
+    timeline = []
+    first_pitch = None
+    pitch_events = []
+    wp_events = []
+
+    # Fetch win probability timeline (one entry per completed play)
+    wp_by_index = {}
+    try:
+        wp_resp = requests.get(
+            f'https://statsapi.mlb.com/api/v1/game/{game_pk}/winProbability',
+            timeout=10,
+        )
+        wp_data = wp_resp.json()
+        if isinstance(wp_data, list):
+            for entry in wp_data:
+                idx = entry.get('atBatIndex')
+                if idx is not None:
+                    wp_by_index[idx] = entry
+    except Exception:
+        pass
+
+    # Running score: score after last completed play (used for pitch events mid-at-bat)
+    running_away = 0
+    running_home = 0
+    cumulative_last_play = None  # last non-substitution event description seen so far
+
+    for i, play in enumerate(all_plays):
+        about  = play.get('about', {})
+        result = play.get('result', {})
+        inning      = about.get('inning', 1)
+        half_inning = about.get('halfInning', 'top')
+
+        if first_pitch is None:
+            st = about.get('startTime', '')
+            if st:
+                try:
+                    first_pitch = _parse_mlb_time(st)
+                except ValueError:
+                    pass
+
+        # --- Extract pitch-level events for minute-by-minute state ---
+        # Score during this at-bat = score as of the end of the last completed play.
+        at_bat_away = running_away
+        at_bat_home = running_home
+
+        matchup = play.get('matchup', {})
+        at_bat_pitcher = matchup.get('pitcher', {}).get('fullName') or ''
+        at_bat_batter  = matchup.get('batter',  {}).get('fullName') or ''
+
+        for ev in play.get('playEvents', []):
+            ev_time_str = ev.get('startTime', '')
+            if not ev_time_str:
+                continue
+            try:
+                ev_time = _parse_mlb_time(ev_time_str)
+            except ValueError:
+                continue
+            count = ev.get('count', {})
+            pitch_events.append({
+                'time':        ev_time,
+                'balls':       count.get('balls', 0) or 0,
+                'strikes':     count.get('strikes', 0) or 0,
+                'outs':        count.get('outs', about.get('outs', 0)) or 0,
+                'inning':      inning,
+                'half_inning': half_inning,
+                'away_score':  at_bat_away,
+                'home_score':  at_bat_home,
+                'pitcher':     at_bat_pitcher,
+                'batter':      at_bat_batter,
+            })
+
+        # --- Completed-play timeline (for score/inning snapshots) ---
+        if not about.get('isComplete', False):
+            continue
+        end_str = about.get('endTime', '')
+        if not end_str:
+            continue
+        try:
+            end_time = _parse_mlb_time(end_str)
+        except ValueError:
+            continue
+
+        away_score = result.get('awayScore', 0) or 0
+        home_score = result.get('homeScore', 0) or 0
+
+        timeline.append({
+            'end_time':    end_time,
+            'away_score':  away_score,
+            'home_score':  home_score,
+            'inning':      inning,
+            'half_inning': half_inning,
+            'outs':        about.get('outs', 0),
+            'outs_after':  play.get('count', {}).get('outs', 0) or 0,
+            'pitcher':     at_bat_pitcher,
+            'batter':      at_bat_batter,
+        })
+
+        running_away = away_score
+        running_home = home_score
+
+        # --- Win probability and last-play at this play boundary ---
+        wp_entry = wp_by_index.get(i, {})
+        away_wp = wp_entry.get('awayTeamWinProbability')
+        home_wp = wp_entry.get('homeTeamWinProbability')
+        if away_wp is not None:
+            away_wp = float(away_wp)
+            if away_wp <= 1.0:
+                away_wp *= 100
+        if home_wp is not None:
+            home_wp = float(home_wp)
+            if home_wp <= 1.0:
+                home_wp *= 100
+
+        # Advance last_play description (skip substitutions/timeouts)
+        wp_result    = wp_entry.get('result', {})
+        event        = wp_result.get('event') or result.get('event') or ''
+        event_type   = (wp_result.get('eventType') or '').lower()
+        if event and not any(s in event_type for s in _WP_SKIP_TYPES):
+            cumulative_last_play = event
+
+        wp_events.append({
+            'time':      end_time,
+            'away_wp':   away_wp,
+            'home_wp':   home_wp,
+            'last_play': cumulative_last_play,
+        })
+
+    timeline.sort(key=lambda p: p['end_time'])
+    pitch_events.sort(key=lambda e: e['time'])
+    wp_events.sort(key=lambda e: e['time'])
+
+    return {
+        'scheduled_start_utc': scheduled_start,
+        'first_pitch_utc':     first_pitch,
+        'last_play_utc':       timeline[-1]['end_time'] if timeline else None,
+        'plays':               timeline,
+        'pitch_events':        pitch_events,
+        'wp_events':           wp_events,
+    }
+
+
+_TERMINAL_GAME_STATES = {'Postponed', 'Cancelled', 'Suspended'}
+
+def _game_state_at_time(base_game, tl, target_utc):
+    """Return a copy of base_game with dynamic fields set to game state at target_utc."""
+    state = dict(base_game)
+
+    # Preserve terminal non-game statuses (Postponed, Cancelled, Suspended).
+    # These have no play data, so the timeline-based logic would otherwise
+    # overwrite them with 'Scheduled'.
+    if base_game.get('detailed_state') in _TERMINAL_GAME_STATES and not tl.get('plays'):
+        return state
+
+    scheduled_start = tl.get('scheduled_start_utc')
+    first_pitch     = tl.get('first_pitch_utc') or scheduled_start
+    last_play_time  = tl.get('last_play_utc')
+    plays           = tl.get('plays', [])
+
+    # --- Before first pitch ---
+    if first_pitch and target_utc < first_pitch - timedelta(seconds=30):
+        state.update({
+            'detailed_state': 'Scheduled',
+            'away_runs': None, 'home_runs': None,
+            'current_inning': None, 'currentInningOrdinal': None, 'inningState': None,
+            'num_of_outs': None, 'balls': None, 'strikes': None,
+            'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+            'away_win_probability': None, 'home_win_probability': None, 'last_play': None,
+        })
+        return state
+
+    # --- After last play with buffer ---
+    if last_play_time and target_utc > last_play_time + timedelta(minutes=5):
+        final = plays[-1] if plays else None
+        state['detailed_state'] = 'Final'
+        if final:
+            state['away_runs']      = final['away_score']
+            state['home_runs']      = final['home_score']
+            state['current_inning'] = final['inning']
+        state.update({
+            'num_of_outs': None, 'balls': None, 'strikes': None,
+            'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+            'inningState': None, 'away_win_probability': None,
+            'home_win_probability': None,
+        })
+        # Keep last_play from final play if available
+        wp_events = tl.get('wp_events', [])
+        state['last_play'] = wp_events[-1]['last_play'] if wp_events else None
+        return state
+
+    # --- In Progress: reconstruct detailed state from pitch events and completed plays ---
+    state['detailed_state'] = 'In Progress'
+    pitch_events = tl.get('pitch_events', [])
+
+    # Last pitch event before target_utc
+    last_event = None
+    for ev in pitch_events:
+        if ev['time'] <= target_utc:
+            last_event = ev
+        else:
+            break
+
+    # Last completed play before target_utc
+    last_play = None
+    for play in plays:
+        if play['end_time'] <= target_utc:
+            last_play = play
+        else:
+            break
+
+    # Between-plays: last play resolved AFTER the most recent pitch event.
+    # This covers the inning break and the gap between plate appearances.
+    between_plays = (
+        last_play is not None and
+        (last_event is None or last_play['end_time'] > last_event['time'])
+    )
+
+    if between_plays:
+        outs_after = last_play.get('outs_after', 0)
+        half = last_play.get('half_inning', 'top')
+        state['away_runs']            = last_play['away_score']
+        state['home_runs']            = last_play['home_score']
+        state['current_inning']       = last_play['inning']
+        state['currentInningOrdinal'] = _ordinal(last_play['inning'])
+        state['num_of_outs']          = outs_after
+        state['balls']                = 0
+        state['strikes']              = 0
+        state['current_pitcher']      = last_play.get('pitcher') or None
+        state['current_hitter']       = None  # between at-bats, no batter yet
+        if outs_after >= 3:
+            # Inning break: top half done → Mid, bottom half done → End
+            state['inningState'] = 'Middle' if half == 'top' else 'End'
+        else:
+            state['inningState'] = 'Top' if half == 'top' else 'Bottom'
+    elif last_event:
+        # Mid-at-bat: pitch events are more recent than the last play completion
+        state['away_runs']            = last_event['away_score']
+        state['home_runs']            = last_event['home_score']
+        state['current_inning']       = last_event['inning']
+        state['currentInningOrdinal'] = _ordinal(last_event['inning'])
+        state['num_of_outs']          = last_event['outs']
+        state['balls']                = last_event['balls']
+        state['strikes']              = last_event['strikes']
+        state['current_pitcher']      = last_event.get('pitcher') or None
+        state['current_hitter']       = last_event.get('batter') or None
+        half = last_event.get('half_inning', 'top')
+        state['inningState']          = 'Top' if half == 'top' else 'Bottom'
+    else:
+        # No pitch events and no completed plays at this timestamp —
+        # the game hasn't officially started yet (no first pitch thrown).
+        state.update({
+            'detailed_state': 'Scheduled',
+            'away_runs': None, 'home_runs': None,
+            'current_inning': None, 'currentInningOrdinal': None,
+            'inningState': None, 'num_of_outs': None,
+            'balls': None, 'strikes': None,
+            'current_pitcher': None, 'current_hitter': None,
+        })
+
+    # --- Win probability and last-play: find last wp_event before target_utc ---
+    wp_events = tl.get('wp_events', [])
+    last_wp = None
+    for wp in wp_events:
+        if wp['time'] <= target_utc:
+            last_wp = wp
+        else:
+            break
+
+    if last_wp:
+        state['away_win_probability'] = last_wp['away_wp']
+        state['home_win_probability'] = last_wp['home_wp']
+        state['last_play']            = last_wp['last_play']
+    else:
+        state['away_win_probability'] = None
+        state['home_win_probability'] = None
+        state['last_play']            = None
+
+    state.update({
+        'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+    })
+    return state
+
+
+def _any_game_active(game_timelines, current_utc):
+    """Return True if any game has had at least one pitch thrown by current_utc
+    and hasn't ended more than 5 minutes ago.
+
+    pitch_events includes pre-game advisory/action events (mound visits, lineup
+    substitutions) with count 0-0.  Use the first event where balls+strikes > 0
+    (an actual pitch registered) or the first completed play, so pre-game
+    advisory events don't count as the game start.
+    """
+    for tl in game_timelines.values():
+        last_play    = tl.get('last_play_utc')
+        pitch_events = tl.get('pitch_events', [])
+        plays        = tl.get('plays', [])
+
+        # First pitch event that registered a ball or strike
+        game_start = None
+        for ev in pitch_events:
+            if (ev.get('balls', 0) or 0) + (ev.get('strikes', 0) or 0) > 0:
+                game_start = ev['time']
+                break
+        # Fall back to first completed play (handles first-pitch-hit where count stays 0-0)
+        if game_start is None and plays:
+            game_start = plays[0]['end_time']
+        # Last resort: first_pitch_utc from the schedule
+        if game_start is None:
+            game_start = tl.get('first_pitch_utc')
+
+        if not game_start or current_utc < game_start:
+            continue
+        game_end = (last_play + timedelta(minutes=5)) if last_play else (game_start + timedelta(hours=4))
+        if current_utc <= game_end:
+            return True
+    return False
+
+
+def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame_delay_ms, sport_id, config_data):
+    """Generate an animated GIF of the scoreboard for a game day.
+
+    Fetches each game's full play-by-play feed once (O(N_games) API calls),
+    then reconstructs game state at every minute in memory — no per-minute
+    API calls.  Time window is auto-detected from first pitch / last play
+    when --gif-start / --gif-end are not provided.
+    """
+    from generate_image import orchestrate_score_board
+
+    tz_str   = config_data.get('timezone', 'America/Chicago')
+    local_tz = pytz.timezone(tz_str)
+
+    # --- Step 1: Fetch base schedule (final/current state for team/game metadata) ---
+    print(f"Fetching schedule for {date_str}...")
+    fetch_scoreboard_for_date(date_str, sport_id)
+    base_games = read_json_file('data/games.json').get('games', [])
+    team_data  = read_json_file('data/teams.json') or {}
+    if 'team_abbreviation' not in team_data:
+        team_data = {'team_abbreviation': {}}
+
+    if not base_games:
+        print(f"No games found for {date_str}")
+        return
+
+    # --- Step 1b: Fetch standings as of this date so wildcard/division data is accurate ---
+    print(f"Fetching standings for {date_str}...")
+    try:
+        from standings import get_standings
+        from datetime import datetime as _dt
+        _date_obj = _dt.strptime(date_str, '%Y-%m-%d')
+        get_standings([103, 104], season=_date_obj.year, date=_date_obj.strftime('%m/%d/%Y'))
+        print("  standings ok")
+    except Exception as _e:
+        print(f"  standings error: {_e} (using cached)")
+
+    # --- Step 2: Fetch play-by-play timeline once per game ---
+    print(f"Fetching play-by-play for {len(base_games)} game(s)...")
+    game_timelines   = {}
+    all_first_pitches = []
+    all_last_plays    = []
+
+    for game in base_games:
+        game_pk = game.get('game_pk')
+        if not game_pk:
+            continue
+        print(f"  game {game_pk}...", end=' ', flush=True)
+        try:
+            tl = _fetch_game_timeline(game_pk)
+            game_timelines[str(game_pk)] = tl
+            anchor = tl.get('first_pitch_utc') or tl.get('scheduled_start_utc')
+            if anchor:
+                all_first_pitches.append(anchor)
+            if tl.get('last_play_utc'):
+                all_last_plays.append(tl['last_play_utc'])
+            print("ok")
+        except Exception as e:
+            print(f"error: {e}")
+
+    if not game_timelines:
+        print("No timeline data fetched — aborting.")
+        return
+
+    # --- Step 3: Determine time window ---
+    if gif_start and gif_end:
+        start_dt = local_tz.localize(datetime.strptime(f"{date_str} {gif_start}", "%Y-%m-%d %H:%M"))
+        end_dt   = local_tz.localize(datetime.strptime(f"{date_str} {gif_end}",   "%Y-%m-%d %H:%M"))
+    else:
+        if not all_first_pitches:
+            print("Cannot determine start time — provide --gif-start/--gif-end")
+            return
+        start_utc = min(all_first_pitches)
+        end_utc   = (max(all_last_plays) + timedelta(minutes=5)) if all_last_plays \
+                    else max(all_first_pitches) + timedelta(hours=4)
+        start_dt = start_utc.astimezone(local_tz)
+        end_dt   = end_utc.astimezone(local_tz)
+        print(f"Auto-detected window: {start_dt.strftime('%H:%M')}–{end_dt.strftime('%H:%M')} {tz_str}")
+
+    if end_dt <= start_dt:
+        print("End time is before start time — aborting.")
+        return
+
+    total_steps = int((end_dt - start_dt).total_seconds() / 60 / interval_min) + 1
+    print(f"Generating {total_steps}-frame GIF ({interval_min}min intervals, {frame_delay_ms}ms/frame)")
+    print(f"  Output: {output_path}")
+
+    # --- Step 4: Render each frame from in-memory timelines ---
+    frames = []
+    current_dt = start_dt
+    step = 0
+
+    while current_dt <= end_dt:
+        step += 1
+        current_utc = current_dt.astimezone(pytz.utc)
+        time_label  = current_dt.strftime("%H:%M")
+
+        if not _any_game_active(game_timelines, current_utc):
+            print(f"  [    dead] {current_dt.strftime('%H:%M')} — no active games, skipping")
+            current_dt += timedelta(minutes=interval_min)
+            continue
+
+        print(f"  [{step:4d}/{total_steps}] {time_label}...", end=' ', flush=True)
+
+        frame_games = []
+        for game in base_games:
+            pk_str = str(game.get('game_pk', ''))
+            tl = game_timelines.get(pk_str)
+            frame_games.append(_game_state_at_time(game, tl, current_utc) if tl else dict(game))
+
+        try:
+            result = orchestrate_score_board(frame_games, team_data, date_str, bypass_cache=True)
+            if result:
+                image, _ = result
+                frames.append(image.convert('L').convert('P'))
+                print("ok")
+            else:
+                print("skip")
+        except Exception as e:
+            print(f"error: {e}")
+
+        current_dt += timedelta(minutes=interval_min)
+
+    # --- Step 5: Save GIF ---
+    if not frames:
+        print("No frames generated — GIF not saved.")
+        return
+
+    print(f"Assembling {len(frames)}-frame GIF...")
+    frames[0].save(
+        output_path,
+        save_all=True,
+        append_images=frames[1:],
+        optimize=False,
+        duration=frame_delay_ms,
+        loop=0,
+    )
+    print(f"✓ GIF saved to {output_path}")
+
+
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -682,6 +1210,15 @@ Examples:
   # Specify a date
   python scoreboard_generate.py --date 2024-07-26
 
+  # Time-travel: show scoreboard as it appeared at 7:32 PM local time
+  python scoreboard_generate.py --date 2025-04-01 --time 19:32
+
+  # Generate a GIF for the full game day (auto-detects first pitch to last out)
+  python scoreboard_generate.py --date 2025-04-01 --gif
+
+  # GIF with manual window override
+  python scoreboard_generate.py --date 2025-04-01 --gif --gif-start 18:00 --gif-end 23:00 --gif-interval 5 --gif-delay 300
+
   # World Baseball Classic game from 2023
   python scoreboard_generate.py --date 2023-03-21 --sport-id 8
 
@@ -693,6 +1230,50 @@ Examples:
         '--date',
         type=str,
         help='Date to fetch games for (format: YYYY-MM-DD). Default: today'
+    )
+    parser.add_argument(
+        '--time',
+        type=str,
+        metavar='HH:MM',
+        help='Time-travel: show the scoreboard as it appeared at this local time on --date'
+    )
+    parser.add_argument(
+        '--gif',
+        action='store_true',
+        help='Generate a GIF for --date (auto-detects time window from first pitch to last out)'
+    )
+    parser.add_argument(
+        '--gif-start',
+        type=str,
+        metavar='HH:MM',
+        help='GIF start time override (local HH:MM). Auto-detected if omitted.'
+    )
+    parser.add_argument(
+        '--gif-end',
+        type=str,
+        metavar='HH:MM',
+        help='GIF end time (local, HH:MM). Requires --date and --gif-start.'
+    )
+    parser.add_argument(
+        '--gif-output',
+        type=str,
+        metavar='FILE',
+        default='scoreboard_timelapse.gif',
+        help='Output path for the generated GIF (default: scoreboard_timelapse.gif)'
+    )
+    parser.add_argument(
+        '--gif-interval',
+        type=int,
+        metavar='MINUTES',
+        default=1,
+        help='Minutes between each GIF frame (default: 1)'
+    )
+    parser.add_argument(
+        '--gif-delay',
+        type=int,
+        metavar='MS',
+        default=500,
+        help='Delay between GIF frames in milliseconds (default: 500)'
     )
     parser.add_argument(
         '--sport-id',
@@ -711,6 +1292,20 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # --gif-start and --gif-end must always be used together
+    if bool(args.gif_start) != bool(args.gif_end):
+        parser.error("--gif-start and --gif-end must be used together")
+    # --gif / --gif-start / --gif-end all require --date
+    gif_mode = args.gif or bool(args.gif_start)
+    if gif_mode and not args.date:
+        parser.error("--gif / --gif-start / --gif-end require --date")
+    if args.time and not args.date:
+        parser.error("--time requires --date")
+
+    # Time-travel and GIF modes are treated as explicit offline requests — bypass
+    # night mode, smart polling, and Discord state checks.
+    offline_mode = bool(args.time or gif_mode or args.local)
 
     # Display platform information
     system_platform = platform.system()
@@ -737,8 +1332,8 @@ Examples:
             # Window within same day (e.g. 0 to 7): active if start <= hour < end
             in_night_window = night_start <= current_hour < night_end
         if in_night_window:
-            if args.local:
-                print(f"Night mode: bypassed for local testing ({now_local.strftime('%H:%M')})")
+            if offline_mode:
+                print(f"Night mode: bypassed for offline/local request ({now_local.strftime('%H:%M')})")
             else:
                 print(f"Night mode: skipping refresh ({now_local.strftime('%H:%M')})")
                 return
@@ -746,8 +1341,8 @@ Examples:
     dark_mode = config_data.get('dark_mode', False)
 
     # --- Discord state check ---
-    # Apply any pending changes from the Discord bot before doing anything else
-    discord_state = load_discord_state()
+    # Skip Discord changes for offline/time-travel/GIF modes — they're historical queries.
+    discord_state = None if offline_mode else load_discord_state()
     if discord_state:
         user = discord_state.get('requested_by', 'unknown')
         mode_req = discord_state.get('pending_mode', '')
@@ -794,9 +1389,20 @@ Examples:
         date_str = now.strftime('%Y-%m-%d')
         print(f"Using today's date: {date_str}")
 
+    # --- GIF generation mode ---
+    if gif_mode:
+        _generate_gif(
+            date_str,
+            args.gif_start or None,  # None triggers auto-detection
+            args.gif_end   or None,
+            args.gif_output, args.gif_interval, args.gif_delay,
+            sport_id, config_data,
+        )
+        return
+
     # --- Smart polling: rate-limit MLB API calls based on game state ---
-    # Only applies when running on today's date (not a manual --date override or --local)
-    if not args.date and not args.local:
+    # Only applies when running on today's date without any offline/explicit flags
+    if not args.date and not offline_mode:
         sched = load_schedule_state()
 
         # Skip entirely if next game is a future date
@@ -817,30 +1423,37 @@ Examples:
 
         if any_live:
             # Game in progress — always fetch, no throttle
-            interval_min = 0
+            polling_interval = 0
         elif all_done:
             # All games finished — check once per hour (scores won't change)
-            interval_min = 60
+            polling_interval = 60
         elif not cached_games:
             # No cached data yet today — use hourly until we confirm games exist
-            interval_min = 60
+            polling_interval = 60
         else:
             # Pre-game / scheduled — respect update_interval from config
-            interval_min = config_data.get('update_interval', 14)
+            polling_interval = config_data.get('update_interval', 14)
 
-        if interval_min > 0:
+        if polling_interval > 0:
             last_fetch = sched.get('last_game_fetch')
             if last_fetch:
                 try:
                     elapsed = datetime.now() - datetime.fromisoformat(last_fetch)
-                    if elapsed < timedelta(minutes=interval_min):
+                    if elapsed < timedelta(minutes=polling_interval):
                         mins = int(elapsed.total_seconds() // 60)
-                        print(f"Throttled — {mins}min since last fetch (interval={interval_min}min, state={'all_done' if all_done else 'pre-game'})")
+                        print(f"Throttled — {mins}min since last fetch (interval={polling_interval}min, state={'all_done' if all_done else 'pre-game'})")
                         return
                 except Exception:
                     pass
 
-    fetch_scoreboard_for_date(date_str, sport_id)
+    # --- Time-travel: convert local HH:MM to MLB API timecode ---
+    timecode = None
+    if args.time:
+        tz_str = config_data.get('timezone', 'America/Chicago')
+        timecode = _local_time_to_timecode(date_str, args.time, tz_str)
+        print(f"Time-travel: {date_str} {args.time} ({tz_str}) → timecode {timecode} ET")
+
+    fetch_scoreboard_for_date(date_str, sport_id, timecode=timecode)
 
     game_state_data = read_json_file('data/games.json')['games']
     team_data = read_json_file('data/teams.json')
@@ -849,8 +1462,8 @@ Examples:
     if not team_data or 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    # After fetching: update schedule state
-    if not args.date and not args.local:
+    # After fetching: update schedule state (only for normal live-polling runs)
+    if not args.date and not offline_mode:
         sched = load_schedule_state()
         sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
         if not game_state_data:
@@ -873,24 +1486,31 @@ Examples:
         _run_single_game_mode(mode, game_state_data, team_data, config_data)
         print(f"\n✓ {mode.title()} view generated successfully!")
         print(f"  View image at: resulting_image.bmp")
-        if args.local and platform.system() == 'Darwin':
+        if offline_mode and platform.system() == 'Darwin':
             import subprocess
             subprocess.run(['open', 'resulting_image.bmp'], check=False)
         return
 
-    result = orchestrate_score_board(game_state_data, team_data, date_str)
+    # bypass_cache=True for time-travel so the image always renders (no stale-state skip)
+    result = orchestrate_score_board(game_state_data, team_data, date_str,
+                                     bypass_cache=bool(args.time))
 
     if result:
         sccoreboard_image, changed_regions = result
-        if needs_full_refresh() or not changed_regions:
-            print("Scoreboard: full refresh")
-            display_image(sccoreboard_image)
+        if args.time:
+            # Time-travel: just save the image, no e-ink update
+            sccoreboard_image.save('resulting_image.bmp')
+            print(f"\n✓ Time-travel snapshot saved to resulting_image.bmp")
         else:
-            print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
-            display_partial_regions(sccoreboard_image, changed_regions)
-        print(f"\n✓ Scoreboard generated successfully!")
-        print(f"  View image at: resulting_image.bmp")
-        if args.local and platform.system() == 'Darwin':
+            if needs_full_refresh() or not changed_regions:
+                print("Scoreboard: full refresh")
+                display_image(sccoreboard_image)
+            else:
+                print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
+                display_partial_regions(sccoreboard_image, changed_regions)
+            print(f"\n✓ Scoreboard generated successfully!")
+            print(f"  View image at: resulting_image.bmp")
+        if offline_mode and platform.system() == 'Darwin':
             import subprocess
             subprocess.run(['open', 'resulting_image.bmp'], check=False)
     else:
