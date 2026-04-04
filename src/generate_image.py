@@ -1018,6 +1018,32 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data = dict(game_data)
         game_data['detailed_state'] = 'In Progress'
 
+    # Only show score once the first pitch has been thrown. Evidence of play:
+    # a ball/strike in the current at-bat, any out, any hit, a runner on base,
+    # an inning break, or the game past inning 1. If none of these are present
+    # the game hasn't officially started despite the API saying "In Progress".
+    if game_data.get('detailed_state') == 'In Progress':
+        # Only show score once the first pitch has been thrown.
+        # away_hits/home_hits are intentionally excluded: in the GIF path they
+        # are inherited from the final game box score and are always non-zero,
+        # causing false positives before the game starts.
+        _has_play = (
+            (game_data.get('balls') or 0) > 0
+            or (game_data.get('strikes') or 0) > 0
+            or (game_data.get('num_of_outs') or 0) > 0
+            or (game_data.get('away_runs') or 0) > 0
+            or (game_data.get('home_runs') or 0) > 0
+            or game_data.get('inningState') in ('Middle', 'End')
+            or (game_data.get('current_inning') or 1) > 1
+            or game_data.get('runner_on_first')
+            or game_data.get('runner_on_second')
+            or game_data.get('runner_on_third')
+            or game_data.get('last_play')
+        )
+        if not _has_play:
+            game_data = dict(game_data)
+            game_data['detailed_state'] = 'Pre-Game'
+
     draw = ImageDraw.Draw(Himage)
     font26 = _get_font(26)
     font24 = _get_font(24)
@@ -1395,8 +1421,21 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
 
     draw = ImageDraw.Draw(Himage)
 
-    # draw.line((col_start, 60 + row_start, 580 + col_start, 60 + row_start), fill = 0)
-    # draw.line((col_start, 90 + row_start, 580 + col_start, 90 + row_start), fill = 0)
+    # --- Date label: centered in the top strip, as large as possible, bold ---
+    if date_str:
+        from datetime import datetime as _dt
+        try:
+            _d = _dt.strptime(date_str, '%Y-%m-%d')
+            _label = _d.strftime('%B %-d, %Y')
+        except (ValueError, AttributeError):
+            _label = date_str
+        _font_date = _get_font(24)
+        _lw = int(_font_date.getlength(_label))
+        _lx = (800 - _lw) // 2
+        _ly = max(0, (_WC_STRIP_H - 24) // 2)
+        draw.text((_lx,     _ly), _label, font=_font_date, fill=0)
+        draw.text((_lx + 1, _ly), _label, font=_font_date, fill=0)  # bold stroke
+
     x_start = 32
     y_start = 30
 
