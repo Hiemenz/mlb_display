@@ -1,5 +1,5 @@
 from generate_image import orchestrate_score_board
-from fetch_games import fetch_win_probability
+from fetch_games import fetch_win_probability, _fetch_pitcher_eras
 
 from datetime import datetime, timedelta
 import json
@@ -253,12 +253,14 @@ def parse_games(data, sport_id=None):
             'away_team_id': away_team_id,
             'away_team_is_winner': away_team.get('isWinner'),
             'away_probable': away_team.get('probablePitcher', {}).get('fullName'),
+            '_away_probable_id': away_team.get('probablePitcher', {}).get('id'),
             'away_probable_note': away_team.get('probablePitcher', {}).get('note'),
             'away_team_series_number': away_team.get('seriesNumber'),
             'home_team_name': home_team_info.get('name'),
             'home_team_id': home_team_id,
             'home_team_is_winner': home_team.get('isWinner'),
             'home_probable': home_team.get('probablePitcher', {}).get('fullName'),
+            '_home_probable_id': home_team.get('probablePitcher', {}).get('id'),
             'home_probable_note': home_team.get('probablePitcher', {}).get('note'),
             'home_team_series_number': home_team.get('seriesNumber'),
             'double_header': game.get('doubleHeader'),
@@ -312,6 +314,29 @@ def parse_games(data, sport_id=None):
                 game_dict['home_win_probability'] = home_wp
 
         game_array.append(game_dict)
+
+    # Batch-fetch probable pitcher ERA (MLB API no longer returns note field)
+    pitcher_ids = set()
+    for gd in game_array:
+        if gd.get('_away_probable_id'):
+            pitcher_ids.add(gd['_away_probable_id'])
+        if gd.get('_home_probable_id'):
+            pitcher_ids.add(gd['_home_probable_id'])
+    if pitcher_ids:
+        from datetime import date as _date
+        season = str(_date.today().year)
+        eras = _fetch_pitcher_eras(pitcher_ids, season)
+        for gd in game_array:
+            away_id = gd.pop('_away_probable_id', None)
+            home_id = gd.pop('_home_probable_id', None)
+            if away_id and away_id in eras and not gd.get('away_probable_note'):
+                gd['away_probable_note'] = eras[away_id]
+            if home_id and home_id in eras and not gd.get('home_probable_note'):
+                gd['home_probable_note'] = eras[home_id]
+    else:
+        for gd in game_array:
+            gd.pop('_away_probable_id', None)
+            gd.pop('_home_probable_id', None)
 
     # Save both games and updated team abbreviations
     save_off_results({'games': game_array}, 'games')
