@@ -1007,7 +1007,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
     return Himage
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None):
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
         game_data = dict(game_data)
@@ -1111,12 +1111,34 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((start_x + 7, y), txt, font=fnt, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
-        away_prob = _pitcher_line(game_data.get("away_probable"), game_data.get("away_probable_note"))
-        home_prob = _pitcher_line(game_data.get("home_probable"), game_data.get("home_probable_note"))
-        away_prob, away_font = fit_text(away_prob, max_text_width)
-        home_prob, home_font = fit_text(home_prob, max_text_width)
-        draw.text((start_x + 7 , start_y + 25 + 59), away_prob, font=away_font, fill=0)
-        draw.text((start_x + 7, start_y + 25 + 74), home_prob, font=home_font, fill=0)
+        def _draw_pitcher_era(raw_str, y_pos):
+            """Draw pitcher name left-aligned and ERA right-anchored to the box edge."""
+            parts = raw_str.rsplit(' ', 1)
+            era_part = None
+            if len(parts) == 2:
+                try:
+                    float(parts[1])
+                    era_part = parts[1]
+                    name_part = parts[0]
+                except ValueError:
+                    name_part = raw_str
+            else:
+                name_part = raw_str
+            if era_part:
+                era_w = int(font14.getlength(era_part))
+                era_x = start_x + horizonta_len - era_w - 1
+                draw.text((era_x, y_pos), era_part, font=font14, fill=0)
+                max_name_w = era_x - (start_x + 7) - 2
+                name_str, name_fnt = fit_text(name_part, max(max_name_w, 20))
+                draw.text((start_x + 7, y_pos), name_str, font=name_fnt, fill=0)
+            else:
+                name_str, name_fnt = fit_text(name_part, max_text_width)
+                draw.text((start_x + 7, y_pos), name_str, font=name_fnt, fill=0)
+
+        away_prob_raw = _pitcher_line(game_data.get("away_probable"), game_data.get("away_probable_note"))
+        home_prob_raw = _pitcher_line(game_data.get("home_probable"), game_data.get("home_probable_note"))
+        _draw_pitcher_era(away_prob_raw, start_y + 25 + 59)
+        _draw_pitcher_era(home_prob_raw, start_y + 25 + 74)
     elif game_data['detailed_state'] == 'Postponed':
         reason = game_data.get('postpone_reason') or game_data.get('description') or ''
         postponed_line, postponed_fnt = fit_text(f'PPD: {reason}' if reason else 'Postponed', max_text_width)
@@ -1195,7 +1217,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     if vfont.getlength(venue_clean) <= max_venue_w:
                         break
                 vw = int(vfont.getlength(venue_clean))
-                vx = start_x + horizonta_len - vw - 2
+                vx = start_x + horizonta_len - vw - 1
                 draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
             except AttributeError:
                 pass
@@ -1242,9 +1264,43 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
                 draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
     elif game_data['detailed_state'] in ['Scheduled', 'Pre-Game', 'Warmup']:
-        # Game hasn't started - show team records
-        draw.text((start_x + 89, start_y + 31), f'{game_data.get("away_team_record_wins", "0")} - {game_data.get("away_team_record_losses", "0")}', font=font14, fill=0)
-        draw.text((start_x + 89, start_y + 61), f'{game_data.get("home_team_record_wins", "0")} - {game_data.get("home_team_record_losses", "0")}', font=font14, fill=0)
+        # Game hasn't started - show "W-L (l10w-l10l) streak" right-anchored
+        def _team_stats(team_id):
+            if streak_map:
+                return streak_map.get(str(team_id)) or {}
+            return {}
+
+        def _format_record_line(wins, losses, team_id):
+            rec = f'{wins}-{losses}'
+            stats = _team_stats(team_id)
+            w10, l10 = stats.get('l10_wins'), stats.get('l10_losses')
+            if w10 is not None and l10 is not None:
+                rec += f' ({w10}-{l10})'
+            s = stats.get('streak')
+            if s:
+                rec += f' {s}'
+            return rec
+
+        def _draw_record(wins, losses, team_id, y_pos):
+            txt = _format_record_line(wins, losses, team_id)
+            # font11 fits all realistic strings; font9 is a safety fallback only
+            fnt = font11 if font11.getlength(txt) <= horizonta_len - 2 else font9
+            tw = int(fnt.getlength(txt))
+            rx = start_x + horizonta_len - tw - 1
+            draw.text((rx, y_pos), txt, font=fnt, fill=0)
+
+        _draw_record(
+            game_data.get("away_team_record_wins", "0"),
+            game_data.get("away_team_record_losses", "0"),
+            game_data.get("away_team_id"),
+            start_y + 33,
+        )
+        _draw_record(
+            game_data.get("home_team_record_wins", "0"),
+            game_data.get("home_team_record_losses", "0"),
+            game_data.get("home_team_id"),
+            start_y + 63,
+        )
         
     # horizontal line
     end_x = start_x + horizonta_len
@@ -1453,6 +1509,19 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                     game_list.insert(0, game_list.pop(i))
                     break
 
+    # Build per-team stats lookup {str(team_id): {'streak': ..., 'l10_wins': ..., 'l10_losses': ...}}
+    _standings = load_json_file('standings.json')
+    streak_map = {}
+    for _div_teams in _standings.get('standings', {}).values():
+        for _t in _div_teams:
+            _tid = str(_t.get('team_id', ''))
+            if _tid:
+                streak_map[_tid] = {
+                    'streak': _t.get('streak'),
+                    'l10_wins': _t.get('last_ten_wins'),
+                    'l10_losses': _t.get('last_ten_losses'),
+                }
+
     counter = 0
     for y in range(0,3):
         for x in range(0,5):
@@ -1461,7 +1530,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             if game_list[counter]:
                 game_pk_key = str(game_list[counter].get('game_pk', ''))
                 score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
-                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
+                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, streak_map=streak_map)
             counter += 1
 
     Himage.save('score_board.bmp')
