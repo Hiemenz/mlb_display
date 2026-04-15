@@ -123,6 +123,62 @@ def fetch_pitch_view_data(game_pk):
     }
 
 
+def fetch_scoreboard_live_extras(game_pk):
+    """Fetch pitch count, batter game stats, last at-bat result, and last pitch speed
+    from the live feed for use in the scoreboard box.
+
+    Returns a dict with keys: pitch_count, batter_hits, batter_at_bats,
+    batter_last_result, last_pitch_speed, last_pitch_type.
+    All values default to None / '' on any failure.
+    """
+    try:
+        data = fetch_live_feed(game_pk)
+        live = data.get('liveData', {})
+        plays = live.get('plays', {})
+        linescore = live.get('linescore', {})
+        boxscore = live.get('boxscore', {})
+
+        pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
+        batter_id = linescore.get('offense', {}).get('batter', {}).get('id')
+
+        pitcher_info = _get_player_info(boxscore, pitcher_id, 'pitching')
+        batter_info = _get_player_info(boxscore, batter_id, 'batting')
+
+        pitch_count = pitcher_info.get('stats', {}).get('numberOfPitches')
+        batter_hits = batter_info.get('stats', {}).get('hits')
+        batter_at_bats = batter_info.get('stats', {}).get('atBats')
+
+        # Last completed at-bat result for the current batter (e.g. HR, K, 2B)
+        batter_last_result = ''
+        for play in reversed(plays.get('allPlays', [])):
+            if play.get('matchup', {}).get('batter', {}).get('id') == batter_id:
+                event = play.get('result', {}).get('event', '')
+                batter_last_result = _EVENT_CODE_MAP.get(event, event[:3] if event else '')
+                break
+
+        # Last pitch speed and type from the most recent pitch event
+        last_speed = None
+        last_type = ''
+        for event in reversed(plays.get('currentPlay', {}).get('playEvents', [])):
+            if event.get('isPitch'):
+                pd = event.get('pitchData', {})
+                last_speed = pd.get('startSpeed')
+                raw_code = event.get('details', {}).get('type', {}).get('code', '') or ''
+                last_type = _PITCH_TYPE_ABBR.get(raw_code, raw_code)
+                break
+
+        return {
+            'pitch_count': pitch_count,
+            'batter_hits': batter_hits,
+            'batter_at_bats': batter_at_bats,
+            'batter_last_result': batter_last_result,
+            'last_pitch_speed': last_speed,
+            'last_pitch_type': last_type,
+        }
+    except Exception:
+        return {}
+
+
 def _extract_pitches(plays):
     """Extract pitch locations from the current at-bat, falling back to the last completed at-bat."""
     sources = [plays.get('currentPlay', {})]
@@ -345,6 +401,28 @@ def _get_player_info(boxscore, player_id, stat_type):
                     'season': season,
                 }
     return {'name': '', 'stats': {}, 'season': {}}
+
+
+# --- Pitch type display abbreviations (Statcast code → scoreboard label) ---
+
+_PITCH_TYPE_ABBR = {
+    'FF': 'FB',  # Four-seam fastball
+    'FA': 'FB',  # Generic fastball
+    'FT': 'FB',  # Two-seam fastball
+    'SI': 'SI',  # Sinker
+    'FC': 'CT',  # Cutter
+    'SL': 'SL',  # Slider
+    'ST': 'SW',  # Sweeper
+    'SW': 'SW',
+    'CH': 'CH',  # Changeup
+    'CU': 'CB',  # Curveball
+    'CS': 'CB',
+    'KC': 'KC',  # Knuckle-curve
+    'FS': 'SP',  # Splitter
+    'KN': 'KN',  # Knuckleball
+    'EP': 'EP',  # Eephus
+    'SC': 'SC',  # Screwball
+}
 
 
 # --- Scorecard Data ---

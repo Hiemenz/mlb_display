@@ -78,6 +78,10 @@ small_logo_x_offset: 2
 # Left edge = 0% (certain loss), right edge = 100% (certain win). Only shown for In Progress games.
 scoreboard_win_probability: true
 
+# Live details in scoreboard boxes: pitch count, batter today stats + last AB result, last pitch speed.
+# Adds one extra API call (live feed) per in-progress game per refresh cycle.
+scoreboard_live_details: true
+
 # Discord bot configuration
 # Get token from https://discord.com/developers/applications
 # Set channel_id to restrict commands to one channel (0 = any channel)
