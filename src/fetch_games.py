@@ -332,6 +332,10 @@ def parse_games(data, sport_id=None, config=None):
             if config.get('scoreboard_win_probability', False):
                 game_dict['away_win_probability'] = away_wp
                 game_dict['home_win_probability'] = home_wp
+            if config.get('scoreboard_live_details', False):
+                from game_detail_fetch import fetch_scoreboard_live_extras
+                extras = fetch_scoreboard_live_extras(game_id)
+                game_dict.update(extras)
         game_array.append(game_dict)
 
     # Batch-fetch probable pitcher ERA (MLB API no longer returns note field)

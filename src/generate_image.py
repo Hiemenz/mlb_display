@@ -1148,10 +1148,56 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             venue_ppd_txt, venue_ppd_fnt = fit_text(venue_ppd, max_text_width)
             draw.text((start_x + 7, start_y + 25 + 74), venue_ppd_txt, font=venue_ppd_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
-        pitcher_str, pitcher_font = fit_text(f'P: {game_data.get("current_pitcher") or ""}', max_text_width)
-        hitter_str, hitter_font = fit_text(f'AB: {game_data.get("current_hitter") or ""}', max_text_width)
+        # Right-column pitch info: speed on count row, "TYPE (count)" on pitcher line
+        _pc = game_data.get('pitch_count')
+        _pt = game_data.get('last_pitch_type', '')   # e.g. "FB", "SL", "CH"
+        _lps = game_data.get('last_pitch_speed')
+
+        # Pitcher line right badge: "FB (87)", "(87)", "FB", or ""
+        if _pc is not None and _pt:
+            _right_str = f'{_pt} ({_pc})'
+        elif _pc is not None:
+            _right_str = f'({_pc})'
+        elif _pt:
+            _right_str = _pt
+        else:
+            _right_str = ''
+        _right_w = int(font11.getlength(_right_str)) + 2 if _right_str else 0
+
+        pitcher_str, pitcher_font = fit_text(
+            f'P: {game_data.get("current_pitcher") or ""}',
+            max_text_width - _right_w,
+        )
         draw.text((start_x + 5, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
+        if _right_str:
+            draw.text((start_x + horizonta_len - _right_w, start_y + 25 + 74), _right_str, font=font11, fill=0)
+
+        # Speed right-aligned above the pitch count column on the B/S row (bold)
+        if _lps:
+            _speed_str = str(int(_lps))
+            _speed_w = int(font11.getlength(_speed_str)) + 2
+            _speed_x = start_x + horizonta_len - _speed_w
+            _speed_y = start_y + 25 + 62
+            draw.text((_speed_x,     _speed_y), _speed_str, font=font11, fill=0)
+            draw.text((_speed_x + 1, _speed_y), _speed_str, font=font11, fill=0)
+
+        # Batter stats "2-4 HR" right-anchored on hitter line
+        _bh = game_data.get('batter_hits')
+        _ba = game_data.get('batter_at_bats')
+        _blr = game_data.get('batter_last_result', '')
+        _ba_str = ''
+        if _bh is not None and _ba is not None:
+            _ba_str = f'{_bh}-{_ba}'
+            if _blr:
+                _ba_str += f' {_blr}'
+        _ba_w = int(font11.getlength(_ba_str)) + 2 if _ba_str else 0
+        hitter_str, hitter_font = fit_text(
+            f'AB: {game_data.get("current_hitter") or ""}',
+            max_text_width - _ba_w,
+        )
         draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
+        if _ba_str:
+            draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
         
     if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
         # Normalize display labels
@@ -1407,8 +1453,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         Himage = draw_circle(Himage, (start_x + 34 + 63, start_y + 25 + 68), 4, strikes_list[1])
 
         if game_data.get('save_situation'):
-            sv_w = int(font11.getlength('SV'))
-            draw.text((start_x + horizonta_len - sv_w - 2, start_y + 25 + 61), 'SV', font=font11, fill=0)
+            _sv_w = int(font9.getlength('SV'))
+            draw.text((start_x + horizonta_len - _sv_w - 2, start_y + 21), 'SV', font=font9, fill=0)
     else:
 
         # Perfect game takes precedence over no-hitter display
