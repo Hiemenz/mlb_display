@@ -193,10 +193,20 @@ def _should_skip_poll(date_str, config, sched):
     )
     all_done = bool(cached_games) and all(g.get('detailed_state') in _final_states for g in cached_games)
 
+    # Final games that haven't received decisions yet (API lag after game ends)
+    _final_no_decision_states = {'Final', 'Game Over', 'Final: Tied', 'Completed Early'}
+    any_final_undecided = any(
+        g.get('detailed_state') in _final_no_decision_states
+        and g.get('winner_name') is None
+        for g in cached_games
+    )
+
     if any_live:
         return False, ""
 
-    if all_done:
+    if any_final_undecided:
+        interval_min = 2
+    elif all_done:
         interval_min = 60
     elif not cached_games:
         interval_min = 60
@@ -209,7 +219,11 @@ def _should_skip_poll(date_str, config, sched):
             elapsed = datetime.now() - datetime.fromisoformat(last_fetch)
             if elapsed < timedelta(minutes=interval_min):
                 mins = int(elapsed.total_seconds() // 60)
-                state_label = 'all_done' if all_done else 'pre-game'
+                state_label = (
+                    'final_undecided' if any_final_undecided
+                    else 'all_done' if all_done
+                    else 'pre-game'
+                )
                 return True, f"Throttled — {mins}min since last fetch (interval={interval_min}min, state={state_label})"
         except Exception:
             pass
