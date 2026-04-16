@@ -797,21 +797,51 @@ def _format_player_name(name):
 
 
 def _pitcher_line(name, note):
-    """Format 'F. Lastname ERA' for probable pitcher display.
+    """Return (name_str, stat_str) for probable pitcher display.
 
-    note is the MLB Stats API probablePitcher.note, e.g. '2-1, 3.45 ERA'.
-    Returns 'F. Lastname' if ERA is unavailable.
+    name_str is 'Lastname F.' format.
+    stat_str combines W-L and ERA, e.g. '1-0 3.45', or just one if the other
+    is missing, or '' if neither is available.
     """
     if not name:
-        return 'TBD'
-    display_name = _format_player_name(name)
+        return ('TBD', '')
+    parts = name.split()
+    last_name = parts[-1]
+    for i in range(len(parts) - 1, 0, -1):
+        if parts[i].lower().strip('.') not in _NAME_SUFFIXES:
+            last_name = parts[i]
+            break
+    first_initial = parts[0][0] + '.' if len(parts) > 1 else ''
+    display_name = f'{first_initial} {last_name}' if first_initial else last_name
+
+    wl_str = ''
+    era_str = ''
     if note:
-        parts = note.split(', ')
-        if len(parts) >= 2:
-            era_str = parts[1].replace(' ERA', '').strip()
-            if era_str and not era_str.startswith('-'):
-                return f'{display_name} {era_str}'
-    return display_name
+        note_parts = note.split(', ')
+        if note_parts:
+            candidate = note_parts[0].strip()
+            if '-' in candidate:
+                left, right = candidate.split('-', 1)
+                if left.strip().isdigit() and right.strip().isdigit():
+                    wl_str = candidate
+        if len(note_parts) >= 2:
+            era_candidate = note_parts[1].replace(' ERA', '').strip()
+            if era_candidate and not era_candidate.startswith('-'):
+                try:
+                    float(era_candidate)
+                    era_str = era_candidate
+                except ValueError:
+                    pass
+
+    if wl_str and era_str:
+        stat = f'{wl_str} {era_str}'
+    elif wl_str:
+        stat = wl_str
+    elif era_str:
+        stat = era_str
+    else:
+        stat = ''
+    return (display_name, stat)
 
 
 _VENUE_OVERRIDES = {
@@ -1100,45 +1130,63 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         LINE_H = 15
         BOTTOM_Y = start_y + vertical_len + 20 - 3  # 3px margin above bottom border
         saver = game_data.get('saver_name')
+        winner_record = game_data.get('winner_record')
+        loser_record = game_data.get('loser_record')
+        saver_saves = game_data.get('saver_saves')
         lines = []
-        lines.append(fit_text(f'LP: {_format_player_name(game_data.get("loser_name") or "")}', max_text_width))
-        lines.append(fit_text(f'WP: {_format_player_name(game_data.get("winner_name") or "")}', max_text_width))
+        wp_name = _format_player_name(game_data.get('winner_name') or '')
+        lp_name = _format_player_name(game_data.get('loser_name') or '')
+        wp_str = f'WP: {wp_name} ({winner_record})' if winner_record else f'WP: {wp_name}'
+        lp_str = f'LP: {lp_name} ({loser_record})' if loser_record else f'LP: {lp_name}'
+        lines.append((lp_str, font14))
+        lines.append((wp_str, font14))
         if saver:
-            lines.append(fit_text(f'SV: {_format_player_name(saver)}', max_text_width))
+            sv_name = _format_player_name(saver)
+            sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
+            lines.append((sv_str, font14))
+
+        def _truncate_keep_suffix(s):
+            """Truncate s to max_text_width at font14, cutting the name but preserving trailing (...)."""
+            if int(font14.getlength(s)) <= max_text_width:
+                return s
+            # Isolate trailing record suffix like " (1-0)" or " (S7)"
+            paren = s.rfind(' (')
+            if paren != -1:
+                suffix = s[paren:]       # e.g. " (1-0)"
+                prefix = s[:paren]       # e.g. "WP: R. Thompson"
+                suffix_w = int(font14.getlength(suffix))
+                avail = max_text_width - suffix_w
+                while prefix and int(font14.getlength(prefix)) > avail:
+                    prefix = prefix[:-1]
+                return prefix + suffix
+            # No suffix — truncate the whole string
+            while s and int(font14.getlength(s)) > max_text_width:
+                s = s[:-1]
+            return s
+
         # Draw from bottom up
         for i, (txt, fnt) in enumerate(reversed(lines)):
             y = BOTTOM_Y - LINE_H * (i + 1)
-            draw.text((start_x + 7, y), txt, font=fnt, fill=0)
+            draw.text((start_x + 7, y), _truncate_keep_suffix(txt), font=fnt, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
-        def _draw_pitcher_era(raw_str, y_pos):
-            """Draw pitcher name left-aligned and ERA right-anchored to the box edge."""
-            parts = raw_str.rsplit(' ', 1)
-            era_part = None
-            if len(parts) == 2:
-                try:
-                    float(parts[1])
-                    era_part = parts[1]
-                    name_part = parts[0]
-                except ValueError:
-                    name_part = raw_str
-            else:
-                name_part = raw_str
-            if era_part:
-                era_w = int(font14.getlength(era_part))
-                era_x = start_x + horizonta_len - era_w - 1
-                draw.text((era_x, y_pos), era_part, font=font14, fill=0)
-                max_name_w = era_x - (start_x + 7) - 2
+        def _draw_pitcher_era(name_part, stat_part, y_pos):
+            """Draw pitcher name left-aligned and stat right-anchored."""
+            if stat_part:
+                stat_w = int(font14.getlength(stat_part))
+                stat_x = start_x + horizonta_len - stat_w - 1
+                draw.text((stat_x, y_pos), stat_part, font=font14, fill=0)
+                max_name_w = stat_x - (start_x + 7) - 2
                 name_str, name_fnt = fit_text(name_part, max(max_name_w, 20))
                 draw.text((start_x + 7, y_pos), name_str, font=name_fnt, fill=0)
             else:
                 name_str, name_fnt = fit_text(name_part, max_text_width)
                 draw.text((start_x + 7, y_pos), name_str, font=name_fnt, fill=0)
 
-        away_prob_raw = _pitcher_line(game_data.get("away_probable"), game_data.get("away_probable_note"))
-        home_prob_raw = _pitcher_line(game_data.get("home_probable"), game_data.get("home_probable_note"))
-        _draw_pitcher_era(away_prob_raw, start_y + 25 + 59)
-        _draw_pitcher_era(home_prob_raw, start_y + 25 + 74)
+        away_name, away_stat = _pitcher_line(game_data.get("away_probable"), game_data.get("away_probable_note"))
+        home_name, home_stat = _pitcher_line(game_data.get("home_probable"), game_data.get("home_probable_note"))
+        _draw_pitcher_era(away_name, away_stat, start_y + 25 + 59)
+        _draw_pitcher_era(home_name, home_stat, start_y + 25 + 74)
     elif game_data['detailed_state'] == 'Postponed':
         reason = game_data.get('postpone_reason') or game_data.get('description') or ''
         postponed_line, postponed_fnt = fit_text(f'PPD: {reason}' if reason else 'Postponed', max_text_width)

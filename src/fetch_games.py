@@ -101,6 +101,42 @@ def _fetch_pitcher_eras(pitcher_ids, season):
     return result
 
 
+def _fetch_decision_pitcher_stats(pitcher_ids, season):
+    """Batch-fetch wins, losses, and saves for decision pitchers.
+
+    Returns {id: {'record': 'W-L', 'saves': int}}.
+    """
+    ids = [p for p in pitcher_ids if p]
+    if not ids:
+        return {}
+    ids_str = ','.join(str(p) for p in ids)
+    try:
+        url = (
+            f'https://statsapi.mlb.com/api/v1/people?personIds={ids_str}'
+            f'&hydrate=stats(group=pitching,type=season,season={season})'
+        )
+        resp = requests.get(url, timeout=10)
+        data = resp.json()
+    except Exception:
+        return {}
+    result = {}
+    for person in data.get('people', []):
+        pid = person.get('id')
+        for stat_group in person.get('stats', []):
+            splits = stat_group.get('splits', [])
+            if splits:
+                stat = splits[0].get('stat', {})
+                wins = stat.get('wins', '')
+                losses = stat.get('losses', '')
+                saves = stat.get('saves', 0)
+                if wins != '' and losses != '':
+                    result[pid] = {
+                        'record': f'{wins}-{losses}',
+                        'saves': int(saves) if saves else 0,
+                    }
+    return result
+
+
 def fetch_all_team_abbreviations(sport_id=1):
     """Fetch all team abbreviations for a given sport and cache to data/teams.json."""
     team_abbreviations = {}
@@ -297,8 +333,14 @@ def parse_games(data, sport_id=None, config=None):
             'currentInningOrdinal': linescore.get('currentInningOrdinal'),
             'inningState': linescore.get('inningState'),
             'winner_name': decisions.get('winner', {}).get('fullName'),
+            '_winner_id': decisions.get('winner', {}).get('id'),
             'loser_name': decisions.get('loser', {}).get('fullName'),
+            '_loser_id': decisions.get('loser', {}).get('id'),
             'saver_name': decisions.get('save', {}).get('fullName'),
+            '_saver_id': decisions.get('save', {}).get('id'),
+            'winner_record': None,
+            'loser_record': None,
+            'saver_saves': None,
             'num_of_outs': linescore.get('outs'),
             'balls': linescore.get('balls'),
             'strikes': linescore.get('strikes'),
@@ -360,6 +402,33 @@ def parse_games(data, sport_id=None, config=None):
         for gd in game_array:
             gd.pop('_away_probable_id', None)
             gd.pop('_home_probable_id', None)
+
+    # Batch-fetch decision pitcher records (W-L + saves)
+    decision_ids = set()
+    for gd in game_array:
+        decision_ids.add(gd.get('_winner_id'))
+        decision_ids.add(gd.get('_loser_id'))
+        decision_ids.add(gd.get('_saver_id'))
+    decision_ids.discard(None)
+    if decision_ids:
+        from datetime import date as _date
+        season = str(_date.today().year)
+        decision_stats = _fetch_decision_pitcher_stats(decision_ids, season)
+        for gd in game_array:
+            winner_id = gd.pop('_winner_id', None)
+            loser_id = gd.pop('_loser_id', None)
+            saver_id = gd.pop('_saver_id', None)
+            if winner_id and winner_id in decision_stats:
+                gd['winner_record'] = decision_stats[winner_id]['record']
+            if loser_id and loser_id in decision_stats:
+                gd['loser_record'] = decision_stats[loser_id]['record']
+            if saver_id and saver_id in decision_stats:
+                gd['saver_saves'] = decision_stats[saver_id]['saves']
+    else:
+        for gd in game_array:
+            gd.pop('_winner_id', None)
+            gd.pop('_loser_id', None)
+            gd.pop('_saver_id', None)
 
     save_off_results({'games': game_array}, 'games')
     save_off_results({'team_abbreviation': team_abbreviations}, 'teams')
