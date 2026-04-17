@@ -1221,7 +1221,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((start_x + horizonta_len - _right_w, start_y + 25 + 74), _right_str, font=font11, fill=0)
 
         # Speed right-aligned above the pitch count column on the B/S row (bold)
-        if _lps:
+        if _lps and game_data.get('inningState') not in ('Middle', 'End'):
             _speed_str = str(int(_lps))
             _speed_w = int(font11.getlength(_speed_str)) + 2
             _speed_x = start_x + horizonta_len - _speed_w
@@ -1239,13 +1239,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             if _blr:
                 _ba_str += f' {_blr}'
         _ba_w = int(font11.getlength(_ba_str)) + 2 if _ba_str else 0
-        hitter_str, hitter_font = fit_text(
-            f'AB: {game_data.get("current_hitter") or ""}',
-            max_text_width - _ba_w,
-        )
-        draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
-        if _ba_str:
-            draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
+        if game_data.get('inningState') not in ('Middle', 'End'):
+            hitter_str, hitter_font = fit_text(
+                f'AB: {game_data.get("current_hitter") or ""}',
+                max_text_width - _ba_w,
+            )
+            draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
+            if _ba_str:
+                draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
         
     if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
         # Normalize display labels
@@ -1403,6 +1404,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     draw.line((start_x, start_y + 20, end_x, end_y  + 20), fill = 0)
 
     # Win probability bar — live games only, when show_win_prob enabled
+    # Win prob bar — all In Progress states including between-inning breaks
     if show_win_prob and game_data['detailed_state'] == 'In Progress':
         away_wp = game_data.get('away_win_probability')
         home_wp = game_data.get('home_win_probability')
@@ -1416,19 +1418,44 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             except (ValueError, TypeError):
                 away_wp, home_wp = 50.0, 50.0
 
-            LOGO_SZ = 14
-            BAR_X = start_x + 2
-            BAR_W = horizonta_len - 4        # 131px
-            BAR_H = LOGO_SZ
+            LOGO_SZ = 18
             BAR_Y = start_y + vertical_len + 21  # 1px below bottom border, in the inter-row gap
+            BAR_H = 19                            # available inter-row height
+            BAR_X = start_x + 1
+            BAR_W = horizonta_len - 2
 
-            logo_y = BAR_Y
+            # Ghost "LOSS" / "WIN" watermarks, then a solid horizontal center line
+            _ghost_strip = Image.new('L', (BAR_W, BAR_H), 255)
+            _ghost_draw = ImageDraw.Draw(_ghost_strip)
+            _ghost_draw.text((1, (BAR_H - 18) // 2), 'LOSS', font=font18, fill=0)
+            _win_w = int(font18.getlength('WIN'))
+            _ghost_draw.text((BAR_W - _win_w - 1, (BAR_H - 18) // 2), 'WIN', font=font18, fill=0)
+            _ghost_strip = _ghost_strip.point(lambda p: 255 if p > 180 else min(255, int(p * 0.35 + 155)))
+            # Solid center line drawn after ghost transform so it stays black
+            _ghost_draw.line((0, BAR_H // 2, BAR_W, BAR_H // 2), fill=0)
+            Himage.paste(_ghost_strip.convert('1'), (BAR_X, BAR_Y))
+            draw = ImageDraw.Draw(Himage)
+
+            logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2  # center logo in strip
 
             away_px = BAR_X + int(BAR_W * away_wp / 100.0)
             away_logo_x = max(BAR_X, min(BAR_X + BAR_W - LOGO_SZ, away_px - LOGO_SZ // 2))
 
             home_px = BAR_X + int(BAR_W * home_wp / 100.0)
             home_logo_x = max(BAR_X, min(BAR_X + BAR_W - LOGO_SZ, home_px - LOGO_SZ // 2))
+
+            # Prevent logos from overlapping each other
+            MIN_SEP = LOGO_SZ + 1
+            if away_logo_x > home_logo_x:
+                if away_logo_x - home_logo_x < MIN_SEP:
+                    mid = (away_logo_x + home_logo_x) // 2
+                    away_logo_x = min(BAR_X + BAR_W - LOGO_SZ, mid + MIN_SEP // 2)
+                    home_logo_x = max(BAR_X, mid - MIN_SEP // 2)
+            else:
+                if home_logo_x - away_logo_x < MIN_SEP:
+                    mid = (away_logo_x + home_logo_x) // 2
+                    home_logo_x = min(BAR_X + BAR_W - LOGO_SZ, mid + MIN_SEP // 2)
+                    away_logo_x = max(BAR_X, mid - MIN_SEP // 2)
 
             if use_logos:
                 away_logo = _logo_small(away_team_name, away_team_id, size=LOGO_SZ)
@@ -1437,6 +1464,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     Himage.paste(away_logo, (away_logo_x, logo_y))
                 if home_logo:
                     Himage.paste(home_logo, (home_logo_x, logo_y))
+
+                # During inning breaks, draw each team's % in the AB area
+                # directly above their logo position in the bar
+                if game_data.get('inningState') in ('Middle', 'End'):
+                    _ab_y = start_y + 25 + 89
+                    if away_logo:
+                        _pa_str = f'{away_wp:.0f}%'
+                        _pa_w = int(font14.getlength(_pa_str))
+                        draw.text((away_logo_x + (LOGO_SZ - _pa_w) // 2, _ab_y), _pa_str, font=font14, fill=0)
+                    if home_logo:
+                        _ph_str = f'{home_wp:.0f}%'
+                        _ph_w = int(font14.getlength(_ph_str))
+                        draw.text((home_logo_x + (LOGO_SZ - _ph_w) // 2, _ab_y), _ph_str, font=font14, fill=0)
             else:
                 draw.line((away_px, BAR_Y, away_px, BAR_Y + BAR_H), fill=0)
                 draw.line((home_px, BAR_Y, home_px, BAR_Y + BAR_H), fill=0)
@@ -1467,39 +1507,61 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
     if game_data['detailed_state'] == 'In Progress':
-        # bases
-        Himage = draw_diamond(Himage, (start_x + 22 + 75, start_y + 27 + 25), 10, isinstance(game_data['runner_on_third'], str))
-        Himage = draw_diamond(Himage, (start_x + 34 + 75, start_y + 15 + 25), 10, isinstance(game_data['runner_on_second'], str))
-        Himage = draw_diamond(Himage, (start_x + 46 + 75, start_y + 27 + 25), 10, isinstance(game_data['runner_on_first'], str))
+        _between_innings = game_data.get('inningState') in ('Middle', 'End')
 
-        # outs
-        outs_list = [None] * 3
+        # bases — during inning breaks animate warmup: 1st base (first minute),
+        # then 1st + 3rd base (second minute), cycling on wall-clock time
+        if _between_innings:
+            _phase = int(time.time()) % 120 // 60  # 0 = first min, 1 = second min
+            _hi_first = True
+            _hi_second = False
+            _hi_third = (_phase == 1)
+        else:
+            _hi_third = isinstance(game_data['runner_on_third'], str)
+            _hi_second = isinstance(game_data['runner_on_second'], str)
+            _hi_first = isinstance(game_data['runner_on_first'], str)
+        Himage = draw_diamond(Himage, (start_x + 22 + 75, start_y + 27 + 25), 10, _hi_third)
+        Himage = draw_diamond(Himage, (start_x + 34 + 75, start_y + 15 + 25), 10, _hi_second)
+        Himage = draw_diamond(Himage, (start_x + 46 + 75, start_y + 27 + 25), 10, _hi_first)
 
-        for i in range(1,4):
-            outs_list[i-1] =  i <= game_data['num_of_outs']
+        # outs — show all 3 filled during inning break (the third out was just recorded)
+        if _between_innings:
+            Himage = draw_circle(Himage, (start_x + 22 + 75, start_y + 25 + 48), 5, True)
+            Himage = draw_circle(Himage, (start_x + 34 + 75, start_y + 25 + 48), 5, True)
+            Himage = draw_circle(Himage, (start_x + 46 + 75, start_y + 25 + 48), 5, True)
+        else:
+            outs_list = [None] * 3
+            for i in range(1, 4):
+                outs_list[i-1] = i <= game_data['num_of_outs']
+            Himage = draw_circle(Himage, (start_x + 22 + 75, start_y + 25 + 48), 5, outs_list[0])
+            Himage = draw_circle(Himage, (start_x + 34 + 75, start_y + 25 + 48), 5, outs_list[1])
+            Himage = draw_circle(Himage, (start_x + 46 + 75, start_y + 25 + 48), 5, outs_list[2])
 
-        Himage = draw_circle(Himage, (start_x + 22 + 75, start_y + 25 + 48), 5, outs_list[0])
-        Himage = draw_circle(Himage, (start_x + 34 + 75, start_y + 25 + 48), 5, outs_list[1])
-        Himage = draw_circle(Himage, (start_x + 46 + 75, start_y + 25 + 48), 5, outs_list[2])
+        # balls/strikes area — during inning breaks show "Due up: [next batter]" instead
+        if _between_innings:
+            _due_raw = game_data.get('due_up') or ''
+            _due_name = _format_player_name(_due_raw) if _due_raw else ''
+            _due_str, _due_fnt = fit_text(f'Due up: {_due_name}' if _due_name else 'Due up:', max_text_width)
+            draw.text((start_x + 5, start_y + 25 + 59), _due_str, font=_due_fnt, fill=0)
+        else:
+            balls_list = [None] * 4
+            for i in range(1, 4):
+                balls_list[i-1] = i <= game_data['balls']
 
-        balls_list = [None] * 4
-        for i in range(1,4):
-            balls_list[i-1] =  i <= game_data['balls']
+            draw.text((start_x + 5, start_y + 25 + 59), 'B', font=font14, fill=0)
+            Himage = draw_circle(Himage, (start_x + 22, start_y + 25 + 68), 4, balls_list[0])
+            Himage = draw_circle(Himage, (start_x + 34, start_y + 25 + 68), 4, balls_list[1])
+            Himage = draw_circle(Himage, (start_x + 46, start_y + 25 + 68), 4, balls_list[2])
 
-        draw.text((start_x + 5 , start_y + 25 + 59), 'B', font=font14, fill=0)
-        Himage = draw_circle(Himage, (start_x + 22 , start_y + 25 + 68), 4, balls_list[0])
-        Himage = draw_circle(Himage, (start_x + 34, start_y + 25 + 68), 4, balls_list[1])
-        Himage = draw_circle(Himage, (start_x + 46, start_y + 25 + 68), 4, balls_list[2])
+            strikes_list = [None] * 3
+            for i in range(1, 3):
+                strikes_list[i-1] = i <= game_data['strikes']
 
+            draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
+            Himage = draw_circle(Himage, (start_x + 22 + 63, start_y + 25 + 68), 4, strikes_list[0])
+            Himage = draw_circle(Himage, (start_x + 34 + 63, start_y + 25 + 68), 4, strikes_list[1])
 
-        strikes_list = [None] * 3
-        for i in range(1,3):
-            strikes_list[i-1] =  i <= game_data['strikes']
-
-        draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
-        Himage = draw_circle(Himage, (start_x + 22 + 63, start_y + 25 + 68), 4, strikes_list[0])
-        Himage = draw_circle(Himage, (start_x + 34 + 63, start_y + 25 + 68), 4, strikes_list[1])
-
+        # SV badge — keep visible during inning breaks too
         if game_data.get('save_situation'):
             _sv_w = int(font9.getlength('SV'))
             draw.text((start_x + horizonta_len - _sv_w - 2, start_y + 21), 'SV', font=font9, fill=0)

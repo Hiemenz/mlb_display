@@ -140,6 +140,7 @@ def fetch_scoreboard_live_extras(game_pk):
 
         pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
         batter_id = linescore.get('offense', {}).get('batter', {}).get('id')
+        on_deck_name = linescore.get('offense', {}).get('onDeck', {}).get('fullName') or None
 
         pitcher_info = _get_player_info(boxscore, pitcher_id, 'pitching')
         batter_info = _get_player_info(boxscore, batter_id, 'batting')
@@ -174,6 +175,7 @@ def fetch_scoreboard_live_extras(game_pk):
             'batter_last_result': batter_last_result,
             'last_pitch_speed': last_speed,
             'last_pitch_type': last_type,
+            'due_up': on_deck_name,
         }
     except Exception:
         return {}
