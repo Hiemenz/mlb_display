@@ -190,7 +190,8 @@ import time
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
 import traceback
 
-
+# Tracks when each game's inning break was first detected: (game_pk, inning, state) -> epoch
+_break_start_times: dict = {}
 
 # logging.basicConfig(level=logging.DEBUG)
 
@@ -1509,13 +1510,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if game_data['detailed_state'] == 'In Progress':
         _between_innings = game_data.get('inningState') in ('Middle', 'End')
 
-        # bases — during inning breaks animate warmup: 1st base (first minute),
-        # then 1st + 3rd base (second minute), cycling on wall-clock time
+        # bases — two refreshes per break: first 60s = 1B only, after 60s = 1B + 3B.
+        # Elapsed time is measured from when the break was first detected for this game/inning.
         if _between_innings:
-            _phase = int(time.time()) % 120 // 60  # 0 = first min, 1 = second min
+            _bkey = (game_data.get('game_pk'), game_data.get('current_inning'), game_data.get('inningState'))
+            if _bkey not in _break_start_times:
+                _break_start_times[_bkey] = time.time()
+                # Drop stale keys for this game (previous inning breaks)
+                for _k in [k for k in _break_start_times if k[0] == _bkey[0] and k != _bkey]:
+                    del _break_start_times[_k]
+            _elapsed = time.time() - _break_start_times[_bkey]
             _hi_first = True
             _hi_second = False
-            _hi_third = (_phase == 1)
+            _hi_third = (_elapsed >= 60)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
@@ -1539,7 +1546,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
         # balls/strikes area — during inning breaks show "Due up: [next batter]" instead
         if _between_innings:
-            _due_raw = game_data.get('due_up') or ''
+            _due_raw = game_data.get('current_hitter') or game_data.get('due_up') or ''
             _due_name = _format_player_name(_due_raw) if _due_raw else ''
             _due_str, _due_fnt = fit_text(f'Due up: {_due_name}' if _due_name else 'Due up:', max_text_width)
             draw.text((start_x + 5, start_y + 25 + 59), _due_str, font=_due_fnt, fill=0)
