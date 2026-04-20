@@ -183,10 +183,10 @@ def _should_skip_poll(date_str, config, sched):
     except Exception:
         cached_games = []
 
-    _final_states = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed', 'Completed Early'}
+    _final_states = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Completed Early'}
     # Any game that has started (current_inning > 0) but isn't in a terminal state —
-    # catches 'In Progress' plus any other mid-game API state (e.g. rain delay, challenge)
-    # that would leave the display stuck showing stale inning data.
+    # catches 'In Progress', rain delays, and any other mid-game API state.
+    # 'Delayed' is intentionally excluded from _final_states so delayed games keep polling.
     any_live = any(
         g.get('detailed_state') not in _final_states and (g.get('current_inning') or 0) > 0
         for g in cached_games
