@@ -352,6 +352,8 @@ def parse_games(data, sport_id=None, config=None):
             'home_errors': ls_home.get('errors'),
             'away_left_on_base': ls_away.get('leftOnBase'),
             'home_left_on_base': ls_home.get('leftOnBase'),
+            'away_inning_runs': [inn.get('away', {}).get('runs') for inn in linescore.get('innings', [])],
+            'home_inning_runs': [inn.get('home', {}).get('runs') for inn in linescore.get('innings', [])],
             'runner_on_first': ls_offense.get('first', {}).get('fullName'),
             'runner_on_second': ls_offense.get('second', {}).get('fullName'),
             'runner_on_third': ls_offense.get('third', {}).get('fullName'),

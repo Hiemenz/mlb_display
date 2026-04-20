@@ -815,6 +815,19 @@ def _format_player_name(name):
     return f'{first_initial} {last_name}' if first_initial else last_name
 
 
+def _render_linescore_row(draw, x, y, inning_runs, fnt, max_width=130):
+    """Draw per-inning run values as a space-separated strip."""
+    if not inning_runs:
+        return
+    parts = [str(r) if r is not None else 'x' for r in inning_runs[:15]]
+    # Try progressively tighter separators if the string is too wide
+    for sep in ('  ', ' ', ''):
+        txt = sep.join(parts)
+        if int(fnt.getlength(txt)) <= max_width:
+            break
+    draw.text((x, y), txt, font=fnt, fill=0)
+
+
 def _pitcher_line(name, note):
     """Return (name_str, stat_str) for probable pitcher display.
 
@@ -1110,6 +1123,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     horizonta_len = 135
     max_text_width = horizonta_len - 14
 
+    # Needed by the elif chain below — define early so all branches can reference it
+    _delayed_with_score = (
+        game_data['detailed_state'] == 'Delayed'
+        and (game_data.get('current_inning') or 0) > 0
+    )
+
     def fit_text(text, max_w):
         try:
             if font14.getlength(text) <= max_w:
@@ -1149,9 +1168,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # inning or game state
     if game_data['detailed_state'] == 'Final':
+        # Linescore strip — two rows of per-inning runs, above pitcher info
+        away_inning_runs = game_data.get('away_inning_runs') or []
+        home_inning_runs = game_data.get('home_inning_runs') or []
+        if away_inning_runs or home_inning_runs:
+            _ls_font = font11
+            _label_w = int(_ls_font.getlength('A '))
+            _ls_max_w = horizonta_len - 10 - _label_w
+            draw.text((start_x + 5, start_y + 82), 'A', font=_ls_font, fill=0)
+            _render_linescore_row(draw, start_x + 5 + _label_w, start_y + 82, away_inning_runs, _ls_font, max_width=_ls_max_w)
+            draw.text((start_x + 5, start_y + 92), 'H', font=_ls_font, fill=0)
+            _render_linescore_row(draw, start_x + 5 + _label_w, start_y + 92, home_inning_runs, _ls_font, max_width=_ls_max_w)
+
         # Pitchers of record — anchored to bottom of box, working upward
         # bottom border is at start_y + vertical_len + 20 = start_y + 130
-        LINE_H = 15
         BOTTOM_Y = start_y + vertical_len + 20 - 3  # 3px margin above bottom border
         saver = game_data.get('saver_name')
         winner_record = game_data.get('winner_record')
@@ -1160,38 +1190,48 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         lines = []
         wp_name = _format_player_name(game_data.get('winner_name') or '')
         lp_name = _format_player_name(game_data.get('loser_name') or '')
+        # Use smaller font when linescore is present so pitchers fit below it (y>101)
+        _has_linescore = bool(away_inning_runs or home_inning_runs)
+        _p_font = font9 if saver and _has_linescore else font11
+        LINE_H = 9 if saver and _has_linescore else 12
         wp_str = f'WP: {wp_name} ({winner_record})' if winner_record else f'WP: {wp_name}'
         lp_str = f'LP: {lp_name} ({loser_record})' if loser_record else f'LP: {lp_name}'
-        lines.append((lp_str, font14))
-        lines.append((wp_str, font14))
+        lines.append((lp_str, _p_font))
+        lines.append((wp_str, _p_font))
         if saver:
             sv_name = _format_player_name(saver)
             sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
-            lines.append((sv_str, font14))
+            lines.append((sv_str, _p_font))
 
-        def _truncate_keep_suffix(s):
-            """Truncate s to max_text_width at font14, cutting the name but preserving trailing (...)."""
-            if int(font14.getlength(s)) <= max_text_width:
+        def _truncate_keep_suffix(s, fnt):
+            """Truncate s to max_text_width, cutting the name but preserving trailing (...)."""
+            if int(fnt.getlength(s)) <= max_text_width:
                 return s
-            # Isolate trailing record suffix like " (1-0)" or " (S7)"
             paren = s.rfind(' (')
             if paren != -1:
-                suffix = s[paren:]       # e.g. " (1-0)"
-                prefix = s[:paren]       # e.g. "WP: R. Thompson"
-                suffix_w = int(font14.getlength(suffix))
+                suffix = s[paren:]
+                prefix = s[:paren]
+                suffix_w = int(fnt.getlength(suffix))
                 avail = max_text_width - suffix_w
-                while prefix and int(font14.getlength(prefix)) > avail:
+                while prefix and int(fnt.getlength(prefix)) > avail:
                     prefix = prefix[:-1]
                 return prefix + suffix
-            # No suffix — truncate the whole string
-            while s and int(font14.getlength(s)) > max_text_width:
+            while s and int(fnt.getlength(s)) > max_text_width:
                 s = s[:-1]
             return s
 
-        # Draw from bottom up
-        for i, (txt, fnt) in enumerate(reversed(lines)):
-            y = BOTTOM_Y - LINE_H * (i + 1)
-            draw.text((start_x + 7, y), _truncate_keep_suffix(txt), font=fnt, fill=0)
+        if _has_linescore:
+            # Top-down from just below the linescore strip; order: WP, LP, SV
+            _draw_lines = [(wp_str, _p_font), (lp_str, _p_font)]
+            if saver:
+                _draw_lines.append((sv_str, _p_font))
+            for i, (txt, fnt) in enumerate(_draw_lines):
+                draw.text((start_x + 7, start_y + 102 + i * LINE_H), _truncate_keep_suffix(txt, fnt), font=fnt, fill=0)
+        else:
+            # Bottom-up (existing layout when no linescore)
+            for i, (txt, fnt) in enumerate(reversed(lines)):
+                y = BOTTOM_Y - LINE_H * (i + 1)
+                draw.text((start_x + 7, y), _truncate_keep_suffix(txt, fnt), font=fnt, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
         def _draw_pitcher_era(name_part, stat_part, y_pos):
@@ -1362,11 +1402,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
 
-    # Mid-game delay: game started (has innings) but play is suspended
-    _delayed_with_score = (
-        game_data['detailed_state'] == 'Delayed'
-        and (game_data.get('current_inning') or 0) > 0
-    )
     is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress', 'Final: Tied'] or _delayed_with_score
     is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over', 'Final: Tied']
 
