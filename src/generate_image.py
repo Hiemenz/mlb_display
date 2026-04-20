@@ -1569,15 +1569,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         # bases — two refreshes per break: first 60s = 1B only, after 60s = 1B + 3B.
         # Elapsed time is measured from when the break was first detected for this game/inning.
         if _between_innings:
-            _bkey = f"{game_data.get('game_pk')}_{game_data.get('current_inning')}_{game_data.get('inningState')}"
+            _game_pk = str(game_data.get('game_pk', ''))
+            _state = game_data.get('inningState', '')
+            _cur_inn = game_data.get('current_inning') or 0
+            # Key excludes current_inning: MLB API may increment it mid-break,
+            # which would reset the timer and break the 60-second phase transition.
+            _bkey = f"{_game_pk}_{_state}"
             _brk = _load_break_state()
-            if _bkey not in _brk:
-                # New break: clear any old keys for this game, record start time
-                _brk = {k: v for k, v in _brk.items()
-                        if not k.startswith(f"{game_data.get('game_pk')}_")}
-                _brk[_bkey] = time.time()
+            _stored = _brk.get(_bkey) if isinstance(_brk.get(_bkey), dict) else None
+            _is_new_break = (
+                _stored is None
+                or (time.time() - _stored.get('start', 0)) > 300  # >5 min = definitely new break
+                or abs((_stored.get('inning') or 0) - _cur_inn) > 1  # different inning, not API lag
+            )
+            if _is_new_break:
+                _brk = {k: v for k, v in _brk.items() if not k.startswith(f"{_game_pk}_")}
+                _brk[_bkey] = {'start': time.time(), 'inning': _cur_inn}
                 _save_break_state(_brk)
-            _elapsed = time.time() - _brk.get(_bkey, time.time())
+                _elapsed = 0.0
+            else:
+                _elapsed = time.time() - _stored['start']
             _hi_first = True
             _hi_second = False
             _hi_third = (_elapsed >= 60)
@@ -1787,13 +1798,29 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     else:
         old_data = load_json_file('old_scoreboard_state.json')
 
-        new_data_str = json.dumps(game_state_data)
+        # Augment between-inning games with _break_phase so crossing 60s triggers a re-render
+        # even when the underlying game JSON hasn't changed.
+        _brk_aug = _load_break_state()
+        aug_game_state = []
+        for _g in game_state_data:
+            if _g.get('detailed_state') == 'In Progress' and _g.get('inningState') in ('Middle', 'End'):
+                _g = dict(_g)
+                _bkey_aug = f"{_g.get('game_pk')}_{_g.get('inningState')}"
+                _stored_aug = _brk_aug.get(_bkey_aug)
+                if isinstance(_stored_aug, dict):
+                    _elapsed_aug = time.time() - _stored_aug.get('start', time.time())
+                else:
+                    _elapsed_aug = 0.0
+                _g['_break_phase'] = 1 if _elapsed_aug >= 60 else 0
+            aug_game_state.append(_g)
+
+        new_data_str = json.dumps(aug_game_state)
         old_data_str = json.dumps(old_data)
 
         new_dict = load_and_sort_json(new_data_str)
         old_dict = load_and_sort_json(old_data_str)
 
-        save_off_results(game_state_data, "old_scoreboard_state")
+        save_off_results(aug_game_state, "old_scoreboard_state")
 
     # Build map of old game data by game_pk for per-game comparison
     old_by_pk = {}
