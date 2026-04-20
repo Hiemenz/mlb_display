@@ -190,8 +190,24 @@ import time
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
 import traceback
 
-# Tracks when each game's inning break was first detected: (game_pk, inning, state) -> epoch
-_break_start_times: dict = {}
+_BREAK_STATE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'inning_break_state.json')
+
+
+def _load_break_state() -> dict:
+    try:
+        with open(_BREAK_STATE_FILE) as _f:
+            return json.load(_f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _save_break_state(state: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(_BREAK_STATE_FILE), exist_ok=True)
+        with open(_BREAK_STATE_FILE, 'w') as _f:
+            json.dump(state, _f)
+    except Exception:
+        pass
 
 # logging.basicConfig(level=logging.DEBUG)
 
@@ -484,11 +500,13 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
         
     DISPLAY_PROBS = False
     
-    if game_state in ('Scheduled', 'Pre-Game', 'Warmup'):
+    if game_state in ('Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start'):
         innings = [None] * 12
         away, home = innings, innings
-        if game_state != 'Warmup':
-            game_state = start_time 
+        if game_state not in ('Warmup', 'Delayed Start'):
+            game_state = start_time
+        elif game_state == 'Delayed Start':
+            game_state = 'Delayed'
         DISPLAY_PROBS = True
 
         draw.text((25 + col_start + 82, 30 + row_start), away_probable, font = font24, fill = 0)
@@ -1049,6 +1067,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data = dict(game_data)
         game_data['detailed_state'] = 'In Progress'
 
+    # Delayed Start = game hasn't begun yet; treat like Pre-Game (show pitcher probables)
+    if game_data.get('detailed_state') == 'Delayed Start':
+        game_data = dict(game_data)
+        game_data['detailed_state'] = 'Pre-Game'
+
     # Only show score once the first pitch has been thrown. Evidence of play:
     # a ball/strike in the current at-bat, any out, any hit, a runner on base,
     # an inning break, or the game past inning 1. If none of these are present
@@ -1196,6 +1219,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if venue_ppd:
             venue_ppd_txt, venue_ppd_fnt = fit_text(venue_ppd, max_text_width)
             draw.text((start_x + 7, start_y + 25 + 74), venue_ppd_txt, font=venue_ppd_fnt, fill=0)
+    elif _delayed_with_score:
+        reason = game_data.get('postpone_reason') or ''
+        delay_line, delay_fnt = fit_text(f'Delay: {reason}' if reason else 'Delay', max_text_width)
+        draw.text((start_x + 7, start_y + 25 + 59), delay_line, font=delay_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
         # Right-column pitch info: speed on count row, "TYPE (count)" on pitcher line
         _pc = game_data.get('pitch_count')
@@ -1335,7 +1362,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
 
-    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress', 'Final: Tied']
+    # Mid-game delay: game started (has innings) but play is suspended
+    _delayed_with_score = (
+        game_data['detailed_state'] == 'Delayed'
+        and (game_data.get('current_inning') or 0) > 0
+    )
+    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress', 'Final: Tied'] or _delayed_with_score
     is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over', 'Final: Tied']
 
     # Display score if game has started, otherwise show team records
@@ -1513,13 +1545,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         # bases — two refreshes per break: first 60s = 1B only, after 60s = 1B + 3B.
         # Elapsed time is measured from when the break was first detected for this game/inning.
         if _between_innings:
-            _bkey = (game_data.get('game_pk'), game_data.get('current_inning'), game_data.get('inningState'))
-            if _bkey not in _break_start_times:
-                _break_start_times[_bkey] = time.time()
-                # Drop stale keys for this game (previous inning breaks)
-                for _k in [k for k in _break_start_times if k[0] == _bkey[0] and k != _bkey]:
-                    del _break_start_times[_k]
-            _elapsed = time.time() - _break_start_times[_bkey]
+            _bkey = f"{game_data.get('game_pk')}_{game_data.get('current_inning')}_{game_data.get('inningState')}"
+            _brk = _load_break_state()
+            if _bkey not in _brk:
+                # New break: clear any old keys for this game, record start time
+                _brk = {k: v for k, v in _brk.items()
+                        if not k.startswith(f"{game_data.get('game_pk')}_")}
+                _brk[_bkey] = time.time()
+                _save_break_state(_brk)
+            _elapsed = time.time() - _brk.get(_bkey, time.time())
             _hi_first = True
             _hi_second = False
             _hi_third = (_elapsed >= 60)
