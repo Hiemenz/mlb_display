@@ -815,6 +815,19 @@ def _format_player_name(name):
     return f'{first_initial} {last_name}' if first_initial else last_name
 
 
+def _render_linescore_row(draw, x, y, inning_runs, fnt, max_width=130):
+    """Draw per-inning run values as a space-separated strip."""
+    if not inning_runs:
+        return
+    parts = [str(r) if r is not None else 'x' for r in inning_runs[:15]]
+    # Try progressively tighter separators if the string is too wide
+    for sep in ('  ', ' ', ''):
+        txt = sep.join(parts)
+        if int(fnt.getlength(txt)) <= max_width:
+            break
+    draw.text((x, y), txt, font=fnt, fill=0)
+
+
 def _pitcher_line(name, note):
     """Return (name_str, stat_str) for probable pitcher display.
 
@@ -1110,6 +1123,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     horizonta_len = 135
     max_text_width = horizonta_len - 14
 
+    # Needed by the elif chain below — define early so all branches can reference it
+    _delayed_with_score = (
+        game_data['detailed_state'] == 'Delayed'
+        and (game_data.get('current_inning') or 0) > 0
+    )
+
     def fit_text(text, max_w):
         try:
             if font14.getlength(text) <= max_w:
@@ -1149,49 +1168,59 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # inning or game state
     if game_data['detailed_state'] == 'Final':
-        # Pitchers of record — anchored to bottom of box, working upward
-        # bottom border is at start_y + vertical_len + 20 = start_y + 130
-        LINE_H = 15
-        BOTTOM_Y = start_y + vertical_len + 20 - 3  # 3px margin above bottom border
-        saver = game_data.get('saver_name')
-        winner_record = game_data.get('winner_record')
-        loser_record = game_data.get('loser_record')
-        saver_saves = game_data.get('saver_saves')
-        lines = []
-        wp_name = _format_player_name(game_data.get('winner_name') or '')
-        lp_name = _format_player_name(game_data.get('loser_name') or '')
-        wp_str = f'WP: {wp_name} ({winner_record})' if winner_record else f'WP: {wp_name}'
-        lp_str = f'LP: {lp_name} ({loser_record})' if loser_record else f'LP: {lp_name}'
-        lines.append((lp_str, font14))
-        lines.append((wp_str, font14))
-        if saver:
-            sv_name = _format_player_name(saver)
-            sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
-            lines.append((sv_str, font14))
+        away_inning_runs = game_data.get('away_inning_runs') or []
+        home_inning_runs = game_data.get('home_inning_runs') or []
+        winner_name = game_data.get('winner_name')
+        loser_name = game_data.get('loser_name')
 
-        def _truncate_keep_suffix(s):
-            """Truncate s to max_text_width at font14, cutting the name but preserving trailing (...)."""
-            if int(font14.getlength(s)) <= max_text_width:
+        if (away_inning_runs or home_inning_runs) and not (winner_name or loser_name):
+            # Game over but decisions not yet posted — fill the info area with linescore.
+            # Pick the largest font whose 2-space-separated string fits the full box width.
+            _ls_max_w = horizonta_len - 10
+            n_inn = max(len(away_inning_runs), len(home_inning_runs), 1)
+            _ls_fnt = font14 if n_inn <= 9 else font11 if n_inn <= 13 else font9
+            _render_linescore_row(draw, start_x + 5, start_y + 25 + 59, away_inning_runs, _ls_fnt, max_width=_ls_max_w)
+            _render_linescore_row(draw, start_x + 5, start_y + 25 + 74, home_inning_runs, _ls_fnt, max_width=_ls_max_w)
+        else:
+            # Pitchers of record — anchored to bottom of box, working upward.
+            # bottom border is at start_y + vertical_len + 20 = start_y + 130
+            LINE_H = 15
+            BOTTOM_Y = start_y + vertical_len + 20 - 3  # 3px margin above bottom border
+            saver = game_data.get('saver_name')
+            winner_record = game_data.get('winner_record')
+            loser_record = game_data.get('loser_record')
+            saver_saves = game_data.get('saver_saves')
+            lines = []
+            wp_name = _format_player_name(winner_name or '')
+            lp_name = _format_player_name(loser_name or '')
+            wp_str = f'WP: {wp_name} ({winner_record})' if winner_record else f'WP: {wp_name}'
+            lp_str = f'LP: {lp_name} ({loser_record})' if loser_record else f'LP: {lp_name}'
+            lines.append((lp_str, font14))
+            lines.append((wp_str, font14))
+            if saver:
+                sv_name = _format_player_name(saver)
+                sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
+                lines.append((sv_str, font14))
+
+            def _truncate_keep_suffix(s):
+                if int(font14.getlength(s)) <= max_text_width:
+                    return s
+                paren = s.rfind(' (')
+                if paren != -1:
+                    suffix = s[paren:]
+                    prefix = s[:paren]
+                    suffix_w = int(font14.getlength(suffix))
+                    avail = max_text_width - suffix_w
+                    while prefix and int(font14.getlength(prefix)) > avail:
+                        prefix = prefix[:-1]
+                    return prefix + suffix
+                while s and int(font14.getlength(s)) > max_text_width:
+                    s = s[:-1]
                 return s
-            # Isolate trailing record suffix like " (1-0)" or " (S7)"
-            paren = s.rfind(' (')
-            if paren != -1:
-                suffix = s[paren:]       # e.g. " (1-0)"
-                prefix = s[:paren]       # e.g. "WP: R. Thompson"
-                suffix_w = int(font14.getlength(suffix))
-                avail = max_text_width - suffix_w
-                while prefix and int(font14.getlength(prefix)) > avail:
-                    prefix = prefix[:-1]
-                return prefix + suffix
-            # No suffix — truncate the whole string
-            while s and int(font14.getlength(s)) > max_text_width:
-                s = s[:-1]
-            return s
 
-        # Draw from bottom up
-        for i, (txt, fnt) in enumerate(reversed(lines)):
-            y = BOTTOM_Y - LINE_H * (i + 1)
-            draw.text((start_x + 7, y), _truncate_keep_suffix(txt), font=fnt, fill=0)
+            for i, (txt, fnt) in enumerate(reversed(lines)):
+                y = BOTTOM_Y - LINE_H * (i + 1)
+                draw.text((start_x + 7, y), _truncate_keep_suffix(txt), font=fnt, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
         def _draw_pitcher_era(name_part, stat_part, y_pos):
@@ -1362,11 +1391,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
 
-    # Mid-game delay: game started (has innings) but play is suspended
-    _delayed_with_score = (
-        game_data['detailed_state'] == 'Delayed'
-        and (game_data.get('current_inning') or 0) > 0
-    )
     is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress', 'Final: Tied'] or _delayed_with_score
     is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over', 'Final: Tied']
 
@@ -1545,15 +1569,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         # bases — two refreshes per break: first 60s = 1B only, after 60s = 1B + 3B.
         # Elapsed time is measured from when the break was first detected for this game/inning.
         if _between_innings:
-            _bkey = f"{game_data.get('game_pk')}_{game_data.get('current_inning')}_{game_data.get('inningState')}"
+            _game_pk = str(game_data.get('game_pk', ''))
+            _state = game_data.get('inningState', '')
+            _cur_inn = game_data.get('current_inning') or 0
+            # Key excludes current_inning: MLB API may increment it mid-break,
+            # which would reset the timer and break the 60-second phase transition.
+            _bkey = f"{_game_pk}_{_state}"
             _brk = _load_break_state()
-            if _bkey not in _brk:
-                # New break: clear any old keys for this game, record start time
-                _brk = {k: v for k, v in _brk.items()
-                        if not k.startswith(f"{game_data.get('game_pk')}_")}
-                _brk[_bkey] = time.time()
+            _stored = _brk.get(_bkey) if isinstance(_brk.get(_bkey), dict) else None
+            _is_new_break = (
+                _stored is None
+                or (time.time() - _stored.get('start', 0)) > 300  # >5 min = definitely new break
+                or abs((_stored.get('inning') or 0) - _cur_inn) > 1  # different inning, not API lag
+            )
+            if _is_new_break:
+                _brk = {k: v for k, v in _brk.items() if not k.startswith(f"{_game_pk}_")}
+                _brk[_bkey] = {'start': time.time(), 'inning': _cur_inn}
                 _save_break_state(_brk)
-            _elapsed = time.time() - _brk.get(_bkey, time.time())
+                _elapsed = 0.0
+            else:
+                _elapsed = time.time() - _stored['start']
             _hi_first = True
             _hi_second = False
             _hi_third = (_elapsed >= 60)
@@ -1763,13 +1798,29 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     else:
         old_data = load_json_file('old_scoreboard_state.json')
 
-        new_data_str = json.dumps(game_state_data)
+        # Augment between-inning games with _break_phase so crossing 60s triggers a re-render
+        # even when the underlying game JSON hasn't changed.
+        _brk_aug = _load_break_state()
+        aug_game_state = []
+        for _g in game_state_data:
+            if _g.get('detailed_state') == 'In Progress' and _g.get('inningState') in ('Middle', 'End'):
+                _g = dict(_g)
+                _bkey_aug = f"{_g.get('game_pk')}_{_g.get('inningState')}"
+                _stored_aug = _brk_aug.get(_bkey_aug)
+                if isinstance(_stored_aug, dict):
+                    _elapsed_aug = time.time() - _stored_aug.get('start', time.time())
+                else:
+                    _elapsed_aug = 0.0
+                _g['_break_phase'] = 1 if _elapsed_aug >= 60 else 0
+            aug_game_state.append(_g)
+
+        new_data_str = json.dumps(aug_game_state)
         old_data_str = json.dumps(old_data)
 
         new_dict = load_and_sort_json(new_data_str)
         old_dict = load_and_sort_json(old_data_str)
 
-        save_off_results(game_state_data, "old_scoreboard_state")
+        save_off_results(aug_game_state, "old_scoreboard_state")
 
     # Build map of old game data by game_pk for per-game comparison
     old_by_pk = {}
