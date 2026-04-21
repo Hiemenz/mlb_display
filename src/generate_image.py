@@ -526,7 +526,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
         draw.text((25 + col_start + 82, 30 + row_start), away_probable, font = font24, fill = 0)
         draw.text((25 + col_start + 82, 60 + row_start), home_probable, font = font24, fill = 0)
         
-    elif game_state in ('Final'):
+    elif game_state in ('Final', 'Game Over') and winner_name and loser_name:
         draw.text(( col_start + 0 , row_start + 93), f'WP: {winner_name}  LP: {loser_name}' , font = font18, fill = 0)
     
     draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0, stroke_width=1, stroke_fill=0)
@@ -1282,13 +1282,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw = ImageDraw.Draw(Himage)
 
     # inning or game state
-    if game_data['detailed_state'] == 'Final':
+    if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
         away_inning_runs = game_data.get('away_inning_runs') or []
         home_inning_runs = game_data.get('home_inning_runs') or []
         winner_name = game_data.get('winner_name')
         loser_name = game_data.get('loser_name')
 
-        if (away_inning_runs or home_inning_runs) and not (winner_name or loser_name):
+        if (away_inning_runs or home_inning_runs) and not (winner_name and loser_name):
             # Game over but decisions not yet posted — show the tic-tac-toe linescore grid.
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
         else:
