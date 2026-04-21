@@ -157,16 +157,32 @@ def fetch_scoreboard_live_extras(game_pk):
                 batter_last_result = _EVENT_CODE_MAP.get(event, event[:3] if event else '')
                 break
 
-        # Last pitch speed and type from the most recent pitch event
+        # Scan current at-bat: pitch count, last strike type, and whether AB is complete
         last_speed = None
         last_type = ''
-        for event in reversed(plays.get('currentPlay', {}).get('playEvents', [])):
-            if event.get('isPitch'):
-                pd = event.get('pitchData', {})
-                last_speed = pd.get('startSpeed')
-                raw_code = event.get('details', {}).get('type', {}).get('code', '') or ''
+        last_strike_call = ''
+        at_bat_pitch_count = 0
+        current_play_events = plays.get('currentPlay', {}).get('playEvents', [])
+        for ev in current_play_events:
+            if ev.get('isPitch'):
+                at_bat_pitch_count += 1
+                pd = ev.get('pitchData', {})
+                details = ev.get('details', {})
+                call_code = (details.get('call', {}).get('code', '') or '').upper()
+                if call_code in ('S', 'W', 'T', 'O', 'M'):
+                    last_strike_call = 'S'  # swinging
+                elif call_code == 'C':
+                    last_strike_call = 'L'  # looking
+                elif call_code in ('F', 'L', 'R'):
+                    last_strike_call = 'F'  # foul
+                # always overwrite so the last pitch in the AB is shown
+                raw_code = details.get('type', {}).get('code', '') or ''
                 last_type = _PITCH_TYPE_ABBR.get(raw_code, raw_code)
-                break
+                last_speed = pd.get('startSpeed')
+
+        current_at_bat_complete = bool(
+            plays.get('currentPlay', {}).get('result', {}).get('event')
+        )
 
         return {
             'pitch_count': pitch_count,
@@ -176,6 +192,9 @@ def fetch_scoreboard_live_extras(game_pk):
             'last_pitch_speed': last_speed,
             'last_pitch_type': last_type,
             'due_up': on_deck_name,
+            'last_strike_call': last_strike_call,
+            'at_bat_pitch_count': at_bat_pitch_count,
+            'current_at_bat_complete': current_at_bat_complete,
         }
     except Exception:
         return {}
@@ -311,13 +330,19 @@ def fetch_field_view_data(game_pk):
     last_hit = all_hits[-1] if all_hits else None
     hit_coords = (last_hit['x'], last_hit['y']) if last_hit else None
 
-    # Last play description
+    # Last play description — only show plays from the current half inning so the
+    # previous half inning's last play doesn't bleed into the new half inning header.
     current_play = plays.get('currentPlay', {})
     last_play_desc = current_play.get('result', {}).get('description', '')
     if not last_play_desc:
         all_plays = plays.get('allPlays', [])
         if all_plays:
-            last_play_desc = all_plays[-1].get('result', {}).get('description', '')
+            last_completed = all_plays[-1]
+            cur_half = 'bottom' if inning_state == 'Bottom' else 'top'
+            play_inning = last_completed.get('about', {}).get('inning')
+            play_half = last_completed.get('about', {}).get('halfInning', '')
+            if play_inning == current_inning and play_half == cur_half:
+                last_play_desc = last_completed.get('result', {}).get('description', '')
 
     # Linescore innings for mini table
     innings_list = linescore.get('innings', [])
@@ -435,6 +460,7 @@ _EVENT_CODE_MAP = {
     'Strikeout Double Play': 'K',
     'Walk': 'BB',
     'Intent Walk': 'IBB',
+    'Runner Placed On Base': 'PR',
     'Hit By Pitch': 'HBP',
     'Single': '1B',
     'Double': '2B',
