@@ -1408,14 +1408,22 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _ba_str = f'{_bh}-{_ba}'
                 if _blr:
                     _ba_str += f' {_blr}'
-            _ba_w = int(font11.getlength(_ba_str)) + 2 if _ba_str else 0
-            hitter_str, hitter_font = fit_text(
-                f'AB: {game_data.get("current_hitter") or ""}',
-                max_text_width - _ba_w,
-            )
-            draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
-            if _ba_str:
-                draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
+            _ba_w = min(int(font11.getlength(_ba_str)) + 2, horizonta_len - 8) if _ba_str else 0
+            _ab_done = game_data.get('current_at_bat_complete', False)
+            if _ab_done:
+                # Play resolved — show the on-deck player as the next batter while API catches up
+                _next = _format_player_name(game_data.get('due_up') or '')
+                if _next:
+                    _next_str, _next_font = fit_text(f'AB: {_next}', max_text_width)
+                    draw.text((start_x + 7, start_y + 25 + 89), _next_str, font=_next_font, fill=0)
+            else:
+                hitter_str, hitter_font = fit_text(
+                    f'AB: {game_data.get("current_hitter") or ""}',
+                    max(1, max_text_width - _ba_w),
+                )
+                draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
+                if _ba_str:
+                    draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
         
     if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
         # Normalize display labels
@@ -1502,14 +1510,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     draw.text((_due_x,     start_y + 5), _due_str, font=_due_fnt, fill=0)
                     draw.text((_due_x + 1, start_y + 5), _due_str, font=_due_fnt, fill=0)
         else:
-            raw_play = game_data.get('last_play') or ''
+            raw_play = (game_data.get('last_play') or '').replace('**', '').strip()
             if raw_play:
-                max_play_w = horizonta_len - _total_time_w - 10
+                max_play_w = max(horizonta_len - _total_time_w - 10, 0)
                 play_text = raw_play
                 _play_font = _get_font(12)
-                while play_text and int(_play_font.getlength(play_text)) > max_play_w:
-                    play_text = play_text[:-2] + '…'
-                if play_text:
+                while len(play_text) > 1 and int(_play_font.getlength(play_text)) > max_play_w:
+                    play_text = play_text[:-2] + '.'
+                if play_text and int(_play_font.getlength(play_text)) <= max_play_w:
                     pw = int(_play_font.getlength(play_text))
                     px = start_x + horizonta_len - pw - 2
                     draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
@@ -1742,13 +1750,24 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             Himage = draw_circle(Himage, (start_x + 34, start_y + 25 + 68), 4, balls_list[1])
             Himage = draw_circle(Himage, (start_x + 46, start_y + 25 + 68), 4, balls_list[2])
 
-            strikes_list = [None] * 3
-            for i in range(1, 3):
-                strikes_list[i-1] = i <= game_data['strikes']
+            _num_strikes = game_data.get('strikes') or 0
+            strikes_list = [i + 1 <= _num_strikes for i in range(2)]
+
+            _lsc = game_data.get('last_strike_call', '')
+            _show_k = _lsc == 'S' or (_lsc == 'F' and _num_strikes >= 2)
 
             draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
-            Himage = draw_circle(Himage, (start_x + 22 + 63, start_y + 25 + 68), 4, strikes_list[0])
-            Himage = draw_circle(Himage, (start_x + 34 + 63, start_y + 25 + 68), 4, strikes_list[1])
+            for _si, (_scx, _scy) in enumerate([
+                (start_x + 22 + 63, start_y + 25 + 68),
+                (start_x + 34 + 63, start_y + 25 + 68),
+            ]):
+                Himage = draw_circle(Himage, (_scx, _scy), 4, strikes_list[_si])
+                if strikes_list[_si] and _si == _num_strikes - 1 and _show_k:
+                    _kfont = _get_font(7)
+                    _kw = int(_kfont.getlength('K'))
+                    _kx, _ky = _scx - _kw // 2, _scy - 4
+                    draw.text((_kx,     _ky), 'K', font=_kfont, fill=255)
+                    draw.text((_kx + 1, _ky), 'K', font=_kfont, fill=255)
 
         # SV badge — keep visible during inning breaks too
         if game_data.get('save_situation'):
