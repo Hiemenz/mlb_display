@@ -1059,8 +1059,31 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
 
     logo_x = 3 if side == 'left' else (800 - 3 - _SIDEBAR_LOGO_SIZE)
     sep_x0, sep_x1 = (0, 31) if side == 'left' else (768, 800)
+    # Line drawn on the inner edge of the logo (between logo and scoreboard grid)
+    line_x = logo_x + _SIDEBAR_LOGO_SIZE + 1 if side == 'left' else logo_x - 2
 
     draw = ImageDraw.Draw(Himage)
+
+    # Build previous-rank lookup from standings_prev.json for movement indicators
+    # Stores (rank, wins, losses) so tied teams that didn't change record are not flagged.
+    prev_rank = {}
+    try:
+        prev_data = load_json_file('standings_prev.json')
+        for _teams in prev_data.get('standings', {}).values():
+            for _t in _teams:
+                _tid = str(_t.get('team_id', ''))
+                _r = _t.get('divisionRank')
+                if _tid and _r is not None:
+                    try:
+                        prev_rank[_tid] = (
+                            int(_r),
+                            int(_t.get('league_record_wins') or 0),
+                            int(_t.get('league_record_losses') or 0),
+                        )
+                    except (ValueError, TypeError):
+                        pass
+    except Exception:
+        pass
 
     for row_idx, div_name in enumerate(divisions):
         teams = standings_data.get('standings', {}).get(div_name, [])
@@ -1079,6 +1102,19 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
             else:
                 font = _get_font(9)
                 draw.text((logo_x, logo_y + 8), abbr[:3], font=font, fill=0)
+
+            # Draw movement indicator only when rank changed AND the team's record
+            # changed — this prevents false positives when tied teams swap API order.
+            if team_id in prev_rank:
+                cur_rank = int(team.get('divisionRank', 99))
+                prev_r, prev_w, prev_l = prev_rank[team_id]
+                cur_w = int(team.get('league_record_wins') or 0)
+                cur_l = int(team.get('league_record_losses') or 0)
+                if cur_rank != prev_r and (cur_w != prev_w or cur_l != prev_l):
+                    draw.line(
+                        (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
+                        fill=0, width=2,
+                    )
 
         # Removed separator lines between division sections
 

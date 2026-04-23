@@ -357,7 +357,11 @@ Examples:
         if _should_refresh_standings(sched):
             print("Refreshing standings (new Finals detected or no cache)...")
             try:
-                get_standings([103, 104], season=datetime.now().year)
+                today = datetime.now()
+                get_standings([103, 104], season=today.year)
+                prev_day = today - timedelta(days=1)
+                get_standings([103, 104], season=prev_day.year,
+                              date=prev_day.strftime('%m/%d/%Y'), save_as='standings_prev')
                 games = load_json_file('games.json').get('games', [])
                 sched['standings_final_pks'] = [
                     str(g['game_pk']) for g in games

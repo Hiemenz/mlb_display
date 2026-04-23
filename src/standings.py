@@ -43,7 +43,7 @@ def get_teams(team_id):
 
         
 
-def get_standings(league_id_list, season=2025, date=None):
+def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
     division_standings_list = {}
     for league_id in league_id_list:
         # Build the API URL with optional date parameter
@@ -117,7 +117,7 @@ def get_standings(league_id_list, season=2025, date=None):
     
     standings = {'standings': division_standings_list, 'team_abbreviation': team_abbreviation_list, 'last_updated': last_updated}
 
-    save_off_results(standings, 'standings')
+    save_off_results(standings, save_as)
 
     # Also update the teams.json file to include these abbreviations
     from util import load_json_file
