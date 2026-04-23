@@ -382,6 +382,11 @@ def parse_games(data, sport_id=None, config=None):
                 from game_detail_fetch import fetch_scoreboard_live_extras
                 extras = fetch_scoreboard_live_extras(game_id)
                 game_dict.update(extras)
+            if game_dict.get('inningState') in ('Middle', 'End') and live_calls_made < max_live_calls:
+                from game_detail_fetch import fetch_between_inning_info
+                bi_info = fetch_between_inning_info(game_id, game_dict['inningState'])
+                live_calls_made += 1
+                game_dict.update(bi_info)
         game_array.append(game_dict)
 
     # Batch-fetch probable pitcher ERA (MLB API no longer returns note field)

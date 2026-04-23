@@ -1726,13 +1726,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
     if game_data['detailed_state'] == 'In Progress':
         if _between_innings:
-            # Next 3 batters (last names) + pitcher, right-aligned in the bases/outs space
+            # Next 3 batters (last names) + pitcher, right-aligned in the bases/outs space.
+            # Prefer the batting-order-derived fields; fall back to linescore fields.
             _right_x = start_x + horizonta_len - 2
             _max_name_w = 46
             _batter_names = [
-                _last_name(game_data.get('current_hitter') or ''),
-                _last_name(game_data.get('due_up') or ''),
-                _last_name(game_data.get('in_hole') or ''),
+                _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
             ]
             _name_y = start_y + 31
             for _nm in _batter_names:
@@ -1745,7 +1746,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _name_y += 13
             _sep_y = _name_y + 1
             draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
-            _pit_name = _last_name(game_data.get('current_pitcher') or '')
+            _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             while _pit_name and int(font9.getlength(_pit_name)) > _max_name_w:
                 _pit_name = _pit_name[:-1]
             if _pit_name:
