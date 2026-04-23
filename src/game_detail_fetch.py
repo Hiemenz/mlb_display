@@ -123,13 +123,36 @@ def fetch_pitch_view_data(game_pk):
     }
 
 
-def fetch_scoreboard_live_extras(game_pk):
+_ABS_CHALLENGE_MAX = 2
+
+
+def _count_abs_challenges_used(plays, away_id, home_id):
+    """Count unsuccessful ABS challenges per team. Successful ones are retained."""
+    away_used, home_used = 0, 0
+    if not (away_id and home_id):
+        return away_used, home_used
+    for play in plays.get('allPlays', []):
+        for ev in play.get('playEvents', []):
+            rd = ev.get('reviewDetails')
+            if not rd or ev.get('type') != 'pitch':
+                continue
+            if rd.get('inProgress') or rd.get('isOverturned'):
+                continue
+            team = rd.get('challengeTeamId')
+            if team == away_id:
+                away_used += 1
+            elif team == home_id:
+                home_used += 1
+    return away_used, home_used
+
+
+def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
     """Fetch pitch count, batter game stats, last at-bat result, and last pitch speed
     from the live feed for use in the scoreboard box.
 
     Returns a dict with keys: pitch_count, batter_hits, batter_at_bats,
-    batter_last_result, last_pitch_speed, last_pitch_type.
-    All values default to None / '' on any failure.
+    batter_last_result, last_pitch_speed, last_pitch_type, away_challenges_remaining,
+    home_challenges_remaining.  All values default to None / '' on any failure.
     """
     try:
         data = fetch_live_feed(game_pk)
@@ -184,6 +207,10 @@ def fetch_scoreboard_live_extras(game_pk):
             plays.get('currentPlay', {}).get('result', {}).get('event')
         )
 
+        away_used, home_used = _count_abs_challenges_used(plays, away_id, home_id)
+        away_remaining = max(0, _ABS_CHALLENGE_MAX - away_used)
+        home_remaining = max(0, _ABS_CHALLENGE_MAX - home_used)
+
         return {
             'pitch_count': pitch_count,
             'batter_hits': batter_hits,
@@ -195,6 +222,8 @@ def fetch_scoreboard_live_extras(game_pk):
             'last_strike_call': last_strike_call,
             'at_bat_pitch_count': at_bat_pitch_count,
             'current_at_bat_complete': current_at_bat_complete,
+            'away_challenges_remaining': away_remaining,
+            'home_challenges_remaining': home_remaining,
         }
     except Exception:
         return {}

@@ -1214,6 +1214,73 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     return draw, Himage
 
 
+_ABS_CHALLENGE_MAX = 2
+
+
+def _draw_challenge_dots(draw, start_x, start_y, game_data):
+    """Two stacked dots per team just left of each logo: filled = remaining, outlined = used."""
+    dot_x = start_x - 6
+    r = 3
+    for side, top_y in (('away', start_y + 30), ('home', start_y + 60)):
+        remaining = game_data.get(f'{side}_challenges_remaining')
+        if remaining is None:
+            continue
+        remaining = max(0, min(_ABS_CHALLENGE_MAX, int(remaining)))
+        for i in range(_ABS_CHALLENGE_MAX):
+            cy = top_y + i * 9
+            box = (dot_x - r, cy - r, dot_x + r, cy + r)
+            if i < remaining:
+                draw.ellipse(box, fill=0, outline=0)
+            else:
+                draw.ellipse(box, fill=255, outline=0)
+
+
+def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt):
+    """Pre-game weather line (temp / wind / precip, plus dome marker) in the inter-row gap."""
+    parts = []
+    roof = game_data.get('roof_state')
+    if roof == 'fixed':
+        parts.append('Dome')
+    temp = game_data.get('weather_temp_f')
+    if temp is not None:
+        parts.append(f'{temp}°')
+    wind = game_data.get('weather_wind_mph')
+    wd = game_data.get('weather_wind_dir')
+    if wind is not None and wind >= 1:
+        parts.append(f'{wind}mph {wd}' if wd else f'{wind}mph')
+    precip = game_data.get('weather_precip_pct')
+    if precip is not None and precip > 0:
+        parts.append(f'{precip}%')
+    if not parts:
+        return
+    text = ' · '.join(parts)
+    try:
+        tw = int(fnt.getlength(text))
+    except AttributeError:
+        tw = len(text) * 5
+    tx = start_x + max(0, (horiz_len - tw) // 2)
+    draw.text((tx, start_y + 112), text, font=fnt, fill=0)
+
+
+def _is_game_effectively_over(game_data):
+    """True if MLB will mark the game Final shortly — used to suppress upcoming-batter text
+    during the lag between the final out and detailed_state flipping to Final."""
+    if game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied', 'Completed Early'):
+        return True
+    inning = game_data.get('current_inning') or 0
+    state = game_data.get('inningState') or ''
+    away = game_data.get('away_runs') or 0
+    home = game_data.get('home_runs') or 0
+    if inning >= 9:
+        # Top of 9+ complete and home already ahead → home doesn't bat
+        if state == 'Middle' and home > away:
+            return True
+        # Bottom of 9+ complete with a non-tie → game over
+        if state == 'End' and home != away:
+            return True
+    return False
+
+
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None):
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
@@ -1446,7 +1513,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _ba_str += f' {_blr}'
             _ba_w = min(int(font11.getlength(_ba_str)) + 2, horizonta_len - 8) if _ba_str else 0
             _ab_done = game_data.get('current_at_bat_complete', False)
-            if _ab_done:
+            if _ab_done and not _is_game_effectively_over(game_data):
                 # Play resolved — show the on-deck player as the next batter while API catches up
                 _next = _format_player_name(game_data.get('due_up') or '')
                 if _next:
@@ -1529,14 +1596,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
             except AttributeError:
                 pass
-    if game_data['detailed_state'] == 'In Progress':
-        if _between_innings:
+    if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
+        raw_play = (game_data.get('last_play') or '').replace('**', '').strip()
+        if _between_innings and raw_play:
+            # Mid-inning break: show the play that ended the half-inning
+            max_play_w = max(horizonta_len - _total_time_w - 10, 0)
+            play_text = raw_play
+            _play_font = _get_font(12)
+            while len(play_text) > 1 and int(_play_font.getlength(play_text)) > max_play_w:
+                play_text = play_text[:-2] + '.'
+            if play_text and int(_play_font.getlength(play_text)) <= max_play_w:
+                pw = int(_play_font.getlength(play_text))
+                px = start_x + horizonta_len - pw - 2
+                draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
+                draw.text((px + 1, start_y + 4), play_text, font=_play_font, fill=0)
+        elif _between_innings:
+            # No last-play text available — fall back to showing who's due
             _due_name = _format_player_name(game_data.get('current_hitter') or '')
             if _due_name:
                 _due_str = f'Due: {_due_name}'
                 _due_fnt = font11
-                _due_w = int(_due_fnt.getlength(_due_str))
-                # Truncate if needed to avoid overlapping the state label
                 _max_due_w = horizonta_len - _total_time_w - 6
                 while _due_str and int(_due_fnt.getlength(_due_str)) > _max_due_w:
                     _due_str = _due_str[:-1]
@@ -1545,19 +1624,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _due_x = start_x + horizonta_len - _due_w - 2
                     draw.text((_due_x,     start_y + 5), _due_str, font=_due_fnt, fill=0)
                     draw.text((_due_x + 1, start_y + 5), _due_str, font=_due_fnt, fill=0)
-        else:
-            raw_play = (game_data.get('last_play') or '').replace('**', '').strip()
-            if raw_play:
-                max_play_w = max(horizonta_len - _total_time_w - 10, 0)
-                play_text = raw_play
-                _play_font = _get_font(12)
-                while len(play_text) > 1 and int(_play_font.getlength(play_text)) > max_play_w:
-                    play_text = play_text[:-2] + '.'
-                if play_text and int(_play_font.getlength(play_text)) <= max_play_w:
-                    pw = int(_play_font.getlength(play_text))
-                    px = start_x + horizonta_len - pw - 2
-                    draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
-                    draw.text((px + 1, start_y + 4), play_text, font=_play_font, fill=0)
+        elif raw_play:
+            max_play_w = max(horizonta_len - _total_time_w - 10, 0)
+            play_text = raw_play
+            _play_font = _get_font(12)
+            while len(play_text) > 1 and int(_play_font.getlength(play_text)) > max_play_w:
+                play_text = play_text[:-2] + '.'
+            if play_text and int(_play_font.getlength(play_text)) <= max_play_w:
+                pw = int(_play_font.getlength(play_text))
+                px = start_x + horizonta_len - pw - 2
+                draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
+                draw.text((px + 1, start_y + 4), play_text, font=_play_font, fill=0)
 
     # Initialize score variables (will be used later for winner display)
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
@@ -1629,7 +1706,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             game_data.get("home_team_id"),
             start_y + 55,
         )
-        
+
+        _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font9)
+
+    # ABS challenges remaining — small stacked dots to the left of each team's logo
+    if game_data['detailed_state'] == 'In Progress':
+        _draw_challenge_dots(draw, start_x, start_y, game_data)
+
     # horizontal line
     end_x = start_x + horizonta_len
     end_y = start_y

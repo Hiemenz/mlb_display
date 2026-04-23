@@ -39,6 +39,61 @@ def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
 
 
 _SUBSTITUTION_TYPES = ('substitution', 'timeout', 'advisory')
+_PRE_GAME_STATES = ('Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start')
+
+_STADIUM_WEATHER_CACHE = None
+
+
+def _load_stadium_weather():
+    global _STADIUM_WEATHER_CACHE
+    if _STADIUM_WEATHER_CACHE is None:
+        _STADIUM_WEATHER_CACHE = load_json_file('stadium_weather.json') or {}
+    return _STADIUM_WEATHER_CACHE
+
+
+def _lookup_stadium(venue_id, venue_name):
+    stadiums = _load_stadium_weather()
+    if venue_id is not None:
+        entry = stadiums.get(str(venue_id))
+        if entry:
+            return entry
+    fallback = stadiums.get('_name_fallback', {})
+    if venue_name:
+        vid = fallback.get(venue_name)
+        if vid:
+            return stadiums.get(str(vid))
+    return None
+
+
+def _attach_pregame_weather(game_dict, schedule_game, config):
+    """Fill weather_* and roof_state on game_dict for a scheduled game."""
+    weather_cfg = config.get('weather') or {}
+    if not weather_cfg.get('enabled', True):
+        return
+    venue = schedule_game.get('venue', {}) or {}
+    venue_id = venue.get('id')
+    stadium = _lookup_stadium(venue_id, venue.get('name'))
+    if stadium is None:
+        return
+    if stadium.get('roof') == 'fixed':
+        game_dict['roof_state'] = 'fixed'
+    try:
+        from weather import get_forecast
+    except ImportError:
+        return
+    forecast = get_forecast(
+        str(venue_id or stadium.get('name')),
+        stadium.get('lat'),
+        stadium.get('lon'),
+        game_dict.get('game_date'),
+        cache_ttl_minutes=weather_cfg.get('cache_ttl_minutes', 60),
+    )
+    if not forecast:
+        return
+    game_dict['weather_temp_f'] = forecast.get('temp_f')
+    game_dict['weather_wind_mph'] = forecast.get('wind_mph')
+    game_dict['weather_wind_dir'] = forecast.get('wind_dir')
+    game_dict['weather_precip_pct'] = forecast.get('precip_pct')
 
 def fetch_win_probability(game_pk):
     """Return (away_wp, home_wp, last_play) from the winProbability endpoint, or (None, None, None)."""
@@ -379,8 +434,10 @@ def parse_games(data, sport_id=None, config=None):
                 game_dict['home_win_probability'] = home_wp
             if config.get('scoreboard_live_details', False):
                 from game_detail_fetch import fetch_scoreboard_live_extras
-                extras = fetch_scoreboard_live_extras(game_id)
+                extras = fetch_scoreboard_live_extras(game_id, away_team_id, home_team_id)
                 game_dict.update(extras)
+        elif game_dict.get('detailed_state') in _PRE_GAME_STATES:
+            _attach_pregame_weather(game_dict, game, config)
         game_array.append(game_dict)
 
     # Batch-fetch probable pitcher ERA (MLB API no longer returns note field)
