@@ -1552,42 +1552,46 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
                 draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
     elif game_data['detailed_state'] in ['Scheduled', 'Pre-Game', 'Warmup']:
-        # Game hasn't started - show "W-L (l10w-l10l) streak" right-anchored
+        # Game hasn't started — show record stacked above L10/streak, both right-anchored
         def _team_stats(team_id):
             if streak_map:
                 return streak_map.get(str(team_id)) or {}
             return {}
 
-        def _format_record_line(wins, losses, team_id):
-            rec = f'{wins}-{losses}'
+        def _draw_record(wins, losses, team_id, y_pos):
+            # Primary: W-L in font14, bold via double-draw, aligned to top of logo row
+            main_txt = f'{wins}-{losses}'
+            main_w = int(font14.getlength(main_txt))
+            rx = start_x + horizonta_len - main_w - 1
+            draw.text((rx,     y_pos), main_txt, font=font14, fill=0)
+            draw.text((rx + 1, y_pos), main_txt, font=font14, fill=0)
+
+            # Secondary: L10 and streak on the line below in font9
             stats = _team_stats(team_id)
             w10, l10 = stats.get('l10_wins'), stats.get('l10_losses')
+            s = stats.get('streak') or ''
+            parts = []
             if w10 is not None and l10 is not None:
-                rec += f' ({w10}-{l10})'
-            s = stats.get('streak')
+                parts.append(f'{w10}-{l10}')
             if s:
-                rec += f' {s}'
-            return rec
-
-        def _draw_record(wins, losses, team_id, y_pos):
-            txt = _format_record_line(wins, losses, team_id)
-            # font11 fits all realistic strings; font9 is a safety fallback only
-            fnt = font11 if font11.getlength(txt) <= horizonta_len - 2 else font9
-            tw = int(fnt.getlength(txt))
-            rx = start_x + horizonta_len - tw - 1
-            draw.text((rx, y_pos), txt, font=fnt, fill=0)
+                parts.append(s)
+            if parts:
+                sub_txt = ' '.join(parts)
+                sub_w = int(font9.getlength(sub_txt))
+                sx = start_x + horizonta_len - sub_w - 1
+                draw.text((sx, y_pos + 15), sub_txt, font=font9, fill=0)
 
         _draw_record(
             game_data.get("away_team_record_wins", "0"),
             game_data.get("away_team_record_losses", "0"),
             game_data.get("away_team_id"),
-            start_y + 33,
+            start_y + 25,
         )
         _draw_record(
             game_data.get("home_team_record_wins", "0"),
             game_data.get("home_team_record_losses", "0"),
             game_data.get("home_team_id"),
-            start_y + 63,
+            start_y + 55,
         )
         
     # horizontal line
