@@ -913,6 +913,49 @@ def _fetch_game_timeline(game_pk):
 
 _TERMINAL_GAME_STATES = {'Postponed', 'Cancelled', 'Suspended'}
 
+
+def _inning_runs_at_time(plays, target_utc):
+    """Return (away_inning_runs, home_inning_runs) lists reconstructed from plays up to target_utc.
+
+    Away team scores in 'top' halves; home team scores in 'bottom' halves.
+    A None value in home_inning_runs means the bottom half hasn't been played yet.
+    """
+    half_final = {}
+    for play in plays:
+        if play['end_time'] > target_utc:
+            break
+        key = (play['inning'], play['half_inning'])
+        half_final[key] = (play['away_score'], play['home_score'])
+
+    if not half_final:
+        return [], []
+
+    max_inning = max(k[0] for k in half_final)
+    away_runs = []
+    home_runs = []
+    prev_away = 0
+    prev_home = 0
+
+    for inn in range(1, max_inning + 1):
+        top_key = (inn, 'top')
+        bot_key = (inn, 'bottom')
+
+        if top_key not in half_final:
+            break
+        top_away, _ = half_final[top_key]
+        away_runs.append(top_away - prev_away)
+        prev_away = top_away
+
+        if bot_key in half_final:
+            _, bot_home = half_final[bot_key]
+            home_runs.append(bot_home - prev_home)
+            prev_home = bot_home
+        else:
+            home_runs.append(None)
+
+    return away_runs, home_runs
+
+
 def _game_state_at_time(base_game, tl, target_utc):
     """Return a copy of base_game with dynamic fields set to game state at target_utc."""
     state = dict(base_game)
@@ -997,7 +1040,12 @@ def _game_state_at_time(base_game, tl, target_utc):
         state['balls']                = 0
         state['strikes']              = 0
         state['current_pitcher']      = last_play.get('pitcher') or None
-        state['current_hitter']       = None  # between at-bats, no batter yet
+        # Find the first batter of the next half inning so "Due:" can be shown
+        _next_event = next(
+            (ev for ev in pitch_events if ev['time'] > last_play['end_time']),
+            None,
+        )
+        state['current_hitter'] = _next_event.get('batter') if _next_event else None
         if outs_after >= 3:
             # Inning break: top half done → Mid, bottom half done → End
             state['inningState'] = 'Middle' if half == 'top' else 'End'
@@ -1027,6 +1075,11 @@ def _game_state_at_time(base_game, tl, target_utc):
             'balls': None, 'strikes': None,
             'current_pitcher': None, 'current_hitter': None,
         })
+
+    # Reconstruct per-inning run lists from play history so linescore grid shows correct data.
+    away_inn, home_inn = _inning_runs_at_time(plays, target_utc)
+    state['away_inning_runs'] = away_inn
+    state['home_inning_runs'] = home_inn
 
     # --- Win probability and last-play: find last wp_event before target_utc ---
     wp_events = tl.get('wp_events', [])
@@ -1116,10 +1169,14 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
     print(f"Fetching standings for {date_str}...")
     try:
         from standings import get_standings
-        from datetime import datetime as _dt
+        from datetime import datetime as _dt, timedelta as _td
         _date_obj = _dt.strptime(date_str, '%Y-%m-%d')
         get_standings([103, 104], season=_date_obj.year, date=_date_obj.strftime('%m/%d/%Y'))
         print("  standings ok")
+        _prev_date = _date_obj - _td(days=1)
+        get_standings([103, 104], season=_prev_date.year,
+                      date=_prev_date.strftime('%m/%d/%Y'), save_as='standings_prev')
+        print("  prev standings ok")
     except Exception as _e:
         print(f"  standings error: {_e} (using cached)")
 
@@ -1224,6 +1281,19 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
         loop=0,
     )
     print(f"✓ GIF saved to {output_path}")
+
+    mp4_path = os.path.splitext(output_path)[0] + '.mp4'
+    try:
+        import imageio
+        import numpy as np
+        fps = 1000 / frame_delay_ms
+        writer = imageio.get_writer(mp4_path, fps=fps, codec='libx264', quality=8)
+        for frame in frames:
+            writer.append_data(np.array(frame.convert('RGB')))
+        writer.close()
+        print(f"✓ MP4 saved to {mp4_path}")
+    except ImportError:
+        print("imageio not installed — skipping MP4 (pip install imageio[ffmpeg])")
 
 
 def main():
@@ -1420,11 +1490,14 @@ Examples:
 
     # --- GIF generation mode ---
     if gif_mode:
+        gif_output = args.gif_output
+        if gif_output == 'scoreboard_timelapse.gif':
+            gif_output = f'scoreboard_{date_str}.gif'
         _generate_gif(
             date_str,
             args.gif_start or None,  # None triggers auto-detection
             args.gif_end   or None,
-            args.gif_output, args.gif_interval, args.gif_delay,
+            gif_output, args.gif_interval, args.gif_delay,
             sport_id, config_data,
         )
         return
