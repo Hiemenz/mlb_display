@@ -365,6 +365,7 @@ def parse_games(data, sport_id=None, config=None):
             'perfect_game': game.get('flags', {}).get('perfectGame'),
             'current_hitter': ls_offense.get('batter', {}).get('fullName'),
             'due_up': ls_offense.get('onDeck', {}).get('fullName'),
+            'in_hole': ls_offense.get('inHole', {}).get('fullName'),
             'current_pitcher': linescore.get('defense', {}).get('pitcher', {}).get('fullName'),
             'last_play': last_play_result,
             'save_situation': save_situation,
