@@ -1086,6 +1086,33 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
         y_section = _SIDEBAR_ROW_Y[row_idx]
         slot_h    = (_SIDEBAR_ROW_H - (_SIDEBAR_VERTICAL_PADDING * 2)) // 5
 
+        # Find team IDs whose rank genuinely changed (record moved, not just API tie-break).
+        # Any team that actually changed record is a "mover"; its swap partner gets marked too
+        # even if the partner's own record didn't change (e.g. Texas climbs past a team that
+        # didn't play — that team's rank still changed).
+        movers = set()
+        for team in teams[:5]:
+            tid = str(team.get('team_id', ''))
+            if tid not in prev_rank:
+                continue
+            cur_rank = int(team.get('divisionRank', 99))
+            prev_r, prev_w, prev_l = prev_rank[tid]
+            cur_w = int(team.get('league_record_wins') or 0)
+            cur_l = int(team.get('league_record_losses') or 0)
+            if cur_rank != prev_r and (cur_w != prev_w or cur_l != prev_l):
+                movers.add(tid)
+
+        # Any team displaced by a mover also changed rank — mark it too.
+        if movers:
+            for team in teams[:5]:
+                tid = str(team.get('team_id', ''))
+                if tid not in prev_rank or tid in movers:
+                    continue
+                cur_rank = int(team.get('divisionRank', 99))
+                prev_r, _, _ = prev_rank[tid]
+                if cur_rank != prev_r:
+                    movers.add(tid)
+
         for slot_idx, team in enumerate(teams[:5]):
             team_id = str(team.get('team_id', ''))
             abbr    = abbr_map.get(team_id, f'T{team_id}')
@@ -1101,18 +1128,11 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
                 tw = int(font.getlength(abbr[:3]))
                 draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - tw) // 2, logo_y + 8), abbr[:3], font=font, fill=0)
 
-            # Draw movement indicator only when rank changed AND the team's record
-            # changed — this prevents false positives when tied teams swap API order.
-            if team_id in prev_rank:
-                cur_rank = int(team.get('divisionRank', 99))
-                prev_r, prev_w, prev_l = prev_rank[team_id]
-                cur_w = int(team.get('league_record_wins') or 0)
-                cur_l = int(team.get('league_record_losses') or 0)
-                if cur_rank != prev_r and (cur_w != prev_w or cur_l != prev_l):
-                    draw.line(
-                        (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
-                        fill=0, width=2,
-                    )
+            if team_id in movers:
+                draw.line(
+                    (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
+                    fill=0, width=2,
+                )
 
         # Removed separator lines between division sections
 
