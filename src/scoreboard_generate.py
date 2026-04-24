@@ -1095,6 +1095,7 @@ def _game_state_at_time(base_game, tl, target_utc):
             'num_of_outs': None, 'balls': None, 'strikes': None,
             'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
             'away_win_probability': None, 'home_win_probability': None, 'last_play': None,
+            'away_team_is_winner': False, 'home_team_is_winner': False,
         })
         return state
 
@@ -1312,6 +1313,38 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
     if not base_games:
         print(f"No games found for {date_str}")
         return
+
+    # --- Step 1a: Attach pre-game weather to every game for Scheduled frames ---
+    print("Attaching weather data...")
+    try:
+        from fetch_games import _lookup_stadium
+        from weather import get_forecast
+        _weather_cfg = config_data.get('weather') or {}
+        if _weather_cfg.get('enabled', True):
+            for _g in base_games:
+                _venue = _g.get('venue')
+                _gdate = _g.get('game_date')
+                if not _venue or not _gdate:
+                    continue
+                _stadium = _lookup_stadium(None, _venue)
+                if _stadium is None:
+                    continue
+                if _stadium.get('roof') == 'fixed':
+                    _g['roof_state'] = 'fixed'
+                _fc = get_forecast(
+                    _venue,
+                    _stadium.get('lat'),
+                    _stadium.get('lon'),
+                    _gdate,
+                    cache_ttl_minutes=_weather_cfg.get('cache_ttl_minutes', 60),
+                )
+                if _fc:
+                    _g['weather_temp_f']    = _fc.get('temp_f')
+                    _g['weather_wind_mph']  = _fc.get('wind_mph')
+                    _g['weather_wind_dir']  = _fc.get('wind_dir')
+                    _g['weather_precip_pct'] = _fc.get('precip_pct')
+    except Exception as _we:
+        print(f"  weather attach error: {_we}")
 
     # --- Step 1b: Fetch standings as of this date so wildcard/division data is accurate ---
     print(f"Fetching standings for {date_str}...")
