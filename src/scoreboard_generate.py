@@ -737,25 +737,30 @@ def _parse_mlb_time(time_str):
 
 
 _WP_SKIP_TYPES = ('substitution', 'timeout', 'advisory')
+_GIF_ABS_CHALLENGE_MAX = 2
 
 
 def _fetch_game_timeline(game_pk):
     """Fetch the full live feed for one game and return a play-by-play timeline.
 
     Returns a dict:
-      scheduled_start_utc — UTC-aware datetime of scheduled first pitch
-      first_pitch_utc     — UTC-aware datetime when first play began (or None)
-      last_play_utc       — UTC-aware datetime when last play completed (or None)
-      plays               — list of dicts sorted by end_time, each:
-                              end_time, away_score, home_score, inning,
-                              half_inning ('top'|'bottom'), outs
-      pitch_events        — list of dicts sorted by time, one per pitch/action event:
-                              time, balls, strikes, outs, inning, half_inning,
-                              away_score, home_score
-                            Used to reconstruct mid-at-bat state minute by minute.
-      wp_events           — list of dicts sorted by time, one per completed play:
-                              time, away_wp, home_wp, last_play
-                            Win probability and last-play description at each play boundary.
+      scheduled_start_utc  — UTC-aware datetime of scheduled first pitch
+      first_pitch_utc      — UTC-aware datetime when first play began (or None)
+      last_play_utc        — UTC-aware datetime when last play completed (or None)
+      plays                — list of dicts sorted by end_time, each:
+                               end_time, away_score, home_score, inning,
+                               half_inning ('top'|'bottom'), outs, batter_id
+      pitch_events         — list of dicts sorted by time, one per pitch/action event:
+                               time, balls, strikes, outs, inning, half_inning,
+                               away_score, home_score
+                             Used to reconstruct mid-at-bat state minute by minute.
+      wp_events            — list of dicts sorted by time, one per completed play:
+                               time, away_wp, home_wp, last_play
+                             Win probability and last-play description at each play boundary.
+      challenge_events     — list of dicts sorted by time, one per play where challenge
+                               state changed: time, away_remaining, home_remaining
+      next_batters_events  — list of dicts sorted by time, one per inning break:
+                               time, next_batter_1/2/3 (full names), next_pitcher
     """
     url = f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
     resp = requests.get(url, timeout=20)
@@ -769,11 +774,37 @@ def _fetch_game_timeline(game_pk):
         except ValueError:
             pass
 
+    # Team IDs for challenge attribution
+    game_data_sec = data.get('gameData', {})
+    away_id = game_data_sec.get('teams', {}).get('away', {}).get('id')
+    home_id = game_data_sec.get('teams', {}).get('home', {}).get('id')
+
+    # Batting orders from boxscore (final state; good enough for GIF reconstruction)
+    bscore_teams = data.get('liveData', {}).get('boxscore', {}).get('teams', {})
+
+    def _build_order(team_box):
+        batting_order_ids = team_box.get('battingOrder', [])
+        players = team_box.get('players', {})
+        slot_map = {}
+        for pid in batting_order_ids:
+            pdata = players.get(f'ID{pid}', {})
+            bat_str = str(pdata.get('battingOrder', ''))
+            slot = int(bat_str[0]) if bat_str and bat_str[0].isdigit() else None
+            if slot:
+                slot_map[slot] = (pid, pdata.get('person', {}).get('fullName', ''))
+        return [slot_map[s] for s in sorted(slot_map)]
+
+    away_order = _build_order(bscore_teams.get('away', {}))  # [(pid, name), ...]
+    home_order = _build_order(bscore_teams.get('home', {}))
+
     all_plays = data.get('liveData', {}).get('plays', {}).get('allPlays', [])
     timeline = []
     first_pitch = None
     pitch_events = []
     wp_events = []
+    challenge_events = []
+    away_chal_used = 0
+    home_chal_used = 0
 
     # Fetch win probability timeline (one entry per completed play)
     wp_by_index = {}
@@ -816,10 +847,21 @@ def _fetch_game_timeline(game_pk):
         at_bat_home = running_home
 
         matchup = play.get('matchup', {})
-        at_bat_pitcher = matchup.get('pitcher', {}).get('fullName') or ''
-        at_bat_batter  = matchup.get('batter',  {}).get('fullName') or ''
+        at_bat_pitcher   = matchup.get('pitcher', {}).get('fullName') or ''
+        at_bat_batter    = matchup.get('batter',  {}).get('fullName') or ''
+        at_bat_batter_id = matchup.get('batter',  {}).get('id')
 
         for ev in play.get('playEvents', []):
+            # ABS challenge tracking
+            rd = ev.get('reviewDetails')
+            if rd and ev.get('type') == 'pitch':
+                if not rd.get('inProgress') and not rd.get('isOverturned'):
+                    ch_team = rd.get('challengeTeamId')
+                    if ch_team == away_id:
+                        away_chal_used += 1
+                    elif ch_team == home_id:
+                        home_chal_used += 1
+
             ev_time_str = ev.get('startTime', '')
             if not ev_time_str:
                 continue
@@ -865,7 +907,15 @@ def _fetch_game_timeline(game_pk):
             'outs_after':  play.get('count', {}).get('outs', 0) or 0,
             'pitcher':     at_bat_pitcher,
             'batter':      at_bat_batter,
+            'batter_id':   at_bat_batter_id,
         })
+
+        if away_chal_used > 0 or home_chal_used > 0:
+            challenge_events.append({
+                'time':           end_time,
+                'away_remaining': max(0, _GIF_ABS_CHALLENGE_MAX - away_chal_used),
+                'home_remaining': max(0, _GIF_ABS_CHALLENGE_MAX - home_chal_used),
+            })
 
         running_away = away_score
         running_home = home_score
@@ -901,13 +951,77 @@ def _fetch_game_timeline(game_pk):
     pitch_events.sort(key=lambda e: e['time'])
     wp_events.sort(key=lambda e: e['time'])
 
+    # First pitch event where a ball or strike was actually registered
+    first_actual_pitch = None
+    for pe in pitch_events:
+        if (pe.get('balls', 0) or 0) + (pe.get('strikes', 0) or 0) > 0:
+            first_actual_pitch = pe['time']
+            break
+    if first_actual_pitch is None and timeline:
+        first_actual_pitch = timeline[0]['end_time']  # first completed play as fallback
+
+    # Build next_batters_events: for each inning break, compute the 3 upcoming batters
+    away_pids   = [pid for pid, _ in away_order]
+    home_pids   = [pid for pid, _ in home_order]
+    pid_to_name = {pid: name for pid, name in away_order + home_order}
+    next_batters_events = []
+
+    for i, play in enumerate(timeline):
+        if play.get('outs_after', 0) < 3:
+            continue
+        curr_half = play['half_inning']
+        if curr_half == 'top':
+            batting_side = 'home'
+            batting_half = 'bottom'
+        else:
+            batting_side = 'away'
+            batting_half = 'top'
+
+        batting_pids = home_pids if batting_side == 'home' else away_pids
+        if not batting_pids:
+            continue
+
+        # Last batter from this team in their most recent prior half-inning
+        last_batter_id = None
+        for prev in reversed(timeline[:i + 1]):
+            if prev['half_inning'] == batting_half:
+                last_batter_id = prev.get('batter_id')
+                break
+
+        if last_batter_id and last_batter_id in batting_pids:
+            start = (batting_pids.index(last_batter_id) + 1) % len(batting_pids)
+        else:
+            start = 0
+
+        n = len(batting_pids)
+        next_3 = [batting_pids[(start + k) % n] for k in range(min(3, n))]
+        names  = [pid_to_name.get(pid, '') for pid in next_3]
+
+        # Pitcher for the upcoming half: first pitch event after this break in that half
+        next_pitcher = ''
+        for pe in pitch_events:
+            if pe['time'] > play['end_time'] and pe.get('half_inning') == batting_half:
+                next_pitcher = pe.get('pitcher', '')
+                break
+
+        next_batters_events.append({
+            'time':          play['end_time'],
+            'next_batter_1': names[0] if len(names) > 0 else '',
+            'next_batter_2': names[1] if len(names) > 1 else '',
+            'next_batter_3': names[2] if len(names) > 2 else '',
+            'next_pitcher':  next_pitcher,
+        })
+
     return {
-        'scheduled_start_utc': scheduled_start,
-        'first_pitch_utc':     first_pitch,
-        'last_play_utc':       timeline[-1]['end_time'] if timeline else None,
-        'plays':               timeline,
-        'pitch_events':        pitch_events,
-        'wp_events':           wp_events,
+        'scheduled_start_utc':   scheduled_start,
+        'first_pitch_utc':       first_pitch,
+        'first_actual_pitch_utc': first_actual_pitch,
+        'last_play_utc':         timeline[-1]['end_time'] if timeline else None,
+        'plays':                 timeline,
+        'pitch_events':          pitch_events,
+        'wp_events':             wp_events,
+        'challenge_events':      challenge_events,
+        'next_batters_events':   next_batters_events,
     }
 
 
@@ -966,13 +1080,14 @@ def _game_state_at_time(base_game, tl, target_utc):
     if base_game.get('detailed_state') in _TERMINAL_GAME_STATES and not tl.get('plays'):
         return state
 
-    scheduled_start = tl.get('scheduled_start_utc')
-    first_pitch     = tl.get('first_pitch_utc') or scheduled_start
-    last_play_time  = tl.get('last_play_utc')
-    plays           = tl.get('plays', [])
+    scheduled_start     = tl.get('scheduled_start_utc')
+    first_pitch         = tl.get('first_pitch_utc') or scheduled_start
+    first_actual_pitch  = tl.get('first_actual_pitch_utc') or first_pitch
+    last_play_time      = tl.get('last_play_utc')
+    plays               = tl.get('plays', [])
 
-    # --- Before first pitch ---
-    if first_pitch and target_utc < first_pitch - timedelta(seconds=30):
+    # --- Before first actual pitch (first ball or strike recorded) ---
+    if first_actual_pitch and target_utc < first_actual_pitch:
         state.update({
             'detailed_state': 'Scheduled',
             'away_runs': None, 'home_runs': None,
@@ -1102,6 +1217,39 @@ def _game_state_at_time(base_game, tl, target_utc):
     state.update({
         'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
     })
+
+    # ABS challenges: replay cumulative state up to target_utc.
+    # Default to full allotment when no challenges have been used yet.
+    if state.get('detailed_state') == 'In Progress':
+        challenge_events = tl.get('challenge_events', [])
+        last_challenge = None
+        for ce in challenge_events:
+            if ce['time'] <= target_utc:
+                last_challenge = ce
+            else:
+                break
+        if last_challenge:
+            state['away_challenges_remaining'] = last_challenge['away_remaining']
+            state['home_challenges_remaining'] = last_challenge['home_remaining']
+        else:
+            state['away_challenges_remaining'] = _GIF_ABS_CHALLENGE_MAX
+            state['home_challenges_remaining'] = _GIF_ABS_CHALLENGE_MAX
+
+    # Next 3 batters + pitcher: shown during inning breaks (Middle/End)
+    if state.get('inningState') in ('Middle', 'End'):
+        next_batters_events = tl.get('next_batters_events', [])
+        last_nb = None
+        for nbe in next_batters_events:
+            if nbe['time'] <= target_utc:
+                last_nb = nbe
+            else:
+                break
+        if last_nb:
+            state['next_batter_1'] = last_nb['next_batter_1']
+            state['next_batter_2'] = last_nb['next_batter_2']
+            state['next_batter_3'] = last_nb['next_batter_3']
+            state['next_pitcher']  = last_nb.get('next_pitcher', '')
+
     return state
 
 
@@ -1194,7 +1342,7 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
         try:
             tl = _fetch_game_timeline(game_pk)
             game_timelines[str(game_pk)] = tl
-            anchor = tl.get('first_pitch_utc') or tl.get('scheduled_start_utc')
+            anchor = tl.get('first_actual_pitch_utc') or tl.get('first_pitch_utc') or tl.get('scheduled_start_utc')
             if anchor:
                 all_first_pitches.append(anchor)
             if tl.get('last_play_utc'):

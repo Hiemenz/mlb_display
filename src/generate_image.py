@@ -1045,17 +1045,17 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
       section 1 = Central (y=180–330)
       section 2 = West   (y=330–480)
 
-    side='left'  → AL divisions, logo_x=3  (fits in 32px left margin)
-    side='right' → NL divisions, logo_x=771 (fits in 33px right margin)
+    side='left'  → AL divisions, logo_x=6  (centered in 32px left margin)
+    side='right' → NL divisions, logo_x=774 (centered in 32px right margin)
     """
     divisions = _AL_DIV_ORDER if side == 'left' else _NL_DIV_ORDER
     abbr_map  = {**standings_data.get('team_abbreviation', {}),
                  **team_data.get('team_abbreviation', {})}
 
-    logo_x = 3 if side == 'left' else (800 - 3 - _SIDEBAR_LOGO_SIZE)
+    logo_x = (32 - _SIDEBAR_LOGO_SIZE) // 2 if side == 'left' else (800 - 32) + (32 - _SIDEBAR_LOGO_SIZE) // 2
     sep_x0, sep_x1 = (0, 31) if side == 'left' else (768, 800)
     # Line drawn on the inner edge of the logo (between logo and scoreboard grid)
-    line_x = logo_x + _SIDEBAR_LOGO_SIZE + 1 if side == 'left' else logo_x - 2
+    line_x = logo_x + _SIDEBAR_LOGO_SIZE + 3 if side == 'left' else logo_x - 4
 
     draw = ImageDraw.Draw(Himage)
 
@@ -1086,6 +1086,33 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
         y_section = _SIDEBAR_ROW_Y[row_idx]
         slot_h    = (_SIDEBAR_ROW_H - (_SIDEBAR_VERTICAL_PADDING * 2)) // 5
 
+        # Find team IDs whose rank genuinely changed (record moved, not just API tie-break).
+        # Any team that actually changed record is a "mover"; its swap partner gets marked too
+        # even if the partner's own record didn't change (e.g. Texas climbs past a team that
+        # didn't play — that team's rank still changed).
+        movers = set()
+        for team in teams[:5]:
+            tid = str(team.get('team_id', ''))
+            if tid not in prev_rank:
+                continue
+            cur_rank = int(team.get('divisionRank', 99))
+            prev_r, prev_w, prev_l = prev_rank[tid]
+            cur_w = int(team.get('league_record_wins') or 0)
+            cur_l = int(team.get('league_record_losses') or 0)
+            if cur_rank != prev_r and (cur_w != prev_w or cur_l != prev_l):
+                movers.add(tid)
+
+        # Any team displaced by a mover also changed rank — mark it too.
+        if movers:
+            for team in teams[:5]:
+                tid = str(team.get('team_id', ''))
+                if tid not in prev_rank or tid in movers:
+                    continue
+                cur_rank = int(team.get('divisionRank', 99))
+                prev_r, _, _ = prev_rank[tid]
+                if cur_rank != prev_r:
+                    movers.add(tid)
+
         for slot_idx, team in enumerate(teams[:5]):
             team_id = str(team.get('team_id', ''))
             abbr    = abbr_map.get(team_id, f'T{team_id}')
@@ -1093,23 +1120,19 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
 
             logo_img = _logo_small(abbr, team_id, size=_SIDEBAR_LOGO_SIZE)
             if logo_img is not None:
-                Himage.paste(logo_img, (logo_x, logo_y))
+                lw, lh = logo_img.size
+                paste_x = logo_x + (_SIDEBAR_LOGO_SIZE - lw) // 2
+                Himage.paste(logo_img, (paste_x, logo_y))
             else:
                 font = _get_font(9)
-                draw.text((logo_x, logo_y + 8), abbr[:3], font=font, fill=0)
+                tw = int(font.getlength(abbr[:3]))
+                draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - tw) // 2, logo_y + 8), abbr[:3], font=font, fill=0)
 
-            # Draw movement indicator only when rank changed AND the team's record
-            # changed — this prevents false positives when tied teams swap API order.
-            if team_id in prev_rank:
-                cur_rank = int(team.get('divisionRank', 99))
-                prev_r, prev_w, prev_l = prev_rank[team_id]
-                cur_w = int(team.get('league_record_wins') or 0)
-                cur_l = int(team.get('league_record_losses') or 0)
-                if cur_rank != prev_r and (cur_w != prev_w or cur_l != prev_l):
-                    draw.line(
-                        (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
-                        fill=0, width=2,
-                    )
+            if team_id in movers:
+                draw.line(
+                    (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
+                    fill=0, width=2,
+                )
 
         # Removed separator lines between division sections
 
@@ -1133,10 +1156,10 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     N_COLS     = 9
     COL_W      = 13   # 15 + 9×13 = 132 ≤ 135
 
-    y0 = start_y + 81            # grid top — bottom half of box (scores/logos/bases stay above)
-    y1 = y0 + ROW_H_HDR          # = start_y + 34  (away row top)
-    y2 = y1 + ROW_H_TEAM         # = start_y + 50  (home row top)
-    y3 = y2 + ROW_H_TEAM         # = start_y + 66  (grid bottom)
+    y0 = start_y + 83            # grid top — bottom half of box (scores/logos/bases stay above)
+    y1 = y0 + ROW_H_HDR          # = start_y + 97  (away row top)
+    y2 = y1 + ROW_H_TEAM         # = start_y + 113 (home row top)
+    y3 = y2 + ROW_H_TEAM         # = start_y + 129 (grid bottom)
 
     current_inning = game_data.get('current_inning') or 1
     first_inn = max(1, current_inning - N_COLS + 1) if current_inning > N_COLS else 1
@@ -1212,18 +1235,22 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
 _ABS_CHALLENGE_MAX = 2
 
 
-def _draw_challenge_dots(draw, start_x, start_y, game_data):
-    """Two stacked dots per team just left of each logo: filled = remaining, outlined = used."""
-    dot_x = start_x - 6
+def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, logo_x_offset=2):
+    """Two side-by-side dots per team: filled = remaining, outlined = used."""
+    _LOGO_SIZE = 28
+    if use_logos:
+        dot_x = start_x + logo_x_offset + _LOGO_SIZE + 2 + 3
+    else:
+        dot_x = start_x + 5 + 3
     r = 3
-    for side, top_y in (('away', start_y + 30), ('home', start_y + 60)):
+    for side, row_y in (('away', start_y + 30), ('home', start_y + 60)):
         remaining = game_data.get(f'{side}_challenges_remaining')
         if remaining is None:
             continue
         remaining = max(0, min(_ABS_CHALLENGE_MAX, int(remaining)))
         for i in range(_ABS_CHALLENGE_MAX):
-            cy = top_y + i * 9
-            box = (dot_x - r, cy - r, dot_x + r, cy + r)
+            cx = dot_x + i * 9
+            box = (cx - r, row_y - r, cx + r, row_y + r)
             if i < remaining:
                 draw.ellipse(box, fill=0, outline=0)
             else:
@@ -1706,7 +1733,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
-        _draw_challenge_dots(draw, start_x, start_y, game_data)
+        _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=use_logos, logo_x_offset=logo_x_offset)
 
     # horizontal line
     end_x = start_x + horizonta_len
@@ -1818,7 +1845,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
                 _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
             ]
-            _name_y = start_y + 31
+            _name_y = start_y + 21
             for _nm in _batter_names:
                 _nm_disp = _nm
                 while _nm_disp and int(font11.getlength(_nm_disp)) > _max_name_w:
