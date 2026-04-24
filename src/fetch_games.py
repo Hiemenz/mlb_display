@@ -41,6 +41,41 @@ def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
 _SUBSTITUTION_TYPES = ('substitution', 'timeout', 'advisory')
 _PRE_GAME_STATES = ('Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start')
 
+
+def _pick_tv_channel(broadcasts, favorite_abbr, away_abbr, home_abbr):
+    """Return one TV callSign/name to display, or None.
+
+    Priority: favorite-team local TV > home-team local TV > first TV found.
+    National broadcasts (ESPN, Peacock, etc.) are treated as home-side for
+    this purpose and will appear if no local home/favorite broadcast exists.
+    """
+    tv = [b for b in (broadcasts or []) if b.get('type') == 'TV']
+    if not tv:
+        return None
+
+    def _label(b):
+        return b.get('callSign') or b.get('name') or ''
+
+    # Favorite team override
+    if favorite_abbr:
+        fav_side = None
+        if away_abbr and away_abbr.upper() == favorite_abbr.upper():
+            fav_side = 'away'
+        elif home_abbr and home_abbr.upper() == favorite_abbr.upper():
+            fav_side = 'home'
+        if fav_side:
+            fav = [b for b in tv if b.get('homeAway') == fav_side]
+            if fav:
+                return _label(fav[0])
+
+    # Home team local
+    home_tv = [b for b in tv if b.get('homeAway') == 'home']
+    if home_tv:
+        return _label(home_tv[0])
+
+    # National or first available
+    return _label(tv[0])
+
 _STADIUM_WEATHER_CACHE = None
 
 
@@ -425,6 +460,12 @@ def parse_games(data, sport_id=None, config=None):
             'last_play': last_play_result,
             'save_situation': save_situation,
             'game_pk': game_id,
+            'tv_channel': _pick_tv_channel(
+                game.get('broadcasts', []),
+                config.get('primary'),
+                away_abbreviation,
+                home_abbreviation,
+            ),
         }
         if game_dict.get('detailed_state') == 'In Progress' and live_calls_made < max_live_calls:
             away_wp, home_wp, last_play = fetch_win_probability(game_id)
@@ -527,7 +568,7 @@ def fetch_scoreboard_for_date(date, sport_id=None, config=None):
     endpoint_url = (
         'https://statsapi.mlb.com/api/v1/schedule?'
         f'startDate={date}&endDate={date}&sportId={sport_id}'
-        '&hydrate=decisions,probablePitcher(note),linescore,flags,team'
+        '&hydrate=decisions,probablePitcher(note),linescore,flags,team,broadcasts(all)'
     )
     response = requests.get(endpoint_url)
     data = response.json()

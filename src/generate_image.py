@@ -1258,7 +1258,20 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
 
 
 def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt):
-    """Pre-game weather line (temp / wind / precip, plus dome marker) in the inter-row gap."""
+    """Pre-game footer: weather left-aligned, TV channel right-aligned, in the inter-row gap."""
+    y = start_y + 112
+
+    # TV channel: right-aligned
+    tv = game_data.get('tv_channel') or ''
+    tv_w = 0
+    if tv:
+        try:
+            tv_w = int(fnt.getlength(tv)) + 2
+        except AttributeError:
+            tv_w = len(tv) * 5 + 2
+        draw.text((start_x + horiz_len - tv_w, y), tv, font=fnt, fill=0)
+
+    # Weather: left-aligned, using width not taken by TV
     parts = []
     roof = game_data.get('roof_state')
     if roof == 'fixed':
@@ -1276,6 +1289,7 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt):
     if not parts:
         return
     text = ' · '.join(parts)
+    avail_w = horiz_len - tv_w - 6
     use_fnt = fnt
     for try_fnt in (fnt, _get_font(11), _get_font(9)):
         try:
@@ -1283,15 +1297,9 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt):
         except AttributeError:
             tw = len(text) * 5
         use_fnt = try_fnt
-        if tw <= horiz_len - 4:
+        if tw <= avail_w:
             break
-    else:
-        try:
-            tw = int(use_fnt.getlength(text))
-        except AttributeError:
-            tw = len(text) * 5
-    tx = start_x + max(0, (horiz_len - tw) // 2)
-    draw.text((tx, start_y + 112), text, font=use_fnt, fill=0)
+    draw.text((start_x + 2, y), text, font=use_fnt, fill=0)
 
 
 def _is_game_effectively_over(game_data):
