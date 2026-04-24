@@ -951,6 +951,15 @@ def _fetch_game_timeline(game_pk):
     pitch_events.sort(key=lambda e: e['time'])
     wp_events.sort(key=lambda e: e['time'])
 
+    # First pitch event where a ball or strike was actually registered
+    first_actual_pitch = None
+    for pe in pitch_events:
+        if (pe.get('balls', 0) or 0) + (pe.get('strikes', 0) or 0) > 0:
+            first_actual_pitch = pe['time']
+            break
+    if first_actual_pitch is None and timeline:
+        first_actual_pitch = timeline[0]['end_time']  # first completed play as fallback
+
     # Build next_batters_events: for each inning break, compute the 3 upcoming batters
     away_pids   = [pid for pid, _ in away_order]
     home_pids   = [pid for pid, _ in home_order]
@@ -1004,14 +1013,15 @@ def _fetch_game_timeline(game_pk):
         })
 
     return {
-        'scheduled_start_utc': scheduled_start,
-        'first_pitch_utc':     first_pitch,
-        'last_play_utc':       timeline[-1]['end_time'] if timeline else None,
-        'plays':               timeline,
-        'pitch_events':        pitch_events,
-        'wp_events':           wp_events,
-        'challenge_events':    challenge_events,
-        'next_batters_events': next_batters_events,
+        'scheduled_start_utc':   scheduled_start,
+        'first_pitch_utc':       first_pitch,
+        'first_actual_pitch_utc': first_actual_pitch,
+        'last_play_utc':         timeline[-1]['end_time'] if timeline else None,
+        'plays':                 timeline,
+        'pitch_events':          pitch_events,
+        'wp_events':             wp_events,
+        'challenge_events':      challenge_events,
+        'next_batters_events':   next_batters_events,
     }
 
 
@@ -1070,13 +1080,14 @@ def _game_state_at_time(base_game, tl, target_utc):
     if base_game.get('detailed_state') in _TERMINAL_GAME_STATES and not tl.get('plays'):
         return state
 
-    scheduled_start = tl.get('scheduled_start_utc')
-    first_pitch     = tl.get('first_pitch_utc') or scheduled_start
-    last_play_time  = tl.get('last_play_utc')
-    plays           = tl.get('plays', [])
+    scheduled_start     = tl.get('scheduled_start_utc')
+    first_pitch         = tl.get('first_pitch_utc') or scheduled_start
+    first_actual_pitch  = tl.get('first_actual_pitch_utc') or first_pitch
+    last_play_time      = tl.get('last_play_utc')
+    plays               = tl.get('plays', [])
 
-    # --- Before first pitch ---
-    if first_pitch and target_utc < first_pitch - timedelta(seconds=30):
+    # --- Before first actual pitch (first ball or strike recorded) ---
+    if first_actual_pitch and target_utc < first_actual_pitch:
         state.update({
             'detailed_state': 'Scheduled',
             'away_runs': None, 'home_runs': None,
@@ -1331,7 +1342,7 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
         try:
             tl = _fetch_game_timeline(game_pk)
             game_timelines[str(game_pk)] = tl
-            anchor = tl.get('first_pitch_utc') or tl.get('scheduled_start_utc')
+            anchor = tl.get('first_actual_pitch_utc') or tl.get('first_pitch_utc') or tl.get('scheduled_start_utc')
             if anchor:
                 all_first_pitches.append(anchor)
             if tl.get('last_play_utc'):
