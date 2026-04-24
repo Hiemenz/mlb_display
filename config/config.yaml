@@ -82,6 +82,12 @@ scoreboard_win_probability: true
 # Adds one extra API call (live feed) per in-progress game per refresh cycle.
 scoreboard_live_details: true
 
+# Pre-game weather footer on Scheduled/Pre-Game/Warmup tiles (temp, wind, precip%).
+# Uses Open-Meteo (no API key required) with stadium coordinates from data/stadium_weather.json.
+weather:
+  enabled: true
+  cache_ttl_minutes: 60
+
 # Discord bot configuration
 # Get token from https://discord.com/developers/applications
 # Set channel_id to restrict commands to one channel (0 = any channel)
