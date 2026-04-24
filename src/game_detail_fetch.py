@@ -164,6 +164,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
         batter_id = linescore.get('offense', {}).get('batter', {}).get('id')
         on_deck_name = linescore.get('offense', {}).get('onDeck', {}).get('fullName') or None
+        in_hole_name = linescore.get('offense', {}).get('inHole', {}).get('fullName') or None
 
         pitcher_info = _get_player_info(boxscore, pitcher_id, 'pitching')
         batter_info = _get_player_info(boxscore, batter_id, 'batting')
@@ -219,6 +220,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_pitch_speed': last_speed,
             'last_pitch_type': last_type,
             'due_up': on_deck_name,
+            'in_hole': in_hole_name,
             'last_strike_call': last_strike_call,
             'at_bat_pitch_count': at_bat_pitch_count,
             'current_at_bat_complete': current_at_bat_complete,
@@ -229,7 +231,96 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         return {}
 
 
-def _extract_pitches(plays):
+def fetch_between_inning_info(game_pk, inning_state):
+    """Return the next 3 batters and pitcher for the upcoming half-inning.
+
+    Computes from the live feed batting order so the result is always the true
+    leadoff + next two, not whatever the linescore offense fields happen to hold.
+
+    inning_state: 'Middle' → home bats next (bottom); 'End' → away bats next (top).
+    Returns dict with keys: next_batter_1/2/3 (full names), next_pitcher (full name).
+    """
+    try:
+        data = fetch_live_feed(game_pk)
+        live = data.get('liveData', {})
+        linescore = live.get('linescore', {})
+        boxscore = live.get('boxscore', {})
+        plays = live.get('plays', {})
+
+        batting_side = 'home' if inning_state == 'Middle' else 'away'
+        pitching_side = 'away' if batting_side == 'home' else 'home'
+        # The half-inning in which this team bats
+        batting_half = 'bottom' if batting_side == 'home' else 'top'
+
+        team_box = boxscore.get('teams', {}).get(batting_side, {})
+        batting_order_ids = team_box.get('battingOrder', [])
+        players = team_box.get('players', {})
+
+        if not batting_order_ids:
+            return {}
+
+        # Build slot (1-9) -> current player id map; last entry per slot = current player
+        slot_to_pid = {}
+        for pid in batting_order_ids:
+            pdata = players.get(f'ID{pid}', {})
+            bat_str = str(pdata.get('battingOrder', ''))
+            slot = int(bat_str[0]) if bat_str and bat_str[0].isdigit() else None
+            if slot:
+                slot_to_pid[slot] = pid
+
+        ordered_pids = [slot_to_pid[s] for s in sorted(slot_to_pid.keys())]
+        if not ordered_pids:
+            return {}
+
+        # Find the last batter from this team's most recent half-inning
+        all_plays = plays.get('allPlays', [])
+        last_batter_pid = None
+        for play in reversed(all_plays):
+            if play.get('about', {}).get('halfInning', '') != batting_half:
+                continue
+            bid = play.get('matchup', {}).get('batter', {}).get('id')
+            if bid and bid in ordered_pids:
+                last_batter_pid = bid
+                break
+
+        if last_batter_pid and last_batter_pid in ordered_pids:
+            last_idx = ordered_pids.index(last_batter_pid)
+            start = (last_idx + 1) % len(ordered_pids)
+        else:
+            start = 0  # team hasn't batted yet → start from top of order
+
+        n = len(ordered_pids)
+        next_3_pids = [ordered_pids[(start + i) % n] for i in range(min(3, n))]
+
+        def _name(pid):
+            return players.get(f'ID{pid}', {}).get('person', {}).get('fullName', '')
+
+        names = [_name(pid) for pid in next_3_pids]
+
+        # Pitcher warming up for the next half (linescore.defense is the fielding team)
+        pitcher_name = linescore.get('defense', {}).get('pitcher', {}).get('fullName', '')
+        if not pitcher_name:
+            pit_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
+            if pit_id:
+                pit_box = boxscore.get('teams', {}).get(pitching_side, {})
+                pitcher_name = (
+                    pit_box.get('players', {})
+                    .get(f'ID{pit_id}', {})
+                    .get('person', {})
+                    .get('fullName', '')
+                )
+
+        return {
+            'next_batter_1': names[0] if len(names) > 0 else '',
+            'next_batter_2': names[1] if len(names) > 1 else '',
+            'next_batter_3': names[2] if len(names) > 2 else '',
+            'next_pitcher':  pitcher_name,
+        }
+    except Exception:
+        return {}
+
+
+
     """Extract pitch locations from the current at-bat, falling back to the last completed at-bat."""
     sources = [plays.get('currentPlay', {})]
     all_plays = plays.get('allPlays', [])

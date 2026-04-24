@@ -190,24 +190,6 @@ import time
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
 import traceback
 
-_BREAK_STATE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'inning_break_state.json')
-
-
-def _load_break_state() -> dict:
-    try:
-        with open(_BREAK_STATE_FILE) as _f:
-            return json.load(_f)
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def _save_break_state(state: dict) -> None:
-    try:
-        os.makedirs(os.path.dirname(_BREAK_STATE_FILE), exist_ok=True)
-        with open(_BREAK_STATE_FILE, 'w') as _f:
-            json.dump(state, _f)
-    except Exception:
-        pass
 
 # logging.basicConfig(level=logging.DEBUG)
 
@@ -829,6 +811,19 @@ def _format_player_name(name):
             break
     first_initial = parts[0][0] + '.' if len(parts) > 1 else ''
     return f'{first_initial} {last_name}' if first_initial else last_name
+
+
+def _last_name(name):
+    """Return just the last name, skipping suffixes like Jr./Sr./II."""
+    if not name:
+        return ''
+    parts = name.split()
+    if not parts:
+        return ''
+    for i in range(len(parts) - 1, 0, -1):
+        if parts[i].lower().strip('.') not in _NAME_SUFFIXES:
+            return parts[i]
+    return parts[-1]
 
 
 def _render_linescore_row(draw, x, y, inning_runs, fnt, max_width=130):
@@ -1813,46 +1808,42 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
     if game_data['detailed_state'] == 'In Progress':
-        # _between_innings defined early; bases/outs positions shift when linescore grid is shown
-
-        # Warmup base highlights: 0-60s = 1B only, 61-120s = 1B+3B
         if _between_innings:
-            _game_pk = str(game_data.get('game_pk', ''))
-            _state = game_data.get('inningState', '')
-            _cur_inn = game_data.get('current_inning') or 0
-            _bkey = f"{_game_pk}_{_state}"
-            _brk = _load_break_state()
-            _stored = _brk.get(_bkey) if isinstance(_brk.get(_bkey), dict) else None
-            _is_new_break = (
-                _stored is None
-                or (time.time() - _stored.get('start', 0)) > 300
-                or abs((_stored.get('inning') or 0) - _cur_inn) > 1
-            )
-            if _is_new_break:
-                _brk = {k: v for k, v in _brk.items() if not k.startswith(f"{_game_pk}_")}
-                _brk[_bkey] = {'start': time.time(), 'inning': _cur_inn}
-                _save_break_state(_brk)
-                _elapsed = 0.0
-            else:
-                _elapsed = time.time() - _stored['start']
-            _hi_first = True
-            _hi_second = False
-            _hi_third = (_elapsed >= 60)
+            # Next 3 batters (last names) + pitcher, right-aligned in the bases/outs space.
+            # Prefer the batting-order-derived fields; fall back to linescore fields.
+            _right_x = start_x + horizonta_len - 2
+            _max_name_w = 46
+            _batter_names = [
+                _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+            ]
+            _name_y = start_y + 31
+            for _nm in _batter_names:
+                _nm_disp = _nm
+                while _nm_disp and int(font11.getlength(_nm_disp)) > _max_name_w:
+                    _nm_disp = _nm_disp[:-1]
+                if _nm_disp:
+                    _nw = int(font11.getlength(_nm_disp))
+                    draw.text((_right_x - _nw, _name_y), _nm_disp, font=font11, fill=0)
+                _name_y += 13
+            _sep_y = _name_y + 1
+            draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
+            _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+            while _pit_name and int(font9.getlength(_pit_name)) > _max_name_w:
+                _pit_name = _pit_name[:-1]
+            if _pit_name:
+                _pit_w = int(font9.getlength(_pit_name))
+                draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=font9, fill=0)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
             _hi_first = isinstance(game_data['runner_on_first'], str)
 
-        Himage = draw_diamond(Himage, (start_x + 97,  start_y + 52), 10, _hi_third)
-        Himage = draw_diamond(Himage, (start_x + 109, start_y + 40), 10, _hi_second)
-        Himage = draw_diamond(Himage, (start_x + 121, start_y + 52), 10, _hi_first)
+            Himage = draw_diamond(Himage, (start_x + 97,  start_y + 52), 10, _hi_third)
+            Himage = draw_diamond(Himage, (start_x + 109, start_y + 40), 10, _hi_second)
+            Himage = draw_diamond(Himage, (start_x + 121, start_y + 52), 10, _hi_first)
 
-        # outs — show all 3 filled during inning break (the third out was just recorded)
-        if _between_innings:
-            Himage = draw_circle(Himage, (start_x + 97,  start_y + 73), 5, True)
-            Himage = draw_circle(Himage, (start_x + 109, start_y + 73), 5, True)
-            Himage = draw_circle(Himage, (start_x + 121, start_y + 73), 5, True)
-        else:
             outs_list = [None] * 3
             for i in range(1, 4):
                 outs_list[i-1] = i <= game_data['num_of_outs']
@@ -1860,10 +1851,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             Himage = draw_circle(Himage, (start_x + 109, start_y + 73), 5, outs_list[1])
             Himage = draw_circle(Himage, (start_x + 121, start_y + 73), 5, outs_list[2])
 
-        # balls/strikes area — hidden during inning breaks (linescore fills those rows)
-        if _between_innings:
-            pass
-        else:
             balls_list = [None] * 4
             for i in range(1, 4):
                 balls_list[i-1] = i <= game_data['balls']
@@ -2051,29 +2038,13 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     else:
         old_data = load_json_file('old_scoreboard_state.json')
 
-        # Augment between-inning games with _break_phase so crossing 60s triggers a re-render
-        # even when the underlying game JSON hasn't changed.
-        _brk_aug = _load_break_state()
-        aug_game_state = []
-        for _g in game_state_data:
-            if _g.get('detailed_state') == 'In Progress' and _g.get('inningState') in ('Middle', 'End'):
-                _g = dict(_g)
-                _bkey_aug = f"{_g.get('game_pk')}_{_g.get('inningState')}"
-                _stored_aug = _brk_aug.get(_bkey_aug)
-                if isinstance(_stored_aug, dict):
-                    _elapsed_aug = time.time() - _stored_aug.get('start', time.time())
-                else:
-                    _elapsed_aug = 0.0
-                _g['_break_phase'] = 1 if _elapsed_aug >= 60 else 0
-            aug_game_state.append(_g)
-
-        new_data_str = json.dumps(aug_game_state)
+        new_data_str = json.dumps(game_state_data)
         old_data_str = json.dumps(old_data)
 
         new_dict = load_and_sort_json(new_data_str)
         old_dict = load_and_sort_json(old_data_str)
 
-        save_off_results(aug_game_state, "old_scoreboard_state")
+        save_off_results(game_state_data, "old_scoreboard_state")
 
     # Build map of old game data by game_pk for per-game comparison
     old_by_pk = {}

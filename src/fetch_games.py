@@ -420,6 +420,7 @@ def parse_games(data, sport_id=None, config=None):
             'perfect_game': game.get('flags', {}).get('perfectGame'),
             'current_hitter': ls_offense.get('batter', {}).get('fullName'),
             'due_up': ls_offense.get('onDeck', {}).get('fullName'),
+            'in_hole': ls_offense.get('inHole', {}).get('fullName'),
             'current_pitcher': linescore.get('defense', {}).get('pitcher', {}).get('fullName'),
             'last_play': last_play_result,
             'save_situation': save_situation,
@@ -436,6 +437,11 @@ def parse_games(data, sport_id=None, config=None):
                 from game_detail_fetch import fetch_scoreboard_live_extras
                 extras = fetch_scoreboard_live_extras(game_id, away_team_id, home_team_id)
                 game_dict.update(extras)
+            if game_dict.get('inningState') in ('Middle', 'End') and live_calls_made < max_live_calls:
+                from game_detail_fetch import fetch_between_inning_info
+                bi_info = fetch_between_inning_info(game_id, game_dict['inningState'])
+                live_calls_made += 1
+                game_dict.update(bi_info)
         elif game_dict.get('detailed_state') in _PRE_GAME_STATES:
             _attach_pregame_weather(game_dict, game, config)
         game_array.append(game_dict)
