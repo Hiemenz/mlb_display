@@ -1276,12 +1276,22 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt):
     if not parts:
         return
     text = ' · '.join(parts)
-    try:
-        tw = int(fnt.getlength(text))
-    except AttributeError:
-        tw = len(text) * 5
+    use_fnt = fnt
+    for try_fnt in (fnt, _get_font(11), _get_font(9)):
+        try:
+            tw = int(try_fnt.getlength(text))
+        except AttributeError:
+            tw = len(text) * 5
+        use_fnt = try_fnt
+        if tw <= horiz_len - 4:
+            break
+    else:
+        try:
+            tw = int(use_fnt.getlength(text))
+        except AttributeError:
+            tw = len(text) * 5
     tx = start_x + max(0, (horiz_len - tw) // 2)
-    draw.text((tx, start_y + 112), text, font=fnt, fill=0)
+    draw.text((tx, start_y + 112), text, font=use_fnt, fill=0)
 
 
 def _is_game_effectively_over(game_data):
@@ -1729,7 +1739,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             start_y + 55,
         )
 
-        _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font9)
+        _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14)
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
