@@ -1502,9 +1502,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             venue_ppd_txt, venue_ppd_fnt = fit_text(venue_ppd, max_text_width)
             draw.text((start_x + 7, start_y + 25 + 74), venue_ppd_txt, font=venue_ppd_fnt, fill=0)
     elif _delayed_with_score:
-        reason = game_data.get('postpone_reason') or ''
-        delay_line, delay_fnt = fit_text(f'Delay: {reason}' if reason else 'Delay', max_text_width)
-        draw.text((start_x + 7, start_y + 25 + 59), delay_line, font=delay_fnt, fill=0)
+        draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
     elif game_data['detailed_state'] == 'In Progress':
         if _between_innings:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
@@ -1675,6 +1673,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 px = start_x + horizonta_len - pw - 2
                 draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
                 draw.text((px + 1, start_y + 4), play_text, font=_play_font, fill=0)
+
+    if _delayed_with_score:
+        _delay_reason = game_data.get('postpone_reason') or ''
+        if _delay_reason:
+            _delay_str = f'R: {_delay_reason}'
+            _max_delay_w = max(horizonta_len - _total_time_w - 10, 0)
+            _delay_fnt = _get_font(12)
+            while len(_delay_str) > 1 and int(_delay_fnt.getlength(_delay_str)) > _max_delay_w:
+                _delay_str = _delay_str[:-2] + '.'
+            if _delay_str and int(_delay_fnt.getlength(_delay_str)) <= _max_delay_w:
+                _dw = int(_delay_fnt.getlength(_delay_str))
+                _dx_pos = start_x + horizonta_len - _dw - 2
+                draw.text((_dx_pos, start_y + 4), _delay_str, font=_delay_fnt, fill=0)
+                draw.text((_dx_pos + 1, start_y + 4), _delay_str, font=_delay_fnt, fill=0)
 
     # Initialize score variables (will be used later for winner display)
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
