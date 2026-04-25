@@ -4,23 +4,26 @@ import argparse
 from datetime import datetime
 
 
-from util import save_off_results
+from util import save_off_results, load_json_file
 
-    
+
 
 leauge_dict = {
     201:'American League East',
     202:'American League Central',
     200:'American League West',
-    
+
     204:'National League East',
     205:'National League Central',
     203:'National League West',
-    
+
 }
 team_abbreviation_list = {}
 
 def get_teams(team_id):
+    tid = str(team_id)
+    if tid in team_abbreviation_list:
+        return
     try:
         response = requests.get(f'https://statsapi.mlb.com/api/v1/teams/{team_id}')
         if response.status_code == 200:
@@ -29,21 +32,24 @@ def get_teams(team_id):
             team_abbreviation = data.get('teams', [{}])[0].get('abbreviation')
 
             if fetched_team_id and team_abbreviation:
-                print(f'Adding team: {fetched_team_id} => {team_abbreviation}')
                 team_abbreviation_list[str(fetched_team_id)] = team_abbreviation
             else:
                 print(f'Warning: Could not get abbreviation for team {team_id}, using fallback')
-                team_abbreviation_list[str(team_id)] = f'T{team_id}'
+                team_abbreviation_list[tid] = f'T{team_id}'
         else:
             print(f'Warning: API returned status {response.status_code} for team {team_id}')
-            team_abbreviation_list[str(team_id)] = f'T{team_id}'
+            team_abbreviation_list[tid] = f'T{team_id}'
     except Exception as e:
         print(f'Error fetching team {team_id}: {e}')
-        team_abbreviation_list[str(team_id)] = f'T{team_id}'
+        team_abbreviation_list[tid] = f'T{team_id}'
 
-        
+
 
 def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
+    # Pre-populate from teams.json so we avoid per-team API calls for known teams
+    cached_teams = load_json_file('teams.json').get('team_abbreviation', {})
+    team_abbreviation_list.update(cached_teams)
+
     division_standings_list = {}
     for league_id in league_id_list:
         # Build the API URL with optional date parameter
@@ -52,40 +58,50 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
             url += f'&date={date}'
 
         response = requests.get(url)
-        
+
         data = response.json()
-        
+
         for record in data['records']:
             last_updated = record.get('lastUpdated')
-            
 
-            
+
+
             division_id = leauge_dict.get(record.get('division', {}).get('id'))
             division_team_list = []
             for division in record['teamRecords']:
-                
-                
-                    
-                
+
+
+
+
                 for item in division.get("records", {}).get("splitRecords"):
                     if item.get('type') == 'lastTen':
                         last_ten_wins = item.get('wins')
                         last_ten_losses = item.get('losses')
-                        
+
                     if item.get('type') == 'home':
                         home_wins = item.get('wins')
                         home_losses = item.get('losses')
-                        
+
                     if item.get('type') == 'away':
                         away_wins = item.get('wins')
                         away_losses = item.get('losses')
-                        
-                get_teams(division.get("team", {}).get('id'))
+
+                # Use abbreviation from the API response directly; only fetch if missing
+                team_obj = division.get("team", {})
+                team_id = team_obj.get('id')
+                tid = str(team_id) if team_id else None
+                if tid and tid not in team_abbreviation_list:
+                    abbr = team_obj.get('abbreviation')
+                    if abbr:
+                        team_abbreviation_list[tid] = abbr
+                    else:
+                        get_teams(team_id)
+
                 team_standings = {
                 # 'division_id': division_id,
-                
-                'team_name': division.get("team", {}).get('name'),
-                'team_id': division.get("team", {}).get('id'),
+
+                'team_name': team_obj.get('name'),
+                'team_id': team_id,
 
                 'divisionRank': division.get("divisionRank"),
                 'league_record_wins': division.get("leagueRecord", {}).get('wins'),
@@ -99,8 +115,8 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
                 'home_losses': home_losses,
                 'away_wins':away_wins,
                 'away_losses':away_losses,
-                
-                            
+
+
 
                 'league_rank': division.get("leagueRank"),
                 'sport_rank': division.get("sportRank"),
@@ -108,26 +124,25 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
                 'wild_card_games_back': division.get("wildCardGamesBack"),
                 'league_games_back': division.get("leagueGamesBack"),
                 }
-                
-                # print(team_standings)
-                division_team_list.append(team_standings) 
-           
-            division_standings_list[ division_id] = division_team_list 
 
-    
+                # print(team_standings)
+                division_team_list.append(team_standings)
+
+            division_standings_list[ division_id] = division_team_list
+
+
     standings = {'standings': division_standings_list, 'team_abbreviation': team_abbreviation_list, 'last_updated': last_updated}
 
     save_off_results(standings, save_as)
 
     # Also update the teams.json file to include these abbreviations
-    from util import load_json_file
     teams_data = load_json_file('teams.json')
     existing_abbreviations = teams_data.get('team_abbreviation', {})
     existing_abbreviations.update(team_abbreviation_list)
     save_off_results({'team_abbreviation': existing_abbreviations}, 'teams')
-    
-    
-    
+
+
+
 def fetch_wildcard_standings(season=None, date=None):
     """Fetch wildcard standings for AL (103) and NL (104), save data/wildcard_standings.json.
 
@@ -225,5 +240,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

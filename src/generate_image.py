@@ -1236,22 +1236,54 @@ _ABS_CHALLENGE_MAX = 2
 
 
 def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, logo_x_offset=2):
-    """Two side-by-side dots per team: filled = remaining, outlined = used."""
+    """ABS dots at original position beside the team row; replay dot below the abbreviation."""
     _LOGO_SIZE = 28
+    r = 3
+    dot_spacing = 8
+
     if use_logos:
+        # x: immediately right of logo + abbr (original position)
         dot_x = start_x + logo_x_offset + _LOGO_SIZE + 2 + 3
+        # ABS y: original positions, vertically centred in each team row
+        away_abs_y    = start_y + 30
+        home_abs_y    = start_y + 60
+        # Replay y: below the abbr text (abbr at row_base+7, font14 14px tall → bottom at row_base+21)
+        # Add a small gap so it doesn't touch the text
+        away_replay_y = start_y + 25 + 7 + 14 + 4   # = start_y + 50
+        home_replay_y = start_y + 55 + 7 + 14 + 4   # = start_y + 80
     else:
         dot_x = start_x + 5 + 3
-    r = 3
-    for side, row_y in (('away', start_y + 30), ('home', start_y + 60)):
-        remaining = game_data.get(f'{side}_challenges_remaining')
-        if remaining is None:
-            continue
-        remaining = max(0, min(_ABS_CHALLENGE_MAX, int(remaining)))
-        for i in range(_ABS_CHALLENGE_MAX):
-            cx = dot_x + i * 9
-            box = (cx - r, row_y - r, cx + r, row_y + r)
-            if i < remaining:
+        away_abs_y    = start_y + 30
+        home_abs_y    = start_y + 60
+        # font24 glyph height ~17px, top offset ~6px → bottom at row_base + 23
+        away_replay_y = start_y + 25 + 23 + 4        # = start_y + 52
+        home_replay_y = start_y + 55 + 23 + 4        # = start_y + 82
+
+    abs_max = game_data.get('abs_challenge_max') or _ABS_CHALLENGE_MAX
+
+    for side, abs_y, replay_y in (
+        ('away', away_abs_y, away_replay_y),
+        ('home', home_abs_y, home_replay_y),
+    ):
+        abs_remaining = game_data.get(f'{side}_challenges_remaining')
+        replay_remaining = game_data.get(f'{side}_replay_remaining')
+
+        # ABS dots (original position, max grows +1 per extra inning)
+        if abs_remaining is not None:
+            abs_remaining = max(0, min(abs_max, int(abs_remaining)))
+            for i in range(abs_max):
+                cx = dot_x + i * dot_spacing
+                box = (cx - r, abs_y - r, cx + r, abs_y + r)
+                if i < abs_remaining:
+                    draw.ellipse(box, fill=0, outline=0)
+                else:
+                    draw.ellipse(box, fill=255, outline=0)
+
+        # Replay dot below the abbreviation (max 1)
+        if replay_remaining is not None:
+            replay_remaining = max(0, min(1, int(replay_remaining)))
+            box = (dot_x - r, replay_y - r, dot_x + r, replay_y + r)
+            if replay_remaining > 0:
                 draw.ellipse(box, fill=0, outline=0)
             else:
                 draw.ellipse(box, fill=255, outline=0)
@@ -1503,6 +1535,34 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((start_x + 7, start_y + 25 + 74), venue_ppd_txt, font=venue_ppd_fnt, fill=0)
     elif _delayed_with_score:
         draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
+        # Next 3 batters + pitcher — same panel used for between-innings
+        _right_x = start_x + horizonta_len - 2
+        _max_name_w = 46
+        _batter_names = [
+            _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+            _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+            _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+        ]
+        _name_y = start_y + 21
+        for _nm in _batter_names:
+            if _nm:
+                _nm_disp = _nm
+                while _nm_disp and int(font14.getlength(_nm_disp)) > _max_name_w:
+                    _nm_disp = _nm_disp[:-1]
+                _nw = int(font14.getlength(_nm_disp))
+                draw.text((_right_x - _nw, _name_y), _nm_disp, font=font14, fill=0)
+            _name_y += 16
+        _sep_y = _name_y + 1
+        draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
+        _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+        if _pit_name:
+            _pit_fnt = font11
+            if int(font11.getlength(_pit_name)) > _max_name_w:
+                _pit_fnt = font9
+                while _pit_name and int(font9.getlength(_pit_name)) > _max_name_w:
+                    _pit_name = _pit_name[:-1]
+            _pit_w = int(_pit_fnt.getlength(_pit_name))
+            draw.text((_right_x - _pit_w, _sep_y + 1), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
         if _between_innings:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
@@ -1877,21 +1937,24 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             ]
             _name_y = start_y + 21
             for _nm in _batter_names:
-                _nm_disp = _nm
-                while _nm_disp and int(font11.getlength(_nm_disp)) > _max_name_w:
-                    _nm_disp = _nm_disp[:-1]
-                if _nm_disp:
-                    _nw = int(font11.getlength(_nm_disp))
-                    draw.text((_right_x - _nw, _name_y), _nm_disp, font=font11, fill=0)
-                _name_y += 13
+                if _nm:
+                    _nm_disp = _nm
+                    while _nm_disp and int(font14.getlength(_nm_disp)) > _max_name_w:
+                        _nm_disp = _nm_disp[:-1]
+                    _nw = int(font14.getlength(_nm_disp))
+                    draw.text((_right_x - _nw, _name_y), _nm_disp, font=font14, fill=0)
+                _name_y += 16
             _sep_y = _name_y + 1
             draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
             _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
-            while _pit_name and int(font9.getlength(_pit_name)) > _max_name_w:
-                _pit_name = _pit_name[:-1]
             if _pit_name:
-                _pit_w = int(font9.getlength(_pit_name))
-                draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=font9, fill=0)
+                _pit_fnt = font11
+                if int(font11.getlength(_pit_name)) > _max_name_w:
+                    _pit_fnt = font9
+                    while _pit_name and int(font9.getlength(_pit_name)) > _max_name_w:
+                        _pit_name = _pit_name[:-1]
+                _pit_w = int(_pit_fnt.getlength(_pit_name))
+                draw.text((_right_x - _pit_w, _sep_y + 1), _pit_name, font=_pit_fnt, fill=0)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
@@ -1919,22 +1982,27 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             _num_strikes = game_data.get('strikes') or 0
             strikes_list = [i + 1 <= _num_strikes for i in range(2)]
-
-            _lsc = game_data.get('last_strike_call', '')
-            _show_k = _lsc == 'S' or (_lsc == 'F' and _num_strikes >= 2)
+            _strike_calls = game_data.get('strike_calls', [])
 
             draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
+            _kfont = _get_font(7)
             for _si, (_scx, _scy) in enumerate([
                 (start_x + 22 + 63, start_y + 25 + 68),
                 (start_x + 34 + 63, start_y + 25 + 68),
             ]):
-                Himage = draw_circle(Himage, (_scx, _scy), 4, strikes_list[_si])
-                if strikes_list[_si] and _si == _num_strikes - 1 and _show_k:
-                    _kfont = _get_font(7)
+                _call = _strike_calls[_si] if _si < len(_strike_calls) else None
+                if strikes_list[_si] and _call in ('S', 'F'):
+                    # Swinging or foul: outline circle + K inside
+                    Himage = draw_circle(Himage, (_scx, _scy), 4, False)
+                    draw = ImageDraw.Draw(Himage)
                     _kw = int(_kfont.getlength('K'))
                     _kx, _ky = _scx - _kw // 2, _scy - 4
-                    draw.text((_kx,     _ky), 'K', font=_kfont, fill=255)
-                    draw.text((_kx + 1, _ky), 'K', font=_kfont, fill=255)
+                    draw.text((_kx,     _ky), 'K', font=_kfont, fill=0)
+                    draw.text((_kx + 1, _ky), 'K', font=_kfont, fill=0)
+                else:
+                    # Looking / foul / empty: solid filled circle
+                    Himage = draw_circle(Himage, (_scx, _scy), 4, strikes_list[_si])
+                    draw = ImageDraw.Draw(Himage)
 
         # SV badge — keep visible during inning breaks too
         if game_data.get('save_situation'):
@@ -2167,11 +2235,23 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 
     # --- Compute changed regions from changed_game_ids ---
+    # Must use the same game ordering that draw_out_of_town_score_board used,
+    # otherwise the favorite-team-first reorder causes grid positions to mismatch.
     x_start = 32
     y_start = 30
+    _ordered = list(game_state_data)
+    if config.get('favorite_team_first', False):
+        _primary = config.get('primary', '')
+        if _primary:
+            _abbr_map = team_data.get('team_abbreviation', {})
+            for _i, _g in enumerate(_ordered):
+                _away = _abbr_map.get(str(_g.get('away_team_id', '')), '')
+                _home = _abbr_map.get(str(_g.get('home_team_id', '')), '')
+                if _primary in (_away, _home):
+                    _ordered.insert(0, _ordered.pop(_i))
+                    break
     changed_regions = []
-    # Build map of game_pk -> grid index
-    for i, game in enumerate(game_state_data):
+    for i, game in enumerate(_ordered):
         if i >= 15:  # 5x3 grid max
             break
         pk = str(game.get('game_pk', ''))

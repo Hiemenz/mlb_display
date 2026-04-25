@@ -162,10 +162,53 @@ def fetch_win_probability(game_pk):
         return None, None, None
 
 
+_PITCHER_CACHE_TTL_MINUTES = 30
+
+
+def _pitcher_cache_key(pitcher_ids):
+    return ','.join(str(p) for p in sorted(pitcher_ids))
+
+
+def _load_pitcher_cache():
+    return load_json_file('pitcher_cache.json')
+
+
+def _save_pitcher_cache(cache):
+    save_off_results(cache, 'pitcher_cache')
+
+
+def _cache_get(cache, bucket, key, season):
+    entry = cache.get(bucket, {}).get(key)
+    if not entry or entry.get('season') != season:
+        return None
+    try:
+        age = datetime.now() - datetime.fromisoformat(entry['fetched_at'])
+        if age.total_seconds() < _PITCHER_CACHE_TTL_MINUTES * 60:
+            return entry['data']
+    except Exception:
+        pass
+    return None
+
+
+def _cache_set(cache, bucket, key, season, data):
+    if bucket not in cache:
+        cache[bucket] = {}
+    cache[bucket][key] = {
+        'season': season,
+        'data': data,
+        'fetched_at': datetime.now().isoformat(timespec='seconds'),
+    }
+
+
 def _fetch_pitcher_eras(pitcher_ids, season):
     """Batch-fetch season ERA for a list of pitcher IDs. Returns {id: 'W-L, ERA ERA'}."""
     if not pitcher_ids:
         return {}
+    key = _pitcher_cache_key(pitcher_ids)
+    cache = _load_pitcher_cache()
+    cached = _cache_get(cache, 'era', key, season)
+    if cached is not None:
+        return {int(k): v for k, v in cached.items()}
     ids_str = ','.join(str(p) for p in pitcher_ids)
     try:
         url = (
@@ -188,6 +231,8 @@ def _fetch_pitcher_eras(pitcher_ids, season):
                 losses = stat.get('losses', '')
                 if era and not str(era).startswith('-'):
                     result[pid] = f'{wins}-{losses}, {era} ERA'
+    _cache_set(cache, 'era', key, season, {str(k): v for k, v in result.items()})
+    _save_pitcher_cache(cache)
     return result
 
 
@@ -199,6 +244,11 @@ def _fetch_decision_pitcher_stats(pitcher_ids, season):
     ids = [p for p in pitcher_ids if p]
     if not ids:
         return {}
+    key = _pitcher_cache_key(ids)
+    cache = _load_pitcher_cache()
+    cached = _cache_get(cache, 'decision', key, season)
+    if cached is not None:
+        return {int(k): v for k, v in cached.items()}
     ids_str = ','.join(str(p) for p in ids)
     try:
         url = (
@@ -224,6 +274,8 @@ def _fetch_decision_pitcher_stats(pitcher_ids, season):
                         'record': f'{wins}-{losses}',
                         'saves': int(saves) if saves else 0,
                     }
+    _cache_set(cache, 'decision', key, season, {str(k): v for k, v in result.items()})
+    _save_pitcher_cache(cache)
     return result
 
 
@@ -483,6 +535,14 @@ def parse_games(data, sport_id=None, config=None):
                 bi_info = fetch_between_inning_info(game_id, game_dict['inningState'])
                 live_calls_made += 1
                 game_dict.update(bi_info)
+        elif game_dict.get('detailed_state') == 'Delayed' and (game_dict.get('current_inning') or 0) > 0 and live_calls_made < max_live_calls:
+            # Fetch upcoming batters/pitcher so the delay screen can show who's due up
+            from game_detail_fetch import fetch_between_inning_info
+            _inning_state = game_dict.get('inningState') or ''
+            _bi_state = 'Middle' if _inning_state in ('Bottom', 'Middle') else 'End'
+            bi_info = fetch_between_inning_info(game_id, _bi_state)
+            live_calls_made += 1
+            game_dict.update(bi_info)
         elif game_dict.get('detailed_state') in _PRE_GAME_STATES:
             _attach_pregame_weather(game_dict, game, config)
         game_array.append(game_dict)
