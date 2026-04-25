@@ -110,7 +110,9 @@ def _attach_pregame_weather(game_dict, schedule_game, config):
     stadium = _lookup_stadium(venue_id, venue.get('name'))
     if stadium is None:
         return
-    if stadium.get('roof') == 'fixed':
+    # Fixed roof stadiums + retractable venues that never open in practice
+    _ALWAYS_CLOSED_VENUE_IDS = {'2392'}  # Daikin Park (Houston) — never opens
+    if stadium.get('roof') == 'fixed' or str(venue_id or '') in _ALWAYS_CLOSED_VENUE_IDS:
         game_dict['roof_state'] = 'fixed'
     try:
         from weather import get_forecast

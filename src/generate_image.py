@@ -1054,8 +1054,8 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
 
     logo_x = (32 - _SIDEBAR_LOGO_SIZE) // 2 if side == 'left' else (800 - 32) + (32 - _SIDEBAR_LOGO_SIZE) // 2
     sep_x0, sep_x1 = (0, 31) if side == 'left' else (768, 800)
-    # Line drawn on the inner edge of the logo (between logo and scoreboard grid)
-    line_x = logo_x + _SIDEBAR_LOGO_SIZE + 3 if side == 'left' else logo_x - 4
+    # Line drawn on the outer edge of the logo (between logo and display edge)
+    line_x = logo_x - 4 if side == 'left' else logo_x + _SIDEBAR_LOGO_SIZE + 3
 
     draw = ImageDraw.Draw(Himage)
 
@@ -1303,35 +1303,48 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt):
             tv_w = len(tv) * 5 + 2
         draw.text((start_x + horiz_len - tv_w, y), tv, font=fnt, fill=0)
 
-    # Weather: left-aligned, using width not taken by TV
-    parts = []
+    avail_w = horiz_len - tv_w - 6
+
+    # Dome takes full priority — no weather shown
     roof = game_data.get('roof_state')
-    if roof == 'fixed':
-        parts.append('Dome')
+    if roof in ('fixed', 'dome'):
+        draw.text((start_x + 2, y), 'Dome', font=fnt, fill=0)
+        return
+
     temp = game_data.get('weather_temp_f')
-    if temp is not None:
-        parts.append(f'{temp}°')
     wind = game_data.get('weather_wind_mph')
     wd = game_data.get('weather_wind_dir')
-    if wind is not None and wind >= 1:
-        parts.append(f'{wind}mph {wd}' if wd else f'{wind}mph')
     precip = game_data.get('weather_precip_pct')
-    if precip is not None and precip > 0:
-        parts.append(f'{precip}%')
-    if not parts:
+
+    if temp is None and wind is None and precip is None:
         return
-    text = ' · '.join(parts)
-    avail_w = horiz_len - tv_w - 6
-    use_fnt = fnt
+
+    # Build candidate strings from most to least detailed (drop direction → drop 'mph' → temp only)
+    candidates = []
+    _t = f'{temp}°' if temp is not None else None
+    _w_full = (f'{wind}mph {wd}' if wd else f'{wind}mph') if (wind is not None and wind >= 1) else None
+    _w_nolabel = f'{int(wind)}' if (wind is not None and wind >= 1) else None
+    _p = f'{precip}%' if (precip is not None and precip > 0) else None
+
+    for _w in (_w_full, _w_nolabel, None):
+        parts = [x for x in (_t, _w, _p) if x]
+        if parts:
+            candidate = ' '.join(parts)
+            if candidate not in candidates:
+                candidates.append(candidate)
+    if _t and _t not in candidates:
+        candidates.append(_t)
+
+    # Try largest font first; within each font try shorter text variants
     for try_fnt in (fnt, _get_font(11), _get_font(9)):
-        try:
-            tw = int(try_fnt.getlength(text))
-        except AttributeError:
-            tw = len(text) * 5
-        use_fnt = try_fnt
-        if tw <= avail_w:
-            break
-    draw.text((start_x + 2, y), text, font=use_fnt, fill=0)
+        for text in candidates:
+            try:
+                tw = int(try_fnt.getlength(text))
+            except AttributeError:
+                tw = len(text) * 5
+            if tw <= avail_w:
+                draw.text((start_x + 2, y), text, font=try_fnt, fill=0)
+                return
 
 
 def _is_game_effectively_over(game_data):
@@ -1680,13 +1693,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
         _total_time_w = int(font14.getlength(game_state_str))
 
-    # Venue — right-anchored in header, bold, smaller font to fit full name
+    # Venue — right-anchored in header, as large as possible without overlapping the time
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
         venue_clean = _clean_venue_name(game_data.get('venue'))
         if venue_clean:
             try:
                 max_venue_w = horizonta_len - _total_time_w - 6
-                for vfont, vy in ((_get_font(10), 5), (font9, 6), (_get_font(8), 6), (_get_font(7), 7)):
+                for vfont, vy in ((font14, 3), (font11, 4), (font9, 5), (_get_font(8), 6), (_get_font(7), 7)):
                     if vfont.getlength(venue_clean) <= max_venue_w:
                         break
                 vw = int(vfont.getlength(venue_clean))
