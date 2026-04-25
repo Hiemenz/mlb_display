@@ -324,15 +324,23 @@ Examples:
             return
 
     # Determine date
+    _pre5am = False
     if args.date:
         date_str = args.date
         print(f"Using specified date: {date_str}")
     else:
-        date_str = datetime.now().date().strftime('%Y-%m-%d')
-        print(f"Using today's date: {date_str}")
+        tz = config.get('timezone', 'America/Chicago')
+        _now = datetime.now(pytz.timezone(tz))
+        if _now.hour < 5:
+            date_str = (_now.date() - timedelta(days=1)).strftime('%Y-%m-%d')
+            _pre5am = True
+            print(f"Before 5am — showing previous day: {date_str}")
+        else:
+            date_str = _now.date().strftime('%Y-%m-%d')
+            print(f"Using today's date: {date_str}")
 
-    # 5. Smart polling gate (only for automatic runs on today's date)
-    if not args.date and not args.local:
+    # 5. Smart polling gate (only for automatic runs on today's date, skip in pre-5am mode)
+    if not args.date and not args.local and not _pre5am:
         sched = _load_schedule_state()
         skip, reason = _should_skip_poll(date_str, config, sched)
         if skip:
@@ -345,7 +353,7 @@ Examples:
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
     # 7. Update schedule state
-    if not args.date and not args.local:
+    if not args.date and not args.local and not _pre5am:
         game_state_data = load_json_file('games.json').get('games', [])
         no_games = _update_schedule_state(game_state_data, date_str, config, sched)
         if no_games:
@@ -353,7 +361,7 @@ Examples:
 
     # 7b. Standings auto-refresh (only on live runs, not historical --date replays)
     _needs_standings = config.get('show_standings_sidebar', False) or config.get('show_wildcard_standings', False)
-    if not args.date and _needs_standings:
+    if not args.date and not _pre5am and _needs_standings:
         if _should_refresh_standings(sched):
             print("Refreshing standings (new Finals detected or no cache)...")
             try:
