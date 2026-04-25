@@ -124,10 +124,11 @@ def fetch_pitch_view_data(game_pk):
 
 
 _ABS_CHALLENGE_MAX = 2
+_REPLAY_CHALLENGE_MAX = 1
 
 
 def _count_abs_challenges_used(plays, away_id, home_id):
-    """Count unsuccessful ABS challenges per team. Successful ones are retained."""
+    """Count unsuccessful ABS challenges (on pitch events) per team."""
     away_used, home_used = 0, 0
     if not (away_id and home_id):
         return away_used, home_used
@@ -135,6 +136,26 @@ def _count_abs_challenges_used(plays, away_id, home_id):
         for ev in play.get('playEvents', []):
             rd = ev.get('reviewDetails')
             if not rd or ev.get('type') != 'pitch':
+                continue
+            if rd.get('inProgress') or rd.get('isOverturned'):
+                continue
+            team = rd.get('challengeTeamId')
+            if team == away_id:
+                away_used += 1
+            elif team == home_id:
+                home_used += 1
+    return away_used, home_used
+
+
+def _count_replay_challenges_used(plays, away_id, home_id):
+    """Count unsuccessful replay challenges (on non-pitch events) per team."""
+    away_used, home_used = 0, 0
+    if not (away_id and home_id):
+        return away_used, home_used
+    for play in plays.get('allPlays', []):
+        for ev in play.get('playEvents', []):
+            rd = ev.get('reviewDetails')
+            if not rd or ev.get('type') == 'pitch':
                 continue
             if rd.get('inProgress') or rd.get('isOverturned'):
                 continue
@@ -186,6 +207,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         last_type = ''
         last_strike_call = ''
         at_bat_pitch_count = 0
+        strike_calls = []  # per-strike call type: 'S' swinging, 'C' called, 'F' foul
         current_play_events = plays.get('currentPlay', {}).get('playEvents', [])
         for ev in current_play_events:
             if ev.get('isPitch'):
@@ -195,10 +217,16 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                 call_code = (details.get('call', {}).get('code', '') or '').upper()
                 if call_code in ('S', 'W', 'T', 'O', 'M'):
                     last_strike_call = 'S'  # swinging
+                    if len(strike_calls) < 2:
+                        strike_calls.append('S')
                 elif call_code == 'C':
                     last_strike_call = 'L'  # looking
+                    if len(strike_calls) < 2:
+                        strike_calls.append('C')
                 elif call_code in ('F', 'L', 'R'):
                     last_strike_call = 'F'  # foul
+                    if len(strike_calls) < 2:
+                        strike_calls.append('F')
                 # always overwrite so the last pitch in the AB is shown
                 raw_code = details.get('type', {}).get('code', '') or ''
                 last_type = _PITCH_TYPE_ABBR.get(raw_code, raw_code)
@@ -208,9 +236,16 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             plays.get('currentPlay', {}).get('result', {}).get('event')
         )
 
+        # ABS max grows by 1 per extra inning (10th = 3 total, 11th = 4, ...)
+        current_inning = linescore.get('currentInning') or 9
+        abs_max = _ABS_CHALLENGE_MAX + max(0, int(current_inning) - 9)
+
         away_used, home_used = _count_abs_challenges_used(plays, away_id, home_id)
-        away_remaining = max(0, _ABS_CHALLENGE_MAX - away_used)
-        home_remaining = max(0, _ABS_CHALLENGE_MAX - home_used)
+        away_remaining = max(0, abs_max - away_used)
+        home_remaining = max(0, abs_max - home_used)
+        away_replay_used, home_replay_used = _count_replay_challenges_used(plays, away_id, home_id)
+        away_replay_remaining = max(0, _REPLAY_CHALLENGE_MAX - away_replay_used)
+        home_replay_remaining = max(0, _REPLAY_CHALLENGE_MAX - home_replay_used)
 
         return {
             'pitch_count': pitch_count,
@@ -222,10 +257,14 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'due_up': on_deck_name,
             'in_hole': in_hole_name,
             'last_strike_call': last_strike_call,
+            'strike_calls': strike_calls,
             'at_bat_pitch_count': at_bat_pitch_count,
             'current_at_bat_complete': current_at_bat_complete,
+            'abs_challenge_max': abs_max,
             'away_challenges_remaining': away_remaining,
             'home_challenges_remaining': home_remaining,
+            'away_replay_remaining': away_replay_remaining,
+            'home_replay_remaining': home_replay_remaining,
         }
     except Exception:
         return {}
