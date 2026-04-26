@@ -109,11 +109,20 @@ def _base_game(**overrides):
         'no_hitter': False,
         'perfect_game': False,
         'save_situation': False,
+        'walk_off': False,
         'last_play': None,
         'venue': 'Truist Park',
         'current_hitter': None,
         'current_pitcher': None,
         'due_up': None,
+        'in_hole': None,
+        'game_duration_minutes': None,
+        'series_result': '',
+        'series_game_number': 1,
+        'series_total_games': 3,
+        'series_wins': 0,
+        'series_losses': 0,
+        'series_is_tied': False,
     }
     g.update(overrides)
     return g
@@ -1744,3 +1753,94 @@ class TestDelayedGameRules:
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
         score_region = (92, 52, 118, 77)
         assert _has_dark_pixels(img, *score_region)
+
+
+# ===========================================================================
+# Header inversion — walk-off, no-hitter, perfect game
+# ===========================================================================
+
+class TestHeaderInversion:
+    """Walk-off, no-hitter, and perfect game invert the header row."""
+
+    _HEADER_REGION = (32, 30, 167, 51)  # full header box at (32, 30)
+
+    def _render(self, game, team_data):
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    def _header_has_dark(self, img):
+        return _has_dark_pixels(img, *self._HEADER_REGION)
+
+    def _is_inverted(self, img):
+        """Header is inverted if the majority of the header region is dark (black background)."""
+        region = img.crop(self._HEADER_REGION).convert('L')
+        pixels = list(region.getdata())
+        dark = sum(1 for p in pixels if p < 128)
+        return dark > len(pixels) * 0.5
+
+    @needs_pil
+    def test_normal_final_not_inverted(self, minimal_team_data):
+        """A regular final game must not have an inverted header."""
+        game = _base_game()
+        img = self._render(game, minimal_team_data)
+        assert not self._is_inverted(img)
+
+    @needs_pil
+    def test_walk_off_inverts_header(self, minimal_team_data):
+        """A walk-off Final must invert the header row."""
+        game = _base_game(walk_off=True)
+        img = self._render(game, minimal_team_data)
+        assert self._is_inverted(img)
+
+    @needs_pil
+    def test_no_hitter_inverts_header(self, minimal_team_data):
+        """An active no-hitter must invert the header row."""
+        game = _in_progress_game(no_hitter=True)
+        img = self._render(game, minimal_team_data)
+        assert self._is_inverted(img)
+
+    @needs_pil
+    def test_perfect_game_inverts_header(self, minimal_team_data):
+        """An active perfect game must invert the header row."""
+        game = _in_progress_game(perfect_game=True)
+        img = self._render(game, minimal_team_data)
+        assert self._is_inverted(img)
+
+
+# ===========================================================================
+# Series record display
+# ===========================================================================
+
+class TestSeriesRecord:
+    """Series record string is shown in the header when available."""
+
+    @needs_pil
+    def test_series_record_shown_for_multi_game_series(self, minimal_team_data):
+        """A 3-game series with a record renders differently than a single game."""
+        no_series = _base_game(series_total_games=1)
+        with_series = _base_game(
+            series_total_games=3, series_wins=1, series_losses=0,
+            series_is_tied=False, series_result='Team leads 1-0',
+        )
+        img_none = Image.new('1', (800, 480), 255)
+        img_ser = Image.new('1', (800, 480), 255)
+        draw_box(img_none, 32, 30, no_series, minimal_team_data, use_logos=False)
+        draw_box(img_ser, 32, 30, with_series, minimal_team_data, use_logos=False)
+        assert list(img_none.getdata()) != list(img_ser.getdata()), \
+            "Series record should produce different rendering than no-series"
+
+    @needs_pil
+    def test_game_1_shows_gm_label(self, minimal_team_data):
+        """First game of a series (wins=0, losses=0) renders 'Gm 1/N'."""
+        game = _base_game(
+            series_total_games=7, series_wins=0, series_losses=0,
+            series_game_number=1, series_result='',
+        )
+        no_series = _base_game(series_total_games=1)
+        img_g1 = Image.new('1', (800, 480), 255)
+        img_ns = Image.new('1', (800, 480), 255)
+        draw_box(img_g1, 32, 30, game, minimal_team_data, use_logos=False)
+        draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
+        assert list(img_g1.getdata()) != list(img_ns.getdata()), \
+            "Game 1 of a 7-game series should show Gm 1/7 label"

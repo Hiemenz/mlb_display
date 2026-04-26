@@ -158,6 +158,15 @@ def _minimal_game_api(
         'gameNumber': 1,
         'gamesInSeries': 3,
         'gameDate': '2026-04-25T23:05:00Z',
+        'seriesStatus': {
+            'gameNumber': 1,
+            'totalGames': 3,
+            'isTied': False,
+            'isOver': False,
+            'wins': 0,
+            'losses': 0,
+            'result': '',
+        },
     }
 
 
@@ -603,6 +612,7 @@ _GAME_FIELD_TYPES = {
     'away_inning_runs':        (list,),
     'home_inning_runs':        (list,),
     'save_situation':          (bool,),
+    'walk_off':                (bool,),
     'tv_channel':              (str, type(None)),
     'num_of_outs':             (int, type(None)),
     'balls':                   (int, type(None)),
@@ -615,6 +625,17 @@ _GAME_FIELD_TYPES = {
     'double_header':           (str, type(None)),
     'game_number':             (int, type(None)),
     'day_night':               (str, type(None)),
+}
+
+# Fields added via seriesStatus hydration — present in fresh parse_games() output
+# but may be absent from older cached games.json files.
+_SERIES_FIELD_TYPES = {
+    'series_result':      (str, type(None)),
+    'series_game_number': (int, type(None)),
+    'series_total_games': (int, type(None)),
+    'series_wins':        (int, type(None)),
+    'series_losses':      (int, type(None)),
+    'series_is_tied':     (bool, type(None)),
 }
 
 # States observed in the wild from the MLB Stats API
@@ -940,7 +961,7 @@ class TestParseGamesContract:
         games = _parse([_minimal_game_api(state='Scheduled')])
         assert len(games) == 1
         game = games[0]
-        for field in _GAME_FIELD_TYPES:
+        for field in {**_GAME_FIELD_TYPES, **_SERIES_FIELD_TYPES}:
             assert field in game, f"Parsed game missing required field '{field}'"
 
     def test_game_pk_matches_api_value(self):
@@ -1392,3 +1413,47 @@ class TestMlbApiFieldContract:
     def test_offense_at_linescore_offense(self):
         """Base runners path: game.linescore.offense.{first,second,third}."""
         assert 'offense' in self._GAME['linescore']
+
+    def test_series_status_is_present(self):
+        """game.seriesStatus must be present when seriesStatus hydration is used."""
+        assert 'seriesStatus' in self._GAME
+
+    def test_series_status_has_required_fields(self):
+        """seriesStatus must have gameNumber, totalGames, wins, losses, isTied."""
+        ss = self._GAME['seriesStatus']
+        for field in ('gameNumber', 'totalGames', 'wins', 'losses', 'isTied'):
+            assert field in ss, f"seriesStatus missing field: {field}"
+
+
+# ===========================================================================
+# Series record parse_games() contract
+# ===========================================================================
+
+class TestSeriesRecordParsing:
+    """parse_games() must extract series status fields into game dicts."""
+
+    def test_series_fields_present_in_output(self):
+        """parse_games() output must include all series_* fields."""
+        game = _minimal_game_api(1001, 'Final', 111, 147, 'BOS', 'BAL', away_runs=4, home_runs=3)
+        games = _parse([game])
+        g = games[0]
+        for field in ('series_result', 'series_game_number', 'series_total_games',
+                      'series_wins', 'series_losses', 'series_is_tied'):
+            assert field in g, f"Missing field: {field}"
+
+    def test_series_total_games_extracted(self):
+        """series_total_games should match totalGames from seriesStatus."""
+        game = _minimal_game_api(1001, 'Final', 111, 147, 'BOS', 'BAL', away_runs=4, home_runs=3)
+        game['seriesStatus']['totalGames'] = 7
+        games = _parse([game])
+        assert games[0]['series_total_games'] == 7
+
+    def test_series_tied_extracted(self):
+        """series_is_tied must reflect isTied from the API."""
+        game = _minimal_game_api(1001, 'Final', 111, 147, 'BOS', 'BAL', away_runs=4, home_runs=3)
+        game['seriesStatus']['isTied'] = True
+        game['seriesStatus']['wins'] = 1
+        game['seriesStatus']['losses'] = 1
+        games = _parse([game])
+        assert games[0]['series_is_tied'] is True
+        assert games[0]['series_wins'] == 1

@@ -895,6 +895,22 @@ _VENUE_OVERRIDES = {
     'Great American Ball Park': 'Great American',
 }
 
+def _series_display_str(game_data):
+    """Return a short series record string for the header, or None if not applicable."""
+    total = game_data.get('series_total_games') or 1
+    if total <= 1:
+        return None
+    wins = game_data.get('series_wins') or 0
+    losses = game_data.get('series_losses') or 0
+    if wins == 0 and losses == 0:
+        gn = game_data.get('series_game_number') or 1
+        return f'Gm {gn}/{total}'
+    result = (game_data.get('series_result') or '').replace('Series ', '').strip()
+    if result:
+        return result[0].upper() + result[1:]
+    return None
+
+
 def _clean_venue_name(venue):
     """Return a short, ad-free venue name for display in the scoreboard header."""
     if not venue:
@@ -1055,7 +1071,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
     logo_x = (32 - _SIDEBAR_LOGO_SIZE) // 2 if side == 'left' else (800 - 32) + (32 - _SIDEBAR_LOGO_SIZE) // 2
     sep_x0, sep_x1 = (0, 31) if side == 'left' else (768, 800)
     # Line drawn on the outer edge of the logo (between logo and display edge)
-    line_x = logo_x - 4 if side == 'left' else logo_x + _SIDEBAR_LOGO_SIZE + 3
+    line_x = logo_x + _SIDEBAR_LOGO_SIZE + 3
 
     draw = ImageDraw.Draw(Himage)
 
@@ -1694,6 +1710,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((_wo_x,     start_y + 4), 'W/O', font=font9, fill=0)
         draw.text((_wo_x + 1, start_y + 4), 'W/O', font=font9, fill=0)
 
+    _ser_str = _series_display_str(game_data)
+    if _ser_str:
+        _ser_w = int(font9.getlength(_ser_str))
+        _game_is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
+        _dur_mins = game_data.get('game_duration_minutes') if _game_is_final else None
+        if _dur_mins:
+            _dur_reserve = int(font14.getlength(f'G: {_dur_mins // 60}:{_dur_mins % 60:02d}')) + 3
+        else:
+            _dur_reserve = 0
+        _ser_right = start_x + horizonta_len - 2 - _dur_reserve
+        _ser_left = start_x + 2 + _total_time_w + 4
+        if _ser_right - _ser_left >= _ser_w:
+            _ser_x = _ser_left + (_ser_right - _ser_left - _ser_w) // 2
+            draw.text((_ser_x, start_y + 5), _ser_str, font=font9, fill=0)
 
     # Venue — right-anchored in header, as large as possible without overlapping the time
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup', 'Postponed'):
@@ -2107,6 +2137,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if score_changed and is_game_started and not is_game_finished:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1, start_y + 21))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
+    # Invert header for special final states: walk-off, no-hitter, perfect game
+    if (is_game_finished and game_data.get('walk_off')) or \
+       game_data.get('no_hitter') or game_data.get('perfect_game'):
+        header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1, start_y + 21))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
     return Himage
 
 

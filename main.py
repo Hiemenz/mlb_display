@@ -178,6 +178,10 @@ def _should_skip_poll(date_str, config, sched):
     if next_game_date and next_game_date > date_str:
         return True, f"No games until {next_game_date} — skipping API call"
 
+    # If the last fetch was for a different date, always fetch fresh data.
+    if sched.get('last_fetch_date') and sched['last_fetch_date'] != date_str:
+        return False, ""
+
     try:
         cached_games = load_json_file('games.json').get('games', [])
     except Exception:
@@ -233,6 +237,7 @@ def _should_skip_poll(date_str, config, sched):
 
 def _update_schedule_state(game_state_data, date_str, config, sched):
     sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
+    sched['last_fetch_date'] = date_str
     if not game_state_data:
         priority = config.get('sport_id_priority', [1, 8, 16])
         tomorrow = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
