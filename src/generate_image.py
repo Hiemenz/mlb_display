@@ -1518,7 +1518,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             for i, (txt, fnt) in enumerate(reversed(lines)):
                 y = BOTTOM_Y - LINE_H * (i + 1)
-                draw.text((start_x + 7, y), _truncate_keep_suffix(txt), font=fnt, fill=0)
+                draw.text((start_x + 2, y), _truncate_keep_suffix(txt), font=fnt, fill=0)
         
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
         def _draw_pitcher_era(name_part, stat_part, y_pos):
@@ -1596,7 +1596,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 f'P: {game_data.get("current_pitcher") or ""}',
                 max_text_width - _right_w,
             )
-            draw.text((start_x + 5, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
+            draw.text((start_x + 2, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
             if _right_str:
                 draw.text((start_x + horizonta_len - _right_w, start_y + 25 + 74), _right_str, font=font11, fill=0)
 
@@ -1625,13 +1625,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _next = _format_player_name(game_data.get('due_up') or '')
                 if _next:
                     _next_str, _next_font = fit_text(f'AB: {_next}', max_text_width)
-                    draw.text((start_x + 7, start_y + 25 + 89), _next_str, font=_next_font, fill=0)
+                    draw.text((start_x + 2, start_y + 25 + 89), _next_str, font=_next_font, fill=0)
             else:
                 hitter_str, hitter_font = fit_text(
                     f'AB: {game_data.get("current_hitter") or ""}',
                     max(1, max_text_width - _ba_w),
                 )
-                draw.text((start_x + 7, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
+                draw.text((start_x + 2, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
                 if _ba_str:
                     draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
         
@@ -1984,19 +1984,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             for i in range(1, 4):
                 balls_list[i-1] = i <= game_data['balls']
 
-            draw.text((start_x + 5, start_y + 25 + 59), 'B', font=font14, fill=0)
-            Himage = draw_circle(Himage, (start_x + 22, start_y + 25 + 68), 4, balls_list[0])
-            Himage = draw_circle(Himage, (start_x + 34, start_y + 25 + 68), 4, balls_list[1])
-            Himage = draw_circle(Himage, (start_x + 46, start_y + 25 + 68), 4, balls_list[2])
+            draw.text((start_x + 2, start_y + 25 + 59), 'B', font=font14, fill=0)
+            Himage = draw_circle(Himage, (start_x + 19, start_y + 25 + 68), 4, balls_list[0])
+            Himage = draw_circle(Himage, (start_x + 31, start_y + 25 + 68), 4, balls_list[1])
+            Himage = draw_circle(Himage, (start_x + 43, start_y + 25 + 68), 4, balls_list[2])
 
             _num_strikes = game_data.get('strikes') or 0
             strikes_list = [i + 1 <= _num_strikes for i in range(2)]
             _strike_calls = game_data.get('strike_calls', [])
 
-            draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
+            draw.text((start_x + 19 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
             for _si, (_scx, _scy) in enumerate([
-                (start_x + 22 + 63, start_y + 25 + 68),
-                (start_x + 34 + 63, start_y + 25 + 68),
+                (start_x + 19 + 63, start_y + 25 + 68),
+                (start_x + 31 + 63, start_y + 25 + 68),
             ]):
                 _call = _strike_calls[_si] if _si < len(_strike_calls) else None
                 if strikes_list[_si] and _call in ('S', 'F'):
