@@ -1527,12 +1527,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 stat_w = int(font14.getlength(stat_part))
                 stat_x = start_x + horizonta_len - stat_w - 1
                 draw.text((stat_x, y_pos), stat_part, font=font14, fill=0)
-                max_name_w = stat_x - (start_x + 7) - 2
+                max_name_w = stat_x - (start_x + 2) - 2
                 name_str, name_fnt = fit_text(name_part, max(max_name_w, 20))
-                draw.text((start_x + 7, y_pos), name_str, font=name_fnt, fill=0)
+                draw.text((start_x + 2, y_pos), name_str, font=name_fnt, fill=0)
             else:
                 name_str, name_fnt = fit_text(name_part, max_text_width)
-                draw.text((start_x + 7, y_pos), name_str, font=name_fnt, fill=0)
+                draw.text((start_x + 2, y_pos), name_str, font=name_fnt, fill=0)
 
         away_name, away_stat = _pitcher_line(game_data.get("away_probable"), game_data.get("away_probable_note"))
         home_name, home_stat = _pitcher_line(game_data.get("home_probable"), game_data.get("home_probable_note"))
@@ -1542,10 +1542,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         reason = game_data.get('postpone_reason') or game_data.get('description') or ''
         postponed_line, postponed_fnt = fit_text(f'PPD: {reason}' if reason else 'Postponed', max_text_width)
         draw.text((start_x + 7, start_y + 25 + 59), postponed_line, font=postponed_fnt, fill=0)
-        venue_ppd = _clean_venue_name(game_data.get('venue'))
-        if venue_ppd:
-            venue_ppd_txt, venue_ppd_fnt = fit_text(venue_ppd, max_text_width)
-            draw.text((start_x + 7, start_y + 25 + 74), venue_ppd_txt, font=venue_ppd_fnt, fill=0)
     elif _delayed_with_score:
         draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
         # Next 3 batters + pitcher — same panel used for between-innings
@@ -1694,7 +1690,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _total_time_w = int(font14.getlength(game_state_str))
 
     # Venue — right-anchored in header, as large as possible without overlapping the time
-    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup', 'Postponed'):
         venue_clean = _clean_venue_name(game_data.get('venue'))
         if venue_clean:
             try:
@@ -1815,9 +1811,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 parts.append(s)
             if parts:
                 sub_txt = ' '.join(parts)
-                sub_w = int(font9.getlength(sub_txt))
+                sub_w = int(font11.getlength(sub_txt))
                 sx = start_x + horizonta_len - sub_w - 1
-                draw.text((sx, y_pos + 15), sub_txt, font=font9, fill=0)
+                draw.text((sx, y_pos + 15), sub_txt, font=font11, fill=0)
 
         _draw_record(
             game_data.get("away_team_record_wins", "0"),
@@ -1998,22 +1994,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _strike_calls = game_data.get('strike_calls', [])
 
             draw.text((start_x + 22 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
-            _kfont = _get_font(7)
             for _si, (_scx, _scy) in enumerate([
                 (start_x + 22 + 63, start_y + 25 + 68),
                 (start_x + 34 + 63, start_y + 25 + 68),
             ]):
                 _call = _strike_calls[_si] if _si < len(_strike_calls) else None
                 if strikes_list[_si] and _call in ('S', 'F'):
-                    # Swinging or foul: outline circle + K inside
+                    # Swinging or foul: outline ring with filled center dot
                     Himage = draw_circle(Himage, (_scx, _scy), 4, False)
                     draw = ImageDraw.Draw(Himage)
-                    _kw = int(_kfont.getlength('K'))
-                    _kx, _ky = _scx - _kw // 2, _scy - 4
-                    draw.text((_kx,     _ky), 'K', font=_kfont, fill=0)
-                    draw.text((_kx + 1, _ky), 'K', font=_kfont, fill=0)
+                    draw.ellipse([_scx - 2, _scy - 2, _scx + 2, _scy + 2], fill='black', outline='black')
                 else:
-                    # Looking / foul / empty: solid filled circle
+                    # Looking / empty: solid filled circle
                     Himage = draw_circle(Himage, (_scx, _scy), 4, strikes_list[_si])
                     draw = ImageDraw.Draw(Himage)
 
