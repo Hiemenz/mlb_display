@@ -1694,12 +1694,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((_wo_x,     start_y + 4), 'W/O', font=font9, fill=0)
         draw.text((_wo_x + 1, start_y + 4), 'W/O', font=font9, fill=0)
 
-    if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
-        _dur_mins = game_data.get('game_duration_minutes')
-        if _dur_mins:
-            _dur_str = f'{_dur_mins // 60}:{_dur_mins % 60:02d}'
-            _dur_w = int(font9.getlength(_dur_str))
-            draw.text((start_x + horizonta_len - _dur_w - 1, start_y + 5), _dur_str, font=font9, fill=0)
 
     # Venue — right-anchored in header, as large as possible without overlapping the time
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup', 'Postponed'):
@@ -1792,11 +1786,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((start_x + 123, start_y + 25),  str(game_data.get('away_errors', 0) if game_data.get('away_errors', 0) is not None else 0), font=font24, fill=0)
             draw.text((start_x + 123 , start_y + 55),  str( game_data.get('home_errors', 0) if game_data.get('home_errors', 0) is not None else 0), font=font24, fill=0)
 
-            # header (skip if perfect game or no-hitter to avoid overlap)
+            # header: game duration if available, else R H E (skip for perfect game/no-hitter)
             if not game_data.get('perfect_game') and not game_data.get('no_hitter'):
-                header = 'R     H     E'
-                draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
-                draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
+                _dur_mins = game_data.get('game_duration_minutes')
+                if _dur_mins:
+                    _hdr = f'G: {_dur_mins // 60}:{_dur_mins % 60:02d}'
+                    _hdr_w = int(font14.getlength(_hdr))
+                    _hdr_x = start_x + horizonta_len - _hdr_w - 2
+                    draw.text((_hdr_x,     start_y + 3), _hdr, font=font14, fill=0)
+                    draw.text((_hdr_x + 1, start_y + 3), _hdr, font=font14, fill=0)
+                else:
+                    header = 'R     H     E'
+                    draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
+                    draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
     elif game_data['detailed_state'] in ['Scheduled', 'Pre-Game', 'Warmup']:
         # Game hasn't started — show record stacked above L10/streak, both right-anchored
         def _team_stats(team_id):
