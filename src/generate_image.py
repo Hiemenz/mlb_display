@@ -1790,9 +1790,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             if not game_data.get('perfect_game') and not game_data.get('no_hitter'):
                 _dur_mins = game_data.get('game_duration_minutes')
                 if _dur_mins:
-                    _hdr = f'{_dur_mins // 60}:{_dur_mins % 60:02d}'
+                    _hdr = f'T: {_dur_mins // 60}:{_dur_mins % 60:02d}'
                     _hdr_w = int(font14.getlength(_hdr))
-                    _hdr_x = start_x + 68 + (67 - _hdr_w) // 2
+                    _hdr_x = start_x + horizonta_len - _hdr_w - 2
                     draw.text((_hdr_x,     start_y + 3), _hdr, font=font14, fill=0)
                     draw.text((_hdr_x + 1, start_y + 3), _hdr, font=font14, fill=0)
                 else:
