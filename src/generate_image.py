@@ -1071,7 +1071,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
     logo_x = (32 - _SIDEBAR_LOGO_SIZE) // 2 if side == 'left' else (800 - 32) + (32 - _SIDEBAR_LOGO_SIZE) // 2
     sep_x0, sep_x1 = (0, 31) if side == 'left' else (768, 800)
     # Line drawn on the outer edge of the logo (between logo and display edge)
-    line_x = logo_x + _SIDEBAR_LOGO_SIZE + 3
+    line_x = logo_x - 4 if side == 'left' else logo_x + _SIDEBAR_LOGO_SIZE + 3
 
     draw = ImageDraw.Draw(Himage)
 

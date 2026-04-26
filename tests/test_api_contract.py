@@ -459,11 +459,12 @@ class TestDrawWildcardHeaderSmoke:
 class TestStandingsSidebarMovers:
     """Movement indicator line logic in draw_standings_sidebar().
 
-    Indicator line: x=29 (logo_x=6 + logo_size=20 + 3), width=2 for left sidebar.
-    Check region: (29, 25, 31, 480) — the full indicator column, clear of logos/text.
+    Indicator line: x=2 (logo_x=6 - 4), width=2 for left sidebar — drawn on the
+    outer (left) edge of the logo column, between the screen edge and the logo.
+    Check region: (2, 25, 4, 480) — the full indicator column, clear of logos/text.
     """
 
-    _INDICATOR_REGION = (29, 25, 31, 480)
+    _INDICATOR_REGION = (2, 25, 4, 480)
 
     def _blank(self):
         return Image.new('1', (800, 480), 255)
