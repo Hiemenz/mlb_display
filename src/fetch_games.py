@@ -164,6 +164,61 @@ def fetch_win_probability(game_pk):
         return None, None, None
 
 
+def _fetch_mlb_odds(api_key):
+    """Return {(home_name_lower, away_name_lower): (home_ml, away_ml)} from The Odds API.
+
+    Set ODDS_API_KEY in .env — free key at https://the-odds-api.com (500 req/month).
+    """
+    try:
+        resp = requests.get(
+            'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/',
+            params={
+                'apiKey': api_key,
+                'regions': 'us',
+                'markets': 'h2h',
+                'oddsFormat': 'american',
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        result = {}
+        for event in resp.json():
+            home = event.get('home_team', '')
+            away = event.get('away_team', '')
+            key = (home.lower(), away.lower())
+            for book in event.get('bookmakers', []):
+                for market in book.get('markets', []):
+                    if market.get('key') != 'h2h':
+                        continue
+                    prices = {o['name']: o['price'] for o in market.get('outcomes', [])}
+                    home_ml = prices.get(home)
+                    away_ml = prices.get(away)
+                    if home_ml is not None and away_ml is not None:
+                        result[key] = (int(home_ml), int(away_ml))
+                        break
+                if key in result:
+                    break
+        return result
+    except Exception:
+        return {}
+
+
+def _get_odds_cached(api_key):
+    """Return today's odds from cache, fetching once per calendar day if stale."""
+    from datetime import date
+    today = str(date.today())
+    cache = load_json_file('odds_cache.json') or {}
+    if cache.get('date') == today and cache.get('odds'):
+        return {tuple(k.split('|', 1)): tuple(v) for k, v in cache['odds'].items()}
+    odds = _fetch_mlb_odds(api_key)
+    if odds:
+        save_off_results(
+            {'date': today, 'odds': {f'{h}|{a}': list(v) for (h, a), v in odds.items()}},
+            'odds_cache',
+        )
+    return odds
+
+
 _PITCHER_CACHE_TTL_MINUTES = 30
 
 
@@ -521,6 +576,14 @@ def parse_games(data, sport_id=None, config=None):
                 home_abbreviation,
             ),
         }
+        _h_inn = game_dict.get('home_inning_runs') or []
+        _a_inn = game_dict.get('away_inning_runs') or []
+        game_dict['walk_off'] = bool(
+            game_dict.get('home_team_is_winner') and
+            _h_inn and _a_inn and
+            len(_h_inn) == len(_a_inn) and
+            _h_inn[-1] is not None and _h_inn[-1] > 0
+        )
         if game_dict.get('detailed_state') == 'In Progress' and live_calls_made < max_live_calls:
             away_wp, home_wp, last_play = fetch_win_probability(game_id)
             live_calls_made += 1
@@ -598,6 +661,20 @@ def parse_games(data, sport_id=None, config=None):
             gd.pop('_winner_id', None)
             gd.pop('_loser_id', None)
             gd.pop('_saver_id', None)
+
+    # Attach betting moneylines to pre-game games (key from ODDS_API_KEY env var)
+    _odds_key = os.environ.get('ODDS_API_KEY')
+    if _odds_key and any(gd.get('detailed_state') in _PRE_GAME_STATES for gd in game_array):
+        _odds_map = _get_odds_cached(_odds_key)
+        if _odds_map:
+            for gd in game_array:
+                if gd.get('detailed_state') not in _PRE_GAME_STATES:
+                    continue
+                _home_n = (gd.get('home_team_name') or '').lower()
+                _away_n = (gd.get('away_team_name') or '').lower()
+                _match = _odds_map.get((_home_n, _away_n))
+                if _match:
+                    gd['home_ml'], gd['away_ml'] = _match
 
     save_off_results({'games': game_array}, 'games')
     save_off_results({'team_abbreviation': team_abbreviations}, 'teams')

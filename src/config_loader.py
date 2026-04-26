@@ -4,6 +4,26 @@ import yaml
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_CONFIG = os.path.join(_REPO_ROOT, 'config', 'config.yaml')
+_ENV_FILE = os.path.join(_REPO_ROOT, '.env')
+
+
+def _load_dotenv():
+    """Load key=value pairs from .env into os.environ (existing vars are not overwritten)."""
+    if not os.path.exists(_ENV_FILE):
+        return
+    with open(_ENV_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, value = line.partition('=')
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_dotenv()
 
 
 def load_config(config_path=None):
