@@ -1711,8 +1711,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((_wo_x + 1, start_y + 4), 'W/O', font=font9, fill=0)
 
     _ser_str = _series_display_str(game_data)
-    if _ser_str:
-        _ser_w = int(font9.getlength(_ser_str))
+    _is_sweep = (
+        game_data.get('series_is_over') and
+        (game_data.get('series_losses') == 0 or game_data.get('series_wins') == 0)
+    )
+    _sweep_wins = (game_data.get('series_wins') or game_data.get('series_losses') or 0) if _is_sweep else 0
+
+    if _ser_str or _is_sweep:
         _game_is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
         _dur_mins = game_data.get('game_duration_minutes') if _game_is_final else None
         if _dur_mins:
@@ -1721,9 +1726,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _dur_reserve = 0
         _ser_right = start_x + horizonta_len - 2 - _dur_reserve
         _ser_left = start_x + 2 + _total_time_w + 4
-        if _ser_right - _ser_left >= _ser_w:
-            _ser_x = _ser_left + (_ser_right - _ser_left - _ser_w) // 2
-            draw.text((_ser_x, start_y + 5), _ser_str, font=font9, fill=0)
+
+        if _is_sweep and _sweep_wins:
+            _brooms = '🧹' * _sweep_wins
+            _broom_w = int(font9.getlength(_brooms))
+            if _ser_right - _ser_left >= _broom_w:
+                _bx = _ser_left + (_ser_right - _ser_left - _broom_w) // 2
+                draw.text((_bx,     start_y + 5), _brooms, font=font9, fill=0)
+                draw.text((_bx + 1, start_y + 5), _brooms, font=font9, fill=0)
+        elif _ser_str:
+            _ser_w = int(font9.getlength(_ser_str))
+            if _ser_right - _ser_left >= _ser_w:
+                _ser_x = _ser_left + (_ser_right - _ser_left - _ser_w) // 2
+                draw.text((_ser_x,     start_y + 5), _ser_str, font=font9, fill=0)
+                draw.text((_ser_x + 1, start_y + 5), _ser_str, font=font9, fill=0)
 
     # Venue — right-anchored in header, as large as possible without overlapping the time
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup', 'Postponed'):

@@ -123,6 +123,7 @@ def _base_game(**overrides):
         'series_wins': 0,
         'series_losses': 0,
         'series_is_tied': False,
+        'series_is_over': False,
     }
     g.update(overrides)
     return g

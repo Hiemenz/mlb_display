@@ -166,6 +166,7 @@ def _minimal_game_api(
             'wins': 0,
             'losses': 0,
             'result': '',
+            'shortDescription': 'Season',
         },
     }
 
@@ -637,6 +638,7 @@ _SERIES_FIELD_TYPES = {
     'series_wins':        (int, type(None)),
     'series_losses':      (int, type(None)),
     'series_is_tied':     (bool, type(None)),
+    'series_is_over':     (bool, type(None)),
 }
 
 # States observed in the wild from the MLB Stats API

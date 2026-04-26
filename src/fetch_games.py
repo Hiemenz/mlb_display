@@ -575,6 +575,7 @@ def parse_games(data, sport_id=None, config=None):
             'series_wins': game.get('seriesStatus', {}).get('wins'),
             'series_losses': game.get('seriesStatus', {}).get('losses'),
             'series_is_tied': game.get('seriesStatus', {}).get('isTied'),
+            'series_is_over': game.get('seriesStatus', {}).get('isOver'),
             'tv_channel': _pick_tv_channel(
                 game.get('broadcasts', []),
                 config.get('primary'),
