@@ -1581,19 +1581,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _pt = game_data.get('last_pitch_type', '')   # e.g. "FB", "SL", "CH"
             _lps = game_data.get('last_pitch_speed')
 
-            # Pitcher line right badge: "FB (87)", "(87)", "FB", or ""
-            if _pc is not None and _pt:
-                _right_str = f'{_pt} ({_pc})'
-            elif _pc is not None:
-                _right_str = f'({_pc})'
-            elif _pt:
-                _right_str = _pt
-            else:
-                _right_str = ''
+            # Pitcher line right badge: pitch type only; count moves into the label
+            _right_str = _pt if _pt else ''
             _right_w = int(font11.getlength(_right_str)) + 2 if _right_str else 0
 
+            _pc_label = f' ({_pc}P)' if _pc is not None else ''
             pitcher_str, pitcher_font = fit_text(
-                f'P: {game_data.get("current_pitcher") or ""}',
+                f'P: {game_data.get("current_pitcher") or ""}{_pc_label}',
                 max_text_width - _right_w,
             )
             draw.text((start_x + 2, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
@@ -1621,11 +1615,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _ba_w = min(int(font11.getlength(_ba_str)) + 2, horizonta_len - 8) if _ba_str else 0
             _ab_done = game_data.get('current_at_bat_complete', False)
             if _ab_done and not _is_game_effectively_over(game_data):
-                # Play resolved — show the on-deck player as the next batter while API catches up
-                _next = _format_player_name(game_data.get('due_up') or '')
-                if _next:
-                    _next_str, _next_font = fit_text(f'AB: {_next}', max_text_width)
-                    draw.text((start_x + 2, start_y + 25 + 89), _next_str, font=_next_font, fill=0)
+                # Play resolved — show result and batter name, fall back to on-deck
+                _blr_done = game_data.get('batter_last_result', '')
+                _prev_name = _last_name(game_data.get('current_hitter') or '')
+                if _blr_done and _prev_name:
+                    _play_disp, _play_fnt = fit_text(f'{_blr_done} - {_prev_name}', max_text_width)
+                    draw.text((start_x + 2, start_y + 25 + 89), _play_disp, font=_play_fnt, fill=0)
+                else:
+                    _next = _format_player_name(game_data.get('due_up') or '')
+                    if _next:
+                        _next_str, _next_font = fit_text(f'AB: {_next}', max_text_width)
+                        draw.text((start_x + 2, start_y + 25 + 89), _next_str, font=_next_font, fill=0)
             else:
                 hitter_str, hitter_font = fit_text(
                     f'AB: {game_data.get("current_hitter") or ""}',
@@ -1688,6 +1688,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 2, start_y + 3), game_state_str, font=font14, fill=0)
         draw.text((start_x + 3, start_y + 3), game_state_str, font=font14, fill=0)
         _total_time_w = int(font14.getlength(game_state_str))
+
+    if game_data.get('walk_off'):
+        _wo_x = start_x + 3 + _total_time_w + 2
+        draw.text((_wo_x,     start_y + 4), 'W/O', font=font9, fill=0)
+        draw.text((_wo_x + 1, start_y + 4), 'W/O', font=font9, fill=0)
 
     # Venue — right-anchored in header, as large as possible without overlapping the time
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup', 'Postponed'):
@@ -1815,18 +1820,29 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 sx = start_x + horizonta_len - sub_w - 1
                 draw.text((sx, y_pos + 15), sub_txt, font=font11, fill=0)
 
-        _draw_record(
-            game_data.get("away_team_record_wins", "0"),
-            game_data.get("away_team_record_losses", "0"),
-            game_data.get("away_team_id"),
-            start_y + 25,
-        )
-        _draw_record(
-            game_data.get("home_team_record_wins", "0"),
-            game_data.get("home_team_record_losses", "0"),
-            game_data.get("home_team_id"),
-            start_y + 55,
-        )
+        _away_wins  = game_data.get("away_team_record_wins", "0")
+        _away_losses = game_data.get("away_team_record_losses", "0")
+        _home_wins  = game_data.get("home_team_record_wins", "0")
+        _home_losses = game_data.get("home_team_record_losses", "0")
+
+        _draw_record(_away_wins, _away_losses, game_data.get("away_team_id"), start_y + 25)
+        _draw_record(_home_wins, _home_losses, game_data.get("home_team_id"), start_y + 55)
+
+        # Betting moneylines — right-aligned just left of each team's record
+        _away_ml = game_data.get('away_ml')
+        _home_ml = game_data.get('home_ml')
+        if _away_ml is not None and _home_ml is not None:
+            _away_rec_left = start_x + horizonta_len - int(font14.getlength(f'{_away_wins}-{_away_losses}')) - 5
+            _home_rec_left = start_x + horizonta_len - int(font14.getlength(f'{_home_wins}-{_home_losses}')) - 5
+            _odds_right = min(_away_rec_left, _home_rec_left) - 4
+
+            def _ml_str(v):
+                return f'+{v}' if v > 0 else str(v)
+
+            _aml_s = _ml_str(_away_ml)
+            _hml_s = _ml_str(_home_ml)
+            draw.text((_odds_right - int(font11.getlength(_aml_s)), start_y + 27), _aml_s, font=font11, fill=0)
+            draw.text((_odds_right - int(font11.getlength(_hml_s)), start_y + 57), _hml_s, font=font11, fill=0)
 
         _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14)
 
@@ -1972,6 +1988,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             Himage = draw_diamond(Himage, (start_x + 97,  start_y + 52), 10, _hi_third)
             Himage = draw_diamond(Himage, (start_x + 109, start_y + 40), 10, _hi_second)
             Himage = draw_diamond(Himage, (start_x + 121, start_y + 52), 10, _hi_first)
+            draw = ImageDraw.Draw(Himage)
+            for _bfill, _bcx, _bcy, _bkey in (
+                (_hi_third,  start_x + 97,  start_y + 52, 'runner_third_number'),
+                (_hi_second, start_x + 109, start_y + 40, 'runner_second_number'),
+                (_hi_first,  start_x + 121, start_y + 52, 'runner_first_number'),
+            ):
+                if _bfill:
+                    _bnum = str(game_data.get(_bkey) or '')
+                    if _bnum:
+                        _bnw = int(font9.getlength(_bnum))
+                        draw.text((_bcx - _bnw // 2, _bcy - 5), _bnum, font=font9, fill=255)
 
             outs_list = [None] * 3
             for i in range(1, 4):

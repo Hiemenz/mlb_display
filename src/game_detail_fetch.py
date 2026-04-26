@@ -183,9 +183,25 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         boxscore = live.get('boxscore', {})
 
         pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
-        batter_id = linescore.get('offense', {}).get('batter', {}).get('id')
-        on_deck_name = linescore.get('offense', {}).get('onDeck', {}).get('fullName') or None
-        in_hole_name = linescore.get('offense', {}).get('inHole', {}).get('fullName') or None
+        offense = linescore.get('offense', {})
+        batter_id = offense.get('batter', {}).get('id')
+        on_deck_name = offense.get('onDeck', {}).get('fullName') or None
+        in_hole_name = offense.get('inHole', {}).get('fullName') or None
+
+        def _runner_jersey(base_key):
+            rid = offense.get(base_key, {}).get('id')
+            if not rid:
+                return None
+            pid_str = f'ID{rid}'
+            for side in ('away', 'home'):
+                pdata = boxscore.get('teams', {}).get(side, {}).get('players', {}).get(pid_str, {})
+                if pdata:
+                    return pdata.get('jerseyNumber')
+            return None
+
+        runner_first_number = _runner_jersey('first')
+        runner_second_number = _runner_jersey('second')
+        runner_third_number = _runner_jersey('third')
 
         pitcher_info = _get_player_info(boxscore, pitcher_id, 'pitching')
         batter_info = _get_player_info(boxscore, batter_id, 'batting')
@@ -265,6 +281,9 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'home_challenges_remaining': home_remaining,
             'away_replay_remaining': away_replay_remaining,
             'home_replay_remaining': home_replay_remaining,
+            'runner_first_number': runner_first_number,
+            'runner_second_number': runner_second_number,
+            'runner_third_number': runner_third_number,
         }
     except Exception:
         return {}
