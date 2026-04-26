@@ -662,6 +662,30 @@ def parse_games(data, sport_id=None, config=None):
             gd.pop('_loser_id', None)
             gd.pop('_saver_id', None)
 
+    # Attach game duration to Final games (cached permanently — duration never changes)
+    _final_states = ('Final', 'Game Over', 'Final: Tied')
+    _dur_cache = load_json_file('game_duration_cache.json') or {}
+    _dur_cache_dirty = False
+    for gd in game_array:
+        if gd.get('detailed_state') not in _final_states:
+            continue
+        pk_str = str(gd.get('game_pk'))
+        if pk_str in _dur_cache:
+            gd['game_duration_minutes'] = _dur_cache[pk_str]
+        else:
+            try:
+                _dur_url = f'https://statsapi.mlb.com/api/v1.1/game/{pk_str}/feed/live?fields=gameData,gameInfo'
+                _dur_resp = requests.get(_dur_url, timeout=5)
+                _dur_mins = _dur_resp.json().get('gameData', {}).get('gameInfo', {}).get('gameDurationMinutes')
+                if _dur_mins:
+                    gd['game_duration_minutes'] = int(_dur_mins)
+                    _dur_cache[pk_str] = int(_dur_mins)
+                    _dur_cache_dirty = True
+            except Exception:
+                pass
+    if _dur_cache_dirty:
+        save_off_results(_dur_cache, 'game_duration_cache')
+
     # Attach betting moneylines to pre-game games (key from ODDS_API_KEY env var)
     _odds_key = os.environ.get('ODDS_API_KEY')
     if _odds_key and any(gd.get('detailed_state') in _PRE_GAME_STATES for gd in game_array):

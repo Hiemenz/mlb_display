@@ -1694,6 +1694,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((_wo_x,     start_y + 4), 'W/O', font=font9, fill=0)
         draw.text((_wo_x + 1, start_y + 4), 'W/O', font=font9, fill=0)
 
+    if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
+        _dur_mins = game_data.get('game_duration_minutes')
+        if _dur_mins:
+            _dur_str = f'{_dur_mins // 60}:{_dur_mins % 60:02d}'
+            _dur_w = int(font9.getlength(_dur_str))
+            draw.text((start_x + horizonta_len - _dur_w - 1, start_y + 5), _dur_str, font=font9, fill=0)
+
     # Venue — right-anchored in header, as large as possible without overlapping the time
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup', 'Postponed'):
         venue_clean = _clean_venue_name(game_data.get('venue'))
