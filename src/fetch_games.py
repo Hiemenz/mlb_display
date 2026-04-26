@@ -674,7 +674,7 @@ def parse_games(data, sport_id=None, config=None):
             gd['game_duration_minutes'] = _dur_cache[pk_str]
         else:
             try:
-                _dur_url = f'https://statsapi.mlb.com/api/v1.1/game/{pk_str}/feed/live?fields=gameData,gameInfo'
+                _dur_url = f'https://statsapi.mlb.com/api/v1.1/game/{pk_str}/feed/live?fields=gameData,gameInfo,gameDurationMinutes'
                 _dur_resp = requests.get(_dur_url, timeout=5)
                 _dur_mins = _dur_resp.json().get('gameData', {}).get('gameInfo', {}).get('gameDurationMinutes')
                 if _dur_mins:
