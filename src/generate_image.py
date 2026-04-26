@@ -2036,8 +2036,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     Himage = draw_circle(Himage, (_scx, _scy), 4, strikes_list[_si])
                     draw = ImageDraw.Draw(Himage)
 
-        # SV badge — keep visible during inning breaks too
-        if game_data.get('save_situation'):
+        if game_data.get('save_situation') and not _between_innings:
             _sv_w = int(font9.getlength('SV'))
             draw.text((start_x + horizonta_len - _sv_w - 2, start_y + 21), 'SV', font=font9, fill=0)
     else:
