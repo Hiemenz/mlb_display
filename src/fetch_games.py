@@ -167,7 +167,7 @@ def fetch_win_probability(game_pk):
 def _fetch_mlb_odds(api_key):
     """Return {(home_name_lower, away_name_lower): (home_ml, away_ml)} from The Odds API.
 
-    Requires a free API key from https://the-odds-api.com — set odds_api_key in config.yaml.
+    Set ODDS_API_KEY in .env — free key at https://the-odds-api.com (500 req/month).
     """
     try:
         resp = requests.get(
@@ -201,6 +201,22 @@ def _fetch_mlb_odds(api_key):
         return result
     except Exception:
         return {}
+
+
+def _get_odds_cached(api_key):
+    """Return today's odds from cache, fetching once per calendar day if stale."""
+    from datetime import date
+    today = str(date.today())
+    cache = load_json_file('odds_cache.json') or {}
+    if cache.get('date') == today and cache.get('odds'):
+        return {tuple(k.split('|', 1)): tuple(v) for k, v in cache['odds'].items()}
+    odds = _fetch_mlb_odds(api_key)
+    if odds:
+        save_off_results(
+            {'date': today, 'odds': {f'{h}|{a}': list(v) for (h, a), v in odds.items()}},
+            'odds_cache',
+        )
+    return odds
 
 
 _PITCHER_CACHE_TTL_MINUTES = 30
@@ -646,10 +662,10 @@ def parse_games(data, sport_id=None, config=None):
             gd.pop('_loser_id', None)
             gd.pop('_saver_id', None)
 
-    # Attach betting moneylines to pre-game games if odds_api_key is configured
-    _odds_key = config.get('odds_api_key') if config else None
+    # Attach betting moneylines to pre-game games (key from ODDS_API_KEY env var)
+    _odds_key = os.environ.get('ODDS_API_KEY')
     if _odds_key and any(gd.get('detailed_state') in _PRE_GAME_STATES for gd in game_array):
-        _odds_map = _fetch_mlb_odds(_odds_key)
+        _odds_map = _get_odds_cached(_odds_key)
         if _odds_map:
             for gd in game_array:
                 if gd.get('detailed_state') not in _PRE_GAME_STATES:
