@@ -804,6 +804,11 @@ def _load_logo_gray(abbr, team_id):
     return result
 
 
+def _paste_logo(image, logo, pos):
+    """Paste a 1-bit logo without its white background (only dark pixels are drawn)."""
+    image.paste(logo, pos, mask=ImageOps.invert(logo.convert('L')))
+
+
 def _logo_small(abbr, team_id, size=28):
     """Small 1-bit logo for the team name row. Returns a '1'-mode image or None."""
     gray = _load_logo_gray(abbr, team_id)
@@ -1520,7 +1525,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             if ghost:
                 gw, gh = ghost.size
                 gx = start_x + (135 - gw) // 2 + 12
-                gy = start_y + 5 + (vertical_len - gh) // 2
+                gy = start_y - 5 + (vertical_len - gh) // 2
                 Himage.paste(ghost, (gx, gy))
                 draw = ImageDraw.Draw(Himage)
 
@@ -2032,9 +2037,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 away_logo = _logo_small(away_team_name, away_team_id, size=LOGO_SZ)
                 home_logo = _logo_small(home_team_name, home_team_id, size=LOGO_SZ)
                 if away_logo:
-                    Himage.paste(away_logo, (away_logo_x, logo_y))
+                    _paste_logo(Himage, away_logo, (away_logo_x, logo_y))
                 if home_logo:
-                    Himage.paste(home_logo, (home_logo_x, logo_y))
+                    _paste_logo(Himage, home_logo, (home_logo_x, logo_y))
 
                 # During inning breaks, draw each team's % in the AB area
                 # directly above their logo position in the bar
@@ -2177,7 +2182,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             lw, lh = away_logo.size
             lx = start_x + logo_x_offset + (_LOGO_SIZE - lw) // 2
             ly = start_y + 25 + (_LOGO_SIZE - lh) // 2
-            Himage.paste(away_logo, (lx, ly))
+            _paste_logo(Himage, away_logo, (lx, ly))
             abbr_x = start_x + logo_x_offset + _LOGO_SIZE + 2
             abbr_y = start_y + 25 + (_LOGO_SIZE - 14) // 2
             draw.text((abbr_x, abbr_y), away_team_name, font=font14, fill=0)
@@ -2188,7 +2193,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             lw, lh = home_logo.size
             lx = start_x + logo_x_offset + (_LOGO_SIZE - lw) // 2
             ly = start_y + 55 + (_LOGO_SIZE - lh) // 2
-            Himage.paste(home_logo, (lx, ly))
+            _paste_logo(Himage, home_logo, (lx, ly))
             abbr_x = start_x + logo_x_offset + _LOGO_SIZE + 2
             abbr_y = start_y + 55 + (_LOGO_SIZE - 14) // 2
             draw.text((abbr_x, abbr_y), home_team_name, font=font14, fill=0)
