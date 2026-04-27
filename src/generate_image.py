@@ -108,22 +108,6 @@ def _load_emoji_gray(abbr):
     return result
 
 
-def _make_broom_image(size=14):
-    """Draw a pixel-art broom icon as a grayscale PIL Image."""
-    img = Image.new('L', (size, size), 255)
-    d = ImageDraw.Draw(img)
-    s = size - 1
-    hx, hy = s // 3, s // 2
-    # Handle: thick diagonal from top-right to center-left
-    d.line([(s - 1, 0), (hx + 2, hy - 2)], fill=0, width=2)
-    # Brush head: solid rectangle in bottom-left quadrant
-    d.rectangle([(0, hy - 2), (hx + 3, s)], fill=0)
-    # Bristle texture: light gray horizontal lines
-    step = max(2, (s - hy + 2) // 3)
-    for by in range(hy, s, step):
-        d.line([(0, by), (hx + 3, by)], fill=170, width=1)
-    return img
-
 
 _char_emoji_cache: dict = {}
 
@@ -1777,7 +1761,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data.get('series_is_over') and
         (game_data.get('series_losses') == 0 or game_data.get('series_wins') == 0)
     )
-    _sweep_wins = (game_data.get('series_wins') or game_data.get('series_losses') or 0) if _is_sweep else 0
     _series_clinched = (
         _game_is_final and
         _ser_total > 1 and
@@ -1788,18 +1771,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # _ser_content_left_x tracks left edge of series/broom content for G:X:XX positioning
     _ser_content_left_x = start_x + horizonta_len - 2
 
-    if _is_sweep and _sweep_wins:
-        # Sweep: draw broom icons right-anchored in header
-        _broom_size = 14
-        _bx = start_x + horizonta_len - 2
-        for _ in range(_sweep_wins):
-            _bimg = _make_broom_image(_broom_size)
-            _bx -= _broom_size
-            Himage.paste(_bimg, (_bx, start_y + 3))
-            draw = ImageDraw.Draw(Himage)
-            _bx -= 1
-        _ser_content_left_x = _bx
-    elif _series_clinched:
+    if _is_sweep or _series_clinched:
         # Series win (non-sweep): draw winner logo + series score (e.g. 🏆 3-1)
         _sw = game_data.get('series_wins') or 0
         _sl = game_data.get('series_losses') or 0
