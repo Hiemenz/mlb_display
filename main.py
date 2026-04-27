@@ -404,7 +404,7 @@ Examples:
 
     # 8. Render
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
-    result = render(config, date_str=date_str, output_path=output_path)
+    result = render(config, date_str=date_str, output_path=output_path, bypass_cache=_no_throttle)
 
     if not result:
         print("No display update needed - image unchanged")

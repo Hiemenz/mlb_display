@@ -79,7 +79,7 @@ def _render_single_game_mode(mode, game_state_data, team_data, config, output_pa
         return None
 
 
-def render(config, date_str=None, output_path=None):
+def render(config, date_str=None, output_path=None, bypass_cache=False):
     """
     Render display from cached data/games.json.
 
@@ -87,6 +87,7 @@ def render(config, date_str=None, output_path=None):
         config: Config dict
         date_str: Date string for scoreboard header (optional)
         output_path: Where to save the output image (default: resulting_image.bmp)
+        bypass_cache: If True, always regenerate even if data is unchanged.
 
     Returns:
         (PIL.Image, changed_regions) tuple, or None if no update needed.
@@ -107,7 +108,7 @@ def render(config, date_str=None, output_path=None):
             return (image, [])
         return None
 
-    result = orchestrate_score_board(game_state_data, team_data, date_str)
+    result = orchestrate_score_board(game_state_data, team_data, date_str, bypass_cache=bypass_cache)
     if result:
         image, changed_regions = result
         image.save(output_path)
