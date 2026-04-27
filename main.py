@@ -283,8 +283,22 @@ Examples:
     if system_platform == 'Darwin':
         print("Development mode - e-ink display updates will be skipped")
 
-    import os as _os
-    _no_throttle = args.local or system_platform == 'Darwin' or _os.environ.get('ENV', '').lower() == 'test'
+    def _env_is_test():
+        if os.environ.get('ENV', '').lower() == 'test':
+            return True
+        try:
+            with open(os.path.join(_REPO_ROOT, '.env')) as _ef:
+                for _line in _ef:
+                    _line = _line.strip()
+                    if _line.startswith('ENV=') or _line.startswith('ENV ='):
+                        return _line.split('=', 1)[1].strip().strip('"').strip("'").lower() == 'test'
+        except Exception:
+            pass
+        return False
+
+    _is_test = _env_is_test()
+    _no_throttle = args.local or system_platform == 'Darwin' or _is_test
+    print(f"Throttle bypass: {_no_throttle} (local={args.local}, platform={system_platform}, env_test={_is_test})")
 
     config = load_config(args.config)
 
