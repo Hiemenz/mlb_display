@@ -1814,34 +1814,50 @@ class TestHeaderInversion:
 # ===========================================================================
 
 class TestSeriesRecord:
-    """Series record string is shown in the header when available."""
+    """Series record shown in header only when the series is clinched/over."""
 
     @needs_pil
-    def test_series_record_shown_for_multi_game_series(self, minimal_team_data):
-        """A 3-game series with a record renders differently than a single game."""
+    def test_series_clinched_renders_differently_than_no_series(self, minimal_team_data):
+        """A clinched series (series_is_over=True) renders differently than a no-series game."""
         no_series = _base_game(series_total_games=1)
-        with_series = _base_game(
-            series_total_games=3, series_wins=1, series_losses=0,
-            series_is_tied=False, series_result='Team leads 1-0',
+        clinched = _base_game(
+            series_total_games=3, series_wins=2, series_losses=1,
+            series_is_over=True, series_result='Won 2-1',
+            home_team_is_winner=True,
         )
         img_none = Image.new('1', (800, 480), 255)
         img_ser = Image.new('1', (800, 480), 255)
         draw_box(img_none, 32, 30, no_series, minimal_team_data, use_logos=False)
-        draw_box(img_ser, 32, 30, with_series, minimal_team_data, use_logos=False)
+        draw_box(img_ser, 32, 30, clinched, minimal_team_data, use_logos=False)
         assert list(img_none.getdata()) != list(img_ser.getdata()), \
-            "Series record should produce different rendering than no-series"
+            "Clinched series should produce different rendering than no-series"
 
     @needs_pil
-    def test_game_1_shows_gm_label(self, minimal_team_data):
-        """First game of a series (wins=0, losses=0) renders 'Gm 1/N'."""
+    def test_mid_series_game_no_series_label(self, minimal_team_data):
+        """A non-clinched mid-series game does NOT show series info (series only shown when over)."""
+        mid_series = _base_game(
+            series_total_games=3, series_wins=1, series_losses=0,
+            series_is_over=False, series_result='Team leads 1-0',
+        )
+        no_series = _base_game(series_total_games=1)
+        img_mid = Image.new('1', (800, 480), 255)
+        img_ns = Image.new('1', (800, 480), 255)
+        draw_box(img_mid, 32, 30, mid_series, minimal_team_data, use_logos=False)
+        draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
+        assert list(img_mid.getdata()) == list(img_ns.getdata()), \
+            "Mid-series games should not show series info (series only shown when over)"
+
+    @needs_pil
+    def test_game_1_no_gm_label(self, minimal_team_data):
+        """Game 1 of a series does NOT show Gm 1/N — series info only shown when series is over."""
         game = _base_game(
             series_total_games=7, series_wins=0, series_losses=0,
-            series_game_number=1, series_result='',
+            series_game_number=1, series_result='', series_is_over=False,
         )
         no_series = _base_game(series_total_games=1)
         img_g1 = Image.new('1', (800, 480), 255)
         img_ns = Image.new('1', (800, 480), 255)
         draw_box(img_g1, 32, 30, game, minimal_team_data, use_logos=False)
         draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
-        assert list(img_g1.getdata()) != list(img_ns.getdata()), \
-            "Game 1 of a 7-game series should show Gm 1/7 label"
+        assert list(img_g1.getdata()) == list(img_ns.getdata()), \
+            "Game 1 of a series should NOT show Gm 1/7 — series info only when series is over"

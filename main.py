@@ -283,10 +283,27 @@ Examples:
     if system_platform == 'Darwin':
         print("Development mode - e-ink display updates will be skipped")
 
+    def _env_is_test():
+        if os.environ.get('ENV', '').lower() == 'test':
+            return True
+        try:
+            with open(os.path.join(_REPO_ROOT, '.env')) as _ef:
+                for _line in _ef:
+                    _line = _line.strip()
+                    if _line.startswith('ENV=') or _line.startswith('ENV ='):
+                        return _line.split('=', 1)[1].strip().strip('"').strip("'").lower() == 'test'
+        except Exception:
+            pass
+        return False
+
+    _is_test = _env_is_test()
+    _no_throttle = args.local or system_platform == 'Darwin' or _is_test
+    print(f"Throttle bypass: {_no_throttle} (local={args.local}, platform={system_platform}, env_test={_is_test})")
+
     config = load_config(args.config)
 
     # 3. Night mode gate
-    if config.get('night_mode', False) and not args.local:
+    if config.get('night_mode', False) and not _no_throttle:
         if _in_night_window(config):
             tz = config.get('timezone', 'America/Chicago')
             now_str = datetime.now(pytz.timezone(tz)).strftime('%H:%M')
@@ -345,7 +362,7 @@ Examples:
             print(f"Using today's date: {date_str}")
 
     # 5. Smart polling gate (only for automatic runs on today's date, skip in pre-5am mode)
-    if not args.date and not args.local and not _pre5am:
+    if not args.date and not _no_throttle and not _pre5am:
         sched = _load_schedule_state()
         skip, reason = _should_skip_poll(date_str, config, sched)
         if skip:
@@ -358,7 +375,7 @@ Examples:
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
     # 7. Update schedule state
-    if not args.date and not args.local and not _pre5am:
+    if not args.date and not _no_throttle and not _pre5am:
         game_state_data = load_json_file('games.json').get('games', [])
         no_games = _update_schedule_state(game_state_data, date_str, config, sched)
         if no_games:
@@ -387,7 +404,7 @@ Examples:
 
     # 8. Render
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
-    result = render(config, date_str=date_str, output_path=output_path)
+    result = render(config, date_str=date_str, output_path=output_path, bypass_cache=_no_throttle)
 
     if not result:
         print("No display update needed - image unchanged")
