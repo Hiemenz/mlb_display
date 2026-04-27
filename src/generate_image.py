@@ -108,6 +108,23 @@ def _load_emoji_gray(abbr):
     return result
 
 
+def _make_broom_image(size=14):
+    """Draw a pixel-art broom icon as a grayscale PIL Image."""
+    img = Image.new('L', (size, size), 255)
+    d = ImageDraw.Draw(img)
+    s = size - 1
+    hx, hy = s // 3, s // 2
+    # Handle: thick diagonal from top-right to center-left
+    d.line([(s - 1, 0), (hx + 2, hy - 2)], fill=0, width=2)
+    # Brush head: solid rectangle in bottom-left quadrant
+    d.rectangle([(0, hy - 2), (hx + 3, s)], fill=0)
+    # Bristle texture: light gray horizontal lines
+    step = max(2, (s - hy + 2) // 3)
+    for by in range(hy, s, step):
+        d.line([(0, by), (hx + 3, by)], fill=170, width=1)
+    return img
+
+
 _char_emoji_cache: dict = {}
 
 
@@ -1518,7 +1535,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             ghost = _logo_ghost(winner_abbr, winner_id)
             if ghost:
                 gw, gh = ghost.size
-                gx = start_x + (135 - gw) // 2 + 10
+                gx = start_x + (135 - gw) // 2 + 12
                 gy = start_y + 5 + (vertical_len - gh) // 2
                 Himage.paste(ghost, (gx, gy))
                 draw = ImageDraw.Draw(Himage)
@@ -1573,15 +1590,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             for i, (txt, fnt) in enumerate(reversed(lines)):
                 y = BOTTOM_Y - LINE_H * (i + 1)
                 draw.text((start_x + 2, y), _truncate_keep_suffix(txt), font=fnt, fill=0)
-
-            # No save: draw game duration in the top empty pitcher slot
-            if not saver and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
-                _dur_mins = game_data.get('game_duration_minutes')
-                if _dur_mins:
-                    _dur_str = f'G: {_dur_mins // 60}:{_dur_mins % 60:02d}'
-                    _dur_y = BOTTOM_Y - LINE_H * 3
-                    draw.text((start_x + 2, _dur_y), _dur_str, font=font14, fill=0)
-                    draw.text((start_x + 3, _dur_y), _dur_str, font=font14, fill=0)
 
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
         def _draw_pitcher_era(name_part, stat_part, y_pos):
@@ -1707,8 +1715,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         else:
             game_state_str = game_data['detailed_state']
 
-        if game_data.get('current_inning') and game_data.get('current_inning') != 9:
-            game_state_str += '/' + str(game_data.get('current_inning'))
+        _fin_inning = game_data.get('current_inning') or 9
+        if _fin_inning > 9:
+            game_state_str = 'F'
+        elif _fin_inning != 9:
+            game_state_str += '/' + str(_fin_inning)
             
     elif game_data['detailed_state'] == 'Warmup':
         game_state_str = game_data['detailed_state'] 
@@ -1778,16 +1789,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _ser_content_left_x = start_x + horizonta_len - 2
 
     if _is_sweep and _sweep_wins:
-        # Sweep: draw broom PNG images right-anchored in header
-        _broom_size = 12
+        # Sweep: draw broom icons right-anchored in header
+        _broom_size = 14
         _bx = start_x + horizonta_len - 2
         for _ in range(_sweep_wins):
-            _bimg = _load_char_emoji('🧹', _broom_size)
-            if _bimg:
-                _bx -= _broom_size
-                Himage.paste(_bimg, (_bx, start_y + 4))
-                draw = ImageDraw.Draw(Himage)
-                _bx -= 1
+            _bimg = _make_broom_image(_broom_size)
+            _bx -= _broom_size
+            Himage.paste(_bimg, (_bx, start_y + 3))
+            draw = ImageDraw.Draw(Himage)
+            _bx -= 1
         _ser_content_left_x = _bx
     elif _series_clinched:
         # Series win (non-sweep): draw winner logo + series score (e.g. 🏆 3-1)
@@ -1816,6 +1826,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _ser_content_left_x = _score_x
         draw.text((_score_x,     start_y + 3), _score_str, font=font14, fill=0)
         draw.text((_score_x + 1, start_y + 3), _score_str, font=font14, fill=0)
+
+    # Duration — centered in header for Final games (h:mm format, same font as Final)
+    if _game_is_final and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
+        _dur_mins = game_data.get('game_duration_minutes')
+        if _dur_mins:
+            _dur_str = f'{_dur_mins // 60}:{_dur_mins % 60:02d}'
+            _dur_w = int(font14.getlength(_dur_str))
+            _dur_cx = start_x + horizonta_len // 2 - _dur_w // 2
+            draw.text((_dur_cx,     start_y + 3), _dur_str, font=font14, fill=0)
+            draw.text((_dur_cx + 1, start_y + 3), _dur_str, font=font14, fill=0)
 
     # Venue — right-anchored in header, as large as possible without overlapping the time
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup', 'Postponed'):
@@ -1911,24 +1931,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((start_x + 123, start_y + 25),  str(game_data.get('away_errors', 0) if game_data.get('away_errors', 0) is not None else 0), font=font24, fill=0)
             draw.text((start_x + 123 , start_y + 55),  str( game_data.get('home_errors', 0) if game_data.get('home_errors', 0) is not None else 0), font=font24, fill=0)
 
-            # header: game duration if available, else R H E (skip for perfect game/no-hitter)
-            if not game_data.get('perfect_game') and not game_data.get('no_hitter'):
-                _dur_mins = game_data.get('game_duration_minutes')
-                if _dur_mins:
-                    _hdr = f'G: {_dur_mins // 60}:{_dur_mins % 60:02d}'
-                    if game_data.get('saver_name'):
-                        # With save: draw duration in the ABS challenge-dots area (between logos)
-                        # x aligns with where challenge dots appear during live games
-                        _LOGO_SZ = 28
-                        _cdot_x = start_x + logo_x_offset + _LOGO_SZ + 2 + 1
-                        _dur_y = start_y + 50  # between the two team rows
-                        draw.text((_cdot_x,     _dur_y), _hdr, font=font9, fill=0)
-                        draw.text((_cdot_x + 1, _dur_y), _hdr, font=font9, fill=0)
-                    # else: no save — G:XX drawn in body pitcher slot (handled in pitcher block)
-                else:
-                    header = 'R     H     E'
-                    draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
-                    draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
+            # header: R H E label (only when no duration — duration is centered above)
+            if not game_data.get('game_duration_minutes') and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
+                header = 'R     H     E'
+                draw.text((start_x + 68, start_y + 3), header, font=font14, fill=0)
+                draw.text((start_x + 69, start_y + 3), header, font=font14, fill=0)
     elif game_data['detailed_state'] in ['Scheduled', 'Pre-Game', 'Warmup']:
         # Game hasn't started — show record stacked above L10/streak, both right-anchored
         def _team_stats(team_id):
