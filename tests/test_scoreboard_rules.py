@@ -795,26 +795,26 @@ class TestStateNormalization:
             "Delayed Start and Pre-Game should produce identical renders"
 
     @needs_pil
-    def test_challenge_states_render_like_in_progress(self, minimal_team_data):
-        """Player challenge and Manager challenge must render identically."""
-        pc = _base_game(
-            detailed_state='Player challenge',
+    def test_challenge_states_show_challenge_text_in_header(self, minimal_team_data):
+        """Player challenge and Manager challenge each display their state as the header play text."""
+        common = dict(
             away_runs=3, home_runs=2, num_of_outs=2, balls=1, strikes=1,
             current_inning=7, inningState='Bottom',
             current_pitcher='Sandy Koufax', current_hitter='Pete Rose',
             last_play='Ground out', away_hits=None, home_hits=None,
         )
-        mc = _base_game(
-            detailed_state='Manager challenge',
-            away_runs=3, home_runs=2, num_of_outs=2, balls=1, strikes=1,
-            current_inning=7, inningState='Bottom',
-            current_pitcher='Sandy Koufax', current_hitter='Pete Rose',
-            last_play='Ground out', away_hits=None, home_hits=None,
-        )
+        pc = _base_game(detailed_state='Player challenge', **common)
+        mc = _base_game(detailed_state='Manager challenge', **common)
+        in_prog = _base_game(detailed_state='In Progress', **common)
         img_pc = self._render(pc, minimal_team_data)
         img_mc = self._render(mc, minimal_team_data)
-        assert list(img_pc.getdata()) == list(img_mc.getdata()), \
-            "Player challenge and Manager challenge must produce identical renders"
+        img_ip = self._render(in_prog, minimal_team_data)
+        assert list(img_pc.getdata()) != list(img_ip.getdata()), \
+            "Player challenge should render differently (shows 'P Challenge' not 'Ground out')"
+        assert list(img_mc.getdata()) != list(img_ip.getdata()), \
+            "Manager challenge should render differently (shows 'M Challenge' not 'Ground out')"
+        assert list(img_pc.getdata()) != list(img_mc.getdata()), \
+            "Player challenge and Manager challenge show different text so must differ"
 
 
 # ===========================================================================
@@ -1833,19 +1833,20 @@ class TestSeriesRecord:
             "Clinched series should produce different rendering than no-series"
 
     @needs_pil
-    def test_mid_series_game_no_series_label(self, minimal_team_data):
-        """A non-clinched mid-series game does NOT show series info (series only shown when over)."""
+    def test_mid_series_leading_shows_series_score(self, minimal_team_data):
+        """A non-clinched mid-series game where one team leads shows the series score."""
         mid_series = _base_game(
             series_total_games=3, series_wins=1, series_losses=0,
             series_is_over=False, series_result='Team leads 1-0',
+            home_team_is_winner=True,
         )
         no_series = _base_game(series_total_games=1)
         img_mid = Image.new('1', (800, 480), 255)
         img_ns = Image.new('1', (800, 480), 255)
         draw_box(img_mid, 32, 30, mid_series, minimal_team_data, use_logos=False)
         draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
-        assert list(img_mid.getdata()) == list(img_ns.getdata()), \
-            "Mid-series games should not show series info (series only shown when over)"
+        assert list(img_mid.getdata()) != list(img_ns.getdata()), \
+            "Mid-series leading games should show the series score (logo + X-Y)"
 
     @needs_pil
     def test_game_1_no_gm_label(self, minimal_team_data):
@@ -1861,3 +1862,34 @@ class TestSeriesRecord:
         draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
         assert list(img_g1.getdata()) == list(img_ns.getdata()), \
             "Game 1 of a series should NOT show Gm 1/7 — series info only when series is over"
+
+    @needs_pil
+    def test_tied_series_shows_tied_label(self, minimal_team_data):
+        """A tied mid-series (1-1, not over) shows 'Tied X-X' in the header."""
+        tied = _base_game(
+            series_total_games=5, series_wins=1, series_losses=1,
+            series_is_over=False, series_is_tied=True, series_result='Series Tied 1-1',
+        )
+        no_series = _base_game(series_total_games=1)
+        img_tied = Image.new('1', (800, 480), 255)
+        img_ns = Image.new('1', (800, 480), 255)
+        draw_box(img_tied, 32, 30, tied, minimal_team_data, use_logos=False)
+        draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
+        assert list(img_tied.getdata()) != list(img_ns.getdata()), \
+            "Tied series should show 'Tied 1-1' in the header (renders differently than no-series)"
+
+    @needs_pil
+    def test_leading_mid_series_shows_series_score(self, minimal_team_data):
+        """A mid-series game where one team leads (not tied, not over) shows logo + series score."""
+        leading = _base_game(
+            series_total_games=5, series_wins=2, series_losses=1,
+            series_is_over=False, series_is_tied=False, series_result='Team leads 2-1',
+            away_team_is_winner=True,
+        )
+        no_series = _base_game(series_total_games=1)
+        img_lead = Image.new('1', (800, 480), 255)
+        img_ns = Image.new('1', (800, 480), 255)
+        draw_box(img_lead, 32, 30, leading, minimal_team_data, use_logos=False)
+        draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
+        assert list(img_lead.getdata()) != list(img_ns.getdata()), \
+            "Leading mid-series (not over) should show logo + series score in the header"

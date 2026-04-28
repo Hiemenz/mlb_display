@@ -167,6 +167,36 @@ def _count_replay_challenges_used(plays, away_id, home_id):
     return away_used, home_used
 
 
+def _find_recent_review_result(plays):
+    """Return 'Call Overturned', 'Call Stands', or None if a review just resolved.
+
+    A review is considered fresh if no pitch has been thrown since it completed:
+    - ABS challenge mid-AB: check currentPlay events from the end
+    - Play-ending challenge: check allPlays[-1] when currentPlay has no pitches yet
+    """
+    current_events = plays.get('currentPlay', {}).get('playEvents', [])
+    current_has_pitches = any(ev.get('isPitch') for ev in current_events)
+
+    # Scan currentPlay from end: a review before any pitch means it just resolved
+    for ev in reversed(current_events):
+        if ev.get('isPitch'):
+            return None  # pitch thrown after review — stale
+        rd = ev.get('reviewDetails')
+        if rd and not rd.get('inProgress'):
+            return 'Call Overturned' if rd.get('isOverturned') else 'Call Stands'
+
+    # If current AB has no pitches yet, check the last completed play
+    if not current_has_pitches:
+        all_plays = plays.get('allPlays', [])
+        if all_plays:
+            for ev in reversed(all_plays[-1].get('playEvents', [])):
+                rd = ev.get('reviewDetails')
+                if rd and not rd.get('inProgress'):
+                    return 'Call Overturned' if rd.get('isOverturned') else 'Call Stands'
+
+    return None
+
+
 def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
     """Fetch pitch count, batter game stats, last at-bat result, and last pitch speed
     from the live feed for use in the scoreboard box.
@@ -284,6 +314,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'runner_first_number': runner_first_number,
             'runner_second_number': runner_second_number,
             'runner_third_number': runner_third_number,
+            'last_review_result': _find_recent_review_result(plays),
         }
     except Exception:
         return {}
