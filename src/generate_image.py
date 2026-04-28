@@ -949,6 +949,8 @@ def _series_display_str(game_data):
     if wins == 0 and losses == 0:
         gn = game_data.get('series_game_number') or 1
         return f'Gm {gn}/{total}'
+    if wins == losses:
+        return f'Tied {wins}-{losses}'
     result = (game_data.get('series_result') or '').replace('Series ', '').strip()
     if result:
         return result[0].upper() + result[1:]
@@ -1435,6 +1437,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Normalize mid-game review/challenge states to In Progress
     if game_data.get('detailed_state') in ('Player challenge', 'Manager challenge'):
         game_data = dict(game_data)
+        game_data['last_play'] = 'P Challenge' if game_data['detailed_state'] == 'Player challenge' else 'M Challenge'
         game_data['detailed_state'] = 'In Progress'
 
     # Delayed Start = game hasn't begun yet; treat like Pre-Game (show pitcher probables)
@@ -1524,8 +1527,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             ghost = _logo_ghost(winner_abbr, winner_id)
             if ghost:
                 gw, gh = ghost.size
-                gx = start_x + (135 - gw) // 2 + 12
-                gy = start_y - 5 + (vertical_len - gh) // 2
+                gx = start_x + (135 - gw) // 2 + 0
+                gy = start_y + 20 + (vertical_len - gh) // 2
                 Himage.paste(ghost, (gx, gy))
                 draw = ImageDraw.Draw(Himage)
 
@@ -1772,6 +1775,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data.get('series_is_over') and
         not _is_sweep
     )
+    _series_tied = (
+        _game_is_final and
+        _ser_total > 1 and
+        game_data.get('series_is_tied') and
+        not game_data.get('series_is_over')
+    )
+    _series_leading = (
+        _game_is_final and
+        _ser_total > 1 and
+        not game_data.get('series_is_over') and
+        not game_data.get('series_is_tied') and
+        (game_data.get('series_wins') or 0) > 0
+    )
 
     # _ser_content_left_x tracks left edge of series/broom content for G:X:XX positioning
     _ser_content_left_x = start_x + horizonta_len - 2
@@ -1804,6 +1820,43 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((_score_x,     start_y + 3), _score_str, font=font14, fill=0)
         draw.text((_score_x + 1, start_y + 3), _score_str, font=font14, fill=0)
 
+    elif _series_tied:
+        _sw = game_data.get('series_wins') or 0
+        _sl = game_data.get('series_losses') or 0
+        _tied_str = f'Tied {_sw}-{_sl}'
+        _tied_w = int(font14.getlength(_tied_str))
+        _rx = start_x + horizonta_len - 2
+        _tx = _rx - _tied_w
+        _ser_content_left_x = _tx
+        draw.text((_tx,     start_y + 3), _tied_str, font=font14, fill=0)
+        draw.text((_tx + 1, start_y + 3), _tied_str, font=font14, fill=0)
+
+    elif _series_leading:
+        # Series leader: draw leading team's logo + score (e.g. [NYY logo] 1-0)
+        _sw = game_data.get('series_wins') or 0
+        _sl = game_data.get('series_losses') or 0
+        _score_str = f'{_sw}-{_sl}'
+        _score_w = int(font14.getlength(_score_str))
+        _ser_logo_size = 14
+        _ser_leader_abbr = _ser_leader_id = None
+        if game_data.get('away_team_is_winner'):
+            _ser_leader_abbr, _ser_leader_id = away_team_name, str(game_data['away_team_id'])
+        elif game_data.get('home_team_is_winner'):
+            _ser_leader_abbr, _ser_leader_id = home_team_name, str(game_data['home_team_id'])
+        _ser_logo = _logo_small(_ser_leader_abbr, _ser_leader_id, size=_ser_logo_size) if _ser_leader_abbr else None
+        _rx = start_x + horizonta_len - 2
+        if _ser_logo:
+            _score_x = _rx - _score_w
+            _logo_x = _score_x - 2 - _ser_logo_size
+            _logo_y = start_y + 3
+            Himage.paste(_ser_logo, (_logo_x, _logo_y))
+            draw = ImageDraw.Draw(Himage)
+            _ser_content_left_x = _logo_x
+        else:
+            _score_x = _rx - _score_w
+            _ser_content_left_x = _score_x
+        draw.text((_score_x, start_y + 3), _score_str, font=font14, fill=0)
+
     # Duration — centered in header for Final games (h:mm format, same font as Final)
     if _game_is_final and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
         _dur_mins = game_data.get('game_duration_minutes')
@@ -1831,7 +1884,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
-        raw_play = (game_data.get('last_play') or '').replace('**', '').strip()
+        raw_play = (game_data.get('last_review_result') or game_data.get('last_play') or '').replace('**', '').strip()
         _header_right = _ser_content_left_x - 2
         if _between_innings and raw_play:
             # Mid-inning break: show the play that ended the half-inning
@@ -1964,8 +2017,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             _aml_s = _ml_str(_away_ml)
             _hml_s = _ml_str(_home_ml)
-            draw.text((_odds_right - int(font11.getlength(_aml_s)), start_y + 27), _aml_s, font=font11, fill=0)
-            draw.text((_odds_right - int(font11.getlength(_hml_s)), start_y + 57), _hml_s, font=font11, fill=0)
+            _away_odds_y = start_y + (32 if use_logos else 25)
+            _home_odds_y = start_y + (62 if use_logos else 55)
+            draw.text((_odds_right - int(font11.getlength(_aml_s)), _away_odds_y), _aml_s, font=font11, fill=0)
+            draw.text((_odds_right - int(font11.getlength(_hml_s)), _home_odds_y), _hml_s, font=font11, fill=0)
 
         _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14)
 

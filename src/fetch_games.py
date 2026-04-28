@@ -591,7 +591,7 @@ def parse_games(data, sport_id=None, config=None):
             len(_h_inn) == len(_a_inn) and
             _h_inn[-1] is not None and _h_inn[-1] > 0
         )
-        if game_dict.get('detailed_state') == 'In Progress' and live_calls_made < max_live_calls:
+        if game_dict.get('detailed_state') in ('In Progress', 'Player challenge', 'Manager challenge') and live_calls_made < max_live_calls:
             away_wp, home_wp, last_play = fetch_win_probability(game_id)
             live_calls_made += 1
             game_dict['last_play'] = last_play
