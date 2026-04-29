@@ -1653,10 +1653,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             _pc_label = f' ({_pc}P)' if _pc is not None else ''
             _pitcher_name = _format_player_name(game_data.get("current_pitcher") or "")
-            pitcher_str, pitcher_font = fit_text(
-                f'P: {_pitcher_name}{_pc_label}',
-                max_text_width - _right_w,
-            )
+            _pit_avail = max_text_width - _right_w
+            _pit_full = f'P: {_pitcher_name}{_pc_label}'
+            _pit_short = f'P: {_pitcher_name}'
+            if font14.getlength(_pit_full) <= _pit_avail:
+                pitcher_str, pitcher_font = _pit_full, font14
+            elif font14.getlength(_pit_short) <= _pit_avail:
+                pitcher_str, pitcher_font = _pit_short, font14
+            else:
+                pitcher_str, pitcher_font = fit_text(_pit_short, _pit_avail)
             draw.text((start_x + 2, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
             if _right_str:
                 draw.text((start_x + horizonta_len - _right_w, start_y + 25 + 74), _right_str, font=font11, fill=0)
