@@ -1894,7 +1894,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 pass
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
         if _active_no_no:
-            _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
+            _nh_inn = game_data.get('current_inning') or ''
+            _nh_base = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
+            _nh_label = f'{_nh_base} {_nh_inn}' if _nh_inn else _nh_base
             _nh_lw = int(font14.getlength(_nh_label))
             _nh_lx = start_x + (horizonta_len - _nh_lw) // 2
             draw.text((_nh_lx,     start_y + 3), _nh_label, font=font14, fill=0)
@@ -2243,10 +2245,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     else:
 
         # Perfect game takes precedence over no-hitter display
-        if game_data.get('perfect_game'):
-            draw.text((start_x + 50, start_y + 3), 'Perfect Game', font=font14, fill=0)
-        elif game_data.get('no_hitter'):
-            draw.text((start_x + 79, start_y + 3), 'No Hitter', font=font14, fill=0)
+        if game_data.get('perfect_game') or game_data.get('no_hitter'):
+            _nh_fin_inn = game_data.get('current_inning') or 9
+            _nh_sfx = 'F' if _nh_fin_inn >= 9 else f'/{_nh_fin_inn}'
+            _nh_base = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
+            _nh_label = f'{_nh_base} {_nh_sfx}'
+            _nh_lw = int(font14.getlength(_nh_label))
+            _nh_lx = start_x + (horizonta_len - _nh_lw) // 2
+            draw.text((_nh_lx,     start_y + 3), _nh_label, font=font14, fill=0)
+            draw.text((_nh_lx + 1, start_y + 3), _nh_label, font=font14, fill=0)
 
         
 

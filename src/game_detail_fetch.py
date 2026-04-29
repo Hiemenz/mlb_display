@@ -210,16 +210,31 @@ def _last_name_simple(full_name):
 
 
 def _find_recent_sub_event(plays):
-    """Scan the current play and the most recent completed play for a pitching change
-    or pinch hitter action event. Returns 'PC: Lastname', 'PH: Lastname', or None."""
-    sources = []
-    cp = plays.get('currentPlay')
-    if cp:
-        sources.append(cp)
-    all_plays = plays.get('allPlays') or []
-    if all_plays:
-        sources.append(all_plays[-1])
+    """Return 'PC: Lastname', 'PH: Lastname', or None for the most recent pitching
+    change or pinch hitter within the last 3 plays.
 
+    Pitching changes between at-bats appear as standalone top-level allPlays entries
+    (result.eventType = 'pitching_substitution').  Mid-at-bat subs appear as action
+    events inside a play's playEvents list.  We check both.
+    """
+    all_plays = plays.get('allPlays') or []
+    recent = all_plays[-3:] if len(all_plays) >= 3 else all_plays
+
+    # 1. Top-level allPlays substitution entries (between-at-bat pitching changes)
+    for play in reversed(recent):
+        result_et = (play.get('result', {}).get('eventType') or '').lower()
+        result_desc = (play.get('result', {}).get('description') or '').lower()
+        if 'pitching_substitution' in result_et:
+            pitcher = play.get('matchup', {}).get('pitcher', {}).get('fullName') or ''
+            last = _last_name_simple(pitcher)
+            return f'PC: {last}' if last else None
+        if 'offensive_substitution' in result_et and 'pinch' in result_desc:
+            batter = play.get('matchup', {}).get('batter', {}).get('fullName') or ''
+            last = _last_name_simple(batter)
+            return f'PH: {last}' if last else None
+
+    # 2. Action events inside currentPlay or last completed play (mid-at-bat subs)
+    sources = [p for p in [plays.get('currentPlay')] + ([all_plays[-1]] if all_plays else []) if p]
     for play in sources:
         for ev in reversed(play.get('playEvents', [])):
             et = (ev.get('details', {}).get('eventType') or '').lower()
