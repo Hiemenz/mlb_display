@@ -1624,7 +1624,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _nw = int(font14.getlength(_nm_disp))
                 draw.text((_right_x - _nw, _name_y), _nm_disp, font=font14, fill=0)
             _name_y += 12
-        _sep_y = _name_y
+        _sep_y = _name_y + 5
         draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
         _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
         _pit_max_w = horizonta_len - 2 - 87
@@ -1637,7 +1637,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
                         _pit_name = _pit_name[:-1]
             _pit_w = int(_pit_fnt.getlength(_pit_name))
-            draw.text((_right_x - _pit_w, _sep_y + 1), _pit_name, font=_pit_fnt, fill=0)
+            draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
         if _between_innings:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
@@ -2151,7 +2151,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _nw = int(font14.getlength(_nm_disp))
                     draw.text((_right_x - _nw, _name_y), _nm_disp, font=font14, fill=0)
                 _name_y += 12
-            _sep_y = _name_y
+            _sep_y = _name_y + 5
             draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
             _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             _pit_max_w = horizonta_len - 2 - 87  # full panel width between innings (no diamond)
@@ -2164,7 +2164,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
                             _pit_name = _pit_name[:-1]
                 _pit_w = int(_pit_fnt.getlength(_pit_name))
-                draw.text((_right_x - _pit_w, _sep_y + 1), _pit_name, font=_pit_fnt, fill=0)
+                draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=_pit_fnt, fill=0)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
