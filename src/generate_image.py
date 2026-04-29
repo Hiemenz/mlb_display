@@ -1764,6 +1764,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Series display — only shown when the game is Final/over, not pre-game or live
     _game_is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
+    _active_no_no = (
+        game_data['detailed_state'] == 'In Progress' and
+        (game_data.get('no_hitter') or game_data.get('perfect_game')) and
+        (game_data.get('current_inning') or 0) >= 4
+    )
     _ser_total = (game_data.get('series_total_games') or 1)
     _is_sweep = (
         _game_is_final and
@@ -1888,10 +1893,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
+        if _active_no_no:
+            _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
+            _nh_lw = int(font14.getlength(_nh_label))
+            _nh_lx = start_x + (horizonta_len - _nh_lw) // 2
+            draw.text((_nh_lx,     start_y + 3), _nh_label, font=font14, fill=0)
+            draw.text((_nh_lx + 1, start_y + 3), _nh_label, font=font14, fill=0)
         _sub_ev = (game_data.get('sub_event') or '').strip()
         raw_play = (_sub_ev or game_data.get('last_review_result') or game_data.get('last_play') or '').replace('**', '').strip()
         _header_right = _ser_content_left_x - 2
-        if _between_innings and raw_play:
+        if _active_no_no:
+            pass  # label already drawn above; suppress play text
+        elif _between_innings and raw_play:
             # Mid-inning break: show the play that ended the half-inning
             max_play_w = max(_header_right - start_x - _total_time_w - 10, 0)
             play_text = raw_play
@@ -2285,9 +2298,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1, start_y + 21))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
-    # Invert header for special final states: walk-off, no-hitter, perfect game
+    # Invert header for special states: walk-off, no-hitter, perfect game
     if (is_game_finished and game_data.get('walk_off')) or \
-       game_data.get('no_hitter') or game_data.get('perfect_game'):
+       ((game_data.get('no_hitter') or game_data.get('perfect_game')) and
+        (is_game_finished or _active_no_no)):
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1, start_y + 21))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
