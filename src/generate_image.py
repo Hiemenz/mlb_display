@@ -2181,10 +2181,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 (_hi_first,  start_x + 121, start_y + 52, 'runner_first_number'),
             ):
                 if _bfill:
-                    _bnum = str(game_data.get(_bkey) or '')
-                    if _bnum:
-                        _bnw = int(font9.getlength(_bnum))
-                        draw.text((_bcx - _bnw // 2, _bcy - 5), _bnum, font=font9, fill=255)
+                    _raw = game_data.get(_bkey)
+                    _bnum = str(_raw) if _raw is not None else ''
+                    _bnw = int(font9.getlength(_bnum)) if _bnum else 0
+                    draw.text((_bcx - _bnw // 2, _bcy - 5), _bnum, font=font9, fill=255)
 
             outs_list = [None] * 3
             for i in range(1, 4):
