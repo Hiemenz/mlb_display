@@ -197,6 +197,45 @@ def _find_recent_review_result(plays):
     return None
 
 
+_SUB_SUFFIXES = {'jr', 'sr', 'ii', 'iii', 'iv', 'v'}
+
+
+def _last_name_simple(full_name):
+    """Return last name, skipping name suffixes."""
+    parts = (full_name or '').split()
+    for i in range(len(parts) - 1, 0, -1):
+        if parts[i].lower().strip('.') not in _SUB_SUFFIXES:
+            return parts[i]
+    return parts[-1] if parts else ''
+
+
+def _find_recent_sub_event(plays):
+    """Scan the current play and the most recent completed play for a pitching change
+    or pinch hitter action event. Returns 'PC: Lastname', 'PH: Lastname', or None."""
+    sources = []
+    cp = plays.get('currentPlay')
+    if cp:
+        sources.append(cp)
+    all_plays = plays.get('allPlays') or []
+    if all_plays:
+        sources.append(all_plays[-1])
+
+    for play in sources:
+        for ev in reversed(play.get('playEvents', [])):
+            et = (ev.get('details', {}).get('eventType') or '').lower()
+            player_name = (ev.get('player', {}).get('fullName') or '').strip()
+            if not player_name:
+                continue
+            last = _last_name_simple(player_name)
+            if 'pitching_substitution' in et:
+                return f'PC: {last}'
+            if 'offensive_substitution' in et:
+                desc = (ev.get('details', {}).get('description') or '').lower()
+                if 'pinch' in desc:
+                    return f'PH: {last}'
+    return None
+
+
 def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
     """Fetch pitch count, batter game stats, last at-bat result, and last pitch speed
     from the live feed for use in the scoreboard box.
@@ -293,6 +332,8 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         away_replay_remaining = max(0, _REPLAY_CHALLENGE_MAX - away_replay_used)
         home_replay_remaining = max(0, _REPLAY_CHALLENGE_MAX - home_replay_used)
 
+        sub_event = _find_recent_sub_event(plays)
+
         return {
             'pitch_count': pitch_count,
             'batter_hits': batter_hits,
@@ -306,6 +347,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'strike_calls': strike_calls,
             'at_bat_pitch_count': at_bat_pitch_count,
             'current_at_bat_complete': current_at_bat_complete,
+            'sub_event': sub_event,
             'abs_challenge_max': abs_max,
             'away_challenges_remaining': away_remaining,
             'home_challenges_remaining': home_remaining,

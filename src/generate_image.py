@@ -1888,7 +1888,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
-        raw_play = (game_data.get('last_review_result') or game_data.get('last_play') or '').replace('**', '').strip()
+        _sub_ev = (game_data.get('sub_event') or '').strip()
+        raw_play = (_sub_ev or game_data.get('last_review_result') or game_data.get('last_play') or '').replace('**', '').strip()
         _header_right = _ser_content_left_x - 2
         if _between_innings and raw_play:
             # Mid-inning break: show the play that ended the half-inning
@@ -2223,7 +2224,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
         if game_data.get('save_situation') and not _between_innings:
             _sv_w = int(font9.getlength('SV'))
-            draw.text((start_x + horizonta_len - _sv_w - 2, start_y + 21), 'SV', font=font9, fill=0)
+            _sv_x = start_x + horizonta_len - _sv_w - 2
+            draw.text((_sv_x,     start_y + 21), 'SV', font=font9, fill=0)
+            draw.text((_sv_x + 1, start_y + 21), 'SV', font=font9, fill=0)
     else:
 
         # Perfect game takes precedence over no-hitter display
