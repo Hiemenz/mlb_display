@@ -1679,15 +1679,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _pc_w = int(font11.getlength(_pc_disp)) + 2
                 draw.text((start_x + horizonta_len - _pc_w, _speed_y), _pc_disp, font=font11, fill=0)
 
-            # Batter stats "2-4 HR" right-anchored on hitter line
+            # Batter record for the night "2-4" right-anchored on hitter line
             _bh = game_data.get('batter_hits')
             _ba = game_data.get('batter_at_bats')
-            _blr = game_data.get('batter_last_result', '')
-            _ba_str = ''
-            if _bh is not None and _ba is not None:
-                _ba_str = f'{_bh}-{_ba}'
-                if _blr:
-                    _ba_str += f' {_blr}'
+            _ba_str = f'{_bh}-{_ba}' if _bh is not None and _ba is not None else ''
             _ba_w = min(int(font11.getlength(_ba_str)) + 2, horizonta_len - 8) if _ba_str else 0
             _ab_done = game_data.get('current_at_bat_complete', False)
             if _ab_done and not _is_game_effectively_over(game_data):
@@ -2210,10 +2205,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             strikes_list = [i + 1 <= _num_strikes for i in range(2)]
             _strike_calls = game_data.get('strike_calls', [])
 
-            draw.text((start_x + 19 + 47, start_y + 25 + 59), 'S', font=font14, fill=0)
+            draw.text((start_x + 19 + 39, start_y + 25 + 59), 'S', font=font14, fill=0)
             for _si, (_scx, _scy) in enumerate([
-                (start_x + 19 + 63, start_y + 25 + 68),
-                (start_x + 31 + 63, start_y + 25 + 68),
+                (start_x + 19 + 55, start_y + 25 + 68),
+                (start_x + 31 + 55, start_y + 25 + 68),
             ]):
                 _call = _strike_calls[_si] if _si < len(_strike_calls) else None
                 if strikes_list[_si] and _call in ('S', 'F'):
