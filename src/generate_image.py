@@ -2225,8 +2225,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if game_data.get('save_situation') and not _between_innings:
             _sv_w = int(font9.getlength('SV'))
             _sv_x = start_x + horizonta_len - _sv_w - 2
-            draw.text((_sv_x,     start_y + 21), 'SV', font=font9, fill=0)
-            draw.text((_sv_x + 1, start_y + 21), 'SV', font=font9, fill=0)
+            draw.text((_sv_x,     start_y + 25), 'SV', font=font9, fill=0)
+            draw.text((_sv_x + 1, start_y + 25), 'SV', font=font9, fill=0)
     else:
 
         # Perfect game takes precedence over no-hitter display
