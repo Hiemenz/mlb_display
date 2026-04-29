@@ -1893,19 +1893,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
-        if _active_no_no:
-            _nh_inn = game_data.get('current_inning') or ''
-            _nh_base = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
-            _nh_label = f'{_nh_base} {_nh_inn}' if _nh_inn else _nh_base
-            _nh_lw = int(font14.getlength(_nh_label))
-            _nh_lx = start_x + (horizonta_len - _nh_lw) // 2
-            draw.text((_nh_lx,     start_y + 3), _nh_label, font=font14, fill=0)
-            draw.text((_nh_lx + 1, start_y + 3), _nh_label, font=font14, fill=0)
         _sub_ev = (game_data.get('sub_event') or '').strip()
         raw_play = (_sub_ev or game_data.get('last_review_result') or game_data.get('last_play') or '').replace('**', '').strip()
         _header_right = _ser_content_left_x - 2
         if _active_no_no:
-            pass  # label already drawn above; suppress play text
+            # Right-align label; inning state stays on left as-is
+            _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
+            _nh_lw = int(font14.getlength(_nh_label))
+            _nh_lx = _header_right - _nh_lw
+            draw.text((_nh_lx,     start_y + 3), _nh_label, font=font14, fill=0)
+            draw.text((_nh_lx + 1, start_y + 3), _nh_label, font=font14, fill=0)
         elif _between_innings and raw_play:
             # Mid-inning break: show the play that ended the half-inning
             max_play_w = max(_header_right - start_x - _total_time_w - 10, 0)
@@ -2244,14 +2241,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((_sv_x + 1, start_y + 25), 'SV', font=font9, fill=0)
     else:
 
-        # Perfect game takes precedence over no-hitter display
+        # Perfect game takes precedence over no-hitter display — right-aligned in header
         if game_data.get('perfect_game') or game_data.get('no_hitter'):
-            _nh_fin_inn = game_data.get('current_inning') or 9
-            _nh_sfx = 'F' if _nh_fin_inn >= 9 else f'/{_nh_fin_inn}'
-            _nh_base = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
-            _nh_label = f'{_nh_base} {_nh_sfx}'
+            _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
             _nh_lw = int(font14.getlength(_nh_label))
-            _nh_lx = start_x + (horizonta_len - _nh_lw) // 2
+            _nh_lx = (_ser_content_left_x - 2) - _nh_lw
             draw.text((_nh_lx,     start_y + 3), _nh_label, font=font14, fill=0)
             draw.text((_nh_lx + 1, start_y + 3), _nh_label, font=font14, fill=0)
 
