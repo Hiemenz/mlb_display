@@ -1494,6 +1494,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] == 'In Progress'
         and game_data.get('inningState') in ('Middle', 'End')
     )
+    # End of 9th+ with one team leading — game is effectively over, don't show next batters
+    _game_ending_state = (
+        game_data.get('inningState') == 'End' and
+        (game_data.get('current_inning') or 0) >= 9 and
+        (game_data.get('away_runs') or 0) != (game_data.get('home_runs') or 0)
+    )
 
     def fit_text(text, max_w):
         try:
@@ -2145,7 +2151,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
     if game_data['detailed_state'] == 'In Progress':
-        if _between_innings:
+        if _between_innings and _game_ending_state:
+            pass  # End of 9th+ with a lead — linescore already shown, no next-batters panel
+        elif _between_innings:
             # Next 3 batters (last names) + pitcher, right-aligned in the bases/outs space.
             # Prefer the batting-order-derived fields; fall back to linescore fields.
             _right_x = start_x + horizonta_len - 2
