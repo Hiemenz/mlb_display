@@ -1623,8 +1623,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _nm_disp = _nm_disp[:-1]
                 _nw = int(font14.getlength(_nm_disp))
                 draw.text((_right_x - _nw, _name_y), _nm_disp, font=font14, fill=0)
-            _name_y += 16
-        _sep_y = _name_y + 1
+            _name_y += 12
+        _sep_y = _name_y
         draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
         _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
         _pit_max_w = horizonta_len - 2 - 87
@@ -1651,29 +1651,33 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _right_str = _pt if _pt else ''
             _right_w = int(font11.getlength(_right_str)) + 2 if _right_str else 0
 
-            _pc_label = f' ({_pc}P)' if _pc is not None else ''
             _pitcher_name = _format_player_name(game_data.get("current_pitcher") or "")
             _pit_avail = max_text_width - _right_w
-            _pit_full = f'P: {_pitcher_name}{_pc_label}'
-            _pit_short = f'P: {_pitcher_name}'
-            if font14.getlength(_pit_full) <= _pit_avail:
-                pitcher_str, pitcher_font = _pit_full, font14
-            elif font14.getlength(_pit_short) <= _pit_avail:
-                pitcher_str, pitcher_font = _pit_short, font14
+            _pit_str = f'P: {_pitcher_name}'
+            if font14.getlength(_pit_str) <= _pit_avail:
+                pitcher_str, pitcher_font = _pit_str, font14
             else:
-                pitcher_str, pitcher_font = fit_text(_pit_short, _pit_avail)
+                pitcher_str, pitcher_font = fit_text(_pit_str, _pit_avail)
             draw.text((start_x + 2, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
             if _right_str:
                 draw.text((start_x + horizonta_len - _right_w, start_y + 25 + 74), _right_str, font=font11, fill=0)
 
-            # Speed right-aligned above the pitch count column on the B/S row (bold)
+            # Speed right-aligned; pitch count left of speed on same row
+            _speed_y = start_y + 25 + 62
             if _lps:
                 _speed_str = str(int(_lps))
                 _speed_w = int(font11.getlength(_speed_str)) + 2
                 _speed_x = start_x + horizonta_len - _speed_w
-                _speed_y = start_y + 25 + 62
                 draw.text((_speed_x,     _speed_y), _speed_str, font=font11, fill=0)
                 draw.text((_speed_x + 1, _speed_y), _speed_str, font=font11, fill=0)
+                if _pc is not None:
+                    _pc_disp = f'{_pc}P'
+                    _pc_w = int(font11.getlength(_pc_disp))
+                    draw.text((_speed_x - _pc_w - 3, _speed_y), _pc_disp, font=font11, fill=0)
+            elif _pc is not None:
+                _pc_disp = f'{_pc}P'
+                _pc_w = int(font11.getlength(_pc_disp)) + 2
+                draw.text((start_x + horizonta_len - _pc_w, _speed_y), _pc_disp, font=font11, fill=0)
 
             # Batter stats "2-4 HR" right-anchored on hitter line
             _bh = game_data.get('batter_hits')
@@ -2151,8 +2155,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _nm_disp = _nm_disp[:-1]
                     _nw = int(font14.getlength(_nm_disp))
                     draw.text((_right_x - _nw, _name_y), _nm_disp, font=font14, fill=0)
-                _name_y += 16
-            _sep_y = _name_y + 1
+                _name_y += 12
+            _sep_y = _name_y
             draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
             _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             _pit_max_w = horizonta_len - 2 - 87  # full panel width between innings (no diamond)
