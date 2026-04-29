@@ -1626,7 +1626,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _name_y += 16
         _sep_y = _name_y + 1
         draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
-        _pit_name = _format_player_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+        _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
         _pit_max_w = horizonta_len - 2 - 87
         if _pit_name:
             _pit_fnt = font14
@@ -1806,9 +1806,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _ser_logo = _logo_small(_ser_winner_abbr, _ser_winner_id, size=_ser_logo_size) if _ser_winner_abbr else None
         _rx = start_x + horizonta_len - 2
         if _ser_logo:
+            _logo_w, _logo_h = _ser_logo.size
             _score_x = _rx - _score_w
-            _logo_x = _score_x - 2 - _ser_logo_size
-            _logo_y = start_y + (20 - _ser_logo_size) // 2
+            _logo_x = _score_x - 2 - _logo_w
+            _logo_y = start_y + (20 - _logo_h) // 2
             Himage.paste(_ser_logo, (_logo_x, _logo_y))
             draw = ImageDraw.Draw(Himage)
             _ser_content_left_x = _logo_x
@@ -1844,9 +1845,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _ser_logo = _logo_small(_ser_leader_abbr, _ser_leader_id, size=_ser_logo_size) if _ser_leader_abbr else None
         _rx = start_x + horizonta_len - 2
         if _ser_logo:
+            _logo_w, _logo_h = _ser_logo.size
             _score_x = _rx - _score_w
-            _logo_x = _score_x - 2 - _ser_logo_size
-            _logo_y = start_y + (20 - _ser_logo_size) // 2
+            _logo_x = _score_x - 2 - _logo_w
+            _logo_y = start_y + (20 - _logo_h) // 2
             Himage.paste(_ser_logo, (_logo_x, _logo_y))
             draw = ImageDraw.Draw(Himage)
             _ser_content_left_x = _logo_x
@@ -2147,7 +2149,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _name_y += 16
             _sep_y = _name_y + 1
             draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
-            _pit_name = _format_player_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+            _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             _pit_max_w = horizonta_len - 2 - 87  # full panel width between innings (no diamond)
             if _pit_name:
                 _pit_fnt = font14
