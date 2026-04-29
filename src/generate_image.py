@@ -1626,13 +1626,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _name_y += 16
         _sep_y = _name_y + 1
         draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
-        _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+        _pit_name = _format_player_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+        _pit_max_w = horizonta_len - 2 - 87
         if _pit_name:
-            _pit_fnt = font11
-            if int(font11.getlength(_pit_name)) > _max_name_w:
-                _pit_fnt = font9
-                while _pit_name and int(font9.getlength(_pit_name)) > _max_name_w:
-                    _pit_name = _pit_name[:-1]
+            _pit_fnt = font14
+            if int(font14.getlength(_pit_name)) > _pit_max_w:
+                _pit_fnt = font11
+                if int(font11.getlength(_pit_name)) > _pit_max_w:
+                    _pit_fnt = font9
+                    while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
+                        _pit_name = _pit_name[:-1]
             _pit_w = int(_pit_fnt.getlength(_pit_name))
             draw.text((_right_x - _pit_w, _sep_y + 1), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
@@ -1649,8 +1652,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _right_w = int(font11.getlength(_right_str)) + 2 if _right_str else 0
 
             _pc_label = f' ({_pc}P)' if _pc is not None else ''
+            _pitcher_name = _format_player_name(game_data.get("current_pitcher") or "")
             pitcher_str, pitcher_font = fit_text(
-                f'P: {game_data.get("current_pitcher") or ""}{_pc_label}',
+                f'P: {_pitcher_name}{_pc_label}',
                 max_text_width - _right_w,
             )
             draw.text((start_x + 2, start_y + 25 + 74), pitcher_str, font=pitcher_font, fill=0)
@@ -1678,25 +1682,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _ba_w = min(int(font11.getlength(_ba_str)) + 2, horizonta_len - 8) if _ba_str else 0
             _ab_done = game_data.get('current_at_bat_complete', False)
             if _ab_done and not _is_game_effectively_over(game_data):
-                # Play resolved — show result and batter name, fall back to on-deck
-                _blr_done = game_data.get('batter_last_result', '')
-                _prev_name = _last_name(game_data.get('current_hitter') or '')
-                if _blr_done and _prev_name:
-                    _play_disp, _play_fnt = fit_text(f'{_blr_done} - {_prev_name}', max_text_width)
-                    draw.text((start_x + 2, start_y + 25 + 89), _play_disp, font=_play_fnt, fill=0)
-                else:
-                    _next = _format_player_name(game_data.get('due_up') or '')
-                    if _next:
-                        _next_str, _next_font = fit_text(f'AB: {_next}', max_text_width)
-                        draw.text((start_x + 2, start_y + 25 + 89), _next_str, font=_next_font, fill=0)
+                _next_hitter = _format_player_name(game_data.get('due_up') or game_data.get('next_batter_1') or '')
+                if _next_hitter:
+                    _next_str, _next_font = fit_text(f'AB: {_next_hitter}', max(1, max_text_width - _ba_w))
+                    draw.text((start_x + 2, start_y + 25 + 89), _next_str, font=_next_font, fill=0)
             else:
+                _hitter_name = _format_player_name(game_data.get('current_hitter') or '')
                 hitter_str, hitter_font = fit_text(
-                    f'AB: {game_data.get("current_hitter") or ""}',
+                    f'AB: {_hitter_name}',
                     max(1, max_text_width - _ba_w),
                 )
                 draw.text((start_x + 2, start_y + 25 + 89), hitter_str, font=hitter_font, fill=0)
-                if _ba_str:
-                    draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
+            if _ba_str:
+                draw.text((start_x + horizonta_len - _ba_w, start_y + 25 + 89), _ba_str, font=font11, fill=0)
         
     if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
         # Normalize display labels
@@ -1810,7 +1808,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _ser_logo:
             _score_x = _rx - _score_w
             _logo_x = _score_x - 2 - _ser_logo_size
-            _logo_y = start_y + 3
+            _logo_y = start_y + (20 - _ser_logo_size) // 2
             Himage.paste(_ser_logo, (_logo_x, _logo_y))
             draw = ImageDraw.Draw(Himage)
             _ser_content_left_x = _logo_x
@@ -1823,7 +1821,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     elif _series_tied:
         _sw = game_data.get('series_wins') or 0
         _sl = game_data.get('series_losses') or 0
-        _tied_str = f'Tied {_sw}-{_sl}'
+        _tied_str = f'{_sw}-{_sl}'
         _tied_w = int(font14.getlength(_tied_str))
         _rx = start_x + horizonta_len - 2
         _tx = _rx - _tied_w
@@ -1848,7 +1846,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _ser_logo:
             _score_x = _rx - _score_w
             _logo_x = _score_x - 2 - _ser_logo_size
-            _logo_y = start_y + 3
+            _logo_y = start_y + (20 - _ser_logo_size) // 2
             Himage.paste(_ser_logo, (_logo_x, _logo_y))
             draw = ImageDraw.Draw(Himage)
             _ser_content_left_x = _logo_x
@@ -2149,13 +2147,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _name_y += 16
             _sep_y = _name_y + 1
             draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
-            _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+            _pit_name = _format_player_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+            _pit_max_w = horizonta_len - 2 - 87  # full panel width between innings (no diamond)
             if _pit_name:
-                _pit_fnt = font11
-                if int(font11.getlength(_pit_name)) > _max_name_w:
-                    _pit_fnt = font9
-                    while _pit_name and int(font9.getlength(_pit_name)) > _max_name_w:
-                        _pit_name = _pit_name[:-1]
+                _pit_fnt = font14
+                if int(font14.getlength(_pit_name)) > _pit_max_w:
+                    _pit_fnt = font11
+                    if int(font11.getlength(_pit_name)) > _pit_max_w:
+                        _pit_fnt = font9
+                        while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
+                            _pit_name = _pit_name[:-1]
                 _pit_w = int(_pit_fnt.getlength(_pit_name))
                 draw.text((_right_x - _pit_w, _sep_y + 1), _pit_name, font=_pit_fnt, fill=0)
         else:
