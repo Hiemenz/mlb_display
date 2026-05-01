@@ -572,14 +572,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if _is_sweep_early:
         _sw_text = 'SWEEP'
         _sw_w    = int(font18.getlength(_sw_text))
-        _sw_strip = Image.new('L', (horizonta_len, 20), 0)   # black fill
-        _sw_d = ImageDraw.Draw(_sw_strip)
-        _sw_x = (horizonta_len - _sw_w) // 2
-        _sw_y = (20 - 18) // 2
-        _sw_d.text((_sw_x,     _sw_y), _sw_text, font=font18, fill=255)  # white text
-        _sw_d.text((_sw_x + 1, _sw_y), _sw_text, font=font18, fill=255)
-        Himage.paste(_sw_strip.convert('1'), (start_x, start_y))
-        draw = ImageDraw.Draw(Himage)
+        _sw_pad  = 4
+        _sw_x    = (horizonta_len - _sw_w) // 2
+        _sw_y    = (20 - 18) // 2
+        # Black block only behind the text; edges stay white so other header content renders normally
+        draw.rectangle(
+            [start_x + _sw_x - _sw_pad, start_y,
+             start_x + _sw_x + _sw_w + _sw_pad, start_y + 19],
+            fill=0,
+        )
+        draw.text((start_x + _sw_x,     start_y + _sw_y), _sw_text, font=font18, fill=255)
+        draw.text((start_x + _sw_x + 1, start_y + _sw_y), _sw_text, font=font18, fill=255)
 
     # game state — bold via double draw; for pre-game times render AM/PM smaller + bold
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
