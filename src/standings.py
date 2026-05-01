@@ -123,6 +123,7 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
                 'games_played': division.get("gamesPlayed"),
                 'wild_card_games_back': division.get("wildCardGamesBack"),
                 'league_games_back': division.get("leagueGamesBack"),
+                'clinch_indicator': division.get("clinchIndicator", ""),
                 }
 
                 # print(team_standings)
