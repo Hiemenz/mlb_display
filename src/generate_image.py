@@ -714,15 +714,15 @@ def draw_diamond(Himage, center, size, fill=False):
         
 
 # Function to draw a circle at a specific location with an option to fill
-def draw_circle(Himage, center, radius, fill):
+def draw_circle(Himage, center, radius, fill, outline_width=1):
     draw = ImageDraw.Draw(Himage)
 
     x, y = center
     bounding_box = [x - radius, y - radius, x + radius, y + radius]  # Defines the square in which the circle will be drawn
     if fill:
-        draw.ellipse(bounding_box, fill='black', outline='black')
+        draw.ellipse(bounding_box, fill='black', outline='black', width=outline_width)
     else:
-        draw.ellipse(bounding_box, outline='black')
+        draw.ellipse(bounding_box, outline='black', width=outline_width)
     return Himage
 
 def check_if_two_chars(num):
@@ -2344,9 +2344,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             outs_list = [None] * 3
             for i in range(1, 4):
                 outs_list[i-1] = i <= game_data['num_of_outs']
-            Himage = draw_circle(Himage, (start_x + 97,  start_y + 73), 5, outs_list[0])
-            Himage = draw_circle(Himage, (start_x + 109, start_y + 73), 5, outs_list[1])
-            Himage = draw_circle(Himage, (start_x + 121, start_y + 73), 5, outs_list[2])
+            Himage = draw_circle(Himage, (start_x + 97,  start_y + 73), 6, outs_list[0], outline_width=2)
+            Himage = draw_circle(Himage, (start_x + 111, start_y + 73), 6, outs_list[1], outline_width=2)
+            Himage = draw_circle(Himage, (start_x + 125, start_y + 73), 6, outs_list[2], outline_width=2)
 
             balls_list = [None] * 4
             for i in range(1, 4):
