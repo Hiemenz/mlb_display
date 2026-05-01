@@ -573,10 +573,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _sw_text = 'SWEEP'
         _sw_w    = int(font18.getlength(_sw_text))
         _sw_strip = Image.new('L', (horizonta_len, 20), 255)
-        ImageDraw.Draw(_sw_strip).text(
-            ((horizonta_len - _sw_w) // 2, (20 - 18) // 2),
-            _sw_text, font=font18, fill=0,
-        )
+        _sw_d = ImageDraw.Draw(_sw_strip)
+        _sw_x = (horizonta_len - _sw_w) // 2
+        _sw_y = (20 - 18) // 2
+        _sw_d.text((_sw_x,     _sw_y), _sw_text, font=font18, fill=0)
+        _sw_d.text((_sw_x + 1, _sw_y), _sw_text, font=font18, fill=0)
         _sw_strip = _sw_strip.point(lambda p: 255 if p > 180 else min(255, int(p * 0.35 + 155)))
         Himage.paste(_sw_strip.convert('1'), (start_x, start_y))
         draw = ImageDraw.Draw(Himage)
