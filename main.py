@@ -22,6 +22,7 @@ from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
 from standings import get_standings
+from image_box import set_historical_mode
 
 
 # ---------------------------------------------------------------------------
@@ -150,16 +151,80 @@ def _save_schedule_state(state):
 
 
 _STANDINGS_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Completed Early'}
+_VIDEO_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Completed Early'}
+
+
+def _maybe_generate_video(date_str, config):
+    """Generate an end-of-day timelapse once all games are final, if enabled in config."""
+    if not config.get('auto_generate_video', False):
+        return
+
+    sentinel = _data_path(f'video_generated_{date_str}.done')
+    if os.path.exists(sentinel):
+        print(f"Video already generated for {date_str} — skipping")
+        return
+
+    try:
+        games = load_json_file('games.json').get('games', [])
+    except Exception:
+        return
+
+    if not games:
+        return
+
+    if not all(g.get('detailed_state') in _VIDEO_FINAL_STATES for g in games):
+        return  # at least one game still in progress
+
+    print(f"All games final — generating day timelapse for {date_str}...")
+    try:
+        from scoreboard_generate import _generate_gif
+
+        output_dir = os.path.join(_REPO_ROOT, 'output')
+        os.makedirs(output_dir, exist_ok=True)
+        gif_path = os.path.join(output_dir, f'scoreboard_{date_str}.gif')
+
+        sport_priority = config.get('sport_id_priority', [1])
+        sport_id = sport_priority[0] if isinstance(sport_priority, list) else sport_priority
+
+        _generate_gif(
+            date_str,
+            gif_start=None,
+            gif_end=None,
+            output_path=gif_path,
+            interval_min=config.get('video_interval_min', 5),
+            frame_delay_ms=config.get('video_frame_delay_ms', 300),
+            sport_id=sport_id,
+            config_data=config,
+        )
+
+        # Sentinel prevents this from running again today
+        with open(sentinel, 'w') as _f:
+            _f.write(datetime.now().isoformat())
+        print(f"Timelapse saved to {gif_path}")
+    except Exception as e:
+        print(f"Video generation error: {e}")
+
+
+_STANDINGS_MAX_AGE_HOURS = 20  # refresh if standings.json is older than this
 
 
 def _should_refresh_standings(sched):
     """Return True if standings.json needs a refresh.
 
-    True when the file is missing, or when any game_pk that is now Final
-    was not Final during the last standings refresh.
+    Triggers when: the file is missing, the file is older than 20 hours
+    (catches the case where the program was offline for a day or more),
+    or a game that is now Final was not Final during the last standings refresh.
     """
-    if not os.path.exists(_data_path('standings.json')):
+    standings_path = _data_path('standings.json')
+    if not os.path.exists(standings_path):
         return True
+
+    import time as _t
+    age_hours = (_t.time() - os.path.getmtime(standings_path)) / 3600
+    if age_hours >= _STANDINGS_MAX_AGE_HOURS:
+        print(f"Standings stale ({age_hours:.1f}h old) — refreshing")
+        return True
+
     try:
         games = load_json_file('games.json').get('games', [])
     except Exception:
@@ -208,11 +273,16 @@ def _should_skip_poll(date_str, config, sched):
     if any_live:
         return False, ""
 
+    all_pregame = bool(cached_games) and all(
+        g.get('detailed_state') in {'Scheduled', 'Pre-Game', 'Warmup'}
+        for g in cached_games
+    )
+
     if any_final_undecided:
         interval_min = 2
     elif all_done:
         interval_min = 60
-    elif not cached_games:
+    elif not cached_games or all_pregame:
         interval_min = 60
     else:
         interval_min = config.get('update_interval', 14)
@@ -226,6 +296,7 @@ def _should_skip_poll(date_str, config, sched):
                 state_label = (
                     'final_undecided' if any_final_undecided
                     else 'all_done' if all_done
+                    else 'pregame' if all_pregame
                     else 'pre-game'
                 )
                 return True, f"Throttled — {mins}min since last fetch (interval={interval_min}min, state={state_label})"
@@ -346,23 +417,24 @@ Examples:
             return
 
     # Determine date
-    _pre5am = False
+    _pre9am = False
     if args.date:
         date_str = args.date
+        set_historical_mode(True)
         print(f"Using specified date: {date_str}")
     else:
         tz = config.get('timezone', 'America/Chicago')
         _now = datetime.now(pytz.timezone(tz))
-        if _now.hour < 5:
+        if _now.hour < 9:
             date_str = (_now.date() - timedelta(days=1)).strftime('%Y-%m-%d')
-            _pre5am = True
-            print(f"Before 5am — showing previous day: {date_str}")
+            _pre9am = True
+            print(f"Before 9am — showing previous day: {date_str}")
         else:
             date_str = _now.date().strftime('%Y-%m-%d')
             print(f"Using today's date: {date_str}")
 
     # 5. Smart polling gate (only for automatic runs on today's date, skip in pre-5am mode)
-    if not args.date and not _no_throttle and not _pre5am:
+    if not args.date and not _no_throttle and not _pre9am:
         sched = _load_schedule_state()
         skip, reason = _should_skip_poll(date_str, config, sched)
         if skip:
@@ -375,16 +447,29 @@ Examples:
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
     # 7. Update schedule state
-    if not args.date and not _no_throttle and not _pre5am:
+    if not args.date and not _no_throttle and not _pre9am:
         game_state_data = load_json_file('games.json').get('games', [])
         no_games = _update_schedule_state(game_state_data, date_str, config, sched)
         if no_games:
             return
 
-    # 7b. Standings auto-refresh (only on live runs, not historical --date replays)
+    # 7b. Standings refresh
     _needs_standings = config.get('show_standings_sidebar', False) or config.get('show_wildcard_standings', False)
-    if not args.date and not _pre5am and _needs_standings:
-        if _should_refresh_standings(sched):
+    if _needs_standings:
+        if args.date:
+            # Historical replay: fetch standings as of that specific date so the sidebar
+            # reflects what the standings actually looked like on that day.
+            print(f"Fetching historical standings for {date_str}...")
+            try:
+                _hist = datetime.strptime(date_str, '%Y-%m-%d')
+                get_standings([103, 104], season=_hist.year,
+                              date=_hist.strftime('%m/%d/%Y'))
+                _prev = _hist - timedelta(days=1)
+                get_standings([103, 104], season=_prev.year,
+                              date=_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
+            except Exception as e:
+                print(f"Warning: historical standings fetch failed: {e}")
+        elif not _pre9am and _should_refresh_standings(sched):
             print("Refreshing standings (new Finals detected or no cache)...")
             try:
                 today = datetime.now()
@@ -430,6 +515,10 @@ Examples:
     if args.local and system_platform == 'Darwin':
         import subprocess
         subprocess.run(['open', output_path], check=False)
+
+    # 11. Auto-generate end-of-day timelapse (once all games are final, runs once per day)
+    if not args.date and not _pre9am:
+        _maybe_generate_video(date_str, config)
 
 
 if __name__ == '__main__':

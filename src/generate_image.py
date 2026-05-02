@@ -473,19 +473,41 @@ def generate_standings(Himage, col_start=100, row_start=320):
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False):
 
     draw = ImageDraw.Draw(Himage)
+    config = load_yaml_file('config.yaml')
 
     # --- Date label: centered in the top strip, as large as possible, bold ---
     if date_str:
         from datetime import datetime as _dt
         try:
             _d = _dt.strptime(date_str, '%Y-%m-%d')
-            _label = _d.strftime('%B %-d, %Y')
+            _label_full  = _d.strftime('%B %-d, %Y')   # e.g. "February 28, 2026"
+            _label_short = _d.strftime('%b %-d, %Y')   # e.g. "Feb 28, 2026"
         except (ValueError, AttributeError):
-            _label = date_str
-        _font_date = _get_font(24)
+            _label_full = _label_short = date_str
+
+        # When wildcard standings fill the header strip the center gap shrinks to ~159px.
+        # Without wildcard standings there is ~560px of clear space.
+        if config.get('show_wildcard_standings', False):
+            _MAX_LABEL_W = 155
+        else:
+            _MAX_LABEL_W = 560
+
+        _font_date = _get_font(14)
+        _fsize = 14
+        _label = _label_full
+        for _candidate in (_label_full, _label_short):
+            for _fsize in (24, 22, 20, 18, 16, 14):
+                _font_date = _get_font(_fsize)
+                if int(_font_date.getlength(_candidate)) <= _MAX_LABEL_W:
+                    _label = _candidate
+                    break
+            else:
+                continue  # this format didn't fit at any size; try shorter one
+            break          # found a fitting size
+
         _lw = int(_font_date.getlength(_label))
         _lx = (800 - _lw) // 2
-        _ly = max(0, (_WC_STRIP_H - 24) // 2)
+        _ly = max(0, (_WC_STRIP_H - _fsize) // 2)
         draw.text((_lx,     _ly), _label, font=_font_date, fill=0)
         draw.text((_lx + 1, _ly), _label, font=_font_date, fill=0)  # bold stroke
 
@@ -493,7 +515,6 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     y_start = 30
 
     # Reorder games so the primary team's game appears first in the grid
-    config = load_yaml_file('config.yaml')
     game_list = list(game_state_data)
     if config.get('favorite_team_first', False):
         primary = config.get('primary', '')
