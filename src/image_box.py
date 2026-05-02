@@ -1,3 +1,5 @@
+import time as _time
+
 from PIL import Image, ImageDraw, ImageOps
 
 from image_assets import (
@@ -9,6 +11,32 @@ from image_utils import (
     _format_player_name, _last_name, _pitcher_line, _clean_venue_name,
     _is_game_effectively_over,
 )
+from util import load_json_file, save_off_results
+
+_FINAL_LINESCORE_SECS = 600  # show linescore for 10 min after game ends
+_final_time_cache = {}       # game_pk (str) -> unix timestamp, in-memory layer
+_historical_mode = False     # True for --date replays: skip linescore window
+
+
+def set_historical_mode(enabled=True):
+    global _historical_mode
+    _historical_mode = enabled
+
+
+def _get_or_set_final_time(game_pk):
+    """Return (and persist) the unix timestamp when game_pk first went Final."""
+    pk = str(game_pk)
+    if pk in _final_time_cache:
+        return _final_time_cache[pk]
+    stored = load_json_file('game_final_times.json') or {}
+    if pk in stored:
+        _final_time_cache[pk] = float(stored[pk])
+        return _final_time_cache[pk]
+    ts = _time.time()
+    _final_time_cache[pk] = ts
+    stored[pk] = ts
+    save_off_results(stored, 'game_final_times')
+    return ts
 
 
 def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos):
@@ -100,6 +128,23 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
 
     _draw_row(away_inn, y1)
     _draw_row(home_inn, y2)
+
+    # X in the home team's last column when the bottom half wasn't played.
+    # The API always returns 9 entries; the unplayed inning has value None.
+    _is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
+    if _is_final and away_inn:
+        last_idx = len(away_inn) - 1
+        away_last = away_inn[last_idx]
+        home_last = home_inn[last_idx] if last_idx < len(home_inn) else None
+        if home_last is None and away_last is not None:
+            col_k = last_idx - (first_inn - 1)
+            if 0 <= col_k < N_COLS:
+                cell_x = start_x + LOGO_COL_W + col_k * COL_W
+                _xfont = font11
+                bbox = _xfont.getbbox('x')
+                vis_w = bbox[2] - bbox[0]
+                tx = cell_x + (COL_W - vis_w) // 2 - bbox[0] + 1
+                draw.text((tx, y2 + (ROW_H_TEAM - 11) // 2), 'x', font=_xfont, fill=0)
 
     return draw, Himage
 
@@ -314,7 +359,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Postponed rain emoji ghost — drawn first so all content renders on top
     if game_data['detailed_state'] == 'Postponed':
-        import random as _random, time as _time
+        import random as _random
         _ppd_cp = _random.Random(game_data.get('game_pk', 0) ^ int(_time.time() // 60)).choice(_PPD_EMOJI_CODEPOINTS)
         _ppd_ghost = _load_codepoint_ghost(_ppd_cp, size=90)
         if _ppd_ghost:
@@ -347,8 +392,24 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         winner_name = game_data.get('winner_name')
         loser_name = game_data.get('loser_name')
 
-        if (away_inning_runs or home_inning_runs) and not (winner_name and loser_name):
-            # Game over but decisions not yet posted — show the tic-tac-toe linescore grid.
+        # Track when this game first went Final so we can show the linescore
+        # for 10 minutes before switching to WP/LP/SV.
+        _game_pk = game_data.get('game_pk')
+        _final_ts = _get_or_set_final_time(_game_pk) if _game_pk else None
+        _in_linescore_window = (
+            not _historical_mode and
+            _final_ts is not None and
+            (_time.time() - _final_ts) < _FINAL_LINESCORE_SECS
+        )
+
+        _decisions_ready = bool(winner_name and loser_name)
+        _show_linescore = (away_inning_runs or home_inning_runs) and (
+            _in_linescore_window or not _decisions_ready
+        )
+
+        if _show_linescore:
+            # Show linescore for 10 min after game ends; switch once both window
+            # has elapsed AND decisions are posted.
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
         else:
             # Pitchers of record — anchored to bottom of box, working upward.
@@ -530,10 +591,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         else:
             game_state_str = game_data['detailed_state']
 
+        # Catch tied games the API marks as plain "Final" (spring training, international)
+        if game_state_str == 'Final':
+            _ar = game_data.get('away_runs') or 0
+            _hr = game_data.get('home_runs') or 0
+            if _ar == _hr:
+                game_state_str = 'Tied'
+
         _fin_inning = game_data.get('current_inning') or 9
         if _fin_inning > 9:
             game_state_str = 'F/' + str(_fin_inning)
-        elif _fin_inning != 9:
+        elif _fin_inning != 9 and game_state_str not in ('Tied',):
             game_state_str += '/' + str(_fin_inning)
 
     elif game_data['detailed_state'] == 'Warmup':
@@ -770,12 +838,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _venue_right = _ser_content_left_x - 2
                 max_venue_w = max(_venue_right - start_x - _total_time_w - 6, 0)
                 if max_venue_w > 0:
-                    for vfont, vy in ((font14, 3), (font11, 4), (font9, 5), (_get_font(8), 6), (_get_font(7), 7)):
+                    for vfont, vy in ((_get_font(16), 2), (font14, 3), (font11, 4), (font9, 5), (_get_font(8), 6)):
                         if vfont.getlength(venue_clean) <= max_venue_w:
                             break
                     vw = int(vfont.getlength(venue_clean))
                     vx = _venue_right - vw
-                    draw.text((vx, start_y + vy), venue_clean, font=vfont, fill=0)
+                    draw.text((vx,     start_y + vy), venue_clean, font=vfont, fill=0)
+                    draw.text((vx + 1, start_y + vy), venue_clean, font=vfont, fill=0)  # bold
             except AttributeError:
                 pass
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):

@@ -88,6 +88,14 @@ weather:
   enabled: true
   cache_ttl_minutes: 60
 
+# Auto-generate a timelapse video after all games for the day go Final.
+# Output is saved to output/scoreboard_YYYY-MM-DD.gif + .mp4.
+# A sentinel file (data/video_generated_YYYY-MM-DD.done) prevents re-running.
+# Set video_interval_min and video_frame_delay_ms to control fidelity vs file size.
+auto_generate_video: false
+video_interval_min: 5
+video_frame_delay_ms: 300
+
 # Discord bot configuration
 # Get token from https://discord.com/developers/applications
 # Set channel_id to restrict commands to one channel (0 = any channel)

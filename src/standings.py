@@ -51,6 +51,7 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
     team_abbreviation_list.update(cached_teams)
 
     division_standings_list = {}
+    last_updated = None
     for league_id in league_id_list:
         # Build the API URL with optional date parameter
         url = f'https://statsapi.mlb.com/api/v1/standings?leagueId={league_id}&season={season}'
@@ -69,11 +70,11 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
             division_id = leauge_dict.get(record.get('division', {}).get('id'))
             division_team_list = []
             for division in record['teamRecords']:
+                last_ten_wins = last_ten_losses = None
+                home_wins = home_losses = None
+                away_wins = away_losses = None
 
-
-
-
-                for item in division.get("records", {}).get("splitRecords"):
+                for item in division.get("records", {}).get("splitRecords") or []:
                     if item.get('type') == 'lastTen':
                         last_ten_wins = item.get('wins')
                         last_ten_losses = item.get('losses')

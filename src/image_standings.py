@@ -1,7 +1,9 @@
 from PIL import Image, ImageDraw
 
 from image_assets import _get_font, _logo_small
-from util import load_json_file
+import time as _time
+
+from util import load_json_file, save_off_results
 
 _AL_DIV_ORDER = [
     'American League East',
@@ -155,24 +157,33 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
 
     # Build previous-rank lookup from standings_prev.json for movement indicators
     # Stores (rank, wins, losses) so tied teams that didn't change record are not flagged.
+    prev_data = {}
     prev_rank = {}
     try:
-        prev_data = load_json_file('standings_prev.json')
-        for _teams in prev_data.get('standings', {}).values():
-            for _t in _teams:
-                _tid = str(_t.get('team_id', ''))
-                _r = _t.get('divisionRank')
-                if _tid and _r is not None:
-                    try:
-                        prev_rank[_tid] = (
-                            int(_r),
-                            int(_t.get('league_record_wins') or 0),
-                            int(_t.get('league_record_losses') or 0),
-                        )
-                    except (ValueError, TypeError):
-                        pass
+        _pd = load_json_file('standings_prev.json')
+        if _pd:
+            prev_data = _pd
+            for _teams in prev_data.get('standings', {}).values():
+                for _t in _teams:
+                    _tid = str(_t.get('team_id', ''))
+                    _r = _t.get('divisionRank')
+                    if _tid and _r is not None:
+                        try:
+                            prev_rank[_tid] = (
+                                int(_r),
+                                int(_t.get('league_record_wins') or 0),
+                                int(_t.get('league_record_losses') or 0),
+                            )
+                        except (ValueError, TypeError):
+                            pass
     except Exception:
         pass
+
+    # Load 20-hour movement persistence state: {team_id: unix_timestamp_of_last_move}
+    _now_ts = _time.time()
+    _20h_secs = 20 * 3600
+    _movement_data = load_json_file('standings_movement.json') or {}
+    _movement_updated = False
 
     for row_idx, div_name in enumerate(divisions):
         teams = standings_data.get('standings', {}).get(div_name, [])
@@ -180,10 +191,8 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
         y_section = _SIDEBAR_ROW_Y[row_idx]
         slot_h    = (_SIDEBAR_ROW_H - (_SIDEBAR_VERTICAL_PADDING * 2)) // 5
 
-        # Find team IDs whose rank genuinely changed (record moved, not just API tie-break).
-        # Any team that actually changed record is a "mover"; its swap partner gets marked too
-        # even if the partner's own record didn't change (e.g. Texas climbs past a team that
-        # didn't play — that team's rank still changed).
+        # --- Rank + record change detection ---
+        # A team is a mover when its rank changed AND its record changed.
         movers = set()
         for team in teams[:5]:
             tid = str(team.get('team_id', ''))
@@ -207,6 +216,59 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
                 if cur_rank != prev_r:
                     movers.add(tid)
 
+        # --- Tie-break detection: teams that were tied and now aren't ---
+        # When two teams share a record, they're indistinguishable in the standings.
+        # The moment one pulls ahead, both are considered movers.
+        prev_div_teams = prev_data.get('standings', {}).get(div_name, [])
+        prev_wl_by_tid = {}
+        for _pt in prev_div_teams:
+            _tid = str(_pt.get('team_id', ''))
+            try:
+                prev_wl_by_tid[_tid] = (
+                    int(_pt.get('league_record_wins') or 0),
+                    int(_pt.get('league_record_losses') or 0),
+                )
+            except (ValueError, TypeError):
+                pass
+
+        cur_wl_by_tid = {}
+        for _ct in teams[:5]:
+            _tid = str(_ct.get('team_id', ''))
+            try:
+                cur_wl_by_tid[_tid] = (
+                    int(_ct.get('league_record_wins') or 0),
+                    int(_ct.get('league_record_losses') or 0),
+                )
+            except (ValueError, TypeError):
+                pass
+
+        for i in range(len(teams[:5]) - 1):
+            tid1 = str(teams[i].get('team_id', ''))
+            tid2 = str(teams[i + 1].get('team_id', ''))
+            if tid1 in prev_wl_by_tid and tid2 in prev_wl_by_tid:
+                was_tied = prev_wl_by_tid[tid1] == prev_wl_by_tid[tid2]
+                is_tied  = cur_wl_by_tid.get(tid1) == cur_wl_by_tid.get(tid2)
+                if was_tied and not is_tied:
+                    movers.add(tid1)
+                    movers.add(tid2)
+
+        # Record timestamps for newly detected movers
+        for tid in movers:
+            _movement_data[tid] = _now_ts
+            _movement_updated = True
+
+        # Show indicator for current movers AND any move within the last 20 hours
+        display_movers = set(movers)
+        for team in teams[:5]:
+            tid = str(team.get('team_id', ''))
+            ts = _movement_data.get(tid)
+            if ts is not None:
+                try:
+                    if _now_ts - float(ts) < _20h_secs:
+                        display_movers.add(tid)
+                except (ValueError, TypeError):
+                    pass
+
         for slot_idx, team in enumerate(teams[:5]):
             team_id = str(team.get('team_id', ''))
             abbr    = abbr_map.get(team_id, f'T{team_id}')
@@ -216,13 +278,14 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
             if logo_img is not None:
                 lw, lh = logo_img.size
                 paste_x = logo_x + (_SIDEBAR_LOGO_SIZE - lw) // 2
-                Himage.paste(logo_img, (paste_x, logo_y))
+                paste_y = logo_y + (_SIDEBAR_LOGO_SIZE - lh) // 2
+                Himage.paste(logo_img, (paste_x, paste_y))
             else:
                 font = _get_font(9)
                 tw = int(font.getlength(abbr[:3]))
                 draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - tw) // 2, logo_y + 8), abbr[:3], font=font, fill=0)
 
-            if team_id in movers:
+            if team_id in display_movers:
                 draw.line(
                     (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
                     fill=0, width=2,
@@ -238,7 +301,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
                     outline=0, width=box_w,
                 )
 
-            # Draw --- between tied consecutive slots (same W-L record)
+            # Always draw --- between consecutive slots with the same W-L record (tied teams)
             if slot_idx + 1 < 5 and slot_idx + 1 < len(teams):
                 nxt = teams[slot_idx + 1]
                 cur_wl = (int(team.get('league_record_wins') or 0), int(team.get('league_record_losses') or 0))
@@ -251,6 +314,8 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
                         x0 = dash_start + d * (dash_w + gap_w)
                         draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=1)
 
-        # Removed separator lines between division sections
+    # Persist movement timestamps so indicators survive across render cycles
+    if _movement_updated:
+        save_off_results(_movement_data, 'standings_movement')
 
     return Himage
