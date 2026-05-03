@@ -132,19 +132,27 @@ def draw_wildcard_header(Himage, wildcard_data):
     return Himage
 
 
-def draw_standings_sidebar(Himage, standings_data, team_data, side='left'):
-    """Draw a vertical strip of division-standings logos on the left (AL) or right (NL) edge.
+def _aaa_divisions(standings_data, side):
+    """Return ordered IL (left) or PCL (right) division names from standings data."""
+    all_divs = [d for d in standings_data.get('standings', {}).keys() if d]
+    if side == 'left':
+        divs = sorted(d for d in all_divs if 'International' in d)
+    else:
+        divs = sorted(d for d in all_divs if 'Pacific' in d)
+    # Prefer East → South → West order (alphabetical happens to match)
+    return divs
 
-    Logos are 26px, ordered 1st place (top) to 5th place (bottom) within each
-    division section. Three sections align with the three scoreboard game rows:
-      section 0 = East   (y=30–180)
-      section 1 = Central (y=180–330)
-      section 2 = West   (y=330–480)
 
-    side='left'  → AL divisions, logo_x=6  (centered in 32px left margin)
-    side='right' → NL divisions, logo_x=774 (centered in 32px right margin)
+def draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode='mlb'):
+    """Draw a vertical strip of division-standings logos on the left or right edge.
+
+    MLB: left=AL divisions, right=NL divisions.
+    AAA: left=IL divisions, right=PCL divisions.
     """
-    divisions = _AL_DIV_ORDER if side == 'left' else _NL_DIV_ORDER
+    if league_mode == 'aaa':
+        divisions = _aaa_divisions(standings_data, side)
+    else:
+        divisions = _AL_DIV_ORDER if side == 'left' else _NL_DIV_ORDER
     abbr_map  = {**standings_data.get('team_abbreviation', {}),
                  **team_data.get('team_abbreviation', {})}
 
