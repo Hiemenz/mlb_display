@@ -140,38 +140,52 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
                             game_end_time=game_end_time)
     return Himage, new_image_dict
 
+_LINESCORE_SHOW_SECONDS = 10 * 60  # show linescore for 10 min after last play
+
+
+def _game_in_window(team_abbr, games_scheduled):
+    """Return True if the team's game is live or ended less than 10 minutes ago."""
+    game_id = (games_scheduled or {}).get('team_to_game_id', {}).get(team_abbr)
+    if not game_id:
+        return True
+    game_info = (games_scheduled or {}).get('games_scheduled', {}).get(game_id, {})
+    if game_info.get('detailed_state') not in ('Final', 'Game Over', 'Final: Tied'):
+        return True
+    end_utc_str = game_info.get('game_end_time_utc')
+    if not end_utc_str:
+        return False
+    try:
+        end_utc = pytz.utc.localize(datetime.strptime(end_utc_str[:19], "%Y-%m-%dT%H:%M:%S"))
+        return (datetime.now(pytz.utc) - end_utc).total_seconds() < _LINESCORE_SHOW_SECONDS
+    except Exception:
+        return False
+
+
 def draw_boards():
 
     new_image_dict = {}
     config_data = load_yaml_file('config.yaml')
     linescore_data = load_json_file('linescore.json')
+    games_scheduled = load_json_file('games_scheduled.json')
     # epd = epd7in5_V2.EPD()
     Himage = Image.new('1', (800, 480), 255)  # 255: clear the frame
     col_start = 100
     row_start = 40
 
     team_abbr = None
-    if linescore_data.get(config_data.get('primary')):
-        team_abbr = config_data.get('primary')
-    elif linescore_data.get(config_data.get('primary_backup')):
-        team_abbr = config_data.get('primary_backup')
-    elif linescore_data.get(config_data.get('primary_backup_2')):
-        team_abbr = config_data.get('primary_backup_2')
-
-
+    for _candidate in [config_data.get('primary'), config_data.get('primary_backup'), config_data.get('primary_backup_2')]:
+        if linescore_data.get(_candidate) and _game_in_window(_candidate, games_scheduled):
+            team_abbr = _candidate
+            break
 
     if team_abbr:
         Himage, new_image_dict = generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict)
 
     team_abbr = None
-    if linescore_data.get(config_data.get('secondary')):
-        team_abbr = config_data.get('secondary')
-    elif linescore_data.get(config_data.get('secondary_backup')):
-
-        team_abbr = config_data.get('secondary_backup')
-
-    elif linescore_data.get(config_data.get('secondary_backup_2')):
-        team_abbr = config_data.get('secondary_backup_2')
+    for _candidate in [config_data.get('secondary'), config_data.get('secondary_backup'), config_data.get('secondary_backup_2')]:
+        if linescore_data.get(_candidate) and _game_in_window(_candidate, games_scheduled):
+            team_abbr = _candidate
+            break
 
     col_start = 100
     row_start = 180

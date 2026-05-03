@@ -683,21 +683,17 @@ def parse_games(data, sport_id=None, config=None):
             try:
                 _live_url = (
                     f'https://statsapi.mlb.com/api/v1.1/game/{pk_str}/feed/live'
-                    '?fields=liveData,plays,allPlays,about,endTime'
+                    '?fields=liveData,plays,currentPlay,about,endTime'
                 )
                 _live_resp = requests.get(_live_url, timeout=5)
-                _all_plays = (
+                _end_utc = (
                     _live_resp.json()
                     .get('liveData', {})
                     .get('plays', {})
-                    .get('allPlays', [])
+                    .get('currentPlay', {})
+                    .get('about', {})
+                    .get('endTime')
                 )
-                _end_utc = None
-                for _play in reversed(_all_plays):
-                    _t = _play.get('about', {}).get('endTime')
-                    if _t:
-                        _end_utc = _t
-                        break
                 if _end_utc:
                     gd['game_end_time_utc'] = _end_utc
                     _end_cache[pk_str] = _end_utc
