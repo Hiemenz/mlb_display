@@ -67,7 +67,8 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
 
 
 
-            division_id = leauge_dict.get(record.get('division', {}).get('id'))
+            div_info = record.get('division', {})
+            division_id = leauge_dict.get(div_info.get('id')) or div_info.get('name')
             division_team_list = []
             for division in record['teamRecords']:
                 last_ten_wins = last_ten_losses = None
@@ -208,13 +209,17 @@ def fetch_wildcard_standings(season=None, date=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Fetch MLB standings for a specific season or date')
+    parser = argparse.ArgumentParser(description='Fetch standings for a specific season or date')
     parser.add_argument('--season', '-s', type=int, default=datetime.now().year,
                         help='Season year (e.g., 2024, 2023). Default is current year.')
     parser.add_argument('--date', '-d', type=str,
                         help='Specific date for standings (format: YYYY-MM-DD or MM/DD/YYYY).')
+    parser.add_argument('--aaa', action='store_true',
+                        help='Fetch Triple-A (IL + PCL) standings instead of MLB (AL + NL).')
 
     args = parser.parse_args()
+
+    league_ids = [117, 112] if args.aaa else [103, 104]
 
     # If a specific date is provided, extract the year from it and format it properly
     date_param = None
@@ -236,7 +241,7 @@ def main():
         season = args.season
         print(f'Fetching standings for season: {season}')
 
-    get_standings([103, 104], season=season, date=date_param)
+    get_standings(league_ids, season=season, date=date_param)
     print(f'\nTeam abbreviations loaded: {len(team_abbreviation_list)} teams')
     print(f'Standings data saved to data/standings.json')
 

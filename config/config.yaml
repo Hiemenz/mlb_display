@@ -25,7 +25,13 @@ max_live_game_calls: 15
 # Timezone for game start times (IANA timezone string, e.g. America/Chicago, America/New_York)
 timezone: America/Chicago
 
+# League mode: "mlb" or "aaa"
+# "mlb" — show MLB games + AL/NL standings (uses sport_id_priority list below)
+# "aaa" — show Triple-A games + IL/PCL standings (forces sport_id=12, ignores priority list)
+league_mode: mlb
+
 # Sport ID Priority List (checked in order, first with games is used)
+# Only used when league_mode is "mlb".
 # 1  = MLB
 # 8  = World Baseball Classic
 # 11 = College Baseball

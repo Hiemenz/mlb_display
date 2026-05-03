@@ -669,19 +669,21 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     Himage = Image.new('1', (800, 480), 255)
     Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
+    league_mode = config.get('league_mode', 'mlb')
+
     standings_data = None
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
         standings_data = load_json_file('standings.json')
 
-    if config.get('show_wildcard_standings', False):
+    if config.get('show_wildcard_standings', False) and league_mode != 'aaa':
         if standings_data and 'standings' in standings_data:
             wildcard_data = derive_wildcard_from_standings(standings_data)
             Himage = draw_wildcard_header(Himage, wildcard_data)
 
     if config.get('show_standings_sidebar', False):
         if standings_data and 'standings' in standings_data:
-            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left')
-            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right')
+            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode)
+            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode)
 
     if config.get('dark_mode', False):
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')

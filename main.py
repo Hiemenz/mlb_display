@@ -396,10 +396,18 @@ Examples:
         display_image(overlay)
         _mark_discord_applied()
 
+    league_mode = config.get('league_mode', 'mlb')
+
     # Handle --sport-id / --fetch-teams
     if args.sport_id:
         sport_id = args.sport_id
         print(f"Using specified sport: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
+        if args.fetch_teams:
+            fetch_all_team_abbreviations(sport_id)
+            return
+    elif league_mode == 'aaa':
+        sport_id = 12
+        print("League mode: AAA (Triple-A)")
         if args.fetch_teams:
             fetch_all_team_abbreviations(sport_id)
             return
@@ -455,6 +463,7 @@ Examples:
 
     # 7b. Standings refresh
     _needs_standings = config.get('show_standings_sidebar', False) or config.get('show_wildcard_standings', False)
+    _standings_league_ids = [117, 112] if league_mode == 'aaa' else [103, 104]
     if _needs_standings:
         if args.date:
             # Historical replay: fetch standings as of that specific date so the sidebar
@@ -462,10 +471,10 @@ Examples:
             print(f"Fetching historical standings for {date_str}...")
             try:
                 _hist = datetime.strptime(date_str, '%Y-%m-%d')
-                get_standings([103, 104], season=_hist.year,
+                get_standings(_standings_league_ids, season=_hist.year,
                               date=_hist.strftime('%m/%d/%Y'))
                 _prev = _hist - timedelta(days=1)
-                get_standings([103, 104], season=_prev.year,
+                get_standings(_standings_league_ids, season=_prev.year,
                               date=_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
             except Exception as e:
                 print(f"Warning: historical standings fetch failed: {e}")
@@ -473,9 +482,9 @@ Examples:
             print("Refreshing standings (new Finals detected or no cache)...")
             try:
                 today = datetime.now()
-                get_standings([103, 104], season=today.year)
+                get_standings(_standings_league_ids, season=today.year)
                 prev_day = today - timedelta(days=1)
-                get_standings([103, 104], season=prev_day.year,
+                get_standings(_standings_league_ids, season=prev_day.year,
                               date=prev_day.strftime('%m/%d/%Y'), save_as='standings_prev')
                 games = load_json_file('games.json').get('games', [])
                 sched['standings_final_pks'] = [
