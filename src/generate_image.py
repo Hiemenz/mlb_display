@@ -345,7 +345,8 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
 
     elif game_state in ('Final', 'Game Over') and winner_name and loser_name:
         draw.text(( col_start + 0 , row_start + 93), f'WP: {winner_name}  LP: {loser_name}' , font = font18, fill = 0)
-    elif game_state in ('Final', 'Game Over') and game_end_time:
+
+    if game_state in ('Final', 'Game Over') and game_end_time:
         _et_w = font14.getlength(game_end_time)
         draw.text((col_start + 580 - _et_w, row_start + 113), game_end_time, font=font14, fill=0)
 
