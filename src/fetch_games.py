@@ -582,6 +582,7 @@ def parse_games(data, sport_id=None, config=None):
                 away_abbreviation,
                 home_abbreviation,
             ),
+            'game_duration_minutes': game.get('gameInfo', {}).get('gameDurationMinutes'),
         }
         _h_inn = game_dict.get('home_inning_runs') or []
         _a_inn = game_dict.get('away_inning_runs') or []
@@ -748,7 +749,7 @@ def fetch_scoreboard_for_date(date, sport_id=None, config=None):
     endpoint_url = (
         'https://statsapi.mlb.com/api/v1/schedule?'
         f'startDate={date}&endDate={date}&sportId={sport_id}'
-        '&hydrate=decisions,probablePitcher(note),linescore,flags,team,broadcasts(all),seriesStatus'
+        '&hydrate=decisions,probablePitcher(note),linescore,flags,team,broadcasts(all),seriesStatus,gameInfo'
     )
     response = requests.get(endpoint_url)
     data = response.json()
