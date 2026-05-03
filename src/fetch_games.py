@@ -669,29 +669,43 @@ def parse_games(data, sport_id=None, config=None):
             gd.pop('_loser_id', None)
             gd.pop('_saver_id', None)
 
-    # Attach game duration to Final games (cached permanently — duration never changes)
+    # Attach game end time to Final games via last play's endTime (cached permanently)
     _final_states = ('Final', 'Game Over', 'Final: Tied')
-    _dur_cache = load_json_file('game_duration_cache.json') or {}
-    _dur_cache_dirty = False
+    _end_cache = load_json_file('game_end_time_cache.json') or {}
+    _end_cache_dirty = False
     for gd in game_array:
         if gd.get('detailed_state') not in _final_states:
             continue
         pk_str = str(gd.get('game_pk'))
-        if pk_str in _dur_cache:
-            gd['game_duration_minutes'] = _dur_cache[pk_str]
+        if pk_str in _end_cache:
+            gd['game_end_time_utc'] = _end_cache[pk_str]
         else:
             try:
-                _dur_url = f'https://statsapi.mlb.com/api/v1.1/game/{pk_str}/feed/live?fields=gameData,gameInfo,gameDurationMinutes'
-                _dur_resp = requests.get(_dur_url, timeout=5)
-                _dur_mins = _dur_resp.json().get('gameData', {}).get('gameInfo', {}).get('gameDurationMinutes')
-                if _dur_mins:
-                    gd['game_duration_minutes'] = int(_dur_mins)
-                    _dur_cache[pk_str] = int(_dur_mins)
-                    _dur_cache_dirty = True
+                _live_url = (
+                    f'https://statsapi.mlb.com/api/v1.1/game/{pk_str}/feed/live'
+                    '?fields=liveData,plays,allPlays,about,endTime'
+                )
+                _live_resp = requests.get(_live_url, timeout=5)
+                _all_plays = (
+                    _live_resp.json()
+                    .get('liveData', {})
+                    .get('plays', {})
+                    .get('allPlays', [])
+                )
+                _end_utc = None
+                for _play in reversed(_all_plays):
+                    _t = _play.get('about', {}).get('endTime')
+                    if _t:
+                        _end_utc = _t
+                        break
+                if _end_utc:
+                    gd['game_end_time_utc'] = _end_utc
+                    _end_cache[pk_str] = _end_utc
+                    _end_cache_dirty = True
             except Exception:
                 pass
-    if _dur_cache_dirty:
-        save_off_results(_dur_cache, 'game_duration_cache')
+    if _end_cache_dirty:
+        save_off_results(_end_cache, 'game_end_time_cache')
 
     # Attach betting moneylines to pre-game games (key from ODDS_API_KEY env var)
     _odds_key = os.environ.get('ODDS_API_KEY')
