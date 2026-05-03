@@ -1,6 +1,8 @@
 import os
 import json
 import random
+from datetime import datetime
+import pytz
 from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
 
@@ -87,6 +89,16 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     if (game_state == 'Final' or game_state == 'Game Over') and home[8] == None:
         home[8] = 'X'
 
+    game_end_time = None
+    _end_utc_str = game_info.get('game_end_time_utc')
+    if _end_utc_str and game_state in ('Final', 'Game Over'):
+        try:
+            _tz_str = load_yaml_file('config.yaml').get('timezone', 'America/Chicago')
+            _utc_dt = datetime.strptime(_end_utc_str[:19], "%Y-%m-%dT%H:%M:%S")
+            game_end_time = pytz.utc.localize(_utc_dt).astimezone(pytz.timezone(_tz_str)).strftime("%I:%M:%S%p")
+        except Exception:
+            pass
+
     first_base = data_linescore.get('runner_first')
     second_base = data_linescore.get('runner_second')
     third_base = data_linescore.get('runner_third', None)
@@ -124,7 +136,8 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
                             home_probable, winner_name, loser_name, venue,
                             home_team_win_probability, away_team_win_probability,
                             result_event, weather_condition, weather_temp, weather_wind,
-                            home_team_id=home_team_id, away_team_id=away_team_id)
+                            home_team_id=home_team_id, away_team_id=away_team_id,
+                            game_end_time=game_end_time)
     return Himage, new_image_dict
 
 def draw_boards():
@@ -219,7 +232,7 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
                    home_probable,winner_name, loser_name,  venue,
                    home_team_win_probability, away_team_win_probability, result_event,
                     weather_condition, weather_temp, weather_wind,
-                   home_team_id=None, away_team_id=None):
+                   home_team_id=None, away_team_id=None, game_end_time=None):
     draw = ImageDraw.Draw(Himage)
 
     # Team logos in team name rows (24px, fits in 30px row with 3px top/bottom padding)
@@ -318,6 +331,9 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
 
     elif game_state in ('Final', 'Game Over') and winner_name and loser_name:
         draw.text(( col_start + 0 , row_start + 93), f'WP: {winner_name}  LP: {loser_name}' , font = font18, fill = 0)
+    elif game_state in ('Final', 'Game Over') and game_end_time:
+        _et_w = font14.getlength(game_end_time)
+        draw.text((col_start + 580 - _et_w, row_start + 113), game_end_time, font=font14, fill=0)
 
     draw.text((0 + col_start, 8 + row_start), game_state, font = font18, fill = 0, stroke_width=1, stroke_fill=0)
     draw.text((30 + col_start, 30 + row_start), away_team, font = font24, fill = 0)
