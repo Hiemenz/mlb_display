@@ -140,11 +140,11 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
                             game_end_time=game_end_time)
     return Himage, new_image_dict
 
-_LINESCORE_SHOW_SECONDS = 10 * 60  # show linescore for 10 min after last play
+_LINESCORE_SHOW_SECONDS = 60 * 60  # show linescore for 60 min after last play
 
 
 def _game_in_window(team_abbr, games_scheduled):
-    """Return True if the team's game is live or ended less than 10 minutes ago."""
+    """Return True if the team's game is live or ended less than 60 minutes ago."""
     game_id = (games_scheduled or {}).get('team_to_game_id', {}).get(team_abbr)
     if not game_id:
         return True
