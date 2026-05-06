@@ -19,6 +19,55 @@ _FINAL_LINESCORE_SECS = 3600  # show linescore for 60 min after game ends
 _final_time_cache = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
 
+# Maps verbose MLB API event names (lowercased) to short header abbreviations.
+# Checked with `key in raw.lower()` so partial matches work (e.g. "stolen base 2b" → "SB").
+_PLAY_ABBR = {
+    'grounded into dp': 'GDP',
+    'triple play':      'TP',
+    'double play':      'DP',
+    'home run':         'HR',
+    'triple':           '3B',
+    'double':           '2B',
+    'single':           '1B',
+    'intentional walk': 'IBB',
+    'hit by pitch':     'HBP',
+    'walk':             'BB',
+    'strikeout':        'K',
+    'sac fly':          'SF',
+    'sacrifice fly':    'SF',
+    'sac bunt':         'SAC',
+    'sacrifice bunt':   'SAC',
+    'stolen base':      'SB',
+    'caught stealing':  'CS',
+    'wild pitch':       'WP',
+    'passed ball':      'PB',
+    "fielder's choice": 'FC',
+    'fielders choice':  'FC',
+    'field error':      'E',
+    'flyout':           'FO',
+    'fly out':          'FO',
+    'lineout':          'LO',
+    'line out':         'LO',
+    'groundout':        'GO',
+    'ground out':       'GO',
+    'pop out':          'PO',
+    'popout':           'PO',
+    'pickoff':          'PK',
+    'balk':             'BLK',
+    'runner out':       'RO',
+}
+
+
+def _abbr_play(raw):
+    """Return a short abbreviation for a verbose MLB play-event string."""
+    if not raw:
+        return raw
+    lower = raw.lower()
+    for key, abbr in _PLAY_ABBR.items():
+        if key in lower:
+            return abbr
+    return raw
+
 
 def set_historical_mode(enabled=True):
     global _historical_mode
@@ -608,6 +657,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             game_state_str = 'Final'
         elif game_data['detailed_state'] == 'Final: Tied':
             game_state_str = 'Tied'
+        elif game_data['detailed_state'] == 'Delayed':
+            # Show inning when the delay happened mid-game (e.g. "DLY 5"); just "Delay" pre-game
+            _dly_inn = game_data.get('current_inning') or 0
+            game_state_str = f'DLY {_dly_inn}' if _dly_inn > 0 else 'Delay'
         else:
             game_state_str = game_data['detailed_state']
 
@@ -618,34 +671,34 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             if _ar == _hr:
                 game_state_str = 'Tied'
 
-        _fin_inning = game_data.get('current_inning') or 9
-        if _fin_inning > 9:
-            game_state_str = 'F/' + str(_fin_inning)
-        elif _fin_inning != 9 and game_state_str not in ('Tied',):
-            game_state_str += '/' + str(_fin_inning)
+        if game_data['detailed_state'] not in ('Delayed', 'Postponed'):
+            _fin_inning = game_data.get('current_inning') or 9
+            if _fin_inning > 9:
+                game_state_str = 'F/' + str(_fin_inning)
+            elif _fin_inning != 9 and game_state_str not in ('Tied',):
+                game_state_str += '/' + str(_fin_inning)
 
     elif game_data['detailed_state'] == 'Warmup':
         game_state_str = game_data['detailed_state']
 
-    elif game_data['detailed_state'] == 'Scheduled'  or game_data['detailed_state'] == 'Pre-Game':
+    elif game_data['detailed_state'] in ('Scheduled', 'Pre-Game'):
         try:
             from datetime import datetime
             dt = datetime.strptime(game_data['game_start'], "%Y-%m-%dT%H:%M:%SZ")
             game_state_str = dt.strftime("%I:%M %p").lstrip("0")
         except Exception:
             game_state_str = game_data['game_start']
+    elif game_data['detailed_state'] in ('Suspended', 'Cancelled', 'Cancelled: Rain'):
+        game_state_str = 'Susp' if game_data['detailed_state'] == 'Suspended' else 'Canc'
+        _inn = game_data.get('current_inning')
+        if _inn:
+            game_state_str += f' {_inn}'
     else:
-        extra = ''
-        if game_data.get('inningState'):
-            extra = game_data.get('inningState').upper()
-
-        if game_data['inningState'] == 'Bottom':
-            extra = 'Bot'.upper()
-
-        if game_data['inningState'] == 'Middle':
-            extra = 'Mid'.upper()
-
-        game_state_str = extra + ' ' + str(game_data['current_inning'])
+        # In Progress (and any other live state not matched above)
+        _inn_state = game_data.get('inningState') or ''
+        _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(_inn_state, _inn_state[:3].capitalize() if _inn_state else '')
+        _inn_num = game_data.get('current_inning') or 1
+        game_state_str = (f'{_inn_label} {_inn_num}').strip()
 
     # Pre-draw SWEEP ghost before header text so Final / logo sit on top
     _gf_early = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
@@ -881,7 +934,24 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
         _sub_ev = (game_data.get('sub_event') or '').strip()
         raw_play = (_sub_ev or game_data.get('last_review_result') or game_data.get('last_play') or '').replace('**', '').strip()
+        # Abbreviate verbose play names so they fit cleanly without truncation
+        play_display = _abbr_play(raw_play) if raw_play else ''
         _header_right = _ser_content_left_x - 2
+
+        def _draw_play_right(text, fnt=None, y_off=4):
+            if not text:
+                return
+            _fnt = fnt or _get_font(12)
+            _max_w = max(_header_right - start_x - _total_time_w - 10, 0)
+            _t = text
+            while len(_t) > 1 and int(_fnt.getlength(_t)) > _max_w:
+                _t = _t[:-2] + '.'
+            if _t and int(_fnt.getlength(_t)) <= _max_w:
+                _pw = int(_fnt.getlength(_t))
+                _px = _header_right - _pw
+                draw.text((_px,     start_y + y_off), _t, font=_fnt, fill=0)
+                draw.text((_px + 1, start_y + y_off), _t, font=_fnt, fill=0)
+
         if _active_no_no:
             # Right-align label; inning state stays on left as-is
             _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
@@ -889,20 +959,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _nh_lx = _header_right - _nh_lw
             draw.text((_nh_lx,     start_y + 3), _nh_label, font=font14, fill=0)
             draw.text((_nh_lx + 1, start_y + 3), _nh_label, font=font14, fill=0)
-        elif _between_innings and raw_play:
-            # Mid-inning break: show the play that ended the half-inning
-            max_play_w = max(_header_right - start_x - _total_time_w - 10, 0)
-            play_text = raw_play
-            _play_font = _get_font(12)
-            while len(play_text) > 1 and int(_play_font.getlength(play_text)) > max_play_w:
-                play_text = play_text[:-2] + '.'
-            if play_text and int(_play_font.getlength(play_text)) <= max_play_w:
-                pw = int(_play_font.getlength(play_text))
-                px = _header_right - pw
-                draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
-                draw.text((px + 1, start_y + 4), play_text, font=_play_font, fill=0)
+        elif _between_innings and play_display:
+            # Mid-inning break: show abbreviated play that ended the half-inning
+            _draw_play_right(play_display)
         elif _between_innings:
-            # No last-play text available — fall back to showing who's due
+            # No last-play text — fall back to who's due up
             _due_name = _format_player_name(game_data.get('current_hitter') or '')
             if _due_name:
                 _due_str = f'Due: {_due_name}'
@@ -915,17 +976,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _due_x = _header_right - _due_w
                     draw.text((_due_x,     start_y + 5), _due_str, font=_due_fnt, fill=0)
                     draw.text((_due_x + 1, start_y + 5), _due_str, font=_due_fnt, fill=0)
-        elif raw_play:
-            max_play_w = max(_header_right - start_x - _total_time_w - 10, 0)
-            play_text = raw_play
-            _play_font = _get_font(12)
-            while len(play_text) > 1 and int(_play_font.getlength(play_text)) > max_play_w:
-                play_text = play_text[:-2] + '.'
-            if play_text and int(_play_font.getlength(play_text)) <= max_play_w:
-                pw = int(_play_font.getlength(play_text))
-                px = _header_right - pw
-                draw.text((px, start_y + 4), play_text, font=_play_font, fill=0)
-                draw.text((px + 1, start_y + 4), play_text, font=_play_font, fill=0)
+        elif play_display:
+            _draw_play_right(play_display)
 
     if _delayed_with_score:
         _delay_reason = game_data.get('postpone_reason') or ''
