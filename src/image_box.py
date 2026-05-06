@@ -1273,6 +1273,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                             _pit_name = _pit_name[:-1]
                 _pit_w = int(_pit_fnt.getlength(_pit_name))
                 draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=_pit_fnt, fill=0)
+            # During a mid-inning pitching change, show the current out count.
+            # Outs circles sit at y=73 — above the linescore grid (y=83+), no overlap.
+            if _pitching_change and not _between_innings:
+                _outs_val = game_data.get('num_of_outs') or 0
+                _outs_list = [i + 1 <= _outs_val for i in range(3)]
+                Himage = draw_circle(Himage, (start_x + 97,  start_y + 73), 6, _outs_list[0], outline_width=2)
+                Himage = draw_circle(Himage, (start_x + 111, start_y + 73), 6, _outs_list[1], outline_width=2)
+                Himage = draw_circle(Himage, (start_x + 125, start_y + 73), 6, _outs_list[2], outline_width=2)
+                draw = ImageDraw.Draw(Himage)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
@@ -1329,7 +1338,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     Himage = draw_circle(Himage, (_scx, _scy), 4, strikes_list[_si])
                     draw = ImageDraw.Draw(Himage)
 
-        if game_data.get('save_situation') and not _between_innings:
+        if game_data.get('save_situation') and not _between_innings and not _pitching_change:
             _sv_w = int(font9.getlength('SV'))
             _sv_x = start_x + horizonta_len - _sv_w - 2
             draw.text((_sv_x,     start_y + 25), 'SV', font=font9, fill=0)
