@@ -27,17 +27,17 @@ timezone: America/Chicago
 
 # League mode: "mlb" or "aaa"
 # "mlb" — show MLB games + AL/NL standings (uses sport_id_priority list below)
-# "aaa" — show Triple-A games + IL/PCL standings (forces sport_id=12, ignores priority list)
+# "aaa" — show Triple-A games + IL/PCL standings (forces sport_id=11, ignores priority list)
 league_mode: mlb
 
 # Sport ID Priority List (checked in order, first with games is used)
 # Only used when league_mode is "mlb".
 # 1  = MLB
 # 8  = World Baseball Classic
-# 11 = College Baseball
-# 12 = Triple-A (AAA)
-# 13 = Double-A (AA)
-# 14 = Winter Leagues
+# 11 = Triple-A (AAA)
+# 12 = Double-A (AA)
+# 13 = High-A
+# 14 = Single-A
 # 16 = Spring Training
 # 51 = International
 sport_id_priority:

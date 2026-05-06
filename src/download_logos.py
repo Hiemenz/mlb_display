@@ -72,31 +72,46 @@ def _load_render_config(root):
         return {}
 
 
+MLBSTATIC_SVG_URL = 'https://www.mlbstatic.com/team-logos/{team_id}.svg'
+
+
+def _svg_to_png(svg_bytes, dest, size=500):
+    """Convert SVG bytes to a PNG file using cairosvg. Returns True on success."""
+    try:
+        import cairosvg
+        cairosvg.svg2png(bytestring=svg_bytes, write_to=dest, output_width=size)
+        return True
+    except ImportError:
+        print('  cairosvg not available — cannot convert SVG logos (pip install cairosvg)')
+        return False
+    except Exception as e:
+        print(f'  SVG conversion failed: {e}')
+        return False
+
+
 def download_logos(abbr_map, logodir, render_config=None, sport_id=1):
     os.makedirs(logodir, exist_ok=True)
     success, failed = 0, []
     non_dark = set((render_config or {}).get('non_dark', []))
     is_wbc = sport_id == 8
+    is_milb = sport_id not in (1, 8)  # MiLB sports: AAA=11, AA=12, etc.
 
     for team_id, abbr in sorted(abbr_map.items(), key=lambda x: x[1]):
-        dest = os.path.join(logodir, f'{abbr}.png')
+        # MiLB logos saved as {team_id}.png to avoid abbr collisions with MLB teams
+        # (e.g. COL = Colorado Rockies AND Columbus Clippers).
+        dest = os.path.join(logodir, f'{team_id}.png' if is_milb else f'{abbr}.png')
 
         if os.path.exists(dest):
             print(f'  {abbr:<4} already exists — skipping')
             success += 1
             continue
 
-        urls_to_try = []
-        if is_wbc:
-            countries_abbr = WBC_ESPN_ABBR.get(abbr.upper(), abbr.lower())
-            urls_to_try.append(ESPN_COUNTRIES_LOGO_URL.format(abbr=countries_abbr))
-        # Always try MLB CDN as fallback (some WBC teams are also MLB)
-        espn_abbr = ESPN_ABBR_OVERRIDES.get(abbr, abbr.lower())
-        url_template = ESPN_LOGO_URL_NORMAL if abbr in non_dark else ESPN_LOGO_URL_DARK
-        urls_to_try.append(url_template.format(abbr=espn_abbr))
-
         saved = False
-        for url in urls_to_try:
+
+        if is_wbc:
+            # WBC: try ESPN countries CDN first
+            countries_abbr = WBC_ESPN_ABBR.get(abbr.upper(), abbr.lower())
+            url = ESPN_COUNTRIES_LOGO_URL.format(abbr=countries_abbr)
             try:
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req, timeout=10) as resp:
@@ -106,7 +121,42 @@ def download_logos(abbr_map, logodir, render_config=None, sport_id=1):
                 print(f'  {abbr:<4} saved  ({len(data_bytes) // 1024} KB)  [{url}]')
                 success += 1
                 saved = True
-                break
+            except Exception as e:
+                print(f'  {abbr:<4} try failed: {url} — {e}')
+
+        if not saved and is_milb:
+            # MiLB/AAA: download SVG from mlbstatic and convert to PNG
+            svg_url = MLBSTATIC_SVG_URL.format(team_id=team_id)
+            try:
+                req = urllib.request.Request(svg_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    svg_bytes = resp.read()
+                if _svg_to_png(svg_bytes, dest):
+                    size_kb = os.path.getsize(dest) // 1024
+                    print(f'  {abbr:<4} saved  ({size_kb} KB)  [{svg_url}]')
+                    success += 1
+                    saved = True
+                else:
+                    print(f'  {abbr:<4} FAILED — SVG conversion error')
+                    failed.append(abbr)
+                    continue
+            except Exception as e:
+                print(f'  {abbr:<4} try failed: {svg_url} — {e}')
+
+        if not saved and not is_milb:
+            # MLB / fallback: try ESPN MLB CDN
+            espn_abbr = ESPN_ABBR_OVERRIDES.get(abbr, abbr.lower())
+            url_template = ESPN_LOGO_URL_NORMAL if abbr in non_dark else ESPN_LOGO_URL_DARK
+            url = url_template.format(abbr=espn_abbr)
+            try:
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data_bytes = resp.read()
+                with open(dest, 'wb') as f:
+                    f.write(data_bytes)
+                print(f'  {abbr:<4} saved  ({len(data_bytes) // 1024} KB)  [{url}]')
+                success += 1
+                saved = True
             except Exception as e:
                 print(f'  {abbr:<4} try failed: {url} — {e}')
 
@@ -130,16 +180,22 @@ def main():
                         help='Sport ID to fetch logos for (1=MLB, 8=WBC, etc.). Default: 1')
     parser.add_argument('--wbc', action='store_true',
                         help='Shortcut for --sport-id 8 --fetch-teams (download WBC logos)')
+    parser.add_argument('--aaa', action='store_true',
+                        help='Shortcut for --sport-id 11 --fetch-teams (download Triple-A logos)')
     args = parser.parse_args()
 
     if args.wbc:
         args.sport_id = 8
+    if args.aaa:
+        args.sport_id = 11
+        args.fetch_teams = True
 
     root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     logodir = os.path.join(root, 'pic', 'logos')
 
-    sport_names = {1: 'MLB', 8: 'World Baseball Classic', 11: 'College Baseball',
-                   12: 'Triple-A', 13: 'Double-A', 14: 'Winter Leagues', 16: 'Spring Training'}
+    sport_names = {1: 'MLB', 8: 'World Baseball Classic',
+                   11: 'Triple-A', 12: 'Double-A', 13: 'High-A', 14: 'Single-A',
+                   16: 'Spring Training'}
     sport_name = sport_names.get(args.sport_id, f'Sport {args.sport_id}')
 
     if args.sport_id == 8:

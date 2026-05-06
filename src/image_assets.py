@@ -19,6 +19,12 @@ _ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh'}
 _COUNTRY_ESPN_MAP = {'CLM': 'col'}  # Colombia WBC uses 'col' on ESPN countries CDN
 # Team IDs whose cached abbreviation must be overridden (WBC teams that collide with MLB)
 _TEAM_ID_ABBR_OVERRIDE = {'792': 'CLM'}  # Colombia WBC team ID → CLM
+# Only try ESPN countries CDN for known WBC team abbreviations (prevents false positives
+# where AAA team abbreviations like CHA/POR/SOM accidentally match country codes)
+_WBC_ABBRS = {
+    'USA', 'DOM', 'JPN', 'MEX', 'KOR', 'PUR', 'CUB', 'AUS', 'NED',
+    'ITA', 'CAN', 'VEN', 'PAN', 'CLM', 'GBR', 'ISR', 'CZE', 'NIC', 'TPE', 'CHN',
+}
 
 # Font cache — avoids re-parsing Font.ttc on every draw_box() call (called once per game cell)
 _font_cache: dict = {}
@@ -45,14 +51,13 @@ def _get_logo_invert_config():
     return _logo_invert_config
 
 
-def _try_download_logo(abbr):
+def _try_download_logo(abbr, team_id=None):
     """Download a missing team logo from ESPN CDN using stdlib only (no pip needed).
 
-    Tries MLB CDN first, then falls back to countries CDN for international/WBC teams.
-    Skips numeric or T{id} fallback abbreviations — those are unknown spring training
-    teams that won't exist on any CDN.
+    Tries MLB CDN first, then mlbstatic SVG (for MiLB/AAA teams, requires cairosvg),
+    then ESPN countries CDN only for known WBC abbreviations.
+    Skips numeric or T{id} fallback abbreviations.
     """
-    # Skip fallback IDs like "T792" or pure numeric strings — no logo exists for them
     if abbr.isdigit() or (abbr.startswith('T') and abbr[1:].isdigit()):
         return False
 
@@ -60,7 +65,7 @@ def _try_download_logo(abbr):
     path = os.path.join(logodir, f'{abbr}.png')
     os.makedirs(logodir, exist_ok=True)
 
-    # Try MLB CDN first
+    # Try ESPN MLB CDN first
     try:
         espn = _ESPN_ABBR_MAP.get(abbr.upper(), abbr.lower())
         non_dark = _get_logo_invert_config().get('non_dark', [])
@@ -74,18 +79,34 @@ def _try_download_logo(abbr):
     except Exception:
         pass
 
-    # Fallback: try ESPN countries CDN for international/WBC teams
-    try:
-        espn = _COUNTRY_ESPN_MAP.get(abbr.upper(), abbr.lower())
-        url = f'https://a.espncdn.com/i/teamlogos/countries/500/{espn}.png'
-        with urllib.request.urlopen(url, timeout=5) as response:
-            with open(path, 'wb') as f:
-                f.write(response.read())
-        print(f'Auto-downloaded country logo: {abbr}')
-        return True
-    except Exception as e:
-        print(f'Could not auto-download logo for {abbr}: {e}')
-        return False
+    # Try mlbstatic SVG CDN (covers MiLB/AAA teams not on ESPN) — requires cairosvg
+    # Save as {team_id}.png (not {abbr}.png) to avoid collisions with MLB team abbreviations
+    if team_id and str(team_id).isdigit():
+        try:
+            import cairosvg
+            svg_url = f'https://www.mlbstatic.com/team-logos/{team_id}.svg'
+            svg_data = urllib.request.urlopen(svg_url, timeout=5).read()
+            id_path = os.path.join(logodir, f'{team_id}.png')
+            cairosvg.svg2png(bytestring=svg_data, write_to=id_path, output_width=500)
+            print(f'Auto-downloaded MiLB logo: {abbr}')
+            return True
+        except Exception:
+            pass
+
+    # ESPN countries CDN — only for known WBC abbreviations to avoid false positives
+    if abbr.upper() in _WBC_ABBRS:
+        try:
+            espn = _COUNTRY_ESPN_MAP.get(abbr.upper(), abbr.lower())
+            url = f'https://a.espncdn.com/i/teamlogos/countries/500/{espn}.png'
+            with urllib.request.urlopen(url, timeout=5) as response:
+                with open(path, 'wb') as f:
+                    f.write(response.read())
+            print(f'Auto-downloaded country logo: {abbr}')
+            return True
+        except Exception as e:
+            print(f'Could not auto-download logo for {abbr}: {e}')
+
+    return False
 
 
 def _load_logo_gray(abbr, team_id):
@@ -105,11 +126,18 @@ def _load_logo_gray(abbr, team_id):
 
     invert_config = _get_logo_invert_config()
 
+    abbr_path = os.path.join(logodir, f'{abbr}.png')
+    id_path   = os.path.join(logodir, f'{str(team_id)}.png')
+
+    # Auto-download once if neither file exists yet
+    if not os.path.exists(abbr_path) and not os.path.exists(id_path):
+        _try_download_logo(abbr, team_id=team_id)
+
+    # Prefer {team_id}.png — avoids collisions where a MiLB team shares an abbreviation
+    # with an MLB team (e.g. COL = Colorado Rockies AND Columbus Clippers).
+    # MLB logos are only saved as {abbr}.png, so they fall through naturally.
     result = None
-    for name in (abbr, str(team_id)):
-        path = os.path.join(logodir, f'{name}.png')
-        if not os.path.exists(path):
-            _try_download_logo(name)
+    for path in (id_path, abbr_path):
         if os.path.exists(path):
             try:
                 img = Image.open(path).convert('RGBA')

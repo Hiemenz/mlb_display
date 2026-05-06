@@ -133,14 +133,17 @@ def draw_wildcard_header(Himage, wildcard_data):
 
 
 def _aaa_divisions(standings_data, side):
-    """Return ordered IL (left) or PCL (right) division names from standings data."""
-    all_divs = [d for d in standings_data.get('standings', {}).keys() if d]
+    """Return division names for each sidebar side in AAA mode.
+
+    Left:  IL East (top) + PCL East (bottom)
+    Right: IL West (top) + PCL West (bottom)
+    """
+    all_divs = set(standings_data.get('standings', {}).keys())
     if side == 'left':
-        divs = sorted(d for d in all_divs if 'International' in d)
+        candidates = ['International League East', 'Pacific Coast League East']
     else:
-        divs = sorted(d for d in all_divs if 'Pacific' in d)
-    # Prefer East → South → West order (alphabetical happens to match)
-    return divs
+        candidates = ['International League West', 'Pacific Coast League West']
+    return [d for d in candidates if d in all_divs]
 
 
 def draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode='mlb'):
@@ -193,16 +196,41 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
     _movement_data = load_json_file('standings_movement.json') or {}
     _movement_updated = False
 
+    _SLOT_H_STD = (_SIDEBAR_ROW_H - _SIDEBAR_VERTICAL_PADDING * 2) // 5  # 28px — standard MLB spacing
+
+    if league_mode == 'aaa' and divisions:
+        # Each section height is sized to its team count at standard spacing.
+        # Sections stack from y=5 with a 5px gap between them.
+        div_teams = [
+            sorted(
+                standings_data.get('standings', {}).get(d, []),
+                key=lambda t: int(t.get('divisionRank', 99))
+            )
+            for d in divisions
+        ]
+        section_heights = [len(t) * _SLOT_H_STD + _SIDEBAR_VERTICAL_PADDING * 2 for t in div_teams]
+        row_y_list = []
+        y = _SIDEBAR_ROW_Y[0]
+        for h in section_heights:
+            row_y_list.append(y)
+            y += h + 5
+        max_per_section = None  # show all teams in AAA mode
+    else:
+        section_heights = [_SIDEBAR_ROW_H] * len(divisions)
+        row_y_list      = _SIDEBAR_ROW_Y
+        max_per_section = 5
+
     for row_idx, div_name in enumerate(divisions):
         teams = standings_data.get('standings', {}).get(div_name, [])
         teams = sorted(teams, key=lambda t: int(t.get('divisionRank', 99)))
-        y_section = _SIDEBAR_ROW_Y[row_idx]
-        slot_h    = (_SIDEBAR_ROW_H - (_SIDEBAR_VERTICAL_PADDING * 2)) // 5
+        y_section = row_y_list[row_idx]
+        n_show    = len(teams) if max_per_section is None else min(len(teams), max_per_section)
+        slot_h    = _SLOT_H_STD
 
         # --- Rank + record change detection ---
         # A team is a mover when its rank changed AND its record changed.
         movers = set()
-        for team in teams[:5]:
+        for team in teams[:n_show]:
             tid = str(team.get('team_id', ''))
             if tid not in prev_rank:
                 continue
@@ -215,7 +243,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
 
         # Any team displaced by a mover also changed rank — mark it too.
         if movers:
-            for team in teams[:5]:
+            for team in teams[:n_show]:
                 tid = str(team.get('team_id', ''))
                 if tid not in prev_rank or tid in movers:
                     continue
@@ -240,7 +268,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 pass
 
         cur_wl_by_tid = {}
-        for _ct in teams[:5]:
+        for _ct in teams[:n_show]:
             _tid = str(_ct.get('team_id', ''))
             try:
                 cur_wl_by_tid[_tid] = (
@@ -250,7 +278,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
             except (ValueError, TypeError):
                 pass
 
-        for i in range(len(teams[:5]) - 1):
+        for i in range(len(teams[:n_show]) - 1):
             tid1 = str(teams[i].get('team_id', ''))
             tid2 = str(teams[i + 1].get('team_id', ''))
             if tid1 in prev_wl_by_tid and tid2 in prev_wl_by_tid:
@@ -267,7 +295,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
 
         # Show indicator for current movers AND any move within the last 20 hours
         display_movers = set(movers)
-        for team in teams[:5]:
+        for team in teams[:n_show]:
             tid = str(team.get('team_id', ''))
             ts = _movement_data.get(tid)
             if ts is not None:
@@ -277,7 +305,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 except (ValueError, TypeError):
                     pass
 
-        for slot_idx, team in enumerate(teams[:5]):
+        for slot_idx, team in enumerate(teams[:n_show]):
             team_id = str(team.get('team_id', ''))
             abbr    = abbr_map.get(team_id, f'T{team_id}')
             logo_y  = y_section + _SIDEBAR_VERTICAL_PADDING + slot_idx * slot_h
@@ -310,7 +338,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 )
 
             # Always draw --- between consecutive slots with the same W-L record (tied teams)
-            if slot_idx + 1 < 5 and slot_idx + 1 < len(teams):
+            if slot_idx + 1 < n_show and slot_idx + 1 < len(teams):
                 nxt = teams[slot_idx + 1]
                 cur_wl = (int(team.get('league_record_wins') or 0), int(team.get('league_record_losses') or 0))
                 nxt_wl = (int(nxt.get('league_record_wins') or 0),  int(nxt.get('league_record_losses') or 0))
