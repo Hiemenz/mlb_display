@@ -1213,18 +1213,32 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
     if game_data['detailed_state'] == 'In Progress':
-        if (_between_innings and _game_ending_state) or _pitching_change:
-            pass  # linescore already shown; no bases/batters panel during a pitching change
-        elif _between_innings:
-            # Next 3 batters (last names) + pitcher, right-aligned in the bases/outs space.
-            # Prefer the batting-order-derived fields; fall back to linescore fields.
+        if _between_innings and _game_ending_state:
+            pass  # end of 9th+ with a lead — linescore shown, no next-batters panel
+        elif _between_innings or _pitching_change:
+            # Between-innings OR mid-inning pitching change: show upcoming batters on right side.
+            # For between-innings the batter list is next_batter_1/2/3 (next half-inning).
+            # For mid-inning PC the current hitter is at the plate — show them first, then due up.
             _right_x = start_x + horizonta_len - 2
             _max_name_w = 46
-            _batter_names = [
-                _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
-                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
-                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
-            ]
+            if _pitching_change and not _between_innings:
+                # Mid-inning: current hitter is waiting at the plate
+                _batter_names = [
+                    _last_name(game_data.get('current_hitter') or ''),
+                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                    _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+                ]
+                # New pitcher from sub_event "PC: Smith"
+                _pc_raw = (game_data.get('sub_event') or '')[3:].strip()
+                _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+            else:
+                # Between-innings (with or without a PC)
+                _batter_names = [
+                    _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                    _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+                ]
+                _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             _name_y = start_y + 21
             for _nm in _batter_names:
                 if _nm:
@@ -1236,8 +1250,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _name_y += 12
             _sep_y = _name_y + 5
             draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
-            _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
-            _pit_max_w = horizonta_len - 2 - 87  # full panel width between innings (no diamond)
+            _pit_max_w = horizonta_len - 2 - 87
             if _pit_name:
                 _pit_fnt = font14
                 if int(font14.getlength(_pit_name)) > _pit_max_w:
