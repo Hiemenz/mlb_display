@@ -1260,28 +1260,30 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _nw = int(font14.getlength(_nm_disp))
                     draw.text((_right_x - _nw, _name_y), _nm_disp, font=font14, fill=0)
                 _name_y += 12
-            _sep_y = _name_y + 5
-            draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
-            _pit_max_w = horizonta_len - 2 - 87
-            if _pit_name:
-                _pit_fnt = font14
-                if int(font14.getlength(_pit_name)) > _pit_max_w:
-                    _pit_fnt = font11
-                    if int(font11.getlength(_pit_name)) > _pit_max_w:
-                        _pit_fnt = font9
-                        while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
-                            _pit_name = _pit_name[:-1]
-                _pit_w = int(_pit_fnt.getlength(_pit_name))
-                draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=_pit_fnt, fill=0)
-            # During a mid-inning pitching change, show the current out count.
-            # Outs circles sit at y=73 — above the linescore grid (y=83+), no overlap.
             if _pitching_change and not _between_innings:
+                # Mid-inning PC: no pitcher name (outs circles occupy that space).
+                # Outs circles at y=73 — above the linescore grid (y=83+), no overlap.
                 _outs_val = game_data.get('num_of_outs') or 0
                 _outs_list = [i + 1 <= _outs_val for i in range(3)]
                 Himage = draw_circle(Himage, (start_x + 97,  start_y + 73), 6, _outs_list[0], outline_width=2)
                 Himage = draw_circle(Himage, (start_x + 111, start_y + 73), 6, _outs_list[1], outline_width=2)
                 Himage = draw_circle(Himage, (start_x + 125, start_y + 73), 6, _outs_list[2], outline_width=2)
                 draw = ImageDraw.Draw(Himage)
+            else:
+                # Between-innings PC (or normal between-innings): separator + pitcher name.
+                _sep_y = _name_y + 5
+                draw.line((start_x + 87, _sep_y, _right_x, _sep_y), fill=0)
+                _pit_max_w = horizonta_len - 2 - 87
+                if _pit_name:
+                    _pit_fnt = font14
+                    if int(font14.getlength(_pit_name)) > _pit_max_w:
+                        _pit_fnt = font11
+                        if int(font11.getlength(_pit_name)) > _pit_max_w:
+                            _pit_fnt = font9
+                            while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
+                                _pit_name = _pit_name[:-1]
+                    _pit_w = int(_pit_fnt.getlength(_pit_name))
+                    draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=_pit_fnt, fill=0)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
