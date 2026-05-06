@@ -133,23 +133,28 @@ def _attach_pregame_weather(game_dict, schedule_game, config):
     game_dict['weather_precip_pct'] = forecast.get('precip_pct')
 
 def fetch_win_probability(game_pk):
-    """Return (away_wp, home_wp, last_play) from the winProbability endpoint, or (None, None, None)."""
+    """Return (away_wp, home_wp, last_play, last_play_inning, last_play_is_top) or (None,)*5."""
     try:
         url = f'https://statsapi.mlb.com/api/v1/game/{game_pk}/winProbability'
         response = requests.get(url, timeout=5)
         data = response.json()
         if not isinstance(data, list) or not data:
-            return None, None, None
+            return None, None, None, None, None
         last = data[-1]
         away_wp = last.get('awayTeamWinProbability')
         home_wp = last.get('homeTeamWinProbability')
         # Scan backwards for the last real play (skip substitutions/challenges)
         last_play = None
+        last_play_inning = None
+        last_play_is_top = None
         for entry in reversed(data):
             event_type = (entry.get('result', {}).get('eventType') or '').lower()
             event = entry.get('result', {}).get('event') or ''
             if event and not any(s in event_type for s in _SUBSTITUTION_TYPES):
                 last_play = event
+                about = entry.get('about', {})
+                last_play_inning = about.get('inning')
+                last_play_is_top = about.get('isTopInning')
                 break
         if away_wp is not None and home_wp is not None:
             away_wp = float(away_wp)
@@ -159,9 +164,9 @@ def fetch_win_probability(game_pk):
                 home_wp *= 100
         else:
             away_wp, home_wp = None, None
-        return away_wp, home_wp, last_play
+        return away_wp, home_wp, last_play, last_play_inning, last_play_is_top
     except Exception:
-        return None, None, None
+        return None, None, None, None, None
 
 
 def _fetch_mlb_odds(api_key):
@@ -593,9 +598,11 @@ def parse_games(data, sport_id=None, config=None):
             _h_inn[-1] is not None and _h_inn[-1] > 0
         )
         if game_dict.get('detailed_state') in ('In Progress', 'Player challenge', 'Manager challenge') and live_calls_made < max_live_calls:
-            away_wp, home_wp, last_play = fetch_win_probability(game_id)
+            away_wp, home_wp, last_play, last_play_inning, last_play_is_top = fetch_win_probability(game_id)
             live_calls_made += 1
             game_dict['last_play'] = last_play
+            game_dict['last_play_inning'] = last_play_inning
+            game_dict['last_play_is_top'] = last_play_is_top
             if config.get('scoreboard_win_probability', False):
                 game_dict['away_win_probability'] = away_wp
                 game_dict['home_win_probability'] = home_wp

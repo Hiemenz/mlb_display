@@ -349,6 +349,39 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
 
         sub_event = _find_recent_sub_event(plays)
 
+        # Extract last completed play from the live feed — more timely than the win-prob endpoint.
+        # For field errors include the position code (e.g. "E6" for shortstop error).
+        _SUBST_EVENT_TYPES = {
+            'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
+            'runner_substitution', 'game_advisory', 'ejection', 'defensive_switch',
+        }
+        live_last_play = None
+        live_last_play_inning = None
+        live_last_play_is_top = None
+        for _lp in reversed(plays.get('allPlays', [])):
+            if not _lp.get('about', {}).get('isComplete'):
+                continue
+            _et = (_lp.get('result', {}).get('eventType') or '').lower().replace(' ', '_')
+            if _et in _SUBST_EVENT_TYPES:
+                continue
+            _ev = _lp.get('result', {}).get('event') or ''
+            if not _ev:
+                continue
+            _abbr = _EVENT_CODE_MAP.get(_ev, '')
+            if _ev == 'Field Error':
+                for _cr in _lp.get('credits', []):
+                    if 'error' in (_cr.get('credit') or '').lower():
+                        _pos = _cr.get('position', {}).get('code', '')
+                        if _pos and _pos.isdigit():
+                            _abbr = f'E{_pos}'
+                        break
+            if not _abbr:
+                _abbr = _ev[:3]
+            live_last_play = _abbr
+            live_last_play_inning = _lp.get('about', {}).get('inning')
+            live_last_play_is_top = _lp.get('about', {}).get('isTopInning')
+            break
+
         return {
             'pitch_count': pitch_count,
             'batter_hits': batter_hits,
@@ -372,6 +405,9 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'runner_second_number': runner_second_number,
             'runner_third_number': runner_third_number,
             'last_review_result': _find_recent_review_result(plays),
+            'last_play': live_last_play,
+            'last_play_inning': live_last_play_inning,
+            'last_play_is_top': live_last_play_is_top,
         }
     except Exception:
         return {}
