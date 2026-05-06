@@ -1,4 +1,6 @@
 import time as _time
+import pytz
+from datetime import datetime as _datetime
 
 from PIL import Image, ImageDraw, ImageOps
 
@@ -11,9 +13,9 @@ from image_utils import (
     _format_player_name, _last_name, _pitcher_line, _clean_venue_name,
     _is_game_effectively_over,
 )
-from util import load_json_file, save_off_results
+from util import load_json_file, load_yaml_file, save_off_results
 
-_FINAL_LINESCORE_SECS = 600  # show linescore for 10 min after game ends
+_FINAL_LINESCORE_SECS = 3600  # show linescore for 60 min after game ends
 _final_time_cache = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
 
@@ -336,6 +338,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         (game_data.get('away_runs') or 0) != (game_data.get('home_runs') or 0)
     )
 
+    _in_linescore_window = False  # set True inside Final block when within 60-min window
+
     def fit_text(text, max_w):
         try:
             if font14.getlength(text) <= max_w:
@@ -392,15 +396,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         winner_name = game_data.get('winner_name')
         loser_name = game_data.get('loser_name')
 
-        # Track when this game first went Final so we can show the linescore
-        # for 10 minutes before switching to WP/LP/SV.
+        # Anchor the 60-min linescore window to the actual game end time when available,
+        # falling back to when the app first saw this game as Final.
         _game_pk = game_data.get('game_pk')
         _final_ts = _get_or_set_final_time(_game_pk) if _game_pk else None
-        _in_linescore_window = (
-            not _historical_mode and
-            _final_ts is not None and
-            (_time.time() - _final_ts) < _FINAL_LINESCORE_SECS
-        )
+        _end_utc_str = game_data.get('game_end_time_utc')
+        if _end_utc_str:
+            try:
+                _end_utc_dt = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], "%Y-%m-%dT%H:%M:%S"))
+                _elapsed = (_datetime.now(pytz.utc) - _end_utc_dt).total_seconds()
+                _in_linescore_window = not _historical_mode and _elapsed < _FINAL_LINESCORE_SECS
+            except Exception:
+                _in_linescore_window = (
+                    not _historical_mode and _final_ts is not None and
+                    (_time.time() - _final_ts) < _FINAL_LINESCORE_SECS
+                )
+        else:
+            _in_linescore_window = (
+                not _historical_mode and _final_ts is not None and
+                (_time.time() - _final_ts) < _FINAL_LINESCORE_SECS
+            )
 
         _decisions_ready = bool(winner_name and loser_name)
         _show_linescore = (away_inning_runs or home_inning_runs) and (
@@ -802,12 +817,24 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _show_overline:
             draw.line((_score_x, start_y + 3, _score_x + _score_w, start_y + 3), fill=0, width=2)
 
-    # Series context in header for postponed games — logo of leader + score, nothing if tied
+    # Series context in header for postponed games
     if game_data['detailed_state'] == 'Postponed' and (game_data.get('series_total_games') or 1) > 1:
         _ppd_sr = game_data.get('series_result') or ''
         _ppd_parts = _ppd_sr.split()
         _ppd_is_tied = 'tied' in _ppd_sr.lower()
-        if not _ppd_is_tied and len(_ppd_parts) >= 3 and _ppd_parts[1] == 'leads':
+        _ppd_sw = game_data.get('series_wins') or 0
+        _ppd_sl = game_data.get('series_losses') or 0
+        _ppd_total = game_data.get('series_total_games') or 1
+        _rx = start_x + horizonta_len - 2
+
+        if (_ppd_sw + _ppd_sl) == 0:
+            # Series hasn't started — show "0/X"
+            _ppd_score = f'0/{_ppd_total}'
+            _ppd_score_w = int(font11.getlength(_ppd_score))
+            _ppd_score_x = _rx - _ppd_score_w
+            draw.text((_ppd_score_x, start_y + 5), _ppd_score, font=font11, fill=0)
+            _ser_content_left_x = _ppd_score_x
+        elif not _ppd_is_tied and len(_ppd_parts) >= 3 and _ppd_parts[1] == 'leads':
             _ppd_score = _ppd_parts[2]
             _ppd_leader_str = _ppd_parts[0].upper()
             _ppd_logo_abbr = _ppd_logo_id = None
@@ -816,7 +843,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             elif _ppd_leader_str == home_team_name.upper():
                 _ppd_logo_abbr, _ppd_logo_id = home_team_name, str(game_data['home_team_id'])
             _ppd_score_w = int(font11.getlength(_ppd_score))
-            _rx = start_x + horizonta_len - 2
             _ppd_score_x = _rx - _ppd_score_w
             draw.text((_ppd_score_x, start_y + 5), _ppd_score, font=font11, fill=0)
             _ser_content_left_x = _ppd_score_x
@@ -1007,6 +1033,24 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _dur_y = start_y + 3
             draw.text((_dur_x,     _dur_y), _dur_str, font=_dur_font, fill=0)
             draw.text((_dur_x + 1, _dur_y), _dur_str, font=_dur_font, fill=0)
+
+    # End time — right-aligned in the win-probability strip below the box, shown for 60 min.
+    # Same font and bold double-draw as the "Final" header text.
+    if _game_is_final and _in_linescore_window and _end_utc_str:
+        try:
+            _tz_str = load_yaml_file('config.yaml').get('timezone', 'America/Chicago')
+            _end_utc_parsed = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], "%Y-%m-%dT%H:%M:%S"))
+            _end_local = _end_utc_parsed.astimezone(pytz.timezone(_tz_str))
+            _end_str = _end_local.strftime("%I:%M").lstrip("0") + " " + _end_local.strftime("%p").lower()
+            _et_strip_y = start_y + vertical_len + 21  # same y as win-prob bar
+            _et_strip_h = 19
+            _et_w = int(font14.getlength(_end_str))
+            _et_x = start_x + horizonta_len - _et_w - 1
+            _et_y = _et_strip_y + (_et_strip_h - 14) // 2
+            draw.text((_et_x,     _et_y), _end_str, font=font14, fill=0)
+            draw.text((_et_x + 1, _et_y), _end_str, font=font14, fill=0)
+        except Exception:
+            pass
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
