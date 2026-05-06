@@ -933,13 +933,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 pass
     if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
         _sub_ev = (game_data.get('sub_event') or '').strip()
-        # last_play is only relevant between innings (it reflects the play that ended the half).
-        # During active play include only real-time events (sub_event, review) so stale
-        # last_play from the previous half-inning doesn't bleed into the new half.
-        if _between_innings:
-            raw_play = (_sub_ev or game_data.get('last_review_result') or game_data.get('last_play') or '').replace('**', '').strip()
-        else:
-            raw_play = (_sub_ev or game_data.get('last_review_result') or '').replace('**', '').strip()
+        # Only include last_play when it belongs to the current half-inning.
+        # The API stores inning + isTopInning on every play; compare to the live linescore.
+        _cur_inn = game_data.get('current_inning')
+        _cur_is_top = game_data.get('inningState') in ('Top', 'Middle')
+        _lp_inn = game_data.get('last_play_inning')
+        _lp_is_top = game_data.get('last_play_is_top')
+        _lp_same_half = (
+            _lp_inn is not None and
+            _lp_inn == _cur_inn and
+            bool(_lp_is_top) == _cur_is_top
+        )
+        _last_play_val = game_data.get('last_play') if _lp_same_half else None
+        raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
         # Abbreviate verbose play names so they fit cleanly without truncation
         play_display = _abbr_play(raw_play) if raw_play else ''
         _header_right = _ser_content_left_x - 2
