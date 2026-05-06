@@ -1222,21 +1222,21 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _right_x = start_x + horizonta_len - 2
             _max_name_w = 46
             if _pitching_change and not _between_innings:
-                # Mid-inning: current hitter is waiting at the plate
+                # Mid-inning: bottom = current hitter at plate, middle = on deck, top = in the hole
                 _batter_names = [
-                    _last_name(game_data.get('current_hitter') or ''),
-                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
                     _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                    _last_name(game_data.get('current_hitter') or ''),
                 ]
                 # New pitcher from sub_event "PC: Smith"
                 _pc_raw = (game_data.get('sub_event') or '')[3:].strip()
                 _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             else:
-                # Between-innings (with or without a PC)
+                # Between-innings: bottom = due up, middle = on deck, top = in the hole
                 _batter_names = [
-                    _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
-                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
                     _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                    _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
                 ]
                 _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             _name_y = start_y + 21
