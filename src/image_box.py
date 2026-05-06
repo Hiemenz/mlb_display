@@ -1260,7 +1260,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _nm_disp = _nm_disp[:-1]
                     draw.text((_left_x, _name_y), _nm_disp, font=font14, fill=0)
                 _name_y += 12
-            if _pitching_change and not _between_innings:
+            if _pitching_change and not _between_innings and (game_data.get('num_of_outs') or 0) < 3:
                 # Mid-inning PC: no pitcher name (outs circles occupy that space).
                 # Outs circles at y=73 — above the linescore grid (y=83+), no overlap.
                 _outs_val = game_data.get('num_of_outs') or 0
