@@ -402,11 +402,14 @@ Examples:
     if args.sport_id:
         sport_id = args.sport_id
         print(f"Using specified sport: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
+        if sport_id == 11 and league_mode != 'aaa':
+            league_mode = 'aaa'
+            config['league_mode'] = 'aaa'
         if args.fetch_teams:
             fetch_all_team_abbreviations(sport_id)
             return
     elif league_mode == 'aaa':
-        sport_id = 12
+        sport_id = 11
         print("League mode: AAA (Triple-A)")
         if args.fetch_teams:
             fetch_all_team_abbreviations(sport_id)

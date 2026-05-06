@@ -596,7 +596,7 @@ def load_and_sort_json(json_string):
 
 
 
-def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_cache=False):
+def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_cache=False, config=None):
     """Returns (image, changed_regions) or None if nothing changed.
 
     changed_regions is a list of (x, y, w, h) tuples for partial refresh.
@@ -605,7 +605,8 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     bypass_cache=True skips the unchanged-image check and state persistence.
     Use this when generating GIFs or rendering historical snapshots.
     """
-    config = load_yaml_file('config.yaml')
+    if config is None:
+        config = load_yaml_file('config.yaml')
     use_logos = config.get('use_team_logos', False)
     logo_x_offset = config.get('small_logo_x_offset', 2)
     show_win_prob = config.get('scoreboard_win_probability', False)

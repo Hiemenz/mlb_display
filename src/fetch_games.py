@@ -19,8 +19,8 @@ from util import load_json_file, load_yaml_file, save_off_results
 from config_loader import load_config, add_config_arg
 
 SPORT_NAMES = {
-    1: "MLB", 8: "World Baseball Classic", 11: "College Baseball",
-    12: "Triple-A", 13: "Double-A", 14: "Winter Leagues",
+    1: "MLB", 8: "World Baseball Classic",
+    11: "Triple-A", 12: "Double-A", 13: "High-A", 14: "Single-A",
     16: "Spring Training", 51: "International"
 }
 

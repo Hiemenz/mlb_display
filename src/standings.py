@@ -17,6 +17,11 @@ leauge_dict = {
     205:'National League Central',
     203:'National League West',
 
+    # Triple-A
+    219:'International League East',
+    221:'International League West',
+    233:'Pacific Coast League East',
+    231:'Pacific Coast League West',
 }
 team_abbreviation_list = {}
 
@@ -54,7 +59,7 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
     last_updated = None
     for league_id in league_id_list:
         # Build the API URL with optional date parameter
-        url = f'https://statsapi.mlb.com/api/v1/standings?leagueId={league_id}&season={season}'
+        url = f'https://statsapi.mlb.com/api/v1/standings?leagueId={league_id}&season={season}&hydrate=team'
         if date:
             url += f'&date={date}'
 

@@ -108,7 +108,7 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
             return (image, [])
         return None
 
-    result = orchestrate_score_board(game_state_data, team_data, date_str, bypass_cache=bypass_cache)
+    result = orchestrate_score_board(game_state_data, team_data, date_str, bypass_cache=bypass_cache, config=config)
     if result:
         image, changed_regions = result
         image.save(output_path)
