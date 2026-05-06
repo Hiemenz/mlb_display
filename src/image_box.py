@@ -331,6 +331,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] == 'In Progress'
         and game_data.get('inningState') in ('Middle', 'End')
     )
+    # Mid-inning pitching change — also show linescore grid
+    _pitching_change = (
+        game_data['detailed_state'] == 'In Progress'
+        and (game_data.get('sub_event') or '').startswith('PC:')
+    )
     # End of 9th+ with one team leading — game is effectively over, don't show next batters
     _game_ending_state = (
         game_data.get('inningState') == 'End' and
@@ -536,7 +541,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _pit_w = int(_pit_fnt.getlength(_pit_name))
             draw.text((_right_x - _pit_w, _sep_y + 2), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
-        if _between_innings:
+        if _between_innings or _pitching_change:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos)
         else:
             # Active play: pitch/pitcher/batter info
@@ -1156,8 +1161,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
     if game_data['detailed_state'] == 'In Progress':
-        if _between_innings and _game_ending_state:
-            pass  # End of 9th+ with a lead — linescore already shown, no next-batters panel
+        if (_between_innings and _game_ending_state) or _pitching_change:
+            pass  # linescore already shown; no bases/batters panel during a pitching change
         elif _between_innings:
             # Next 3 batters (last names) + pitcher, right-aligned in the bases/outs space.
             # Prefer the batting-order-derived fields; fall back to linescore fields.
