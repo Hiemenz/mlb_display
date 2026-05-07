@@ -703,12 +703,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Pre-draw SWEEP ghost before header text so Final / logo sit on top
     _gf_early = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
     _st_early  = game_data.get('series_total_games') or 1
+    _se_wins   = game_data.get('series_wins', 0) or 0
+    _se_losses = game_data.get('series_losses', 0) or 0
+    _se_desc   = game_data.get('series_description', '')
+    _se_one_side_won = (_se_losses == 0 or _se_wins == 0)
     _is_sweep_early = (
         _gf_early and
         _st_early > 1 and
-        game_data.get('series_description') == 'Regular Season' and
-        (game_data.get('series_wins', 0) + game_data.get('series_losses', 0)) == _st_early and
-        (game_data.get('series_losses') == 0 or game_data.get('series_wins') == 0)
+        _se_one_side_won and
+        (
+            (_se_desc == 'Regular Season' and (_se_wins + _se_losses) == _st_early) or
+            (_se_desc != 'Regular Season' and bool(game_data.get('series_is_over')))
+        )
     )
     if _is_sweep_early:
         _sw_text = 'SWEEP'
@@ -743,12 +749,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         (game_data.get('current_inning') or 0) >= 4
     )
     _ser_total = (game_data.get('series_total_games') or 1)
+    _sw_wins   = game_data.get('series_wins', 0) or 0
+    _sw_losses = game_data.get('series_losses', 0) or 0
+    _sw_desc   = game_data.get('series_description', '')
+    _sw_one_side_won = (_sw_losses == 0 or _sw_wins == 0)
     _is_sweep = (
         _game_is_final and
         _ser_total > 1 and
-        game_data.get('series_description') == 'Regular Season' and
-        (game_data.get('series_wins', 0) + game_data.get('series_losses', 0)) == _ser_total and
-        (game_data.get('series_losses') == 0 or game_data.get('series_wins') == 0)
+        _sw_one_side_won and
+        (
+            (_sw_desc == 'Regular Season' and (_sw_wins + _sw_losses) == _ser_total) or
+            (_sw_desc != 'Regular Season' and bool(game_data.get('series_is_over')))
+        )
     )
     _series_clinched = (
         _game_is_final and
@@ -770,16 +782,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         (game_data.get('series_wins') or 0) > 0
     )
 
-    # Overline when no more games remain in the series.
-    # Regular season: last game of the set (game N of N) regardless of result.
-    # Postseason: only when a team has clinched the series.
-    _show_overline = False
-    if _game_is_final and _ser_total > 1:
-        if game_data.get('series_description') == 'Regular Season':
-            _sgn = game_data.get('series_game_number') or 0
-            _show_overline = _sgn > 0 and _sgn >= _ser_total
-        else:
-            _show_overline = _is_sweep or _series_clinched
+    # Overline when the full series has concluded.
+    # Regular Season: all scheduled games must have been played (wins+losses == total).
+    # Playoffs: series_is_over is sufficient (series ends before all games are needed).
+    _show_overline = (
+        _game_is_final and
+        _ser_total > 1 and
+        (
+            (_sw_desc == 'Regular Season' and (_sw_wins + _sw_losses) == _ser_total) or
+            (_sw_desc != 'Regular Season' and bool(game_data.get('series_is_over')))
+        )
+    )
 
     # _ser_content_left_x tracks left edge of series/broom content for G:X:XX positioning
     _ser_content_left_x = start_x + horizonta_len - 2
@@ -1103,11 +1116,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((_dur_x,     _dur_y), _dur_str, font=_dur_font, fill=0)
             draw.text((_dur_x + 1, _dur_y), _dur_str, font=_dur_font, fill=0)
 
-    # End time — right-aligned in the win-probability strip below the box, shown for 60 min.
-    # Same font and bold double-draw as the "Final" header text.
-    if _game_is_final and _in_linescore_window and _end_utc_str:
+    # End time — right-aligned in the win-probability strip below the box.
+    # Default: shown only while the linescore window is active (disappears with the linescore).
+    # Set show_game_end_time_always: true in config to keep it visible after the window closes.
+    _et_cfg = load_yaml_file('config.yaml')
+    _show_end_time_always = _et_cfg.get('show_game_end_time_always', False)
+    if _game_is_final and (_in_linescore_window or _show_end_time_always) and _end_utc_str:
         try:
-            _tz_str = load_yaml_file('config.yaml').get('timezone', 'America/Chicago')
+            _tz_str = _et_cfg.get('timezone', 'America/Chicago')
             _end_utc_parsed = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], "%Y-%m-%dT%H:%M:%S"))
             _end_local = _end_utc_parsed.astimezone(pytz.timezone(_tz_str))
             _end_str = _end_local.strftime("%I:%M").lstrip("0") + " " + _end_local.strftime("%p").lower()
