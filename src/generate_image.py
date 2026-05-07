@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import time as _time_mod
 from datetime import datetime
 import pytz
 from util import load_json_file, load_yaml_file, save_off_results
@@ -19,7 +20,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
 )
-from image_box import draw_box
+from image_box import draw_box, _FINAL_LINESCORE_SECS
 
 # ---------------------------------------------------------------------------
 # logging.basicConfig(level=logging.DEBUG)
@@ -662,7 +663,41 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         save_off_results(new_scores, 'score_alerts')
         # --- End score change detection ---
 
-        if compare_json_dicts_sorted(new_dict, old_dict):
+        # Detect when a Final game's linescore window transitions True→False.
+        # The visual content (linescore grid vs WP/LP) changes at the 60-min boundary
+        # without any change to game_state_data, so the data comparison above won't
+        # catch it. We track the window state separately and force a re-render when
+        # any game exits the window.
+        _final_state_set = {'Final', 'Game Over', 'Final: Tied'}
+        _final_times = load_json_file('game_final_times.json') or {}
+        _old_win_state = load_json_file('old_linescore_window_state.json') or {}
+        _new_win_state = {}
+        _linescore_window_changed = False
+        for _g in game_state_data:
+            if _g.get('detailed_state') in _final_state_set:
+                _pk = str(_g.get('game_pk', ''))
+                if not _pk:
+                    continue
+                _ft = _final_times.get(_pk)
+                if _ft is None:
+                    continue
+                _end_utc = _g.get('game_end_time_utc')
+                if _end_utc:
+                    try:
+                        _end_dt = pytz.utc.localize(datetime.strptime(_end_utc[:19], "%Y-%m-%dT%H:%M:%S"))
+                        _in_win = (datetime.now(pytz.utc) - _end_dt).total_seconds() < _FINAL_LINESCORE_SECS
+                    except Exception:
+                        _in_win = (_time_mod.time() - float(_ft)) < _FINAL_LINESCORE_SECS
+                else:
+                    _in_win = (_time_mod.time() - float(_ft)) < _FINAL_LINESCORE_SECS
+                _new_win_state[_pk] = _in_win
+                if _old_win_state.get(_pk) is True and not _in_win:
+                    _linescore_window_changed = True
+                    refreshed_game_ids.add(_pk)
+                    print(f'Linescore window expired for game {_pk} — forcing re-render')
+        save_off_results(_new_win_state, 'old_linescore_window_state')
+
+        if compare_json_dicts_sorted(new_dict, old_dict) and not _linescore_window_changed:
             print('images the same')
             return None
 
