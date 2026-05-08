@@ -20,7 +20,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
 )
-from image_box import draw_box, _FINAL_LINESCORE_SECS
+from image_box import draw_box
 
 # ---------------------------------------------------------------------------
 # logging.basicConfig(level=logging.DEBUG)
@@ -250,18 +250,19 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
                    home_team_id=None, away_team_id=None, game_end_time=None):
     draw = ImageDraw.Draw(Himage)
 
-    # Team logos in team name rows (24px, fits in 30px row with 3px top/bottom padding)
+    # Team logos in team name rows (24px bounding box, centered in 30px logo cell)
     _logo_size = 24
-    _logo_x = col_start + 2
     if away_team_id:
         _away_logo = _logo_small(away_team, away_team_id, size=_logo_size)
         if _away_logo:
-            Himage.paste(_away_logo, (_logo_x, row_start + 33))
+            _lw, _lh = _away_logo.size
+            Himage.paste(_away_logo, (col_start + (30 - _lw) // 2, row_start + 31 + (29 - _lh) // 2))
             draw = ImageDraw.Draw(Himage)
     if home_team_id:
         _home_logo = _logo_small(home_team, home_team_id, size=_logo_size)
         if _home_logo:
-            Himage.paste(_home_logo, (_logo_x, row_start + 63))
+            _lw, _lh = _home_logo.size
+            Himage.paste(_home_logo, (col_start + (30 - _lw) // 2, row_start + 61 + (29 - _lh) // 2))
             draw = ImageDraw.Draw(Himage)
 
     # bmp = Image.open(os.path.join('/home/pi/Documents/e-Paper/RaspberryPi_JetsonNano/python/examples/', 'qr.jpg'))
@@ -673,6 +674,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         _old_win_state = load_json_file('old_linescore_window_state.json') or {}
         _new_win_state = {}
         _linescore_window_changed = False
+        _final_linescore_secs = config.get('final_linescore_minutes', 60) * 60
         for _g in game_state_data:
             if _g.get('detailed_state') in _final_state_set:
                 _pk = str(_g.get('game_pk', ''))
@@ -685,11 +687,11 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
                 if _end_utc:
                     try:
                         _end_dt = pytz.utc.localize(datetime.strptime(_end_utc[:19], "%Y-%m-%dT%H:%M:%S"))
-                        _in_win = (datetime.now(pytz.utc) - _end_dt).total_seconds() < _FINAL_LINESCORE_SECS
+                        _in_win = (datetime.now(pytz.utc) - _end_dt).total_seconds() < _final_linescore_secs
                     except Exception:
-                        _in_win = (_time_mod.time() - float(_ft)) < _FINAL_LINESCORE_SECS
+                        _in_win = (_time_mod.time() - float(_ft)) < _final_linescore_secs
                 else:
-                    _in_win = (_time_mod.time() - float(_ft)) < _FINAL_LINESCORE_SECS
+                    _in_win = (_time_mod.time() - float(_ft)) < _final_linescore_secs
                 _new_win_state[_pk] = _in_win
                 if _old_win_state.get(_pk) is True and not _in_win:
                     _linescore_window_changed = True

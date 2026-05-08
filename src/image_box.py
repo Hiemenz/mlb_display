@@ -15,7 +15,6 @@ from image_utils import (
 )
 from util import load_json_file, load_yaml_file, save_off_results
 
-_FINAL_LINESCORE_SECS = 3600  # show linescore for 60 min after game ends
 _final_time_cache = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
 
@@ -98,14 +97,14 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
       Row 1 (16px): away logo + per-inning runs
       Row 2 (16px): home logo + per-inning runs
 
-    Columns: 15px logo col + 9 × 13px inning cols = 132px
+    Columns: 16px logo col + 9 × 13px inning cols = 133px
     Extra-innings: window shifts so the current inning is the rightmost column.
     """
-    LOGO_COL_W = 15
+    LOGO_COL_W = 16
     ROW_H_HDR  = 14
     ROW_H_TEAM = 16
     N_COLS     = 9
-    COL_W      = 13   # 15 + 9×13 = 132 ≤ 135
+    COL_W      = 13   # 16 + 9×13 = 133 ≤ 135
 
     y0 = start_y + 83            # grid top — bottom half of box (scores/logos/bases stay above)
     y1 = y0 + ROW_H_HDR          # = start_y + 97  (away row top)
@@ -152,7 +151,8 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
         lsz = 12
         logo = _logo_small(abbr, tid, size=lsz) if use_logos else None
         if logo:
-            Himage.paste(logo, (start_x + (LOGO_COL_W - lsz) // 2, row_y + (ROW_H_TEAM - lsz) // 2))
+            lw, lh = logo.size
+            Himage.paste(logo, (start_x + (LOGO_COL_W - lw) // 2, row_y + 1 + (ROW_H_TEAM - 1 - lh) // 2))
             draw = ImageDraw.Draw(Himage)
         else:
             s = (abbr or '')[:3]
@@ -192,10 +192,10 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
             if 0 <= col_k < N_COLS:
                 cell_x = start_x + LOGO_COL_W + col_k * COL_W
                 _xfont = font11
-                bbox = _xfont.getbbox('x')
+                bbox = _xfont.getbbox('X')
                 vis_w = bbox[2] - bbox[0]
                 tx = cell_x + (COL_W - vis_w) // 2 - bbox[0] + 1
-                draw.text((tx, y2 + (ROW_H_TEAM - 11) // 2), 'x', font=_xfont, fill=0)
+                draw.text((tx, y2 + (ROW_H_TEAM - 11) // 2), 'X', font=_xfont, fill=0)
 
     return draw, Himage
 
@@ -365,6 +365,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font11 = _get_font(11)
     font9 = _get_font(9)
 
+    _cfg = load_yaml_file('config.yaml')
+    _FINAL_LINESCORE_SECS = _cfg.get('final_linescore_minutes', 60) * 60
+
     vertical_len = 110
     horizonta_len = 135
     max_text_width = horizonta_len - 14
@@ -392,7 +395,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         (game_data.get('away_runs') or 0) != (game_data.get('home_runs') or 0)
     )
 
-    _in_linescore_window = False  # set True inside Final block when within 60-min window
+    _in_linescore_window = False  # set True inside Final block when within the linescore window
 
     def fit_text(text, max_w):
         try:
