@@ -82,6 +82,7 @@ small_logo_x_offset: 2
 
 # Minutes to show the per-inning linescore grid in each finished game's box after it goes Final.
 # Set to a large number (e.g. 9999) to always show the linescore for finished games.
+
 final_linescore_minutes: 60
 
 # Win probability bar in scoreboard mode: show team logos at their win probability position during live games
