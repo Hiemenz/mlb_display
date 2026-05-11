@@ -1162,7 +1162,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # horizontal line
     end_x = start_x + horizonta_len
     end_y = start_y
-    draw.line((start_x, start_y, end_x, end_y), fill = 0)
     draw.line((start_x, start_y + 20 * s, end_x, end_y + 20 * s), fill = 0)
 
     # Win probability bar — live games only, when show_win_prob enabled
