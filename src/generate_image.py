@@ -862,11 +862,14 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
             winner_abbr = abbr_map.get(str(game_data.get('home_team_id', '')))
             winner_id   = str(game_data.get('home_team_id', ''))
         if winner_abbr and winner_id:
-            ghost = _logo_ghost(winner_abbr, winner_id, size=SCALED, lightness=215)
+            # draw_box places a 110px ghost centred in the 135×110 content area
+            # (gx = (135-gw)//2, gy = 20 + (110-gh)//2).  Mirror that at scale×.
+            GHOST_SZ = 110 * scale          # 330 px
+            ghost = _logo_ghost(winner_abbr, winner_id, size=GHOST_SZ, lightness=215)
             if ghost:
                 gw, gh = ghost.size
-                gx = (SCALED - gw) // 2
-                gy = (SCALED - gh) // 2
+                gx = (135 * scale - gw) // 2
+                gy = 20 * scale + (110 * scale - gh) // 2
                 _paste_logo(scaled_cell, ghost, (gx, gy))
 
     # Paste the scaled cell centred in the content area
