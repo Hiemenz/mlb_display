@@ -53,6 +53,15 @@ night_mode: true
 night_start: 2   # midnight (hour in 24h, local timezone)
 night_end: 7     # 7am
 
+# Morning alternating mode: between 7am and 9am, alternate between yesterday's results and
+# today's schedule every 5 minutes. Before 7am always shows yesterday; after 9am always today.
+morning_alternate_games: true
+
+# Featured team full-screen: enlarge the primary team's game to fill the entire 800x480 display.
+# When enabled, one game is rendered full-screen instead of the 15-game scoreboard grid.
+# Game selection: first Scheduled/Pre-Game/Warmup game for the day → else most recent Final.
+featured_team_fullscreen: false
+
 
 # Team emoji overrides: display emoji instead of logo for these teams
 # Dark mode: invert display (white on black instead of black on white)

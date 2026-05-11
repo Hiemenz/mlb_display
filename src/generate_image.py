@@ -8,7 +8,7 @@ from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
 
 from image_assets import (
-    picdir, _get_font, _logo_small, _load_logo_gray,
+    picdir, _get_font, _logo_small, _load_logo_gray, _paste_logo,
     Image, ImageDraw, ImageFont, ImageOps,
 )
 from image_utils import (
@@ -704,10 +704,26 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             return None
 
     print('image is different')
-    Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
     league_mode = config.get('league_mode', 'mlb')
+
+    # --- Featured team full-screen mode ---
+    if config.get('featured_team_fullscreen', False):
+        primary = config.get('primary', '')
+        featured_game = _find_featured_game(game_state_data, team_data, primary)
+        if featured_game:
+            Himage = draw_featured_game_fullscreen(featured_game, team_data, config)
+        else:
+            Himage = Image.new('1', (800, 480), 255)
+            Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
+
+        if config.get('dark_mode', False):
+            Himage = ImageOps.invert(Himage.convert('L')).convert('1')
+        return (Himage, [])   # always full refresh for fullscreen
+
+    # --- Normal scoreboard grid ---
+    Himage = Image.new('1', (800, 480), 255)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
     standings_data = None
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
@@ -762,3 +778,371 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         changed_regions = []
 
     return (Himage, changed_regions)
+
+
+# ---------------------------------------------------------------------------
+# Featured team full-screen rendering
+# ---------------------------------------------------------------------------
+
+def _find_featured_game(game_state_data, team_data, primary_abbr):
+    """Return the best game to display for primary_abbr in fullscreen mode.
+
+    Priority: first Scheduled/Pre-Game/Warmup → first In Progress → last Final.
+    Falls back to the first game in the list if the primary team has no game.
+    """
+    abbr_map = team_data.get('team_abbreviation', {})
+    primary_games = []
+    for game in game_state_data:
+        away = abbr_map.get(str(game.get('away_team_id', '')), '')
+        home = abbr_map.get(str(game.get('home_team_id', '')), '')
+        if primary_abbr in (away, home):
+            primary_games.append(game)
+
+    if not primary_games:
+        return game_state_data[0] if game_state_data else None
+
+    _scheduled = {'Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start'}
+    _final     = {'Final', 'Game Over', 'Final: Tied'}
+
+    for g in primary_games:
+        if g.get('detailed_state') in _scheduled:
+            return g
+    for g in primary_games:
+        if g.get('detailed_state') == 'In Progress':
+            return g
+    for g in reversed(primary_games):
+        if g.get('detailed_state', '').startswith('Completed Early') or g.get('detailed_state') in _final:
+            return g
+    return primary_games[-1]
+
+
+def _draw_fullscreen_linescore(draw, Himage, start_y, game_data, team_data, font_hdr, font_val):
+    """Render a full-width inning-by-inning grid.  Returns the Y coord of the grid bottom."""
+    W = 800
+    MARGIN = 12
+    TEAM_COL_W = 52
+    HEADER_H = 22
+    ROW_H = 28
+
+    away_inn = game_data.get('away_inning_runs') or []
+    home_inn = game_data.get('home_inning_runs') or []
+    current  = game_data.get('current_inning') or max(len(away_inn), 9)
+    N = max(9, current)
+
+    MAX_INN = 12
+    if N > MAX_INN:
+        first_inn = N - MAX_INN + 1
+        n_cols = MAX_INN
+    else:
+        first_inn = 1
+        n_cols = N
+
+    total_data_cols = n_cols + 3           # innings + R + H + E
+    avail_w = W - 2 * MARGIN - TEAM_COL_W
+    col_w = avail_w // total_data_cols
+    x0 = MARGIN + TEAM_COL_W
+
+    abbr_map = team_data.get('team_abbreviation', {})
+    away_id  = str(game_data.get('away_team_id', ''))
+    home_id  = str(game_data.get('home_team_id', ''))
+    away_abbr = abbr_map.get(away_id, '???')
+    home_abbr = abbr_map.get(home_id, '???')
+
+    # Header row — inning numbers + RHE labels
+    for i in range(n_cols):
+        label = str(first_inn + i)
+        lw = int(font_hdr.getlength(label))
+        cx = x0 + i * col_w + col_w // 2
+        draw.text((cx - lw // 2, start_y), label, font=font_hdr, fill=0)
+    for j, lbl in enumerate(('R', 'H', 'E')):
+        lw = int(font_hdr.getlength(lbl))
+        cx = x0 + n_cols * col_w + j * col_w + col_w // 2
+        draw.text((cx - lw // 2, start_y), lbl, font=font_hdr, fill=0)
+
+    sep_y = start_y + HEADER_H
+    draw.line((MARGIN, sep_y, W - MARGIN, sep_y), fill=0)
+
+    rows = [
+        (away_abbr, away_inn, game_data.get('away_runs') or 0,
+         game_data.get('away_hits') or 0, game_data.get('away_errors') or 0),
+        (home_abbr, home_inn, game_data.get('home_runs') or 0,
+         game_data.get('home_hits') or 0, game_data.get('home_errors') or 0),
+    ]
+    for row_idx, (abbr, inn_runs, runs, hits, errors) in enumerate(rows):
+        ry = sep_y + 2 + row_idx * ROW_H
+        text_y = ry + (ROW_H - 18) // 2
+
+        # Team abbreviation right-aligned in team column
+        aw = int(font_val.getlength(abbr))
+        draw.text((MARGIN + TEAM_COL_W - aw - 4, text_y), abbr, font=font_val, fill=0)
+
+        # Per-inning cells
+        for i in range(n_cols):
+            idx = first_inn + i - 1
+            if idx < len(inn_runs):
+                cell = 'X' if inn_runs[idx] is None else str(inn_runs[idx])
+            else:
+                cell = '-'
+            cw_val = int(font_val.getlength(cell))
+            cx = x0 + i * col_w + col_w // 2
+            draw.text((cx - cw_val // 2, text_y), cell, font=font_val, fill=0)
+
+        # R H E
+        for j, val in enumerate((str(runs), str(hits), str(errors))):
+            vw = int(font_val.getlength(val))
+            cx = x0 + n_cols * col_w + j * col_w + col_w // 2
+            draw.text((cx - vw // 2, text_y), val, font=font_val, fill=0)
+
+    bottom_y = sep_y + 2 + 2 * ROW_H
+    draw.line((MARGIN, bottom_y, W - MARGIN, bottom_y), fill=0)
+    return bottom_y
+
+
+def draw_featured_game_fullscreen(game_data, team_data, config=None):
+    """Render a single game at full 800×480 resolution for the featured team display."""
+    if config is None:
+        config = load_yaml_file('config.yaml')
+
+    W, H = 800, 480
+    Himage = Image.new('1', (W, H), 255)
+    draw = ImageDraw.Draw(Himage)
+    use_logos = config.get('use_team_logos', False)
+
+    # Normalize states (mirrors draw_box)
+    if game_data.get('detailed_state', '').startswith('Completed Early'):
+        game_data = dict(game_data)
+        game_data['detailed_state'] = 'Final'
+    if game_data.get('detailed_state') == 'Delayed Start':
+        game_data = dict(game_data)
+        game_data['detailed_state'] = 'Pre-Game'
+    if game_data.get('detailed_state') == 'In Progress':
+        _has_play = (
+            (game_data.get('balls') or 0) > 0
+            or (game_data.get('strikes') or 0) > 0
+            or (game_data.get('num_of_outs') or 0) > 0
+            or (game_data.get('away_runs') or 0) > 0
+            or (game_data.get('home_runs') or 0) > 0
+            or game_data.get('inningState') in ('Middle', 'End')
+            or (game_data.get('current_inning') or 1) > 1
+            or game_data.get('runner_on_first')
+            or game_data.get('runner_on_second')
+            or game_data.get('runner_on_third')
+            or game_data.get('last_play')
+        )
+        if not _has_play:
+            game_data = dict(game_data)
+            game_data['detailed_state'] = 'Pre-Game'
+
+    state = game_data.get('detailed_state', '')
+    abbr_map = team_data.get('team_abbreviation', {})
+    away_id   = str(game_data.get('away_team_id', ''))
+    home_id   = str(game_data.get('home_team_id', ''))
+    away_abbr = abbr_map.get(away_id, '???')
+    home_abbr = abbr_map.get(home_id, '???')
+    away_runs = game_data.get('away_runs') or 0
+    home_runs = game_data.get('home_runs') or 0
+
+    _FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
+    _PRE_STATES   = {'Scheduled', 'Pre-Game', 'Warmup'}
+    _ORDINALS     = {1:'1st',2:'2nd',3:'3rd',4:'4th',5:'5th',
+                     6:'6th',7:'7th',8:'8th',9:'9th',10:'10th',11:'11th',12:'12th'}
+
+    font72 = _get_font(72)
+    font42 = _get_font(42)
+    font30 = _get_font(30)
+    font22 = _get_font(22)
+    font18 = _get_font(18)
+    LOGO_SIZE = 90
+
+    # ── Status header (Y=0..54) ──────────────────────────────────────────────
+    if state in _FINAL_STATES:
+        status = 'FINAL (TIE)' if state == 'Final: Tied' else 'FINAL'
+    elif state == 'In Progress':
+        inning = game_data.get('current_inning') or 1
+        inn_label = _ORDINALS.get(inning, f'{inning}th')
+        status = f"{game_data.get('inningState', 'Top')} {inn_label}"
+    elif state in _PRE_STATES:
+        status = state
+    elif state == 'Postponed':
+        reason = game_data.get('postpone_reason') or ''
+        status = f'PPD: {reason}' if reason else 'POSTPONED'
+    else:
+        status = state
+
+    sw = int(font30.getlength(status))
+    draw.text(((W - sw) // 2,     12), status, font=font30, fill=0)
+    draw.text(((W - sw) // 2 + 1, 12), status, font=font30, fill=0)
+    draw.line((0, 54, W, 54), fill=0)
+
+    # ── Teams + scores (Y=60..229) ───────────────────────────────────────────
+    ZONE_MID = 145   # vertical centre of this zone
+
+    def _place_logo(abbr, team_id, cx, side):
+        """Paste a logo at cx, clipped to screen edge. side='left' or 'right'."""
+        logo = _logo_small(abbr, team_id, size=LOGO_SIZE)
+        if not logo:
+            return
+        lx = (cx - LOGO_SIZE - 8) if side == 'left' else (cx + 8)
+        lx = max(0, min(W - LOGO_SIZE, lx))
+        ly = ZONE_MID - LOGO_SIZE // 2
+        _paste_logo(Himage, logo, (lx, ly))
+
+    if state in _FINAL_STATES or state == 'In Progress':
+        a_str = str(away_runs)
+        h_str = str(home_runs)
+        dash   = '-'
+        asw = int(font72.getlength(a_str))
+        hsw = int(font72.getlength(h_str))
+        dw  = int(font42.getlength(dash))
+
+        total_score_w = asw + 30 + dw + 30 + hsw
+        score_x = (W - total_score_w) // 2
+        score_y = ZONE_MID - 36        # 72-px font: half-height = 36
+
+        draw.text((score_x,                         score_y), a_str, font=font72, fill=0)
+        draw.text((score_x + asw + 30,              score_y + 16), dash, font=font42, fill=0)
+        draw.text((score_x + asw + 30 + dw + 30,   score_y), h_str, font=font72, fill=0)
+
+        # Away team left of score block
+        aaw = int(font42.getlength(away_abbr))
+        ax  = score_x - aaw - 50
+        draw.text((ax, ZONE_MID - 21), away_abbr, font=font42, fill=0)
+        if use_logos:
+            _place_logo(away_abbr, away_id, ax, 'left')
+
+        # Home team right of score block
+        hx = score_x + asw + 30 + dw + 30 + hsw + 50
+        draw.text((hx, ZONE_MID - 21), home_abbr, font=font42, fill=0)
+        if use_logos:
+            haw = int(font42.getlength(home_abbr))
+            _place_logo(home_abbr, home_id, hx + haw, 'right')
+
+    else:
+        # Scheduled / Pre-Game / Postponed: "AWAY @ HOME"
+        matchup = f'{away_abbr}  @  {home_abbr}'
+        mw = int(font42.getlength(matchup))
+        mx = (W - mw) // 2
+        draw.text((mx, ZONE_MID - 21), matchup, font=font42, fill=0)
+        if use_logos:
+            _place_logo(away_abbr, away_id, mx, 'left')
+            _place_logo(home_abbr, home_id, mx + mw, 'right')
+
+    draw.line((0, 233, W, 233), fill=0)
+
+    # ── Details zone (Y=238..479) ────────────────────────────────────────────
+    DETAIL_TOP = 240
+
+    if state in _FINAL_STATES:
+        ls_bottom = _draw_fullscreen_linescore(
+            draw, Himage, DETAIL_TOP, game_data, team_data, font18, font18)
+
+        # WP / LP / SV — one per column, centred
+        winner  = game_data.get('winner_name') or ''
+        loser   = game_data.get('loser_name') or ''
+        saver   = game_data.get('saver_name') or ''
+        wp_rec  = game_data.get('winner_record') or ''
+        lp_rec  = game_data.get('loser_record') or ''
+        sv_saves = game_data.get('saver_saves')
+        is_walkoff = bool(game_data.get('walk_off'))
+
+        lines = []
+        if winner:
+            s = f'WP: {_format_player_name(winner)}'
+            if wp_rec: s += f' ({wp_rec})'
+            lines.append(s)
+        if loser:
+            s = f'LP: {_format_player_name(loser)}'
+            if lp_rec: s += f' ({lp_rec})'
+            lines.append(s)
+        if saver:
+            s = f'SV: {_format_player_name(saver)}'
+            if sv_saves is not None: s += f' (S{sv_saves})'
+            lines.append(s)
+        if is_walkoff and lines:
+            lines.insert(0, 'Walk-off')
+
+        if lines:
+            pit_y = ls_bottom + 10
+            gap = (W - 20) // max(len(lines), 1)
+            for i, line in enumerate(lines):
+                lw = int(font22.getlength(line))
+                px = 10 + i * gap + (gap - lw) // 2
+                draw.text((px, pit_y), line, font=font22, fill=0)
+
+    elif state == 'In Progress':
+        ls_bottom = _draw_fullscreen_linescore(
+            draw, Himage, DETAIL_TOP, game_data, team_data, font18, font18)
+
+        count_y = ls_bottom + 10
+        balls   = game_data.get('balls') or 0
+        strikes = game_data.get('strikes') or 0
+        outs    = game_data.get('num_of_outs') or 0
+        count_str = f'B:{balls}  S:{strikes}  O:{outs}'
+        cw = int(font22.getlength(count_str))
+        draw.text(((W - cw) // 2, count_y), count_str, font=font22, fill=0)
+
+        last_play = game_data.get('last_play') or ''
+        if last_play:
+            lp_str = f'Last: {last_play}'
+            lpw = int(font22.getlength(lp_str))
+            if lpw > W - 20:
+                lp_str = last_play
+                lpw = int(font22.getlength(lp_str))
+            draw.text(((W - lpw) // 2, count_y + 30), lp_str, font=font22, fill=0)
+
+    elif state in _PRE_STATES:
+        away_pitcher_name, away_pitcher_stat = _pitcher_line(
+            game_data.get('away_probable'), game_data.get('away_probable_note'))
+        home_pitcher_name, home_pitcher_stat = _pitcher_line(
+            game_data.get('home_probable'), game_data.get('home_probable_note'))
+
+        def _draw_fs_pitcher(y, team, name, stat):
+            MARGIN_L = 12
+            MARGIN_R = W - 12
+            label = f'{team}:'
+            lw = int(font22.getlength(label))
+            draw.text((MARGIN_L,     y), label, font=font22, fill=0)
+            draw.text((MARGIN_L + 1, y), label, font=font22, fill=0)
+            name_x = MARGIN_L + lw + 10
+            stat_w = int(font18.getlength(stat)) if stat else 0
+            stat_x = MARGIN_R - stat_w
+            avail = stat_x - name_x - 8
+            n = name or 'TBD'
+            while n and int(font22.getlength(n)) > avail:
+                n = n[:-1]
+            draw.text((name_x, y), n, font=font22, fill=0)
+            if stat:
+                draw.text((stat_x, y + 2), stat, font=font18, fill=0)
+
+        _draw_fs_pitcher(DETAIL_TOP,      away_abbr, away_pitcher_name, away_pitcher_stat)
+        _draw_fs_pitcher(DETAIL_TOP + 34, home_abbr, home_pitcher_name, home_pitcher_stat)
+
+        # Weather
+        weather_parts = []
+        temp = game_data.get('weather_temp_f')
+        if temp is not None:
+            weather_parts.append(f'{temp}°F')
+        wind_speed = game_data.get('weather_wind_mph')
+        wind_dir   = (game_data.get('weather_wind_dir') or '').strip()
+        if wind_speed is not None:
+            weather_parts.append(f'{wind_speed}mph {wind_dir}'.strip())
+        precip = game_data.get('weather_precip_pct')
+        if precip is not None:
+            weather_parts.append(f'{precip}% precip')
+
+        if weather_parts:
+            wx_str = '  •  '.join(weather_parts)
+            ww = int(font22.getlength(wx_str))
+            draw.text(((W - ww) // 2, DETAIL_TOP + 80), wx_str, font=font22, fill=0)
+
+        venue = game_data.get('venue') or ''
+        if venue:
+            vw = int(font18.getlength(venue))
+            draw.text(((W - vw) // 2, DETAIL_TOP + 112), venue, font=font18, fill=0)
+
+    elif state == 'Postponed':
+        msg = game_data.get('postpone_reason') or game_data.get('description') or 'Game Postponed'
+        mw = int(font30.getlength(msg))
+        draw.text(((W - mw) // 2, DETAIL_TOP + 80), msg, font=font30, fill=0)
+
+    return Himage
