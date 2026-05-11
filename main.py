@@ -467,7 +467,7 @@ Examples:
     # 6. Fetch
     # In fullscreen mode tell the fetcher which team is featured so it skips
     # live-feed calls for all other games.
-    if config.get('featured_team_fullscreen', False):
+    if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
         config['_featured_abbr'] = config.get('primary', '')
     fetch_scoreboard_for_date(date_str, sport_id, config)
 

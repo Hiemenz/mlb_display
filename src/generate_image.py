@@ -19,6 +19,7 @@ from image_utils import (
 from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
+    draw_standings_sidebar_fullscreen,
 )
 from image_box import draw_box
 
@@ -708,7 +709,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     league_mode = config.get('league_mode', 'mlb')
 
     # --- Featured team full-screen mode ---
-    if config.get('featured_team_fullscreen', False):
+    if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
         primary = config.get('primary', '')
         featured_game = _find_featured_game(game_state_data, team_data, primary)
         if featured_game:
@@ -831,24 +832,24 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     win_prob    = config.get('scoreboard_win_probability', False)
     league_mode = config.get('league_mode', 'mlb')
 
-    # Standings chrome dimensions (must match the normal scoreboard grid)
-    SB_W = 32        # sidebar strip width on each side (x_start used by draw_out_of_town_score_board)
-    AREA_W = 800 - 2 * SB_W          # 736 px
+    # Scale game cell to fill the content height at integer scale (3×).
+    # Center the 405px box content (135*3) horizontally so the 45px dead zone in the
+    # cell image is split ~22px on each side, giving equal-width sidebars.
+    CELL   = 150
     AREA_H = 480 - _WC_STRIP_H       # 450 px
+    SCALED = (AREA_H // CELL) * CELL  # 450 px at scale 3
+    _scale = SCALED // CELL           # 3
+    _box_w = 135 * _scale             # 405 px — where draw_box's horizontal line ends
+    paste_x = (800 - _box_w) // 2    # 197 — centers box content in the display
+    paste_y = _WC_STRIP_H            # 30
 
-    # Scale the 150×150 cell to fit the content area with uniform (1:1) ratio
-    CELL = 150
-    scale  = min(AREA_W, AREA_H) // CELL   # 3  (limited by height: 450//150)
-    SCALED = CELL * scale                   # 450 px
-
-    # Render WITHOUT the winner ghost so upscaling doesn't smear faint dither dots
-    # into heavy blobs that obscure text.  Ghost is overlaid separately below.
-    cell = Image.new('1', (CELL, CELL), 255)
+    # Render at full target resolution — no upscaling needed, fonts/logos are native size
+    cell = Image.new('L', (SCALED, SCALED), 255)
     cell = draw_box(cell, 0, 0, game_data, team_data,
                     use_logos=use_logos, logo_x_offset=logo_offset,
-                    show_win_prob=win_prob, show_winner_logo=False)
-    scaled_gray = cell.convert('L').resize((SCALED, SCALED), Image.LANCZOS)
-    scaled_cell = scaled_gray.point(lambda p: 0 if p < 180 else 255).convert('1')
+                    show_win_prob=win_prob, show_winner_logo=False,
+                    scale=_scale)
+    scaled_cell = cell.point(lambda p: 0 if p < 128 else 255).convert('1')
 
     # Overlay winner ghost rendered natively at SCALED px — no upscaling artifacts.
     # lightness=215 → ~15% dot density: recognisable watermark that doesn't obscure text.
@@ -862,21 +863,24 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
             winner_abbr = abbr_map.get(str(game_data.get('home_team_id', '')))
             winner_id   = str(game_data.get('home_team_id', ''))
         if winner_abbr and winner_id:
-            # draw_box places a 110px ghost centred in the 135×110 content area
-            # (gx = (135-gw)//2, gy = 20 + (110-gh)//2).  Mirror that at scale×.
-            GHOST_SZ = 110 * scale          # 330 px
+            sf = float(_scale)
+            GHOST_SZ = round(110 * sf)
             ghost = _logo_ghost(winner_abbr, winner_id, size=GHOST_SZ, lightness=215)
             if ghost:
                 gw, gh = ghost.size
-                gx = (135 * scale - gw) // 2
-                gy = 20 * scale + (110 * scale - gh) // 2
+                gx = (round(135 * sf) - gw) // 2
+                gy = round(20 * sf) + (round(110 * sf) - gh) // 2
                 _paste_logo(scaled_cell, ghost, (gx, gy))
 
-    # Paste the scaled cell centred in the content area
     canvas = Image.new('1', (800, 480), 255)
-    paste_x = SB_W + (AREA_W - SCALED) // 2    # 32 + 143 = 175
-    paste_y = _WC_STRIP_H + (AREA_H - SCALED) // 2   # 30 + 0 = 30
     canvas.paste(scaled_cell, (paste_x, paste_y))
+
+    # Sidebars: left = x=0..paste_x-1, right = x=(paste_x+_box_w)..799
+    # Both widths are ~197-198px so logos are the same size on each side.
+    _left_sb_w  = paste_x             # 197
+    _right_sb_x = paste_x + _box_w   # 602
+    _right_sb_w = 800 - _right_sb_x  # 198
+    _sb_logo_sz = 52
 
     # Overlay wildcard header and standings sidebars
     standings_data = load_json_file('standings.json')
@@ -885,8 +889,12 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
             wildcard_data = derive_wildcard_from_standings(standings_data)
             canvas = draw_wildcard_header(canvas, wildcard_data)
         if config.get('show_standings_sidebar', False):
-            canvas = draw_standings_sidebar(canvas, standings_data, team_data, side='left', league_mode=league_mode)
-            canvas = draw_standings_sidebar(canvas, standings_data, team_data, side='right', league_mode=league_mode)
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='left', league_mode=league_mode,
+                x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='right', league_mode=league_mode,
+                x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
     return canvas
 
