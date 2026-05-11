@@ -8,7 +8,7 @@ from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
 
 from image_assets import (
-    picdir, _get_font, _logo_small, _load_logo_gray,
+    picdir, _get_font, _logo_small, _load_logo_gray, _logo_ghost, _paste_logo,
     Image, ImageDraw, ImageFont, ImageOps,
 )
 from image_utils import (
@@ -841,13 +841,33 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     scale  = min(AREA_W, AREA_H) // CELL   # 3  (limited by height: 450//150)
     SCALED = CELL * scale                   # 450 px
 
-    # Render the cell then upscale via grayscale for smoother strokes
+    # Render WITHOUT the winner ghost so upscaling doesn't smear faint dither dots
+    # into heavy blobs that obscure text.  Ghost is overlaid separately below.
     cell = Image.new('1', (CELL, CELL), 255)
     cell = draw_box(cell, 0, 0, game_data, team_data,
                     use_logos=use_logos, logo_x_offset=logo_offset,
                     show_win_prob=win_prob, show_winner_logo=False)
     scaled_gray = cell.convert('L').resize((SCALED, SCALED), Image.LANCZOS)
     scaled_cell = scaled_gray.point(lambda p: 0 if p < 180 else 255).convert('1')
+
+    # Overlay winner ghost rendered natively at SCALED px — no upscaling artifacts.
+    # lightness=215 → ~15% dot density: recognisable watermark that doesn't obscure text.
+    if use_logos and game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied'):
+        abbr_map = team_data.get('team_abbreviation', {})
+        winner_abbr = winner_id = None
+        if game_data.get('away_team_is_winner'):
+            winner_abbr = abbr_map.get(str(game_data.get('away_team_id', '')))
+            winner_id   = str(game_data.get('away_team_id', ''))
+        elif game_data.get('home_team_is_winner'):
+            winner_abbr = abbr_map.get(str(game_data.get('home_team_id', '')))
+            winner_id   = str(game_data.get('home_team_id', ''))
+        if winner_abbr and winner_id:
+            ghost = _logo_ghost(winner_abbr, winner_id, size=SCALED, lightness=215)
+            if ghost:
+                gw, gh = ghost.size
+                gx = (SCALED - gw) // 2
+                gy = (SCALED - gh) // 2
+                _paste_logo(scaled_cell, ghost, (gx, gy))
 
     # Paste the scaled cell centred in the content area
     canvas = Image.new('1', (800, 480), 255)

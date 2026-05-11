@@ -208,12 +208,12 @@ def _logo_small(abbr, team_id, size=28):
     return gray.convert('1')
 
 
-def _logo_ghost(abbr, team_id, size=110):
+def _logo_ghost(abbr, team_id, size=110, lightness=160):
     """Large, very-light ghost logo for the winner watermark on finished games.
 
-    The logo is dramatically brightened before Floyd-Steinberg dithering so only
-    ~30-35 % of the logo's darkest pixels survive as black dots — giving a clearly
-    recognisable watermark crest without obscuring the score text drawn on top.
+    lightness controls how bright (faint) the watermark is.  160 = normal (~30-35%
+    black dots); higher values produce fewer dots (e.g. 215 ≈ 15% for fullscreen use
+    where the logo is rendered at native resolution instead of being upscaled).
     Returns a '1'-mode image or None.
     """
     gray = _load_logo_gray(abbr, team_id)
@@ -221,8 +221,7 @@ def _logo_ghost(abbr, team_id, size=110):
         return None
     gray = gray.copy()
     gray.thumbnail((size, size), Image.LANCZOS)
-    # Lift dark pixels moderately so ~30-35% survive as black dots
-    gray = gray.point(lambda p: 255 if p > 180 else min(255, int(p * 0.3 + 160)))
+    gray = gray.point(lambda p: 255 if p > 180 else min(255, int(p * 0.3 + lightness)))
     return gray.convert('1')
 
 
