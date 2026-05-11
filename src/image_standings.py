@@ -33,6 +33,12 @@ _WC_LOGO_SZ     = _SIDEBAR_LOGO_SIZE              # same 20px as the sidebar
 _AL_DIVISIONS = ['American League East', 'American League Central', 'American League West']
 _NL_DIVISIONS = ['National League East', 'National League Central', 'National League West']
 
+# Fullscreen sidebar — 3 division columns side-by-side, full content-area height
+_FS_SIDEBAR_W   = 175   # left sidebar width (= game cell paste_x); game cell = 450px
+_FS_COL_W       = _FS_SIDEBAR_W // 3   # 58px per division column
+_FS_LOGO_SZ     = 44    # default logo size (fits in 58px col with 7px padding each side)
+_FS_LABEL_H     = 14    # px reserved for E/C/W label at top of each column
+
 _WC_WILDCARD_SPOTS = 3   # number of wildcard playoff berths per league
 _WC_MAX_TEAMS      = 12  # max eligible per league (15 teams - 3 division leaders)
 
@@ -355,3 +361,84 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
         save_off_results(_movement_data, 'standings_movement')
 
     return Himage
+
+
+def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='left', league_mode='mlb',
+                                      y_start=_WC_STRIP_H, height=450,
+                                      x_anchor=None, sidebar_w=None, logo_sz=None):
+    """Draw AL or NL divisions (E/C/W) as 3 side-by-side columns for the fullscreen game layout.
+
+    Left side = AL, right side = NL.  x_anchor / sidebar_w / logo_sz can be overridden by the
+    caller so each side uses the space actually available (the right sidebar starts where the
+    scoreboard box's horizontal line stops, not at the far right edge of the game cell image).
+    """
+    if league_mode == 'aaa':
+        divisions = _aaa_divisions(standings_data, side)[:3]
+    else:
+        divisions = _AL_DIV_ORDER if side == 'left' else _NL_DIV_ORDER
+
+    abbr_map = {**standings_data.get('team_abbreviation', {}),
+                **team_data.get('team_abbreviation', {})}
+
+    if x_anchor is None:
+        x_anchor = 0 if side == 'left' else (800 - _FS_SIDEBAR_W)
+    if sidebar_w is None:
+        sidebar_w = _FS_SIDEBAR_W
+    col_w = sidebar_w // 3
+    if logo_sz is None:
+        logo_sz = _FS_LOGO_SZ
+
+    n_teams     = 5
+    team_area_h = height - _FS_LABEL_H
+    slot_h      = team_area_h // n_teams   # 87 px
+
+    draw       = ImageDraw.Draw(canvas)
+    font_label = _get_font(9)
+
+    for col_idx, div_name in enumerate(divisions[:3]):
+        col_x = x_anchor + col_idx * col_w
+
+        # Division label: first letter of direction word (East→E, Central→C, West→W)
+        label = div_name.split()[-1][0]
+        lw = int(font_label.getlength(label))
+        draw.text((col_x + (col_w - lw) // 2, y_start + 2), label, font=font_label, fill=0)
+
+        teams = standings_data.get('standings', {}).get(div_name, [])
+        teams = sorted(teams, key=lambda t: int(t.get('divisionRank', 99)))
+
+        for slot_idx, team in enumerate(teams[:n_teams]):
+            team_id = str(team.get('team_id', ''))
+            abbr    = abbr_map.get(team_id, f'T{team_id}')
+
+            slot_y = y_start + _FS_LABEL_H + slot_idx * slot_h
+            logo_x = col_x + (col_w - logo_sz) // 2
+            logo_y = slot_y + (slot_h - logo_sz) // 2
+
+            logo_img = _logo_small(abbr, team_id, size=logo_sz)
+            if logo_img:
+                lw2, lh = logo_img.size
+                canvas.paste(logo_img, (logo_x + (logo_sz - lw2) // 2,
+                                        logo_y + (logo_sz - lh) // 2))
+            else:
+                font9 = _get_font(9)
+                tw = int(font9.getlength(abbr[:3]))
+                draw.text((logo_x + (logo_sz - tw) // 2, logo_y + (logo_sz - 9) // 2),
+                          abbr[:3], font=font9, fill=0)
+
+            # Clinch indicator
+            clinch = (team.get('clinch_indicator') or '').lower()
+            if clinch in ('y', 'z'):
+                box_w = 2 if clinch == 'z' else 1
+                draw.rectangle([logo_x, logo_y, logo_x + logo_sz - 1, logo_y + logo_sz - 1],
+                               outline=0, width=box_w)
+
+        # Vertical separator between columns (not after the last one)
+        if col_idx < 2:
+            sep_x = col_x + col_w
+            draw.line((sep_x, y_start, sep_x, y_start + height - 1), fill=0, width=1)
+
+    # Outer separator: right edge of left sidebar or left edge of right sidebar
+    edge_x = x_anchor + sidebar_w - 1 if side == 'left' else x_anchor
+    draw.line((edge_x, y_start, edge_x, y_start + height - 1), fill=0, width=1)
+
+    return canvas

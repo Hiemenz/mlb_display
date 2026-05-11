@@ -8,17 +8,18 @@ from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
 
 from image_assets import (
-    picdir, _get_font, _logo_small, _load_logo_gray,
+    picdir, _get_font, _logo_small, _load_logo_gray, _logo_ghost, _paste_logo,
     Image, ImageDraw, ImageFont, ImageOps,
 )
 from image_utils import (
     normalize_dict, standings_dict,
     draw_diamond, draw_circle, check_if_two_chars,
-    _format_player_name, _last_name, _pitcher_line, _clean_venue_name, _is_game_effectively_over,
+    _last_name, _pitcher_line, _clean_venue_name, _is_game_effectively_over,
 )
 from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
+    draw_standings_sidebar_fullscreen,
 )
 from image_box import draw_box
 
@@ -704,10 +705,26 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             return None
 
     print('image is different')
-    Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
     league_mode = config.get('league_mode', 'mlb')
+
+    # --- Featured team full-screen mode ---
+    if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
+        primary = config.get('primary', '')
+        featured_game = _find_featured_game(game_state_data, team_data, primary)
+        if featured_game:
+            Himage = draw_featured_game_fullscreen(featured_game, team_data, config)
+        else:
+            Himage = Image.new('1', (800, 480), 255)
+            Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
+
+        if config.get('dark_mode', False):
+            Himage = ImageOps.invert(Himage.convert('L')).convert('1')
+        return (Himage, [])   # always full refresh for fullscreen
+
+    # --- Normal scoreboard grid ---
+    Himage = Image.new('1', (800, 480), 255)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
     standings_data = None
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
@@ -762,3 +779,123 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         changed_regions = []
 
     return (Himage, changed_regions)
+
+
+# ---------------------------------------------------------------------------
+# Featured team full-screen rendering
+# ---------------------------------------------------------------------------
+
+def _find_featured_game(game_state_data, team_data, primary_abbr):
+    """Return the best game to display for primary_abbr in fullscreen mode.
+
+    Priority: first Scheduled/Pre-Game/Warmup → first In Progress → last Final.
+    Falls back to the first game in the list if the primary team has no game.
+    """
+    abbr_map = team_data.get('team_abbreviation', {})
+    primary_games = []
+    for game in game_state_data:
+        away = abbr_map.get(str(game.get('away_team_id', '')), '')
+        home = abbr_map.get(str(game.get('home_team_id', '')), '')
+        if primary_abbr in (away, home):
+            primary_games.append(game)
+
+    if not primary_games:
+        return game_state_data[0] if game_state_data else None
+
+    _scheduled = {'Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start'}
+    _final     = {'Final', 'Game Over', 'Final: Tied'}
+
+    for g in primary_games:
+        if g.get('detailed_state') in _scheduled:
+            return g
+    for g in primary_games:
+        if g.get('detailed_state') == 'In Progress':
+            return g
+    for g in reversed(primary_games):
+        if g.get('detailed_state', '').startswith('Completed Early') or g.get('detailed_state') in _final:
+            return g
+    return primary_games[-1]
+
+
+def draw_featured_game_fullscreen(game_data, team_data, config=None):
+    """Enlarge a single scoreboard cell while preserving its 1:1 aspect ratio.
+
+    The cell is scaled to fill the content area (inside the standings chrome)
+    uniformly, then the wildcard header and standings sidebars are drawn on top
+    exactly as they appear in the normal scoreboard view.
+    """
+    if config is None:
+        config = load_yaml_file('config.yaml')
+
+    use_logos   = config.get('use_team_logos', False)
+    logo_offset = config.get('small_logo_x_offset', 2)
+    win_prob    = config.get('scoreboard_win_probability', False)
+    league_mode = config.get('league_mode', 'mlb')
+
+    # Scale game cell to fill the content height at integer scale (3×).
+    # Center the 405px box content (135*3) horizontally so the 45px dead zone in the
+    # cell image is split ~22px on each side, giving equal-width sidebars.
+    CELL   = 150
+    AREA_H = 480 - _WC_STRIP_H       # 450 px
+    SCALED = (AREA_H // CELL) * CELL  # 450 px at scale 3
+    _scale = SCALED // CELL           # 3
+    _box_w = 135 * _scale             # 405 px — where draw_box's horizontal line ends
+    paste_x = (800 - _box_w) // 2    # 197 — centers box content in the display
+    paste_y = _WC_STRIP_H            # 30
+
+    # Render at full target resolution — no upscaling needed, fonts/logos are native size
+    cell = Image.new('L', (SCALED, SCALED), 255)
+    cell = draw_box(cell, 0, 0, game_data, team_data,
+                    use_logos=use_logos, logo_x_offset=logo_offset,
+                    show_win_prob=win_prob, show_winner_logo=False,
+                    scale=_scale)
+    scaled_cell = cell.point(lambda p: 0 if p < 128 else 255).convert('1')
+
+    # Overlay winner ghost rendered natively at SCALED px — no upscaling artifacts.
+    # lightness=215 → ~15% dot density: recognisable watermark that doesn't obscure text.
+    if use_logos and game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied'):
+        abbr_map = team_data.get('team_abbreviation', {})
+        winner_abbr = winner_id = None
+        if game_data.get('away_team_is_winner'):
+            winner_abbr = abbr_map.get(str(game_data.get('away_team_id', '')))
+            winner_id   = str(game_data.get('away_team_id', ''))
+        elif game_data.get('home_team_is_winner'):
+            winner_abbr = abbr_map.get(str(game_data.get('home_team_id', '')))
+            winner_id   = str(game_data.get('home_team_id', ''))
+        if winner_abbr and winner_id:
+            sf = float(_scale)
+            GHOST_SZ = round(110 * sf)
+            ghost = _logo_ghost(winner_abbr, winner_id, size=GHOST_SZ, lightness=215)
+            if ghost:
+                gw, gh = ghost.size
+                gx = (round(135 * sf) - gw) // 2
+                gy = round(20 * sf) + (round(110 * sf) - gh) // 2
+                _paste_logo(scaled_cell, ghost, (gx, gy))
+
+    canvas = Image.new('1', (800, 480), 255)
+    canvas.paste(scaled_cell, (paste_x, paste_y))
+
+    # Sidebars: left = x=0..paste_x-1, right = x=(paste_x+_box_w)..799
+    # Both widths are ~197-198px so logos are the same size on each side.
+    _left_sb_w  = paste_x             # 197
+    _right_sb_x = paste_x + _box_w   # 602
+    _right_sb_w = 800 - _right_sb_x  # 198
+    _sb_logo_sz = 52
+
+    # Overlay wildcard header and standings sidebars
+    standings_data = load_json_file('standings.json')
+    if standings_data and 'standings' in standings_data:
+        if config.get('show_wildcard_standings', False) and league_mode != 'aaa':
+            wildcard_data = derive_wildcard_from_standings(standings_data)
+            canvas = draw_wildcard_header(canvas, wildcard_data)
+        if config.get('show_standings_sidebar', False):
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='left', league_mode=league_mode,
+                x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='right', league_mode=league_mode,
+                x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
+
+    return canvas
+
+

@@ -597,7 +597,13 @@ def parse_games(data, sport_id=None, config=None):
             len(_h_inn) == len(_a_inn) and
             _h_inn[-1] is not None and _h_inn[-1] > 0
         )
-        if game_dict.get('detailed_state') in ('In Progress', 'Player challenge', 'Manager challenge') and live_calls_made < max_live_calls:
+        # In fullscreen mode only make live-feed calls for the one displayed game
+        _featured = config.get('_featured_abbr', '')
+        _is_featured = (not _featured) or (_featured in (
+            team_abbreviations.get(str(away_team_id), ''),
+            team_abbreviations.get(str(home_team_id), ''),
+        ))
+        if _is_featured and game_dict.get('detailed_state') in ('In Progress', 'Player challenge', 'Manager challenge') and live_calls_made < max_live_calls:
             away_wp, home_wp, last_play, last_play_inning, last_play_is_top = fetch_win_probability(game_id)
             live_calls_made += 1
             game_dict['last_play'] = last_play
@@ -615,7 +621,7 @@ def parse_games(data, sport_id=None, config=None):
                 bi_info = fetch_between_inning_info(game_id, game_dict['inningState'])
                 live_calls_made += 1
                 game_dict.update(bi_info)
-        elif game_dict.get('detailed_state') == 'Delayed' and (game_dict.get('current_inning') or 0) > 0 and live_calls_made < max_live_calls:
+        elif _is_featured and game_dict.get('detailed_state') == 'Delayed' and (game_dict.get('current_inning') or 0) > 0 and live_calls_made < max_live_calls:
             # Fetch upcoming batters/pitcher so the delay screen can show who's due up
             from game_detail_fetch import fetch_between_inning_info
             _inning_state = game_dict.get('inningState') or ''

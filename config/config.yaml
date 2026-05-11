@@ -53,6 +53,10 @@ night_mode: true
 night_start: 2   # midnight (hour in 24h, local timezone)
 night_end: 7     # 7am
 
+# Morning alternating mode: between 7am and 9am, alternate between yesterday's results and
+# today's schedule every 5 minutes. Before 7am always shows yesterday; after 9am always today.
+morning_alternate_games: true
+
 
 # Team emoji overrides: display emoji instead of logo for these teams
 # Dark mode: invert display (white on black instead of black on white)
