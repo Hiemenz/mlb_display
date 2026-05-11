@@ -738,8 +738,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _main_w = int(font14.getlength(_time_main))
         _ampm_x = start_x + 3 * s + _main_w + 1 * s
         _ampm_y = start_y + 8 * s
-        draw.text((_ampm_x,         _ampm_y), _time_ampm, font=font9, fill=0)
-        draw.text((_ampm_x + 1 * s, _ampm_y), _time_ampm, font=font9, fill=0)
+        draw.text((_ampm_x, _ampm_y), _time_ampm, font=font9, fill=0)
         _total_time_w = _main_w + int(font9.getlength(_time_ampm)) + 2 * s
     else:
         draw.text((start_x + 2 * s, start_y + 3 * s), game_state_str, font=font14, fill=0)
