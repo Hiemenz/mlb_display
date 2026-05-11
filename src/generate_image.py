@@ -817,10 +817,11 @@ def _find_featured_game(game_state_data, team_data, primary_abbr):
 
 
 def draw_featured_game_fullscreen(game_data, team_data, config=None):
-    """Enlarge a single scoreboard cell to 800×480 using the same draw_box layout.
+    """Enlarge a single scoreboard cell while preserving its 1:1 aspect ratio.
 
-    Renders the game with draw_box at its normal scale, then upscales the result
-    to fill the full display — same layout, no repositioning.
+    The cell is scaled to fill the content area (inside the standings chrome)
+    uniformly, then the wildcard header and standings sidebars are drawn on top
+    exactly as they appear in the normal scoreboard view.
     """
     if config is None:
         config = load_yaml_file('config.yaml')
@@ -828,19 +829,42 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     use_logos   = config.get('use_team_logos', False)
     logo_offset = config.get('small_logo_x_offset', 2)
     win_prob    = config.get('scoreboard_win_probability', False)
+    league_mode = config.get('league_mode', 'mlb')
 
-    # draw_box renders into ~135×130 px starting at (start_x, start_y).
-    # Use a 150×150 canvas with the box at (0, 0) so nothing is clipped.
+    # Standings chrome dimensions (must match the normal scoreboard grid)
+    SB_W = 32        # sidebar strip width on each side (x_start used by draw_out_of_town_score_board)
+    AREA_W = 800 - 2 * SB_W          # 736 px
+    AREA_H = 480 - _WC_STRIP_H       # 450 px
+
+    # Scale the 150×150 cell to fit the content area with uniform (1:1) ratio
     CELL = 150
+    scale  = min(AREA_W, AREA_H) // CELL   # 3  (limited by height: 450//150)
+    SCALED = CELL * scale                   # 450 px
+
+    # Render the cell then upscale via grayscale for smoother strokes
     cell = Image.new('1', (CELL, CELL), 255)
     cell = draw_box(cell, 0, 0, game_data, team_data,
                     use_logos=use_logos, logo_x_offset=logo_offset,
                     show_win_prob=win_prob)
+    scaled_gray = cell.convert('L').resize((SCALED, SCALED), Image.LANCZOS)
+    scaled_cell = scaled_gray.point(lambda p: 0 if p < 180 else 255).convert('1')
 
-    # Upscale to full display via grayscale (LANCZOS gives smoother edges than NEAREST)
-    # then threshold back to 1-bit.  Threshold at 180 keeps strokes slightly thicker
-    # at high magnification, improving readability on e-ink.
-    scaled = cell.convert('L').resize((800, 480), Image.LANCZOS)
-    return scaled.point(lambda p: 0 if p < 180 else 255).convert('1')
+    # Paste the scaled cell centred in the content area
+    canvas = Image.new('1', (800, 480), 255)
+    paste_x = SB_W + (AREA_W - SCALED) // 2    # 32 + 143 = 175
+    paste_y = _WC_STRIP_H + (AREA_H - SCALED) // 2   # 30 + 0 = 30
+    canvas.paste(scaled_cell, (paste_x, paste_y))
+
+    # Overlay wildcard header and standings sidebars
+    standings_data = load_json_file('standings.json')
+    if standings_data and 'standings' in standings_data:
+        if config.get('show_wildcard_standings', False) and league_mode != 'aaa':
+            wildcard_data = derive_wildcard_from_standings(standings_data)
+            canvas = draw_wildcard_header(canvas, wildcard_data)
+        if config.get('show_standings_sidebar', False):
+            canvas = draw_standings_sidebar(canvas, standings_data, team_data, side='left', league_mode=league_mode)
+            canvas = draw_standings_sidebar(canvas, standings_data, team_data, side='right', league_mode=league_mode)
+
+    return canvas
 
 

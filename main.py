@@ -465,6 +465,10 @@ Examples:
         sched = {}
 
     # 6. Fetch
+    # In fullscreen mode tell the fetcher which team is featured so it skips
+    # live-feed calls for all other games.
+    if config.get('featured_team_fullscreen', False):
+        config['_featured_abbr'] = config.get('primary', '')
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
     # 7. Update schedule state

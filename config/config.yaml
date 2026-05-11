@@ -60,7 +60,7 @@ morning_alternate_games: true
 # Featured team full-screen: enlarge the primary team's game to fill the entire 800x480 display.
 # When enabled, one game is rendered full-screen instead of the 15-game scoreboard grid.
 # Game selection: first Scheduled/Pre-Game/Warmup game for the day → else most recent Final.
-featured_team_fullscreen: false
+featured_team_fullscreen: true
 
 
 # Team emoji overrides: display emoji instead of logo for these teams
