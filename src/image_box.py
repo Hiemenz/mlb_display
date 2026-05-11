@@ -258,9 +258,9 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
                 draw.ellipse(box, fill=255, outline=0)
 
 
-def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show_tv=True):
+def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show_tv=True, scale=1):
     """Pre-game footer: weather left-aligned, TV channel right-aligned, in the inter-row gap."""
-    y = start_y + 112
+    y = start_y + 112 * scale
 
     # TV channel: right-aligned
     tv = (game_data.get('tv_channel') or '') if show_tv else ''
@@ -272,12 +272,12 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
             tv_w = len(tv) * 5 + 2
         draw.text((start_x + horiz_len - tv_w, y), tv, font=fnt, fill=0)
 
-    avail_w = horiz_len - tv_w - 6
+    avail_w = horiz_len - tv_w - 6 * scale
 
     # Dome takes full priority — no weather shown
     roof = game_data.get('roof_state')
     if roof in ('fixed', 'dome'):
-        draw.text((start_x + 2, y), 'Dome', font=fnt, fill=0)
+        draw.text((start_x + 2 * scale, y), 'Dome', font=fnt, fill=0)
         return
 
     temp = game_data.get('weather_temp_f')
@@ -312,7 +312,7 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
             except AttributeError:
                 tw = len(text) * 5
             if tw <= avail_w:
-                draw.text((start_x + 2, y), text, font=try_fnt, fill=0)
+                draw.text((start_x + 2 * scale, y), text, font=try_fnt, fill=0)
                 return
 
 
@@ -1103,7 +1103,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((_odds_right - int(font11.getlength(_hml_s)), _home_odds_y), _hml_s, font=font11, fill=0)
 
         _is_ppd = game_data['detailed_state'] == 'Postponed'
-        _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14, show_tv=not _is_ppd)
+        _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14, show_tv=not _is_ppd, scale=s)
 
     # Game duration — header-center for non-sweep finals; between team rows for sweep
     if _game_is_final and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
