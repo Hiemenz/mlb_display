@@ -843,12 +843,26 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     paste_x = (800 - _box_w) // 2    # 197 — centers box content in the display
     paste_y = _WC_STRIP_H            # 30
 
+    # Build streak_map from standings so L10/streak show in pre-game boxes
+    standings_data = load_json_file('standings.json')
+    _streak_map = {}
+    if standings_data:
+        for _div_teams in standings_data.get('standings', {}).values():
+            for _t in _div_teams:
+                _tid = str(_t.get('team_id', ''))
+                if _tid:
+                    _streak_map[_tid] = {
+                        'streak': _t.get('streak'),
+                        'l10_wins': _t.get('last_ten_wins'),
+                        'l10_losses': _t.get('last_ten_losses'),
+                    }
+
     # Render at full target resolution — no upscaling needed, fonts/logos are native size
     cell = Image.new('L', (SCALED, SCALED), 255)
     cell = draw_box(cell, 0, 0, game_data, team_data,
                     use_logos=use_logos, logo_x_offset=logo_offset,
                     show_win_prob=win_prob, show_winner_logo=False,
-                    scale=_scale)
+                    streak_map=_streak_map, scale=_scale)
     scaled_cell = cell.point(lambda p: 0 if p < 128 else 255).convert('1')
 
     # Overlay winner ghost rendered natively at SCALED px — no upscaling artifacts.
@@ -882,8 +896,7 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     _right_sb_w = 800 - _right_sb_x  # 198
     _sb_logo_sz = 52
 
-    # Overlay wildcard header and standings sidebars
-    standings_data = load_json_file('standings.json')
+    # Overlay wildcard header and standings sidebars (standings_data already loaded above)
     if standings_data and 'standings' in standings_data:
         if config.get('show_wildcard_standings', False) and league_mode != 'aaa':
             wildcard_data = derive_wildcard_from_standings(standings_data)

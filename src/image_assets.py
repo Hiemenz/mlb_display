@@ -208,10 +208,10 @@ def _logo_small(abbr, team_id, size=28):
     return gray.convert('1')
 
 
-def _logo_ghost(abbr, team_id, size=110, lightness=160):
-    """Large, very-light ghost logo for the winner watermark on finished games.
+def _logo_ghost(abbr, team_id, size=110, lightness=140):
+    """Large, ghost logo for the winner watermark on finished games.
 
-    lightness controls how bright (faint) the watermark is.  160 = normal (~30-35%
+    lightness controls how bright (faint) the watermark is.  140 = normal (~45%
     black dots); higher values produce fewer dots (e.g. 215 ≈ 15% for fullscreen use
     where the logo is rendered at native resolution instead of being upscaled).
     Returns a '1'-mode image or None.

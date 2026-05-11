@@ -120,7 +120,7 @@ def draw_wildcard_header(Himage, wildcard_data):
     n_nl = min(len(nl_teams), _WC_WILDCARD_SPOTS)
 
     if n_al > 0:
-        box_x0 = _WC_BOX_X_START
+        box_x0 = _WC_BOX_X_START + 1
         box_x1 = _WC_BOX_X_START + n_al * _WC_SLOT_W
         try:
             draw.rounded_rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], radius=3, outline=0, width=1)
