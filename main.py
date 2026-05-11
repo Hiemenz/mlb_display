@@ -32,6 +32,29 @@ from image_box import set_historical_mode
 _REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
+def _load_dotenv():
+    """Load .env file into os.environ if not already set. Existing env vars take priority."""
+    env_path = os.path.join(_REPO_ROOT, '.env')
+    try:
+        with open(env_path) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith('#') or '=' not in _line:
+                    continue
+                _key, _, _val = _line.partition('=')
+                _key = _key.strip()
+                _val = _val.strip().strip('"').strip("'")
+                if _key and _key not in os.environ:
+                    os.environ[_key] = _val
+    except FileNotFoundError:
+        pass
+    except Exception as _e:
+        print(f"Warning: failed to load .env: {_e}")
+
+
+_load_dotenv()
+
+
 def _data_path(filename):
     return os.path.join(_REPO_ROOT, 'data', filename)
 
@@ -396,7 +419,8 @@ Examples:
         display_image(overlay)
         _mark_discord_applied()
 
-    league_mode = config.get('league_mode', 'mlb')
+    league_mode = (os.environ.get('LEAGUE_MODE', '').lower().strip()
+                   or config.get('league_mode', 'mlb'))
 
     # Handle --sport-id / --fetch-teams
     if args.sport_id:
@@ -455,11 +479,29 @@ Examples:
             print(f"Before 9am — showing previous day: {date_str}")
 
     # 5. Smart polling gate (only for automatic runs on today's date, skip in pre-5am mode)
+    _is_fullscreen = os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes')
     if not args.date and not _no_throttle and not _pre9am:
         sched = _load_schedule_state()
         skip, reason = _should_skip_poll(date_str, config, sched)
         if skip:
             print(reason)
+            # Still refresh standings if needed — sidebar/fullscreen must stay current
+            # even when the game-data poll is throttled.
+            _sl_needs = (
+                config.get('show_standings_sidebar', False) or
+                config.get('show_wildcard_standings', False) or
+                _is_fullscreen
+            )
+            _sl_ids = [117, 112] if league_mode == 'aaa' else [103, 104]
+            if _sl_needs and _should_refresh_standings(sched):
+                try:
+                    _sl_today = datetime.now()
+                    get_standings(_sl_ids, season=_sl_today.year)
+                    _sl_prev = _sl_today - timedelta(days=1)
+                    get_standings(_sl_ids, season=_sl_prev.year,
+                                  date=_sl_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
+                except Exception as _sl_e:
+                    print(f"Warning: standings refresh on poll-skip: {_sl_e}")
             return
     else:
         sched = {}
@@ -467,7 +509,7 @@ Examples:
     # 6. Fetch
     # In fullscreen mode tell the fetcher which team is featured so it skips
     # live-feed calls for all other games.
-    if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
+    if _is_fullscreen:
         config['_featured_abbr'] = config.get('primary', '')
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
@@ -479,7 +521,11 @@ Examples:
             return
 
     # 7b. Standings refresh
-    _needs_standings = config.get('show_standings_sidebar', False) or config.get('show_wildcard_standings', False)
+    _needs_standings = (
+        config.get('show_standings_sidebar', False) or
+        config.get('show_wildcard_standings', False) or
+        _is_fullscreen
+    )
     _standings_league_ids = [117, 112] if league_mode == 'aaa' else [103, 104]
     if _needs_standings:
         if args.date:
