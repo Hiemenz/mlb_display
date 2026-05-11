@@ -437,8 +437,4 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             sep_x = col_x + col_w
             draw.line((sep_x, y_start, sep_x, y_start + height - 1), fill=0, width=1)
 
-    # Outer separator: right edge of left sidebar or left edge of right sidebar
-    edge_x = x_anchor + sidebar_w - 1 if side == 'left' else x_anchor
-    draw.line((edge_x, y_start, edge_x, y_start + height - 1), fill=0, width=1)
-
     return canvas

@@ -909,6 +909,22 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
                 canvas, standings_data, team_data, side='right', league_mode=league_mode,
                 x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
+    # Date label centered in the top strip between wildcard teams
+    _gd_str = (game_data.get('game_date') or '')[:10]
+    if _gd_str:
+        try:
+            _gd = datetime.strptime(_gd_str, '%Y-%m-%d')
+            _date_label = _gd.strftime('%B %-d, %Y')
+        except Exception:
+            _date_label = _gd_str
+        _date_draw = ImageDraw.Draw(canvas)
+        _date_font = _get_font(14)
+        _dw = int(_date_font.getlength(_date_label))
+        _dx = (800 - _dw) // 2
+        _dy = max(0, (_WC_STRIP_H - 14) // 2)
+        _date_draw.text((_dx,     _dy), _date_label, font=_date_font, fill=0)
+        _date_draw.text((_dx + 1, _dy), _date_label, font=_date_font, fill=0)
+
     return canvas
 
 

@@ -304,11 +304,11 @@ def _should_skip_poll(date_str, config, sched):
     if any_final_undecided:
         interval_min = 2
     elif all_done:
-        interval_min = 60
+        interval_min = 15
     elif not cached_games or all_pregame:
-        interval_min = 60
+        interval_min = 15
     else:
-        interval_min = config.get('update_interval', 14)
+        interval_min = config.get('update_interval', 15)
 
     last_fetch = sched.get('last_game_fetch')
     if last_fetch:
@@ -453,6 +453,7 @@ Examples:
 
     # Determine date
     _pre9am = False
+    _morning_block = None  # set only in morning alternating mode
     if args.date:
         date_str = args.date
         set_historical_mode(True)
@@ -466,45 +467,57 @@ Examples:
         elif _now.hour >= 7 and config.get('morning_alternate_games', True):
             # 7am–9am: alternate between yesterday and today every 5 minutes
             _pre9am = True
-            five_min_block = (_now.hour * 60 + _now.minute) // 5
-            if five_min_block % 2 == 0:
+            _morning_block = (_now.hour * 60 + _now.minute) // 5
+            if _morning_block % 2 == 0:
                 date_str = (_now.date() - timedelta(days=1)).strftime('%Y-%m-%d')
-                print(f"Morning alternating (block {five_min_block}) — showing previous day: {date_str}")
+                print(f"Morning alternating (block {_morning_block}) — showing previous day: {date_str}")
             else:
                 date_str = _now.date().strftime('%Y-%m-%d')
-                print(f"Morning alternating (block {five_min_block}) — showing today: {date_str}")
+                print(f"Morning alternating (block {_morning_block}) — showing today: {date_str}")
         else:
             date_str = (_now.date() - timedelta(days=1)).strftime('%Y-%m-%d')
             _pre9am = True
             print(f"Before 9am — showing previous day: {date_str}")
 
-    # 5. Smart polling gate (only for automatic runs on today's date, skip in pre-5am mode)
+    # 5. Smart polling gate
     _is_fullscreen = os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes')
-    if not args.date and not _no_throttle and not _pre9am:
+    sched = {}
+    if not args.date and not _no_throttle:
         sched = _load_schedule_state()
-        skip, reason = _should_skip_poll(date_str, config, sched)
-        if skip:
-            print(reason)
-            # Still refresh standings if needed — sidebar/fullscreen must stay current
-            # even when the game-data poll is throttled.
-            _sl_needs = (
-                config.get('show_standings_sidebar', False) or
-                config.get('show_wildcard_standings', False) or
-                _is_fullscreen
-            )
-            _sl_ids = [117, 112] if league_mode == 'aaa' else [103, 104]
-            if _sl_needs and _should_refresh_standings(sched):
-                try:
-                    _sl_today = datetime.now()
-                    get_standings(_sl_ids, season=_sl_today.year)
-                    _sl_prev = _sl_today - timedelta(days=1)
-                    get_standings(_sl_ids, season=_sl_prev.year,
-                                  date=_sl_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
-                except Exception as _sl_e:
-                    print(f"Warning: standings refresh on poll-skip: {_sl_e}")
-            return
-    else:
-        sched = {}
+        if _pre9am:
+            # Morning alternating mode: only fetch/render when the 5-minute block changes.
+            # Each block switch toggles the display between yesterday and today, so there
+            # is nothing new to show within the same block.
+            _today_key = _now.date().isoformat()
+            if (
+                _morning_block is not None
+                and sched.get('last_morning_block') == _morning_block
+                and sched.get('last_morning_block_date') == _today_key
+            ):
+                print(f"Morning: same 5-min block ({_morning_block}) — skipping")
+                return
+        else:
+            skip, reason = _should_skip_poll(date_str, config, sched)
+            if skip:
+                print(reason)
+                # Still refresh standings if needed — sidebar/fullscreen must stay current
+                # even when the game-data poll is throttled.
+                _sl_needs = (
+                    config.get('show_standings_sidebar', False) or
+                    config.get('show_wildcard_standings', False) or
+                    _is_fullscreen
+                )
+                _sl_ids = [117, 112] if league_mode == 'aaa' else [103, 104]
+                if _sl_needs and _should_refresh_standings(sched):
+                    try:
+                        _sl_today = datetime.now()
+                        get_standings(_sl_ids, season=_sl_today.year)
+                        _sl_prev = _sl_today - timedelta(days=1)
+                        get_standings(_sl_ids, season=_sl_prev.year,
+                                      date=_sl_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
+                    except Exception as _sl_e:
+                        print(f"Warning: standings refresh on poll-skip: {_sl_e}")
+                return
 
     # 6. Fetch
     # In fullscreen mode tell the fetcher which team is featured so it skips
@@ -514,11 +527,19 @@ Examples:
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
     # 7. Update schedule state
-    if not args.date and not _no_throttle and not _pre9am:
-        game_state_data = load_json_file('games.json').get('games', [])
-        no_games = _update_schedule_state(game_state_data, date_str, config, sched)
-        if no_games:
-            return
+    if not args.date and not _no_throttle:
+        if _pre9am:
+            # Record which block just ran so the next cron tick within the same
+            # 5-minute window is skipped (morning gate above).
+            if _morning_block is not None:
+                sched['last_morning_block'] = _morning_block
+                sched['last_morning_block_date'] = _now.date().isoformat()
+                _save_schedule_state(sched)
+        else:
+            game_state_data = load_json_file('games.json').get('games', [])
+            no_games = _update_schedule_state(game_state_data, date_str, config, sched)
+            if no_games:
+                return
 
     # 7b. Standings refresh
     _needs_standings = (
@@ -541,7 +562,7 @@ Examples:
                               date=_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
             except Exception as e:
                 print(f"Warning: historical standings fetch failed: {e}")
-        elif not _pre9am and _should_refresh_standings(sched):
+        elif _should_refresh_standings(sched):
             print("Refreshing standings (new Finals detected or no cache)...")
             try:
                 today = datetime.now()
