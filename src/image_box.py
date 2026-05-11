@@ -315,7 +315,7 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
                 return
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True):
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
         game_data = dict(game_data)
@@ -431,7 +431,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw = ImageDraw.Draw(Himage)
 
     # Winner ghost logo — drawn first so all text/scores render on top of it
-    if use_logos and game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
+    if show_winner_logo and use_logos and game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
         winner_abbr = winner_id = None
         if game_data.get('away_team_is_winner'):
             winner_abbr, winner_id = away_team_name, away_team_id

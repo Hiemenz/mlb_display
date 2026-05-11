@@ -845,7 +845,7 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     cell = Image.new('1', (CELL, CELL), 255)
     cell = draw_box(cell, 0, 0, game_data, team_data,
                     use_logos=use_logos, logo_x_offset=logo_offset,
-                    show_win_prob=win_prob)
+                    show_win_prob=win_prob, show_winner_logo=False)
     scaled_gray = cell.convert('L').resize((SCALED, SCALED), Image.LANCZOS)
     scaled_cell = scaled_gray.point(lambda p: 0 if p < 180 else 255).convert('1')
 
