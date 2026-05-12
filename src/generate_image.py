@@ -919,9 +919,12 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
         except Exception:
             _date_label_full = _date_label_short = _gd_str
         _date_draw = ImageDraw.Draw(canvas)
-        # Center over the 405px content area (paste_x … paste_x+_box_w)
-        _center_x = paste_x + _box_w // 2
-        _MAX_DATE_W = _box_w - 8  # leave a small margin
+        # When wildcard standings are shown they fill the strip leaving only ~155px
+        # clear in the center (same constraint as the normal scoreboard header).
+        # Without wildcard the full strip is free so the content-area width applies.
+        _show_wc = config.get('show_wildcard_standings', False)
+        _MAX_DATE_W = 151 if _show_wc else (_box_w - 8)
+        _center_x = 400  # midpoint of the 800px display (matches _WC_MID = 399)
         _date_font = _get_font(14)
         _date_label = _date_label_short
         _fsize_used = 14
