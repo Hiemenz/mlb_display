@@ -909,19 +909,36 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
                 canvas, standings_data, team_data, side='right', league_mode=league_mode,
                 x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
-    # Date label centered in the top strip between wildcard teams
+    # Date label centered in the top strip — use the largest font that fits
     _gd_str = (game_data.get('game_date') or '')[:10]
     if _gd_str:
         try:
             _gd = datetime.strptime(_gd_str, '%Y-%m-%d')
-            _date_label = _gd.strftime('%B %-d, %Y')
+            _date_label_full  = _gd.strftime('%A, %B %-d, %Y')   # Monday, May 11, 2026
+            _date_label_short = _gd.strftime('%a · %b %-d, %Y')  # Mon · May 11, 2026
         except Exception:
-            _date_label = _gd_str
+            _date_label_full = _date_label_short = _gd_str
         _date_draw = ImageDraw.Draw(canvas)
+        # Center over the 405px content area (paste_x … paste_x+_box_w)
+        _center_x = paste_x + _box_w // 2
+        _MAX_DATE_W = _box_w - 8  # leave a small margin
         _date_font = _get_font(14)
+        _date_label = _date_label_short
+        _fsize_used = 14
+        for _fsize in (20, 18, 16, 14):
+            _f = _get_font(_fsize)
+            for _candidate in (_date_label_full, _date_label_short):
+                if int(_f.getlength(_candidate)) <= _MAX_DATE_W:
+                    _date_font = _f
+                    _date_label = _candidate
+                    _fsize_used = _fsize
+                    break
+            else:
+                continue
+            break
         _dw = int(_date_font.getlength(_date_label))
-        _dx = (800 - _dw) // 2
-        _dy = max(0, (_WC_STRIP_H - 14) // 2)
+        _dx = _center_x - _dw // 2
+        _dy = max(0, (_WC_STRIP_H - _fsize_used) // 2)
         _date_draw.text((_dx,     _dy), _date_label, font=_date_font, fill=0)
         _date_draw.text((_dx + 1, _dy), _date_label, font=_date_font, fill=0)
 
