@@ -304,9 +304,9 @@ def _should_skip_poll(date_str, config, sched):
     if any_final_undecided:
         interval_min = 2
     elif all_done:
-        interval_min = 15
+        interval_min = 60
     elif not cached_games or all_pregame:
-        interval_min = 15
+        interval_min = 60
     else:
         interval_min = config.get('update_interval', 15)
 
@@ -320,7 +320,7 @@ def _should_skip_poll(date_str, config, sched):
                     'final_undecided' if any_final_undecided
                     else 'all_done' if all_done
                     else 'pregame' if all_pregame
-                    else 'pre-game'
+                    else 'mixed'
                 )
                 return True, f"Throttled — {mins}min since last fetch (interval={interval_min}min, state={state_label})"
         except Exception:

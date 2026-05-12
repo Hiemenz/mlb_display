@@ -204,29 +204,30 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
 _ABS_CHALLENGE_MAX = 2
 
 
-def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, logo_x_offset=2):
+def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, logo_x_offset=2, scale=1):
     """ABS dots at original position beside the team row; replay dot below the abbreviation."""
-    _LOGO_SIZE = 28
-    r = 3
-    dot_spacing = 8
+    s = scale
+    _LOGO_SIZE = 28 * s
+    r = 3 * s
+    dot_spacing = 8 * s
 
     if use_logos:
         # x: immediately right of logo + abbr (original position)
-        dot_x = start_x + logo_x_offset + _LOGO_SIZE + 2 + 3
+        dot_x = start_x + logo_x_offset + _LOGO_SIZE + 2 * s + 3 * s
         # ABS y: original positions, vertically centred in each team row
-        away_abs_y    = start_y + 30
-        home_abs_y    = start_y + 60
-        # Replay y: below the abbr text (abbr at row_base+7, font14 14px tall → bottom at row_base+21)
+        away_abs_y    = start_y + 30 * s
+        home_abs_y    = start_y + 60 * s
+        # Replay y: below the abbr text (abbr at row_base+7*s, font14 14*s px tall → bottom at row_base+21*s)
         # Add a small gap so it doesn't touch the text
-        away_replay_y = start_y + 25 + 7 + 14 + 4   # = start_y + 50
-        home_replay_y = start_y + 55 + 7 + 14 + 4   # = start_y + 80
+        away_replay_y = start_y + (25 + 7 + 14 + 4) * s   # = start_y + 50*s
+        home_replay_y = start_y + (55 + 7 + 14 + 4) * s   # = start_y + 80*s
     else:
-        dot_x = start_x + 5 + 3
-        away_abs_y    = start_y + 30
-        home_abs_y    = start_y + 60
+        dot_x = start_x + (5 + 3) * s
+        away_abs_y    = start_y + 30 * s
+        home_abs_y    = start_y + 60 * s
         # font24 glyph height ~17px, top offset ~6px → bottom at row_base + 23
-        away_replay_y = start_y + 25 + 23 + 4        # = start_y + 52
-        home_replay_y = start_y + 55 + 23 + 4        # = start_y + 82
+        away_replay_y = start_y + (25 + 23 + 4) * s        # = start_y + 52*s
+        home_replay_y = start_y + (55 + 23 + 4) * s        # = start_y + 82*s
 
     abs_max = game_data.get('abs_challenge_max') or _ABS_CHALLENGE_MAX
 
@@ -1156,7 +1157,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
-        _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=use_logos, logo_x_offset=logo_x_offset)
+        _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=use_logos, logo_x_offset=logo_x_offset, scale=s)
 
     # horizontal line
     end_x = start_x + horizonta_len
