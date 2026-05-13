@@ -395,6 +395,96 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
     draw       = ImageDraw.Draw(canvas)
     font_label = _get_font(9)
 
+    # --- Movement indicator detection (same logic as draw_standings_sidebar) ---
+    _now_ts   = _time.time()
+    _20h_secs = 20 * 3600
+    prev_rank = {}
+    prev_data = {}
+    try:
+        _pd = load_json_file('standings_prev.json')
+        if _pd:
+            prev_data = _pd
+            for _teams in prev_data.get('standings', {}).values():
+                for _t in _teams:
+                    _tid = str(_t.get('team_id', ''))
+                    _r = _t.get('divisionRank')
+                    if _tid and _r is not None:
+                        try:
+                            prev_rank[_tid] = (
+                                int(_r),
+                                int(_t.get('league_record_wins') or 0),
+                                int(_t.get('league_record_losses') or 0),
+                            )
+                        except (ValueError, TypeError):
+                            pass
+    except Exception:
+        pass
+
+    _movement_data = load_json_file('standings_movement.json') or {}
+    _movement_updated = False
+
+    # Build display_movers across all divisions for this sidebar
+    display_movers = set()
+    for _div_name in divisions:
+        _div_teams = standings_data.get('standings', {}).get(_div_name, [])
+        _div_teams = sorted(_div_teams, key=lambda t: int(t.get('divisionRank', 99)))
+        _n = min(len(_div_teams), n_teams)
+
+        movers = set()
+        for team in _div_teams[:_n]:
+            tid = str(team.get('team_id', ''))
+            if tid not in prev_rank:
+                continue
+            cur_rank = int(team.get('divisionRank', 99))
+            prev_r, prev_w, prev_l = prev_rank[tid]
+            cur_w = int(team.get('league_record_wins') or 0)
+            cur_l = int(team.get('league_record_losses') or 0)
+            if cur_rank != prev_r and (cur_w != prev_w or cur_l != prev_l):
+                movers.add(tid)
+
+        if movers:
+            for team in _div_teams[:_n]:
+                tid = str(team.get('team_id', ''))
+                if tid not in prev_rank or tid in movers:
+                    continue
+                cur_rank = int(team.get('divisionRank', 99))
+                prev_r, _, _ = prev_rank[tid]
+                if cur_rank != prev_r:
+                    movers.add(tid)
+
+        # Tie-break detection
+        prev_div_teams = prev_data.get('standings', {}).get(_div_name, [])
+        prev_wl = {str(_pt.get('team_id', '')): (int(_pt.get('league_record_wins') or 0),
+                                                  int(_pt.get('league_record_losses') or 0))
+                   for _pt in prev_div_teams}
+        cur_wl  = {str(_ct.get('team_id', '')): (int(_ct.get('league_record_wins') or 0),
+                                                  int(_ct.get('league_record_losses') or 0))
+                   for _ct in _div_teams[:_n]}
+        for i in range(_n - 1):
+            t1 = str(_div_teams[i].get('team_id', ''))
+            t2 = str(_div_teams[i + 1].get('team_id', ''))
+            if t1 in prev_wl and t2 in prev_wl:
+                if prev_wl[t1] == prev_wl[t2] and cur_wl.get(t1) != cur_wl.get(t2):
+                    movers.add(t1)
+                    movers.add(t2)
+
+        for tid in movers:
+            _movement_data[tid] = _now_ts
+            _movement_updated = True
+
+        for team in _div_teams[:_n]:
+            tid = str(team.get('team_id', ''))
+            ts = _movement_data.get(tid)
+            if ts is not None:
+                try:
+                    if _now_ts - float(ts) < _20h_secs:
+                        display_movers.add(tid)
+                except (ValueError, TypeError):
+                    pass
+
+    if _movement_updated:
+        save_off_results(_movement_data, 'standings_movement')
+
     for col_idx, div_name in enumerate(divisions[:3]):
         col_x = x_anchor + col_idx * col_w
 
@@ -424,6 +514,11 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 tw = int(font9.getlength(abbr[:3]))
                 draw.text((logo_x + (logo_sz - tw) // 2, logo_y + (logo_sz - 9) // 2),
                           abbr[:3], font=font9, fill=0)
+
+            # Movement indicator: 2px vertical line on the left edge of the slot
+            if team_id in display_movers:
+                ind_x = col_x + 1
+                draw.line((ind_x, slot_y, ind_x, slot_y + slot_h - 1), fill=0, width=2)
 
             # Clinch indicator
             clinch = (team.get('clinch_indicator') or '').lower()
