@@ -354,7 +354,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                     dash_start = logo_x + (_SIDEBAR_LOGO_SIZE - (3 * dash_w + 2 * gap_w)) // 2
                     for d in range(3):
                         x0 = dash_start + d * (dash_w + gap_w)
-                        draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=1)
+                        draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)
 
     # Persist movement timestamps so indicators survive across render cycles
     if _movement_updated:
@@ -515,9 +515,9 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 draw.text((logo_x + (logo_sz - tw) // 2, logo_y + (logo_sz - 9) // 2),
                           abbr[:3], font=font9, fill=0)
 
-            # Movement indicator: 2px vertical line, logo-height tall
+            # Movement indicator: 2px vertical line just left of logo, logo-height tall
             if team_id in display_movers:
-                ind_x = col_x + 1
+                ind_x = logo_x - 3
                 draw.line((ind_x, logo_y, ind_x, logo_y + logo_sz - 1), fill=0, width=2)
 
             # Clinch indicator
@@ -538,6 +538,6 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                     dash_start = logo_x + (logo_sz - (3 * dash_w + 2 * gap_w)) // 2
                     for d in range(3):
                         x0 = dash_start + d * (dash_w + gap_w)
-                        draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=1)
+                        draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)
 
     return canvas
