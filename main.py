@@ -293,9 +293,6 @@ def _should_skip_poll(date_str, config, sched):
         for g in cached_games
     )
 
-    if any_live:
-        return False, ""
-
     all_pregame = bool(cached_games) and all(
         g.get('detailed_state') in {'Scheduled', 'Pre-Game', 'Warmup'}
         for g in cached_games
@@ -303,6 +300,8 @@ def _should_skip_poll(date_str, config, sched):
 
     if any_final_undecided:
         interval_min = 2
+    elif any_live:
+        interval_min = config.get('live_game_interval', 5)
     elif all_done:
         interval_min = 60
     elif not cached_games or all_pregame:
@@ -318,6 +317,7 @@ def _should_skip_poll(date_str, config, sched):
                 mins = int(elapsed.total_seconds() // 60)
                 state_label = (
                     'final_undecided' if any_final_undecided
+                    else 'live' if any_live
                     else 'all_done' if all_done
                     else 'pregame' if all_pregame
                     else 'mixed'

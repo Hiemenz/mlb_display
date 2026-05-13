@@ -513,19 +513,31 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
                     lines.append((sv_str, font14, False))
 
+            _wpname_max_w = horizonta_len - 2 * s
+
             def _truncate_keep_suffix(s):
-                if int(font14.getlength(s)) <= max_text_width:
+                if int(font14.getlength(s)) <= _wpname_max_w:
                     return s
+                # Try dropping first initial: "WP: W. Warren (2-2)" → "WP: Warren (2-2)"
+                for _pfx in ('WP: ', 'LP: ', 'SV: '):
+                    if s.startswith(_pfx):
+                        _rest = s[len(_pfx):]
+                        if len(_rest) > 2 and _rest[1:3] == '. ':
+                            _no_init = _pfx + _rest[3:]
+                            if int(font14.getlength(_no_init)) <= _wpname_max_w:
+                                return _no_init
+                            s = _no_init
+                        break
                 paren = s.rfind(' (')
                 if paren != -1:
                     suffix = s[paren:]
                     prefix = s[:paren]
                     suffix_w = int(font14.getlength(suffix))
-                    avail = max_text_width - suffix_w
+                    avail = _wpname_max_w - suffix_w
                     while prefix and int(font14.getlength(prefix)) > avail:
                         prefix = prefix[:-1]
                     return prefix + suffix
-                while s and int(font14.getlength(s)) > max_text_width:
+                while s and int(font14.getlength(s)) > _wpname_max_w:
                     s = s[:-1]
                 return s
 
@@ -966,6 +978,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
         # Abbreviate verbose play names so they fit cleanly without truncation
         play_display = _abbr_play(raw_play) if raw_play else ''
+        # Prepend RBI count when the play drove in runs
+        _rbi = int(game_data.get('last_play_rbi') or 0)
+        if _rbi > 0 and play_display and not _sub_ev and not game_data.get('last_review_result'):
+            play_display = f'RBI {play_display}' if _rbi == 1 else f'{_rbi}R {play_display}'
         _header_right = _ser_content_left_x - 2 * s
 
         def _draw_play_right(text, fnt=None, y_off=4):
