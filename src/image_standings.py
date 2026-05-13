@@ -521,14 +521,15 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             if team_id in display_movers:
                 _arm  = logo_sz
                 _lw   = 4
-                _foot = logo_y + logo_sz + 6   # 6px below logo bottom
+                _foot = logo_y + logo_sz + 6        # 6px below logo bottom
+                _vtop = _foot - logo_sz // 3         # vertical spans bottom 1/3 only
                 if side == 'left':
                     _vx = col_x
-                    draw.line((_vx, logo_y, _vx, _foot), fill=0, width=_lw)
+                    draw.line((_vx, _vtop, _vx, _foot), fill=0, width=_lw)
                     draw.line((_vx, _foot, _vx + _arm, _foot), fill=0, width=_lw)
                 else:
                     _vx = col_x + col_w - 1
-                    draw.line((_vx, logo_y, _vx, _foot), fill=0, width=_lw)
+                    draw.line((_vx, _vtop, _vx, _foot), fill=0, width=_lw)
                     draw.line((_vx - _arm, _foot, _vx, _foot), fill=0, width=_lw)
 
             # Clinch indicator
