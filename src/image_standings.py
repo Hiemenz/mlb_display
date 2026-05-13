@@ -517,7 +517,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
 
             # Movement indicator: 2px vertical line just left of logo, logo-height tall
             if team_id in display_movers:
-                ind_x = logo_x - 3
+                ind_x = col_x
                 draw.line((ind_x, logo_y, ind_x, logo_y + logo_sz - 1), fill=0, width=4)
 
             # Clinch indicator
