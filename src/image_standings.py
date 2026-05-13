@@ -519,7 +519,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             # AL (left): vertical on left + horizontal at bottom-left
             # NL (right): vertical on right + horizontal at bottom-right
             if team_id in display_movers:
-                _arm  = logo_sz // 3
+                _arm  = logo_sz
                 _lw   = 4
                 _foot = logo_y + logo_sz + 6   # 6px below logo bottom
                 if side == 'left':
