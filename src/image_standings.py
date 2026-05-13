@@ -519,16 +519,17 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             # AL (left): vertical on left + horizontal at bottom-left
             # NL (right): vertical on right + horizontal at bottom-right
             if team_id in display_movers:
-                _arm = logo_sz // 3
-                _lw  = 4
+                _arm  = logo_sz // 3
+                _lw   = 4
+                _foot = logo_y + logo_sz + 6   # 6px below logo bottom
                 if side == 'left':
                     _vx = col_x
-                    draw.line((_vx, logo_y, _vx, logo_y + logo_sz - 1), fill=0, width=_lw)
-                    draw.line((_vx, logo_y + logo_sz - 1, _vx + _arm, logo_y + logo_sz - 1), fill=0, width=_lw)
+                    draw.line((_vx, logo_y, _vx, _foot), fill=0, width=_lw)
+                    draw.line((_vx, _foot, _vx + _arm, _foot), fill=0, width=_lw)
                 else:
                     _vx = col_x + col_w - 1
-                    draw.line((_vx, logo_y, _vx, logo_y + logo_sz - 1), fill=0, width=_lw)
-                    draw.line((_vx - _arm, logo_y + logo_sz - 1, _vx, logo_y + logo_sz - 1), fill=0, width=_lw)
+                    draw.line((_vx, logo_y, _vx, _foot), fill=0, width=_lw)
+                    draw.line((_vx - _arm, _foot, _vx, _foot), fill=0, width=_lw)
 
             # Clinch indicator
             clinch = (team.get('clinch_indicator') or '').lower()
