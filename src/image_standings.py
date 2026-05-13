@@ -330,7 +330,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
             if team_id in display_movers:
                 draw.line(
                     (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
-                    fill=0, width=2,
+                    fill=0, width=4,
                 )
 
             # Clinch indicator: box around the logo slot
@@ -518,7 +518,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             # Movement indicator: 2px vertical line just left of logo, logo-height tall
             if team_id in display_movers:
                 ind_x = logo_x - 3
-                draw.line((ind_x, logo_y, ind_x, logo_y + logo_sz - 1), fill=0, width=2)
+                draw.line((ind_x, logo_y, ind_x, logo_y + logo_sz - 1), fill=0, width=4)
 
             # Clinch indicator
             clinch = (team.get('clinch_indicator') or '').lower()
