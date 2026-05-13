@@ -515,10 +515,10 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 draw.text((logo_x + (logo_sz - tw) // 2, logo_y + (logo_sz - 9) // 2),
                           abbr[:3], font=font9, fill=0)
 
-            # Movement indicator: 2px vertical line on the left edge of the slot
+            # Movement indicator: 2px vertical line, logo-height tall
             if team_id in display_movers:
                 ind_x = col_x + 1
-                draw.line((ind_x, slot_y, ind_x, slot_y + slot_h - 1), fill=0, width=2)
+                draw.line((ind_x, logo_y, ind_x, logo_y + logo_sz - 1), fill=0, width=2)
 
             # Clinch indicator
             clinch = (team.get('clinch_indicator') or '').lower()
@@ -527,9 +527,17 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 draw.rectangle([logo_x, logo_y, logo_x + logo_sz - 1, logo_y + logo_sz - 1],
                                outline=0, width=box_w)
 
-        # Vertical separator between columns (not after the last one)
-        if col_idx < 2:
-            sep_x = col_x + col_w
-            draw.line((sep_x, y_start, sep_x, y_start + height - 1), fill=0, width=1)
+            # Tied-team dashes between consecutive slots with the same W-L record
+            if slot_idx + 1 < n_teams and slot_idx + 1 < len(teams):
+                nxt = teams[slot_idx + 1]
+                cur_wl = (int(team.get('league_record_wins') or 0), int(team.get('league_record_losses') or 0))
+                nxt_wl = (int(nxt.get('league_record_wins') or 0),  int(nxt.get('league_record_losses') or 0))
+                if cur_wl == nxt_wl:
+                    gap_y      = logo_y + logo_sz + (slot_h - logo_sz) // 2
+                    dash_w, gap_w = 5, 3
+                    dash_start = logo_x + (logo_sz - (3 * dash_w + 2 * gap_w)) // 2
+                    for d in range(3):
+                        x0 = dash_start + d * (dash_w + gap_w)
+                        draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=1)
 
     return canvas
