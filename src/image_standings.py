@@ -519,7 +519,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             # AL (left): vertical on left + horizontal at bottom-left
             # NL (right): vertical on right + horizontal at bottom-right
             if team_id in display_movers:
-                _arm  = logo_sz
+                _arm  = logo_sz // 3
                 _lw   = 4
                 _foot = logo_y + logo_sz + 6        # 6px below logo bottom
                 _vtop = _foot - logo_sz // 3         # vertical spans bottom 1/3 only
@@ -547,8 +547,8 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 if cur_wl == nxt_wl:
                     gap_y      = logo_y + logo_sz + (slot_h - logo_sz) // 2
                     dash_w, gap_w = 5, 3
-                    dash_start = logo_x + (logo_sz - (3 * dash_w + 2 * gap_w)) // 2
-                    for d in range(3):
+                    dash_start = logo_x + (logo_sz - (5 * dash_w + 4 * gap_w)) // 2
+                    for d in range(5):
                         x0 = dash_start + d * (dash_w + gap_w)
                         draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)
 
