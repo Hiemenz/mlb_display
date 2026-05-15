@@ -91,7 +91,7 @@ def _get_or_set_final_time(game_pk):
     return ts
 
 
-def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=1, show_series_logo=False):
+def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=1):
     """Full-width per-inning linescore grid for between-inning scoreboard tiles.
 
     Layout (135px wide box):
@@ -148,41 +148,6 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     abbr_map = team_data.get('team_abbreviation', {})
     away_abbr = abbr_map.get(away_id, away_id)
     home_abbr = abbr_map.get(home_id, home_id)
-
-    # --- series/game winner logo in linescore header logo column ---
-    if show_series_logo:
-        _sl_abbr = _sl_id = None
-        _sr = game_data.get('series_result', '') or ''
-        _sr_parts = _sr.split()
-        if len(_sr_parts) >= 2 and _sr_parts[1] == 'wins':
-            _leading = _sr_parts[0].upper()
-            if _leading == away_abbr.upper():
-                _sl_abbr, _sl_id = away_abbr, away_id
-            elif _leading == home_abbr.upper():
-                _sl_abbr, _sl_id = home_abbr, home_id
-        if not _sl_abbr:
-            if game_data.get('away_team_is_winner'):
-                _sl_abbr, _sl_id = away_abbr, away_id
-            elif game_data.get('home_team_is_winner'):
-                _sl_abbr, _sl_id = home_abbr, home_id
-        if not _sl_abbr:
-            _ar = game_data.get('away_runs') or 0
-            _hr = game_data.get('home_runs') or 0
-            if _ar > _hr:
-                _sl_abbr, _sl_id = away_abbr, away_id
-            elif _hr > _ar:
-                _sl_abbr, _sl_id = home_abbr, home_id
-        if _sl_abbr:
-            _hdr_logo_sz = 12 * s
-            _hdr_logo = _logo_small(_sl_abbr, _sl_id, size=_hdr_logo_sz) if use_logos else None
-            if _hdr_logo:
-                _hlw, _hlh = _hdr_logo.size
-                Himage.paste(_hdr_logo, (start_x + (LOGO_COL_W - _hlw) // 2, y0 + (ROW_H_HDR - _hlh) // 2))
-                draw = ImageDraw.Draw(Himage)
-            else:
-                _hdr_abbr = (_sl_abbr or '')[:3]
-                _hdr_tw = int(font9.getlength(_hdr_abbr))
-                draw.text((start_x + (LOGO_COL_W - _hdr_tw) // 2, y0 + (ROW_H_HDR - 9 * s) // 2), _hdr_abbr, font=font9, fill=0)
 
     def _place(abbr, tid, row_y):
         nonlocal draw
@@ -525,7 +490,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _show_linescore:
             # Show linescore for 10 min after game ends; switch once both window
             # has elapsed AND decisions are posted.
-            draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale, show_series_logo=True)
+            draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
         else:
             # Pitchers of record — anchored to bottom of box, working upward.
             # bottom border is at start_y + vertical_len + 20 = start_y + 130
