@@ -298,8 +298,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         batter_last_result = ''
         for play in reversed(plays.get('allPlays', [])):
             if play.get('matchup', {}).get('batter', {}).get('id') == batter_id:
-                event = play.get('result', {}).get('event', '')
-                batter_last_result = _EVENT_CODE_MAP.get(event, event[:3] if event else '')
+                batter_last_result = _build_scorecard_notation(play)
                 break
 
         # Scan current at-bat: pitch count, last strike type, and whether AB is complete
@@ -367,17 +366,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             _ev = _lp.get('result', {}).get('event') or ''
             if not _ev:
                 continue
-            _abbr = _EVENT_CODE_MAP.get(_ev, '')
-            if _ev == 'Field Error':
-                for _cr in _lp.get('credits', []):
-                    if 'error' in (_cr.get('credit') or '').lower():
-                        _pos = _cr.get('position', {}).get('code', '')
-                        if _pos and _pos.isdigit():
-                            _abbr = f'E{_pos}'
-                        break
-            if not _abbr:
-                _abbr = _ev[:3]
-            live_last_play = _abbr
+            live_last_play = _build_scorecard_notation(_lp)
             live_last_play_inning = _lp.get('about', {}).get('inning')
             live_last_play_is_top = _lp.get('about', {}).get('isTopInning')
             break
@@ -791,6 +780,93 @@ _EVENT_CODE_MAP = {
 
 def _map_event_to_code(event):
     """Map an API event string to a scorecard abbreviation."""
+    return _EVENT_CODE_MAP.get(event, event[:3] if event else '')
+
+
+def _build_scorecard_notation(play):
+    """Return scorecard notation (e.g. 'F7', '6-4-3 DP', 'K', '1B') from a play dict."""
+    result  = play.get('result', {})
+    event   = result.get('event', '')
+    et      = (result.get('eventType') or '').lower().replace(' ', '_')
+    credits = play.get('credits', [])
+
+    _SIMPLE = {
+        'Strikeout': 'K', 'Strikeout Looking': 'Kl', 'Strikeout Double Play': 'K',
+        'Walk': 'BB', 'Intent Walk': 'IBB', 'Hit By Pitch': 'HBP',
+        'Runner Placed On Base': 'PR',
+        'Single': '1B', 'Double': '2B', 'Triple': '3B', 'Home Run': 'HR',
+        'Balk': 'BLK', 'Wild Pitch': 'WP', 'Passed Ball': 'PB',
+        'Catcher Interf': 'CI', 'Batter Interference': 'BI',
+        'Stolen Base 2B': 'SB', 'Stolen Base 3B': 'SB', 'Stolen Base Home': 'SB',
+    }
+    if event in _SIMPLE:
+        return _SIMPLE[event]
+
+    if event == 'Field Error':
+        for cr in credits:
+            if 'error' in (cr.get('credit') or '').lower():
+                pos = cr.get('position', {}).get('code', '')
+                if pos and pos.isdigit():
+                    return f'E{pos}'
+        return 'E'
+
+    is_dp = 'double_play' in et or event in (
+        'Grounded Into DP', 'Double Play', 'Sac Fly Double Play', 'Sac Bunt Double Play',
+    )
+    is_tp = 'triple_play' in et or event == 'Triple Play'
+    dp_suffix = ' DP' if is_dp else (' TP' if is_tp else '')
+
+    # Build fielder sequence from credits; deduplicate consecutive positions.
+    pos_seq = []
+    for cr in credits:
+        pos = cr.get('position', {}).get('code', '')
+        if pos and pos.isdigit():
+            if not pos_seq or pos_seq[-1] != pos:
+                pos_seq.append(pos)
+
+    # Position of last fielder to record a putout (rightmost in sequence).
+    putout_pos = ''
+    for cr in credits:
+        if cr.get('credit') == 'f_putout':
+            p = cr.get('position', {}).get('code', '')
+            if p and p.isdigit():
+                putout_pos = p
+
+    if event in ('Flyout',):
+        if is_dp and pos_seq:
+            return '-'.join(pos_seq) + dp_suffix
+        return f'F{putout_pos}' if putout_pos else 'FO'
+
+    if event in ('Lineout',):
+        if is_dp and pos_seq:
+            return '-'.join(pos_seq) + dp_suffix
+        return f'L{putout_pos}' if putout_pos else 'LO'
+
+    if event in ('Pop Out', 'Popout'):
+        return f'P{putout_pos}' if putout_pos else 'PO'
+
+    if event in ('Sac Fly', 'Sac Fly Double Play'):
+        if is_dp and pos_seq:
+            return '-'.join(pos_seq) + dp_suffix
+        return f'SF{putout_pos}' if putout_pos else 'SF'
+
+    if event in ('Sac Bunt', 'Sacrifice Bunt DP', 'Sac Bunt Double Play'):
+        seq = '-'.join(pos_seq) if pos_seq else ''
+        return f'SAC {seq}{dp_suffix}' if seq else 'SAC'
+
+    if event in ('Fielders Choice', 'Fielders Choice Out'):
+        seq = '-'.join(pos_seq) if pos_seq else ''
+        return f'{seq} FC{dp_suffix}' if seq else 'FC'
+
+    # All out events: return fielder sequence from credits.
+    if pos_seq:
+        return '-'.join(pos_seq) + dp_suffix
+
+    # Fallbacks when credits are absent.
+    if event.startswith('Caught Stealing'):
+        return 'CS'
+    if event.startswith('Pickoff'):
+        return 'PK'
     return _EVENT_CODE_MAP.get(event, event[:3] if event else '')
 
 

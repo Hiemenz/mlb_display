@@ -349,7 +349,9 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 cur_wl = (int(team.get('league_record_wins') or 0), int(team.get('league_record_losses') or 0))
                 nxt_wl = (int(nxt.get('league_record_wins') or 0),  int(nxt.get('league_record_losses') or 0))
                 if cur_wl == nxt_wl:
-                    gap_y      = logo_y + _SIDEBAR_LOGO_SIZE + (slot_h - _SIDEBAR_LOGO_SIZE) // 2
+                    # Center the 2px-tall dash strip in the gap between logos.
+                    # (slot_h - logo_size - 2) // 2 leaves equal empty rows above and below.
+                    gap_y = logo_y + _SIDEBAR_LOGO_SIZE + (slot_h - _SIDEBAR_LOGO_SIZE - 2) // 2
                     dash_w, gap_w = 4, 2
                     dash_start = logo_x + (_SIDEBAR_LOGO_SIZE - (3 * dash_w + 2 * gap_w)) // 2
                     for d in range(3):
@@ -550,6 +552,6 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                     dash_start = logo_x + (logo_sz - (5 * dash_w + 4 * gap_w)) // 2
                     for d in range(5):
                         x0 = dash_start + d * (dash_w + gap_w)
-                        draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)
+                        draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=1)
 
     return canvas

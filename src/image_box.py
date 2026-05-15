@@ -53,6 +53,8 @@ _PLAY_ABBR = {
     'popout':           'PO',
     'pickoff':          'PK',
     'balk':             'BLK',
+    'force out':        'FO',
+    'field out':        'FO',
     'runner out':       'RO',
 }
 
@@ -89,7 +91,7 @@ def _get_or_set_final_time(game_pk):
     return ts
 
 
-def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=1):
+def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=1, show_series_logo=False):
     """Full-width per-inning linescore grid for between-inning scoreboard tiles.
 
     Layout (135px wide box):
@@ -146,6 +148,41 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     abbr_map = team_data.get('team_abbreviation', {})
     away_abbr = abbr_map.get(away_id, away_id)
     home_abbr = abbr_map.get(home_id, home_id)
+
+    # --- series/game winner logo in linescore header logo column ---
+    if show_series_logo:
+        _sl_abbr = _sl_id = None
+        _sr = game_data.get('series_result', '') or ''
+        _sr_parts = _sr.split()
+        if len(_sr_parts) >= 2 and _sr_parts[1] == 'wins':
+            _leading = _sr_parts[0].upper()
+            if _leading == away_abbr.upper():
+                _sl_abbr, _sl_id = away_abbr, away_id
+            elif _leading == home_abbr.upper():
+                _sl_abbr, _sl_id = home_abbr, home_id
+        if not _sl_abbr:
+            if game_data.get('away_team_is_winner'):
+                _sl_abbr, _sl_id = away_abbr, away_id
+            elif game_data.get('home_team_is_winner'):
+                _sl_abbr, _sl_id = home_abbr, home_id
+        if not _sl_abbr:
+            _ar = game_data.get('away_runs') or 0
+            _hr = game_data.get('home_runs') or 0
+            if _ar > _hr:
+                _sl_abbr, _sl_id = away_abbr, away_id
+            elif _hr > _ar:
+                _sl_abbr, _sl_id = home_abbr, home_id
+        if _sl_abbr:
+            _hdr_logo_sz = 12 * s
+            _hdr_logo = _logo_small(_sl_abbr, _sl_id, size=_hdr_logo_sz) if use_logos else None
+            if _hdr_logo:
+                _hlw, _hlh = _hdr_logo.size
+                Himage.paste(_hdr_logo, (start_x + (LOGO_COL_W - _hlw) // 2, y0 + (ROW_H_HDR - _hlh) // 2))
+                draw = ImageDraw.Draw(Himage)
+            else:
+                _hdr_abbr = (_sl_abbr or '')[:3]
+                _hdr_tw = int(font9.getlength(_hdr_abbr))
+                draw.text((start_x + (LOGO_COL_W - _hdr_tw) // 2, y0 + (ROW_H_HDR - 9 * s) // 2), _hdr_abbr, font=font9, fill=0)
 
     def _place(abbr, tid, row_y):
         nonlocal draw
@@ -391,11 +428,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] == 'In Progress'
         and (game_data.get('sub_event') or '').startswith('PC:')
     )
-    # End of 9th+ with one team leading — game is effectively over, don't show next batters
+    # End of 9th+ with one team leading, or Mid 9th+ with home team winning — game is effectively over
+    _inn_state_ge = game_data.get('inningState') or ''
     _game_ending_state = (
-        game_data.get('inningState') == 'End' and
         (game_data.get('current_inning') or 0) >= 9 and
-        (game_data.get('away_runs') or 0) != (game_data.get('home_runs') or 0)
+        (
+            (_inn_state_ge == 'End' and (game_data.get('away_runs') or 0) != (game_data.get('home_runs') or 0)) or
+            (_inn_state_ge == 'Middle' and (game_data.get('home_runs') or 0) > (game_data.get('away_runs') or 0))
+        )
     )
 
     _in_linescore_window = False  # set True inside Final block when within the linescore window
@@ -485,7 +525,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _show_linescore:
             # Show linescore for 10 min after game ends; switch once both window
             # has elapsed AND decisions are posted.
-            draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
+            draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale, show_series_logo=True)
         else:
             # Pitchers of record — anchored to bottom of box, working upward.
             # bottom border is at start_y + vertical_len + 20 = start_y + 130
@@ -715,8 +755,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         # In Progress (and any other live state not matched above)
         _inn_state = game_data.get('inningState') or ''
         _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(_inn_state, _inn_state[:3].capitalize() if _inn_state else '')
-        _inn_num = game_data.get('current_inning') or 1
-        game_state_str = (f'{_inn_label} {_inn_num}').strip()
+        _inn_ord = game_data.get('currentInningOrdinal') or str(game_data.get('current_inning') or 1)
+        game_state_str = (f'{_inn_label} {_inn_ord}').strip()
 
     # Pre-draw SWEEP ghost before header text so Final / logo sit on top
     _gf_early = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
@@ -763,7 +803,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _active_no_no = (
         game_data['detailed_state'] == 'In Progress' and
         (game_data.get('no_hitter') or game_data.get('perfect_game')) and
-        (game_data.get('current_inning') or 0) >= 4
+        (game_data.get('current_inning') or 0) >= 6
     )
     _ser_total = (game_data.get('series_total_games') or 1)
     _sw_wins   = game_data.get('series_wins', 0) or 0
@@ -1300,7 +1340,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
                     _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
                 ]
-                _pit_name = _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+                _pc_raw = (game_data.get('sub_event') or '')[3:].strip() if _pitching_change else ''
+                _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             _name_y = start_y + 21 * s
             for _nm in _batter_names:
                 if _nm:
@@ -1447,15 +1488,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if game_data.get('home_team_is_winner'):
         draw.text((start_x + 67 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
-    # Invert header to indicate a score change during an active game
-    if score_changed and is_game_started and not is_game_finished:
+    # Invert header to indicate a score change or run-scoring play during an active game
+    _run_scored = is_game_started and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
+    if (score_changed or _run_scored) and is_game_started and not is_game_finished:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
-    # Invert header for special states: walk-off, no-hitter, perfect game
-    if (is_game_finished and game_data.get('walk_off')) or \
-       ((game_data.get('no_hitter') or game_data.get('perfect_game')) and
-        (is_game_finished or _active_no_no)):
+    # Invert header for special states: no-hitter (>= 6 innings), perfect game
+    if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
+       (is_game_finished or _active_no_no):
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
