@@ -33,6 +33,7 @@ from generate_image import (
 )
 from image_utils import _format_player_name
 from image_box import _abbr_play, _fielder_from_desc, _fielder_seq_from_desc
+from game_detail_fetch import _build_scorecard_notation
 from fetch_games import _pick_tv_channel
 
 try:
@@ -2021,7 +2022,7 @@ class TestAbbrPlay:
         assert _abbr_play('Balk') == 'BLK'
 
     def test_force_out(self):
-        assert _abbr_play('Force Out') == 'FO'
+        assert _abbr_play('Force Out') == 'FOUT'
 
     def test_runner_out(self):
         assert _abbr_play('Runner Out') == 'RO'
@@ -2177,3 +2178,249 @@ class TestFielderSeqFromDesc:
         """max_pos=0 means no fielders are kept → empty string."""
         desc = 'Groundout to third baseman to first baseman'
         assert _fielder_seq_from_desc(desc, max_pos=0) == ''
+
+
+# ===========================================================================
+# 20. ABBR_PLAY — new play types added alongside scorecard notation overhaul
+# ===========================================================================
+
+class TestAbbrPlayNewTypes:
+    """_abbr_play() maps the new and corrected play-type tokens."""
+
+    def test_forceout_no_space(self):
+        """API sometimes returns 'Forceout' (one word) — must map to FOUT."""
+        assert _abbr_play('Forceout') == 'FOUT'
+
+    def test_force_out_with_space(self):
+        assert _abbr_play('Force Out') == 'FOUT'
+
+    def test_force_out_in_sentence(self):
+        assert _abbr_play('Forceout, shortstop to first baseman') == 'FOUT'
+
+    def test_forceout_distinct_from_flyout(self):
+        """Force out and flyout must produce different tokens."""
+        assert _abbr_play('Forceout') != _abbr_play('Flyout to left fielder')
+
+    def test_infield_fly(self):
+        assert _abbr_play('Infield Fly') == 'IF'
+
+    def test_infield_fly_in_sentence(self):
+        assert _abbr_play('Infield fly rule applied') == 'IF'
+
+    def test_interference(self):
+        assert _abbr_play('Interference') == 'INT'
+
+    def test_interference_in_sentence(self):
+        assert _abbr_play('Batter interference called') == 'INT'
+
+
+# ===========================================================================
+# 21. _build_scorecard_notation — live-feed credit-based scorecard notation
+# ===========================================================================
+
+def _make_play(event, event_type='', credits=None, description=''):
+    """Build a minimal play dict for _build_scorecard_notation."""
+    return {
+        'result': {
+            'event': event,
+            'eventType': event_type,
+            'description': description,
+        },
+        'credits': credits or [],
+    }
+
+
+def _credit(position_code, credit_type):
+    return {'position': {'code': position_code}, 'credit': credit_type}
+
+
+class TestBuildScorecardNotation:
+
+    # --- Ground outs (no suffix) ---
+
+    def test_groundout_6_3(self):
+        play = _make_play('Groundout', credits=[
+            _credit('6', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == '6-3'
+
+    def test_groundout_5_3(self):
+        play = _make_play('Groundout', credits=[
+            _credit('5', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == '5-3'
+
+    def test_unassisted_out_first_baseman(self):
+        play = _make_play('Groundout', credits=[_credit('3', 'f_putout')])
+        assert _build_scorecard_notation(play) == '3'
+
+    # --- Force out (same notation as ground out, no suffix) ---
+
+    def test_force_out_6_3(self):
+        play = _make_play('Force Out', credits=[
+            _credit('6', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == '6-3'
+
+    def test_force_out_no_suffix(self):
+        """Force out must never produce a FO/FOUT suffix."""
+        play = _make_play('Force Out', credits=[
+            _credit('4', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        result = _build_scorecard_notation(play)
+        assert result == '4-3'
+        assert 'FOUT' not in result
+        assert 'FO' not in result
+
+    # --- Flyout (F + fielder number, never confused with force out) ---
+
+    def test_flyout_left_field(self):
+        play = _make_play('Flyout', credits=[_credit('7', 'f_putout')])
+        assert _build_scorecard_notation(play) == 'F7'
+
+    def test_flyout_center_field(self):
+        play = _make_play('Flyout', credits=[_credit('8', 'f_putout')])
+        assert _build_scorecard_notation(play) == 'F8'
+
+    def test_flyout_distinct_from_force_out(self):
+        flyout = _make_play('Flyout', credits=[_credit('7', 'f_putout')])
+        force  = _make_play('Force Out', credits=[
+            _credit('6', 'f_assist'), _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(flyout) != _build_scorecard_notation(force)
+
+    # --- Double play ---
+
+    def test_gdp_6_4_3(self):
+        play = _make_play('Grounded Into DP', 'double_play', credits=[
+            _credit('6', 'f_assist'),
+            _credit('4', 'f_putout'),
+            _credit('4', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == '6-4-3 DP'
+
+    def test_dp_5_4_3(self):
+        play = _make_play('Double Play', 'double_play', credits=[
+            _credit('5', 'f_assist'),
+            _credit('4', 'f_putout'),
+            _credit('4', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == '5-4-3 DP'
+
+    # --- Triple play ---
+
+    def test_triple_play_5_4_3(self):
+        play = _make_play('Triple Play', 'triple_play', credits=[
+            _credit('5', 'f_assist'),
+            _credit('4', 'f_putout'),
+            _credit('4', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == '5-4-3 TP'
+
+    # --- Field error ---
+
+    def test_field_error_simple(self):
+        """No assist — plain E + position."""
+        play = _make_play('Field Error', credits=[_credit('6', 'f_error')])
+        assert _build_scorecard_notation(play) == 'E6'
+
+    def test_field_error_with_assist_sequence(self):
+        """Shortstop throws to first, first baseman drops it → 6 E3."""
+        play = _make_play('Field Error', credits=[
+            _credit('6', 'f_assist'),
+            _credit('3', 'f_error'),
+        ])
+        assert _build_scorecard_notation(play) == '6 E3'
+
+    def test_field_error_no_credits_returns_E(self):
+        play = _make_play('Field Error')
+        assert _build_scorecard_notation(play) == 'E'
+
+    # --- Caught stealing ---
+
+    def test_caught_stealing_2_6(self):
+        play = _make_play('Caught Stealing 2B', credits=[
+            _credit('2', 'f_assist'),
+            _credit('6', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == 'CS 2-6'
+
+    def test_caught_stealing_prefix_always_present(self):
+        play = _make_play('Caught Stealing 3B', credits=[
+            _credit('2', 'f_assist'),
+            _credit('5', 'f_putout'),
+        ])
+        result = _build_scorecard_notation(play)
+        assert result.startswith('CS ')
+
+    def test_caught_stealing_no_credits_returns_CS(self):
+        play = _make_play('Caught Stealing 2B')
+        assert _build_scorecard_notation(play) == 'CS'
+
+    # --- Pickoff ---
+
+    def test_pickoff_1_3(self):
+        play = _make_play('Pickoff 1B', credits=[
+            _credit('1', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert _build_scorecard_notation(play) == 'PO 1-3'
+
+    def test_pickoff_prefix_always_PO(self):
+        play = _make_play('Pickoff 2B', credits=[
+            _credit('1', 'f_assist'),
+            _credit('4', 'f_putout'),
+        ])
+        result = _build_scorecard_notation(play)
+        assert result.startswith('PO ')
+
+    def test_pickoff_no_credits_returns_PO(self):
+        play = _make_play('Pickoff 1B')
+        assert _build_scorecard_notation(play) == 'PO'
+
+    def test_pickoff_never_returns_PK(self):
+        play = _make_play('Pickoff 1B', credits=[
+            _credit('1', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        assert 'PK' not in _build_scorecard_notation(play)
+
+    # --- Strikeout double play (dropped third strike) ---
+
+    def test_strikeout_double_play_k_2_3(self):
+        """Catcher (2) throws to first (3) after dropped third strike."""
+        play = _make_play('Strikeout Double Play', 'strikeout', credits=[
+            _credit('2', 'f_assist'),
+            _credit('3', 'f_putout'),
+        ])
+        result = _build_scorecard_notation(play)
+        assert result == 'K 2-3'
+
+    def test_strikeout_double_play_no_credits(self):
+        play = _make_play('Strikeout Double Play')
+        assert _build_scorecard_notation(play) == 'K'
+
+    # --- Simple events unchanged ---
+
+    def test_strikeout_swinging(self):
+        play = _make_play('Strikeout')
+        assert _build_scorecard_notation(play) == 'K'
+
+    def test_strikeout_looking(self):
+        play = _make_play('Strikeout Looking')
+        assert _build_scorecard_notation(play) == 'Kl'
+
+    def test_home_run(self):
+        play = _make_play('Home Run')
+        assert _build_scorecard_notation(play) == 'HR'
+
+    def test_walk(self):
+        play = _make_play('Walk')
+        assert _build_scorecard_notation(play) == 'BB'

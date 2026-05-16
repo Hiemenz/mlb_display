@@ -860,9 +860,11 @@ _EVENT_CODE_MAP = {
     'Field Error': 'E',
     'Catcher Interf': 'CI',
     'Batter Interference': 'BI',
+    'Interference': 'INT',
     'Runner Out': 'RO',
-    'Force Out': 'FO',
+    'Force Out': 'FOUT',
     'Field Out': 'FO',
+    'Infield Fly': 'IF',
 }
 
 
@@ -879,7 +881,7 @@ def _build_scorecard_notation(play):
     credits = play.get('credits', [])
 
     _SIMPLE = {
-        'Strikeout': 'K', 'Strikeout Looking': 'Kl', 'Strikeout Double Play': 'K',
+        'Strikeout': 'K', 'Strikeout Looking': 'Kl',
         'Walk': 'BB', 'Intent Walk': 'IBB', 'Hit By Pitch': 'HBP',
         'Runner Placed On Base': 'PR',
         'Single': '1B', 'Double': '2B', 'Triple': '3B', 'Home Run': 'HR',
@@ -891,11 +893,22 @@ def _build_scorecard_notation(play):
         return _SIMPLE[event]
 
     if event == 'Field Error':
+        assists = []
+        error_pos = ''
         for cr in credits:
-            if 'error' in (cr.get('credit') or '').lower():
-                pos = cr.get('position', {}).get('code', '')
-                if pos and pos.isdigit():
-                    return f'E{pos}'
+            credit = (cr.get('credit') or '').lower()
+            pos = cr.get('position', {}).get('code', '')
+            if not (pos and pos.isdigit()):
+                continue
+            if 'error' in credit:
+                error_pos = pos
+            elif 'assist' in credit:
+                if not assists or assists[-1] != pos:
+                    assists.append(pos)
+        if assists and error_pos:
+            return f'{"-".join(assists)} E{error_pos}'
+        if error_pos:
+            return f'E{error_pos}'
         return 'E'
 
     is_dp = 'double_play' in et or event in (
@@ -946,9 +959,17 @@ def _build_scorecard_notation(play):
         seq = '-'.join(pos_seq) if pos_seq else ''
         return f'{seq} FC{dp_suffix}' if seq else 'FC'
 
+    _is_cs  = event.startswith('Caught Stealing')
+    _is_pk  = event.startswith('Pickoff')
+    _is_sdp = event == 'Strikeout Double Play'
+
     # All out events: return fielder sequence from credits.
     if pos_seq:
-        return '-'.join(pos_seq) + dp_suffix
+        seq = '-'.join(pos_seq) + dp_suffix
+        if _is_cs:  return f'CS {seq}'
+        if _is_pk:  return f'PO {seq}'
+        if _is_sdp: return f'K {"-".join(pos_seq)}'
+        return seq
 
     # Credits absent — parse fielder positions from the play description.
     # Find every occurrence of each position keyword so repeated touches
@@ -972,14 +993,16 @@ def _build_scorecard_notation(play):
                 _start = _idx + 1
         _hits.sort()
         if _hits:
-            _seq = '-'.join(c for _, c in _hits[:5])
-            return _seq + dp_suffix
+            _seq = '-'.join(c for _, c in _hits[:5]) + dp_suffix
+            if _is_cs:  return f'CS {_seq}'
+            if _is_pk:  return f'PO {_seq}'
+            if _is_sdp: return f'K {_seq}'
+            return _seq
 
     # Fallbacks when credits are absent.
-    if event.startswith('Caught Stealing'):
-        return 'CS'
-    if event.startswith('Pickoff'):
-        return 'PK'
+    if _is_cs:  return 'CS'
+    if _is_pk:  return 'PO'
+    if _is_sdp: return 'K'
     return _EVENT_CODE_MAP.get(event, event[:3] if event else '')
 
 
