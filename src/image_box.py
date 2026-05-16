@@ -96,8 +96,8 @@ def _fielder_from_desc(description):
     return ''
 
 
-def _fielder_seq_from_desc(description):
-    """Return a fielder position sequence (e.g. '6-3') from a groundout description."""
+def _fielder_seq_from_desc(description, max_pos=2):
+    """Return a fielder position sequence (e.g. '6-3', '4-6-3') from a play description."""
     if not description:
         return ''
     dl = description.lower()
@@ -107,10 +107,8 @@ def _fielder_seq_from_desc(description):
         if idx >= 0:
             hits.append((idx, code))
     hits.sort()
-    if len(hits) >= 2:
-        return '-'.join(h[1] for h in hits[:2])
     if hits:
-        return hits[0][1]
+        return '-'.join(h[1] for h in hits[:max_pos])
     return ''
 
 
@@ -1060,9 +1058,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 if _fp:
                     play_display = f'SF{_fp}'
             elif play_display == 'GO':
-                _fseq = _fielder_seq_from_desc(_lp_desc)
+                _fseq = _fielder_seq_from_desc(_lp_desc, max_pos=2)
                 if _fseq:
                     play_display = f'{_fseq} GO'
+            elif play_display in ('GDP', 'DP'):
+                _fseq = _fielder_seq_from_desc(_lp_desc, max_pos=3)
+                if _fseq:
+                    play_display = f'{_fseq} GDP'
         # Bare fielder-sequence groundouts (e.g. "6-3", "5-3") get a GO suffix
         # so the play type is clear alongside the position sequence.
         if play_display and _re.match(r'^\d(-\d)+$', play_display):

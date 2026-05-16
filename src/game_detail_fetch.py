@@ -899,6 +899,21 @@ def _build_scorecard_notation(play):
     if pos_seq:
         return '-'.join(pos_seq) + dp_suffix
 
+    # Credits absent — parse fielder positions from the play description.
+    _desc = result.get('description', '')
+    if _desc:
+        _dl = _desc.lower()
+        _pos_kws = [
+            ('center fielder', '8'), ('right fielder', '9'), ('left fielder', '7'),
+            ('first baseman', '3'), ('second baseman', '4'), ('third baseman', '5'),
+            ('shortstop', '6'), ('catcher', '2'), ('pitcher', '1'),
+        ]
+        _hits = sorted(((_dl.find(kw), code) for kw, code in _pos_kws if kw in _dl))
+        if _hits:
+            _max = 3 if (is_dp or is_tp) else 2
+            _seq = '-'.join(c for _, c in _hits[:_max])
+            return _seq + dp_suffix
+
     # Fallbacks when credits are absent.
     if event.startswith('Caught Stealing'):
         return 'CS'
