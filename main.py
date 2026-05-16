@@ -301,7 +301,7 @@ def _should_skip_poll(date_str, config, sched):
     if any_final_undecided:
         interval_min = 2
     elif any_live:
-        interval_min = config.get('live_game_interval', 5)
+        interval_min = config.get('live_game_interval', 1)
     elif all_done:
         interval_min = 60
     elif not cached_games or all_pregame:

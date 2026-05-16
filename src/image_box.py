@@ -613,7 +613,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _pit_w = int(_pit_fnt.getlength(_pit_name))
             draw.text((_right_x - _pit_w, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
-        if _between_innings or _pitching_change:
+        if _between_innings:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
         else:
             # Active play: pitch/pitcher/batter info
@@ -980,13 +980,21 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             bool(_lp_is_top) == _cur_is_top
         )
         _last_play_val = game_data.get('last_play') if _lp_same_half else None
-        raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
+        # Between innings: show the play that ended the half-inning, not the PC/sub event.
+        if _between_innings:
+            raw_play = (game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
+        else:
+            raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
         # Abbreviate verbose play names so they fit cleanly without truncation
         play_display = _abbr_play(raw_play) if raw_play else ''
-        # Prepend RBI count when the play drove in runs
+        # Prepend RBI count when the play drove in runs.
+        # Between innings the inning ended on an out — only tag-out plays (CS/PK/RO) can
+        # legitimately have an RBI credited on the same play as the final out.
         _rbi = int(game_data.get('last_play_rbi') or 0)
+        _TAG_OUT_PLAYS = {'CS', 'PK', 'RO'}
         if _rbi > 0 and play_display and not _sub_ev and not game_data.get('last_review_result'):
-            play_display = f'RBI {play_display}' if _rbi == 1 else f'{_rbi}R {play_display}'
+            if not _between_innings or play_display in _TAG_OUT_PLAYS:
+                play_display = f'RBI {play_display}' if _rbi == 1 else f'{_rbi}R {play_display}'
         _header_right = _ser_content_left_x - 2 * s
 
         def _draw_play_right(text, fnt=None, y_off=4):
@@ -1281,32 +1289,21 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if game_data['detailed_state'] == 'In Progress':
         if _between_innings and _game_ending_state:
             pass  # end of 9th+ with a lead — linescore shown, no next-batters panel
-        elif _between_innings or _pitching_change:
-            # Between-innings OR mid-inning pitching change: show upcoming batters on right side.
-            # For between-innings the batter list is next_batter_1/2/3 (next half-inning).
-            # For mid-inning PC the current hitter is at the plate — show them first, then due up.
+        elif _between_innings:
+            # Between-innings break (including pitching changes announced during the break):
+            # show the next three batters for the upcoming half-inning and the pitcher.
             _right_x = start_x + horizonta_len - 2 * s
             _left_x = start_x + 88 * s
             _max_name_w = _right_x - _left_x
-            if _pitching_change and not _between_innings:
-                # Mid-inning: bottom = current hitter at plate, middle = on deck, top = in the hole
-                _batter_names = [
-                    _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
-                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
-                    _last_name(game_data.get('current_hitter') or ''),
-                ]
-                # New pitcher from sub_event "PC: Smith"
-                _pc_raw = (game_data.get('sub_event') or '')[3:].strip()
-                _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
-            else:
-                # Between-innings: bottom = due up, middle = on deck, top = in the hole
-                _batter_names = [
-                    _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
-                    _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
-                    _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
-                ]
-                _pc_raw = (game_data.get('sub_event') or '')[3:].strip() if _pitching_change else ''
-                _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+            # Next half-inning order: in-hole (top), on-deck (middle), leadoff (bottom)
+            _batter_names = [
+                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+            ]
+            # If there's a pitching change announced between innings, use that pitcher name.
+            _pc_raw = (game_data.get('sub_event') or '')[3:].strip() if _pitching_change else ''
+            _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
             _name_y = start_y + 21 * s
             for _nm in _batter_names:
                 if _nm:
@@ -1315,29 +1312,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _nm_disp = _nm_disp[:-1]
                     draw.text((_left_x, _name_y), _nm_disp, font=font14, fill=0)
                 _name_y += 12 * s
-            if _pitching_change and not _between_innings and (game_data.get('num_of_outs') or 0) < 3:
-                # Mid-inning PC: no pitcher name (outs circles occupy that space).
-                # Outs circles at y=73 — above the linescore grid (y=83+), no overlap.
-                _outs_val = game_data.get('num_of_outs') or 0
-                _outs_list = [i + 1 <= _outs_val for i in range(3)]
-                Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _outs_list[0], outline_width=2)
-                Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _outs_list[1], outline_width=2)
-                Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, _outs_list[2], outline_width=2)
-                draw = ImageDraw.Draw(Himage)
-            else:
-                # Between-innings PC (or normal between-innings): separator + pitcher name.
-                _sep_y = _name_y + 5 * s
-                draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
-                _pit_max_w = _max_name_w
-                if _pit_name:
-                    _pit_fnt = font14
-                    if int(font14.getlength(_pit_name)) > _pit_max_w:
-                        _pit_fnt = font11
-                        if int(font11.getlength(_pit_name)) > _pit_max_w:
-                            _pit_fnt = font9
-                            while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
-                                _pit_name = _pit_name[:-1]
-                    draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
+            # Separator line + pitcher name (no outs shown between innings)
+            _sep_y = _name_y + 5 * s
+            draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
+            _pit_max_w = _max_name_w
+            if _pit_name:
+                _pit_fnt = font14
+                if int(font14.getlength(_pit_name)) > _pit_max_w:
+                    _pit_fnt = font11
+                    if int(font11.getlength(_pit_name)) > _pit_max_w:
+                        _pit_fnt = font9
+                        while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
+                            _pit_name = _pit_name[:-1]
+                draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
