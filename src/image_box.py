@@ -1219,8 +1219,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _hml_s = _ml_str(_home_ml)
             _away_odds_y = start_y + (32 * s if use_logos else 25 * s)
             _home_odds_y = start_y + (62 * s if use_logos else 55 * s)
-            draw.text((_odds_right - int(font11.getlength(_aml_s)), _away_odds_y), _aml_s, font=font11, fill=0)
-            draw.text((_odds_right - int(font11.getlength(_hml_s)), _home_odds_y), _hml_s, font=font11, fill=0)
+            # Left-align both strings from the same x so +/- signs are column-aligned.
+            _odds_x = _odds_right - max(int(font11.getlength(_aml_s)), int(font11.getlength(_hml_s)))
+            draw.text((_odds_x, _away_odds_y), _aml_s, font=font11, fill=0)
+            draw.text((_odds_x, _home_odds_y), _hml_s, font=font11, fill=0)
 
         _is_ppd = game_data['detailed_state'] == 'Postponed'
         _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14, show_tv=not _is_ppd, scale=s)
