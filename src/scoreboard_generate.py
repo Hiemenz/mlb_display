@@ -1434,7 +1434,8 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
     print(f"  Output: {output_path}")
 
     # --- Step 4: Render each frame from in-memory timelines ---
-    frames = []
+    frames     = []
+    durations  = []   # per-frame delay in ms; final frame holds longer
     current_dt = start_dt
     step = 0
 
@@ -1461,6 +1462,7 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
             if result:
                 image, _ = result
                 frames.append(image.convert('L').convert('P'))
+                durations.append(frame_delay_ms)
                 print("ok")
             else:
                 print("skip")
@@ -1468,6 +1470,29 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
             print(f"error: {e}")
 
         current_dt += timedelta(minutes=interval_min)
+
+    # --- Step 4b: Trailing final frame — all games in their end state ---
+    # Use a target time well past all last plays so every game enters the Final
+    # branch of _game_state_at_time (requires target > last_play + 5 min).
+    if all_last_plays:
+        final_utc = max(all_last_plays) + timedelta(minutes=10)
+        print("  [final ] rendering trailing end-state frame...", end=' ', flush=True)
+        final_games = []
+        for game in base_games:
+            pk_str = str(game.get('game_pk', ''))
+            tl = game_timelines.get(pk_str)
+            final_games.append(_game_state_at_time(game, tl, final_utc) if tl else dict(game))
+        try:
+            result = orchestrate_score_board(final_games, team_data, date_str, bypass_cache=True)
+            if result:
+                image, _ = result
+                frames.append(image.convert('L').convert('P'))
+                durations.append(3000)  # hold the final scoreboard for 3 s
+                print("ok")
+            else:
+                print("skip")
+        except Exception as e:
+            print(f"error: {e}")
 
     # --- Step 5: Save GIF ---
     if not frames:
@@ -1480,7 +1505,7 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
         save_all=True,
         append_images=frames[1:],
         optimize=False,
-        duration=frame_delay_ms,
+        duration=durations,
         loop=0,
     )
     print(f"✓ GIF saved to {output_path}")
@@ -1490,9 +1515,15 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
         import imageio
         import numpy as np
         fps = 1000 / frame_delay_ms
+        final_hold_frames = max(1, round(3000 / frame_delay_ms))
         writer = imageio.get_writer(mp4_path, fps=fps, codec='libx264', quality=8)
-        for frame in frames:
+        for frame in frames[:-1]:
             writer.append_data(np.array(frame.convert('RGB')))
+        # Repeat the final frame so it holds for ~3 seconds in the MP4
+        if frames:
+            final_arr = np.array(frames[-1].convert('RGB'))
+            for _ in range(final_hold_frames):
+                writer.append_data(final_arr)
         writer.close()
         print(f"✓ MP4 saved to {mp4_path}")
     except ImportError:
