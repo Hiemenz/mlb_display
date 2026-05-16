@@ -1036,8 +1036,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             bool(_lp_is_top) == _cur_is_top
         )
         _last_play_val = game_data.get('last_play') if _lp_same_half else None
-        # Between innings or pitching change: show the last real play, never the PC/sub label.
-        if _between_innings or _pitching_change:
+        # Between innings: suppress sub_event so the last real play (out) shows instead.
+        # Mid-inning PC: include sub_event so the PC label appears in the header.
+        if _between_innings:
             raw_play = (game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
         else:
             raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
@@ -1278,10 +1279,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     if game_data['detailed_state'] == 'In Progress':
         _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=use_logos, logo_x_offset=logo_x_offset, scale=s)
 
-    # horizontal line
+    # top border + header separator
     end_x = start_x + horizonta_len
     end_y = start_y
-    draw.line((start_x, start_y + 20 * s, end_x, end_y + 20 * s), fill = 0)
+    draw.line((start_x, start_y, end_x, start_y), fill=0)
+    draw.line((start_x, start_y + 20 * s, end_x, end_y + 20 * s), fill=0)
 
     # Win probability bar — live games only, when show_win_prob enabled
     # Win prob bar — all In Progress states including between-inning breaks
@@ -1436,15 +1438,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _name_y += 12 * s
             _sep_y = _name_y + 5 * s
             draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
+            _pc_outs = game_data.get('num_of_outs') or 0
+            _pc_outs_str = f'{_pc_outs} out{"s" if _pc_outs != 1 else ""}'
+            _pc_outs_w = int(font9.getlength(_pc_outs_str))
+            _pc_name_max = max(0, _max_name_w - _pc_outs_w - 3 * s)
             if _pc_name:
                 _pit_fnt = font14
-                if int(font14.getlength(_pc_name)) > _max_name_w:
+                if int(font14.getlength(_pc_name)) > _pc_name_max:
                     _pit_fnt = font11
-                    if int(font11.getlength(_pc_name)) > _max_name_w:
+                    if int(font11.getlength(_pc_name)) > _pc_name_max:
                         _pit_fnt = font9
-                        while _pc_name and int(font9.getlength(_pc_name)) > _max_name_w:
+                        while _pc_name and int(font9.getlength(_pc_name)) > _pc_name_max:
                             _pc_name = _pc_name[:-1]
                 draw.text((_left_x, _sep_y + 2 * s), _pc_name, font=_pit_fnt, fill=0)
+            draw.text((_right_x - _pc_outs_w, _sep_y + 4 * s), _pc_outs_str, font=font9, fill=0)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
