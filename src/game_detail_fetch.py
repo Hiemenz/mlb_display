@@ -210,44 +210,52 @@ def _last_name_simple(full_name):
 
 
 def _find_recent_sub_event(plays):
-    """Return 'PC: Lastname', 'PH: Lastname', or None for the most recent pitching
-    change or pinch hitter within the last 3 plays.
+    """Return 'PC: Lastname', 'PH: Lastname', or None for a fresh pitching change
+    or pinch hitter.
+
+    A substitution is considered fresh only while no pitch has been thrown in the
+    current at-bat since the change occurred.  This mirrors the freshness guard used
+    by _find_recent_review_result and prevents the label from persisting for 3+ ABs.
 
     Pitching changes between at-bats appear as standalone top-level allPlays entries
     (result.eventType = 'pitching_substitution').  Mid-at-bat subs appear as action
-    events inside a play's playEvents list.  We check both.
+    events inside a play's playEvents list.
     """
     all_plays = plays.get('allPlays') or []
-    recent = all_plays[-3:] if len(all_plays) >= 3 else all_plays
+    current_events = plays.get('currentPlay', {}).get('playEvents', [])
+    current_has_pitches = any(ev.get('isPitch') for ev in current_events)
 
-    # 1. Top-level allPlays substitution entries (between-at-bat pitching changes)
-    for play in reversed(recent):
-        result_et = (play.get('result', {}).get('eventType') or '').lower()
-        result_desc = (play.get('result', {}).get('description') or '').lower()
+    # 1. Mid-at-bat subs inside currentPlay — fresh only if no pitch thrown after the sub.
+    for ev in reversed(current_events):
+        if ev.get('isPitch'):
+            break  # pitch thrown after sub — stale
+        et = (ev.get('details', {}).get('eventType') or '').lower()
+        player_name = (ev.get('player', {}).get('fullName') or '').strip()
+        if not player_name:
+            continue
+        last = _last_name_simple(player_name)
+        if 'pitching_substitution' in et:
+            return f'PC: {last}'
+        if 'offensive_substitution' in et:
+            desc = (ev.get('details', {}).get('description') or '').lower()
+            if 'pinch' in desc:
+                return f'PH: {last}'
+
+    # 2. Between-at-bat substitution (standalone allPlays entry) — fresh only if the
+    # new pitcher/batter hasn't faced a pitch yet in the current at-bat.
+    if not current_has_pitches and all_plays:
+        last_play = all_plays[-1]
+        result_et = (last_play.get('result', {}).get('eventType') or '').lower()
+        result_desc = (last_play.get('result', {}).get('description') or '').lower()
         if 'pitching_substitution' in result_et:
-            pitcher = play.get('matchup', {}).get('pitcher', {}).get('fullName') or ''
+            pitcher = last_play.get('matchup', {}).get('pitcher', {}).get('fullName') or ''
             last = _last_name_simple(pitcher)
             return f'PC: {last}' if last else None
         if 'offensive_substitution' in result_et and 'pinch' in result_desc:
-            batter = play.get('matchup', {}).get('batter', {}).get('fullName') or ''
+            batter = last_play.get('matchup', {}).get('batter', {}).get('fullName') or ''
             last = _last_name_simple(batter)
             return f'PH: {last}' if last else None
 
-    # 2. Action events inside currentPlay or last completed play (mid-at-bat subs)
-    sources = [p for p in [plays.get('currentPlay')] + ([all_plays[-1]] if all_plays else []) if p]
-    for play in sources:
-        for ev in reversed(play.get('playEvents', [])):
-            et = (ev.get('details', {}).get('eventType') or '').lower()
-            player_name = (ev.get('player', {}).get('fullName') or '').strip()
-            if not player_name:
-                continue
-            last = _last_name_simple(player_name)
-            if 'pitching_substitution' in et:
-                return f'PC: {last}'
-            if 'offensive_substitution' in et:
-                desc = (ev.get('details', {}).get('description') or '').lower()
-                if 'pinch' in desc:
-                    return f'PH: {last}'
     return None
 
 
@@ -890,6 +898,31 @@ def _build_scorecard_notation(play):
     # All out events: return fielder sequence from credits.
     if pos_seq:
         return '-'.join(pos_seq) + dp_suffix
+
+    # Credits absent — parse fielder positions from the play description.
+    # Find every occurrence of each position keyword so repeated touches
+    # (e.g. catcher in a rundown) are captured; cap at 5 fielders.
+    _desc = result.get('description', '')
+    if _desc:
+        _dl = _desc.lower()
+        _pos_kws = [
+            ('center fielder', '8'), ('right fielder', '9'), ('left fielder', '7'),
+            ('first baseman', '3'), ('second baseman', '4'), ('third baseman', '5'),
+            ('shortstop', '6'), ('catcher', '2'), ('pitcher', '1'),
+        ]
+        _hits = []
+        for _kw, _code in _pos_kws:
+            _start = 0
+            while True:
+                _idx = _dl.find(_kw, _start)
+                if _idx < 0:
+                    break
+                _hits.append((_idx, _code))
+                _start = _idx + 1
+        _hits.sort()
+        if _hits:
+            _seq = '-'.join(c for _, c in _hits[:5])
+            return _seq + dp_suffix
 
     # Fallbacks when credits are absent.
     if event.startswith('Caught Stealing'):
