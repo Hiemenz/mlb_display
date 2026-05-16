@@ -444,10 +444,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] == 'In Progress'
         and game_data.get('inningState') in ('Middle', 'End')
     )
-    # Mid-inning pitching change — also show linescore grid
+    # Mid-inning pitching change — show linescore grid only when the half-inning
+    # is already underway (outs recorded or runners on base), not when the new
+    # pitcher is simply starting a fresh half-inning.
     _pitching_change = (
         game_data['detailed_state'] == 'In Progress'
         and (game_data.get('sub_event') or '').startswith('PC:')
+        and (
+            (game_data.get('num_of_outs') or 0) > 0
+            or game_data.get('runner_on_first')
+            or game_data.get('runner_on_second')
+            or game_data.get('runner_on_third')
+        )
     )
     # End of 9th+ with one team leading, or Mid 9th+ with home team winning — game is effectively over
     _inn_state_ge = game_data.get('inningState') or ''

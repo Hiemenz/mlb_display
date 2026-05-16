@@ -365,6 +365,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         live_last_play = None
         live_last_play_inning = None
         live_last_play_is_top = None
+        live_last_play_rbi = 0
         for _lp in reversed(plays.get('allPlays', [])):
             if not _lp.get('about', {}).get('isComplete'):
                 continue
@@ -377,6 +378,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             live_last_play = _build_scorecard_notation(_lp)
             live_last_play_inning = _lp.get('about', {}).get('inning')
             live_last_play_is_top = _lp.get('about', {}).get('isTopInning')
+            live_last_play_rbi = int(_lp.get('result', {}).get('rbi') or 0)
             break
 
         return {
@@ -403,6 +405,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'runner_third_number': runner_third_number,
             'last_review_result': _find_recent_review_result(plays),
             'last_play': live_last_play,
+            'last_play_rbi': live_last_play_rbi,
             'last_play_inning': live_last_play_inning,
             'last_play_is_top': live_last_play_is_top,
         }
