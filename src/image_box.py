@@ -1,3 +1,4 @@
+import re as _re
 import time as _time
 import pytz
 from datetime import datetime as _datetime
@@ -966,7 +967,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     draw.text((vx + 1 * s, start_y + vy), venue_clean, font=vfont, fill=0)  # bold
             except AttributeError:
                 pass
-    if game_data['detailed_state'] == 'In Progress' and not _is_game_effectively_over(game_data):
+    if game_data['detailed_state'] == 'In Progress':
         _sub_ev = (game_data.get('sub_event') or '').strip()
         # Only include last_play when it belongs to the current half-inning.
         # The API stores inning + isTopInning on every play; compare to the live linescore.
@@ -987,6 +988,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
         # Abbreviate verbose play names so they fit cleanly without truncation
         play_display = _abbr_play(raw_play) if raw_play else ''
+        # Bare fielder-sequence groundouts (e.g. "6-3", "5-3") get a GO suffix
+        # so the play type is clear alongside the position sequence.
+        if play_display and _re.match(r'^\d(-\d)+$', play_display):
+            play_display = play_display + ' GO'
         # Prepend RBI count when the play drove in runs.
         # Between innings the inning ended on an out — only tag-out plays (CS/PK/RO) can
         # legitimately have an RBI credited on the same play as the final out.
