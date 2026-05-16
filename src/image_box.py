@@ -96,16 +96,24 @@ def _fielder_from_desc(description):
     return ''
 
 
-def _fielder_seq_from_desc(description, max_pos=2):
-    """Return a fielder position sequence (e.g. '6-3', '4-6-3') from a play description."""
+def _fielder_seq_from_desc(description, max_pos=5):
+    """Return a fielder position sequence from a play description (up to max_pos fielders).
+
+    Finds every occurrence of each position keyword in order so repeated touches
+    (e.g. catcher in a rundown) are captured correctly.
+    """
     if not description:
         return ''
     dl = description.lower()
     hits = []
     for kw, code in _POS_KEYWORDS:
-        idx = dl.find(kw)
-        if idx >= 0:
+        start = 0
+        while True:
+            idx = dl.find(kw, start)
+            if idx < 0:
+                break
             hits.append((idx, code))
+            start = idx + 1
     hits.sort()
     if hits:
         return '-'.join(h[1] for h in hits[:max_pos])
@@ -1058,11 +1066,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 if _fp:
                     play_display = f'SF{_fp}'
             elif play_display == 'GO':
-                _fseq = _fielder_seq_from_desc(_lp_desc, max_pos=2)
+                _fseq = _fielder_seq_from_desc(_lp_desc)
                 if _fseq:
                     play_display = f'{_fseq} GO'
             elif play_display in ('GDP', 'DP'):
-                _fseq = _fielder_seq_from_desc(_lp_desc, max_pos=3)
+                _fseq = _fielder_seq_from_desc(_lp_desc)
                 if _fseq:
                     play_display = f'{_fseq} GDP'
         # Bare fielder-sequence groundouts (e.g. "6-3", "5-3") get a GO suffix

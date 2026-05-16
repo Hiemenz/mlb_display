@@ -900,6 +900,8 @@ def _build_scorecard_notation(play):
         return '-'.join(pos_seq) + dp_suffix
 
     # Credits absent — parse fielder positions from the play description.
+    # Find every occurrence of each position keyword so repeated touches
+    # (e.g. catcher in a rundown) are captured; cap at 5 fielders.
     _desc = result.get('description', '')
     if _desc:
         _dl = _desc.lower()
@@ -908,10 +910,18 @@ def _build_scorecard_notation(play):
             ('first baseman', '3'), ('second baseman', '4'), ('third baseman', '5'),
             ('shortstop', '6'), ('catcher', '2'), ('pitcher', '1'),
         ]
-        _hits = sorted(((_dl.find(kw), code) for kw, code in _pos_kws if kw in _dl))
+        _hits = []
+        for _kw, _code in _pos_kws:
+            _start = 0
+            while True:
+                _idx = _dl.find(_kw, _start)
+                if _idx < 0:
+                    break
+                _hits.append((_idx, _code))
+                _start = _idx + 1
+        _hits.sort()
         if _hits:
-            _max = 3 if (is_dp or is_tp) else 2
-            _seq = '-'.join(c for _, c in _hits[:_max])
+            _seq = '-'.join(c for _, c in _hits[:5])
             return _seq + dp_suffix
 
     # Fallbacks when credits are absent.
