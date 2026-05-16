@@ -375,7 +375,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data = dict(game_data)
         _prefix = 'P CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
         _chal_abbr = game_data.get('challenge_team_abbr', '')
-        game_data['last_play'] = f'{_prefix} {_chal_abbr}'.strip() if _chal_abbr else _prefix
+        _chal_label = f'{_prefix} {_chal_abbr}'.strip() if _chal_abbr else _prefix
+        # Write into sub_event so the challenge label has highest display priority
+        # (sub_event wins over last_play, preventing "PC: Name" from overriding it).
+        game_data['sub_event'] = _chal_label
+        game_data['last_play'] = _chal_label
         game_data['detailed_state'] = 'In Progress'
 
     # Delayed Start = game hasn't begun yet; treat like Pre-Game (show pitcher probables)
