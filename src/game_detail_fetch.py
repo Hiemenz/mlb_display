@@ -403,13 +403,14 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
 
 
 def fetch_between_inning_info(game_pk, inning_state):
-    """Return the next 3 batters and pitcher for the upcoming half-inning.
+    """Return the next 3 batters, pitcher, and last-play notation for the break.
 
     Computes from the live feed batting order so the result is always the true
     leadoff + next two, not whatever the linescore offense fields happen to hold.
 
     inning_state: 'Middle' → home bats next (bottom); 'End' → away bats next (top).
-    Returns dict with keys: next_batter_1/2/3 (full names), next_pitcher (full name).
+    Returns dict with keys: next_batter_1/2/3 (full names), next_pitcher (full name),
+    last_play (scorecard notation), last_play_inning, last_play_is_top.
     """
     try:
         data = fetch_live_feed(game_pk)
@@ -481,11 +482,39 @@ def fetch_between_inning_info(game_pk, inning_state):
                     .get('fullName', '')
                 )
 
+        # Extract the last completed play from the half-inning that just ended.
+        # This provides scorecard notation (e.g. 'F7', '6-3') for the header display,
+        # sourced from the live feed which has credits/fielder position data.
+        _ended_half = 'top' if inning_state == 'Middle' else 'bottom'
+        _SUBST_TYPES = {
+            'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
+            'runner_substitution', 'game_advisory', 'ejection', 'defensive_switch',
+        }
+        last_play_notation = None
+        last_play_inning = None
+        last_play_is_top = None
+        for _lp in reversed(plays.get('allPlays', [])):
+            if not _lp.get('about', {}).get('isComplete'):
+                continue
+            _et = (_lp.get('result', {}).get('eventType') or '').lower().replace(' ', '_')
+            if _et in _SUBST_TYPES:
+                continue
+            if not (_lp.get('result', {}).get('event') or ''):
+                continue
+            if _lp.get('about', {}).get('halfInning', '') == _ended_half:
+                last_play_notation = _build_scorecard_notation(_lp)
+                last_play_inning = _lp.get('about', {}).get('inning')
+                last_play_is_top = _lp.get('about', {}).get('isTopInning')
+                break
+
         return {
             'next_batter_1': names[0] if len(names) > 0 else '',
             'next_batter_2': names[1] if len(names) > 1 else '',
             'next_batter_3': names[2] if len(names) > 2 else '',
             'next_pitcher':  pitcher_name,
+            'last_play':         last_play_notation,
+            'last_play_inning':  last_play_inning,
+            'last_play_is_top':  last_play_is_top,
         }
     except Exception:
         return {}
