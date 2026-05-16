@@ -455,22 +455,36 @@ def fetch_between_inning_info(game_pk, inning_state):
         if not ordered_pids:
             return {}
 
-        # Find the last batter from this team's most recent half-inning
+        # Find the last batter from this team's most recent half-inning.
+        # Don't require the batter to still be in the current lineup (they may have been
+        # pinch-hit for), so search all plays and resolve the batting slot from the
+        # boxscore player data even if they were substituted out.
         all_plays = plays.get('allPlays', [])
+        all_players = {}
+        for _side in ('away', 'home'):
+            all_players.update(boxscore.get('teams', {}).get(_side, {}).get('players', {}))
         last_batter_pid = None
         for play in reversed(all_plays):
             if play.get('about', {}).get('halfInning', '') != batting_half:
                 continue
             bid = play.get('matchup', {}).get('batter', {}).get('id')
-            if bid and bid in ordered_pids:
+            if bid:
                 last_batter_pid = bid
                 break
 
-        if last_batter_pid and last_batter_pid in ordered_pids:
-            last_idx = ordered_pids.index(last_batter_pid)
-            start = (last_idx + 1) % len(ordered_pids)
-        else:
-            start = 0  # team hasn't batted yet → start from top of order
+        start = 0  # default: top of order if team hasn't batted yet
+        if last_batter_pid:
+            if last_batter_pid in ordered_pids:
+                # Current lineup member — direct index lookup
+                last_idx = ordered_pids.index(last_batter_pid)
+                start = (last_idx + 1) % len(ordered_pids)
+            else:
+                # Subbed-out player — resolve batting slot from boxscore player data
+                pdata = all_players.get(f'ID{last_batter_pid}', {})
+                bat_str = str(pdata.get('battingOrder', ''))
+                if bat_str and bat_str[0].isdigit():
+                    last_slot = int(bat_str[0])  # e.g. '300' → slot 3
+                    start = last_slot % len(ordered_pids)  # next slot (0-indexed)
 
         n = len(ordered_pids)
         next_3_pids = [ordered_pids[(start + i) % n] for i in range(min(3, n))]

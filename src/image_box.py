@@ -1416,15 +1416,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                             _pit_name = _pit_name[:-1]
                 draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
         elif _pitching_change:
-            # Mid-inning PC: show current batter (bottom slot) and new pitcher below sep.
+            # Mid-inning PC: show in-hole/on-deck/current batter + new pitcher.
             _right_x = start_x + horizonta_len - 2 * s
             _left_x = start_x + 88 * s
             _max_name_w = _right_x - _left_x
-            _ab_name = _last_name(game_data.get('current_hitter') or '')
+            _pc_batter_names = [
+                _last_name(game_data.get('in_hole') or ''),
+                _last_name(game_data.get('due_up') or ''),
+                _last_name(game_data.get('current_hitter') or ''),
+            ]
             _pc_name = (game_data.get('sub_event') or '')[3:].strip()
-            # Put batter in the bottom name slot (same position as leadoff in between-innings)
             _name_y = start_y + 21 * s
-            for _nm in ('', '', _ab_name):
+            for _nm in _pc_batter_names:
                 if _nm:
                     _nm_disp = _nm
                     while _nm_disp and int(font14.getlength(_nm_disp)) > _max_name_w:
