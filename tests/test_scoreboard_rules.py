@@ -21,7 +21,6 @@ from unittest.mock import patch, MagicMock
 # conftest.py already adds src/ to sys.path and chdirs to project root.
 from generate_image import (
     _pitcher_line,
-    _format_player_name,
     _last_name,
     _clean_venue_name,
     _is_game_effectively_over,
@@ -32,6 +31,8 @@ from generate_image import (
     draw_box,
     draw_out_of_town_score_board,
 )
+from image_utils import _format_player_name
+from image_box import _abbr_play, _fielder_from_desc, _fielder_seq_from_desc
 from fetch_games import _pick_tv_channel
 
 try:
@@ -1788,23 +1789,38 @@ class TestHeaderInversion:
         assert not self._is_inverted(img)
 
     @needs_pil
-    def test_walk_off_inverts_header(self, minimal_team_data):
-        """A walk-off Final must invert the header row."""
-        game = _base_game(walk_off=True)
+    def test_walk_off_shows_walkoff_label(self, minimal_team_data):
+        """A walk-off Final renders differently (shows 'Walk-off' label in the lower box).
+
+        Uses empty inning runs to bypass the post-game linescore window and
+        land in the WP/LP pitcher-of-record section where walk_off matters.
+        """
+        common = dict(away_inning_runs=[], home_inning_runs=[])
+        game_walkoff = _base_game(walk_off=True, **common)
+        game_normal = _base_game(walk_off=False, **common)
+        img_wo = self._render(game_walkoff, minimal_team_data)
+        img_no = self._render(game_normal, minimal_team_data)
+        assert list(img_wo.getdata()) != list(img_no.getdata()), \
+            "walk_off=True should produce a different render (shows 'Walk-off' label)"
+
+    @needs_pil
+    def test_no_hitter_inverts_header_in_progress_inning_6(self, minimal_team_data):
+        """An active no-hitter at inning >= 6 must invert the header row."""
+        game = _in_progress_game(no_hitter=True, current_inning=6)
         img = self._render(game, minimal_team_data)
         assert self._is_inverted(img)
 
     @needs_pil
-    def test_no_hitter_inverts_header(self, minimal_team_data):
-        """An active no-hitter must invert the header row."""
-        game = _in_progress_game(no_hitter=True)
+    def test_no_hitter_before_6th_does_not_invert_header(self, minimal_team_data):
+        """A no-hitter before inning 6 must NOT invert the header (too early to flash)."""
+        game = _in_progress_game(no_hitter=True, current_inning=5)
         img = self._render(game, minimal_team_data)
-        assert self._is_inverted(img)
+        assert not self._is_inverted(img)
 
     @needs_pil
-    def test_perfect_game_inverts_header(self, minimal_team_data):
-        """An active perfect game must invert the header row."""
-        game = _in_progress_game(perfect_game=True)
+    def test_perfect_game_inverts_header_in_progress_inning_6(self, minimal_team_data):
+        """An active perfect game at inning >= 6 must invert the header row."""
+        game = _in_progress_game(perfect_game=True, current_inning=6)
         img = self._render(game, minimal_team_data)
         assert self._is_inverted(img)
 
@@ -1893,3 +1909,271 @@ class TestSeriesRecord:
         draw_box(img_ns, 32, 30, no_series, minimal_team_data, use_logos=False)
         assert list(img_lead.getdata()) != list(img_ns.getdata()), \
             "Leading mid-series (not over) should show logo + series score in the header"
+
+
+# ===========================================================================
+# 17. PLAY ABBREVIATION (_abbr_play)
+# ===========================================================================
+
+class TestAbbrPlay:
+    """_abbr_play() maps verbose MLB play-event strings to short abbreviations."""
+
+    def test_none_returns_none(self):
+        assert _abbr_play(None) is None
+
+    def test_empty_string_returns_empty(self):
+        assert _abbr_play('') == ''
+
+    def test_strikeout(self):
+        assert _abbr_play('Strikeout') == 'K'
+
+    def test_strikeout_case_insensitive(self):
+        assert _abbr_play('STRIKEOUT') == 'K'
+
+    def test_home_run(self):
+        assert _abbr_play('Home Run') == 'HR'
+
+    def test_single(self):
+        assert _abbr_play('Single to center field') == '1B'
+
+    def test_double(self):
+        assert _abbr_play('Double to left field') == '2B'
+
+    def test_triple(self):
+        assert _abbr_play('Triple to right field') == '3B'
+
+    def test_walk(self):
+        assert _abbr_play('Walk') == 'BB'
+
+    def test_intentional_walk_before_walk(self):
+        """Intentional Walk must map to IBB, not BB (longer key checked first)."""
+        assert _abbr_play('Intentional Walk') == 'IBB'
+
+    def test_hit_by_pitch(self):
+        assert _abbr_play('Hit By Pitch') == 'HBP'
+
+    def test_sac_fly(self):
+        assert _abbr_play('Sac Fly to left fielder') == 'SF'
+
+    def test_sacrifice_fly(self):
+        assert _abbr_play('Sacrifice Fly to center fielder') == 'SF'
+
+    def test_sac_bunt(self):
+        assert _abbr_play('Sac Bunt') == 'SAC'
+
+    def test_stolen_base(self):
+        assert _abbr_play('Stolen Base 2B') == 'SB'
+
+    def test_caught_stealing(self):
+        assert _abbr_play('Caught Stealing 3B') == 'CS'
+
+    def test_wild_pitch(self):
+        assert _abbr_play('Wild Pitch') == 'WP'
+
+    def test_passed_ball(self):
+        assert _abbr_play('Passed Ball') == 'PB'
+
+    def test_fielders_choice(self):
+        assert _abbr_play("Fielder's Choice to Second Baseman") == 'FC'
+
+    def test_fielders_choice_no_apostrophe(self):
+        assert _abbr_play('Fielders Choice to Shortstop') == 'FC'
+
+    def test_field_error(self):
+        assert _abbr_play('Field Error') == 'E'
+
+    def test_flyout(self):
+        assert _abbr_play('Flyout to center fielder') == 'FO'
+
+    def test_fly_out_space(self):
+        assert _abbr_play('Fly Out to right fielder') == 'FO'
+
+    def test_groundout(self):
+        assert _abbr_play('Groundout to third baseman') == 'GO'
+
+    def test_ground_out_space(self):
+        assert _abbr_play('Ground Out to shortstop') == 'GO'
+
+    def test_lineout(self):
+        assert _abbr_play('Lineout to left fielder') == 'LO'
+
+    def test_pop_out(self):
+        assert _abbr_play('Pop Out to catcher') == 'PO'
+
+    def test_grounded_into_dp_before_double_play(self):
+        """'grounded into dp' matches the short MLB API event form 'Grounded Into DP'."""
+        assert _abbr_play('Grounded Into DP') == 'GDP'
+
+    def test_double_play_long_form_maps_to_dp(self):
+        """The long MLB API event form 'Grounded Into Double Play' maps to DP via 'double play' key."""
+        assert _abbr_play('Grounded Into Double Play') == 'DP'
+
+    def test_double_play(self):
+        assert _abbr_play('Double Play, Pitcher to First Baseman') == 'DP'
+
+    def test_triple_play(self):
+        assert _abbr_play('Triple Play') == 'TP'
+
+    def test_pickoff(self):
+        assert _abbr_play('Pickoff 1B') == 'PK'
+
+    def test_balk(self):
+        assert _abbr_play('Balk') == 'BLK'
+
+    def test_force_out(self):
+        assert _abbr_play('Force Out') == 'FO'
+
+    def test_runner_out(self):
+        assert _abbr_play('Runner Out') == 'RO'
+
+    def test_unknown_event_returned_unchanged(self):
+        """An unrecognized event string must be returned as-is."""
+        assert _abbr_play('Foul Tip') == 'Foul Tip'
+
+    def test_partial_match_in_longer_string(self):
+        """Match works on substring — 'walk' in longer description."""
+        assert _abbr_play('Ball 4, Walk') == 'IBB' or _abbr_play('Ball 4, Walk') == 'BB'
+
+
+# ===========================================================================
+# 18. FIELDER FROM DESCRIPTION (_fielder_from_desc)
+# ===========================================================================
+
+class TestFielderFromDesc:
+    """_fielder_from_desc() returns the putout fielder's position code."""
+
+    def test_none_returns_empty(self):
+        assert _fielder_from_desc(None) == ''
+
+    def test_empty_returns_empty(self):
+        assert _fielder_from_desc('') == ''
+
+    def test_center_fielder(self):
+        assert _fielder_from_desc('Flyout to center fielder') == '8'
+
+    def test_right_fielder(self):
+        assert _fielder_from_desc('Flyout to right fielder') == '9'
+
+    def test_left_fielder(self):
+        assert _fielder_from_desc('Flyout to left fielder') == '7'
+
+    def test_first_baseman(self):
+        assert _fielder_from_desc('Groundout to first baseman') == '3'
+
+    def test_second_baseman(self):
+        assert _fielder_from_desc('Groundout to second baseman') == '4'
+
+    def test_third_baseman(self):
+        assert _fielder_from_desc('Groundout to third baseman') == '5'
+
+    def test_shortstop(self):
+        assert _fielder_from_desc('Lineout to shortstop') == '6'
+
+    def test_catcher(self):
+        assert _fielder_from_desc('Pop out to catcher') == '2'
+
+    def test_pitcher(self):
+        assert _fielder_from_desc('Groundout to pitcher') == '1'
+
+    def test_no_position_returns_empty(self):
+        """A description with no known position keyword returns ''."""
+        assert _fielder_from_desc('Strikeout swinging') == ''
+
+    def test_case_insensitive(self):
+        assert _fielder_from_desc('FLYOUT TO CENTER FIELDER') == '8'
+
+    def test_center_fielder_beats_right_fielder_in_ambiguous(self):
+        """When both appear, the first matching keyword in the ordered list wins."""
+        result = _fielder_from_desc('center fielder to right fielder')
+        assert result == '8'
+
+    def test_ordered_list_wins_over_text_position(self):
+        """_fielder_from_desc returns the first keyword match in _POS_KEYWORDS order.
+        'first baseman' (index 3) is checked before 'second baseman'/'shortstop',
+        so it wins even when shortstop appears first in the text."""
+        desc = 'Grounded into double play, shortstop to second baseman to first baseman'
+        assert _fielder_from_desc(desc) == '3'
+
+
+# ===========================================================================
+# 19. FIELDER SEQUENCE FROM DESCRIPTION (_fielder_seq_from_desc)
+# ===========================================================================
+
+class TestFielderSeqFromDesc:
+    """_fielder_seq_from_desc() returns dash-joined fielder sequence."""
+
+    def test_none_returns_empty(self):
+        assert _fielder_seq_from_desc(None) == ''
+
+    def test_empty_returns_empty(self):
+        assert _fielder_seq_from_desc('') == ''
+
+    def test_single_fielder(self):
+        assert _fielder_seq_from_desc('Flyout to center fielder') == '8'
+
+    def test_two_fielder_groundout(self):
+        """Groundout: third baseman (5) to first baseman (3) → '5-3'."""
+        assert _fielder_seq_from_desc('Groundout, third baseman to first baseman') == '5-3'
+
+    def test_gdp_6_4_3(self):
+        """Classic GDP: shortstop (6) → second baseman (4) → first baseman (3) → '6-4-3'."""
+        desc = 'Grounded into double play, shortstop to second baseman to first baseman'
+        assert _fielder_seq_from_desc(desc) == '6-4-3'
+
+    def test_dp_pitcher_to_first(self):
+        """Double play: pitcher (1) to first baseman (3) → '1-3'."""
+        desc = 'Double play, pitcher to first baseman'
+        assert _fielder_seq_from_desc(desc) == '1-3'
+
+    def test_max_pos_limits_fielders(self):
+        """With max_pos=2, only first 2 fielders are returned."""
+        desc = 'Grounded into double play, shortstop to second baseman to first baseman'
+        assert _fielder_seq_from_desc(desc, max_pos=2) == '6-4'
+
+    def test_default_max_pos_is_5(self):
+        """Default max_pos=5 accepts up to 5 fielders in a sequence."""
+        desc = ('center fielder to shortstop to second baseman '
+                'to third baseman to first baseman')
+        result = _fielder_seq_from_desc(desc)
+        assert result == '8-6-4-5-3'
+
+    def test_six_fielders_truncated_to_five(self):
+        """A six-fielder sequence is truncated to 5 at the default max_pos."""
+        desc = ('center fielder to shortstop to second baseman '
+                'to third baseman to first baseman to catcher')
+        result = _fielder_seq_from_desc(desc)
+        assert result.count('-') == 4, "Default max_pos=5 means 4 dashes"
+
+    def test_no_position_keyword_returns_empty(self):
+        assert _fielder_seq_from_desc('Strikeout swinging') == ''
+
+    def test_case_insensitive(self):
+        assert _fielder_seq_from_desc('SHORTSTOP TO FIRST BASEMAN') == '6-3'
+
+    def test_repeated_position_captured(self):
+        """A position appearing twice (e.g. catcher in a rundown) is captured twice."""
+        desc = 'catcher to first baseman to catcher'
+        result = _fielder_seq_from_desc(desc)
+        assert '2' in result.split('-')
+        assert result.count('2') == 2
+
+    def test_5_4_3_double_play(self):
+        """Third baseman (5) → second baseman (4) → first baseman (3)."""
+        desc = 'Double play, third baseman to second baseman to first baseman'
+        assert _fielder_seq_from_desc(desc) == '5-4-3'
+
+    def test_4_6_3_double_play(self):
+        """Second baseman (4) → shortstop (6) → first baseman (3)."""
+        desc = 'Grounded into double play, second baseman to shortstop to first baseman'
+        assert _fielder_seq_from_desc(desc) == '4-6-3'
+
+    def test_1_3_groundout(self):
+        """Pitcher (1) to first baseman (3)."""
+        desc = 'Groundout to pitcher, pitcher to first baseman'
+        result = _fielder_seq_from_desc(desc)
+        assert result.startswith('1')
+
+    def test_max_pos_zero_returns_empty(self):
+        """max_pos=0 means no fielders are kept → empty string."""
+        desc = 'Groundout to third baseman to first baseman'
+        assert _fielder_seq_from_desc(desc, max_pos=0) == ''

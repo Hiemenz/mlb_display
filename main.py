@@ -309,6 +309,11 @@ def _should_skip_poll(date_str, config, sched):
     else:
         interval_min = config.get('update_interval', 15)
 
+    # When all games just became Final (cached state was live, now all_done), force one
+    # immediate refresh so the display shows the clean final state without waiting 60 min.
+    if all_done and not sched.get('all_done_refreshed'):
+        return False, ""
+
     last_fetch = sched.get('last_game_fetch')
     if last_fetch:
         try:
@@ -343,6 +348,12 @@ def _update_schedule_state(game_state_data, date_str, config, sched):
         return True  # signal: no games, caller should return early
     else:
         sched.pop('next_game_date', None)
+        _final_states = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Completed Early'}
+        _all_done_now = all(g.get('detailed_state') in _final_states for g in game_state_data)
+        if _all_done_now:
+            sched['all_done_refreshed'] = True
+        else:
+            sched.pop('all_done_refreshed', None)
         _save_schedule_state(sched)
         return False
 

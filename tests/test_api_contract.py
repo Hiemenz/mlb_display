@@ -185,7 +185,7 @@ def _parse(api_games, sport_id=1, config=None):
     with patch('fetch_games.save_off_results', side_effect=fake_save), \
          patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
          patch('fetch_games._attach_pregame_weather'), \
-         patch('fetch_games.fetch_win_probability', return_value=(None, None, None)):
+         patch('fetch_games.fetch_win_probability', return_value=(None, None, None, None, None, None, None)):
         parse_games(schedule_data, sport_id=sport_id, config=config)
 
     return captured.get('games', {}).get('games', [])
@@ -498,7 +498,8 @@ class TestStandingsSidebarMovers:
             return {}
 
         img = self._blank()
-        with patch('generate_image.load_json_file', side_effect=fake_load):
+        with patch('image_standings.load_json_file', side_effect=fake_load), \
+             patch('image_standings.save_off_results'):
             draw_standings_sidebar(img, standings_data, team_data, side='left')
         return img
 
@@ -574,7 +575,8 @@ class TestStandingsSidebarMovers:
             'American League East', 'American League Central', 'American League West',
         ]}, 'team_abbreviation': {}}
         img = self._blank()
-        with patch('generate_image.load_json_file', return_value={}):
+        with patch('image_standings.load_json_file', return_value={}), \
+             patch('image_standings.save_off_results'):
             result = draw_standings_sidebar(img, data, {}, side='left')
         assert result is img
 
@@ -584,7 +586,8 @@ class TestStandingsSidebarMovers:
             'National League East', 'National League Central', 'National League West',
         ]}, 'team_abbreviation': {}}
         img = self._blank()
-        with patch('generate_image.load_json_file', return_value={}):
+        with patch('image_standings.load_json_file', return_value={}), \
+             patch('image_standings.save_off_results'):
             draw_standings_sidebar(img, data, {}, side='right')
 
 
@@ -1121,7 +1124,7 @@ class TestParseGamesContract:
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
              patch('fetch_games._attach_pregame_weather'), \
-             patch('fetch_games.fetch_win_probability', return_value=(None, None, None)):
+             patch('fetch_games.fetch_win_probability', return_value=(None, None, None, None, None, None, None)):
             parse_games(data, sport_id=1, config={'timezone': 'America/Chicago'})
 
         teams = captured.get('teams', {}).get('team_abbreviation', {})
@@ -1227,7 +1230,7 @@ class TestWbcAbbreviationOverride:
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
              patch('fetch_games._attach_pregame_weather'), \
-             patch('fetch_games.fetch_win_probability', return_value=(None, None, None)):
+             patch('fetch_games.fetch_win_probability', return_value=(None, None, None, None, None, None, None)):
             parse_games(data, sport_id=8, config={'timezone': 'America/Chicago'})
 
         return captured.get('teams', {}).get('team_abbreviation', {})
@@ -1256,7 +1259,7 @@ class TestWbcAbbreviationOverride:
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
              patch('fetch_games._attach_pregame_weather'), \
-             patch('fetch_games.fetch_win_probability', return_value=(None, None, None)):
+             patch('fetch_games.fetch_win_probability', return_value=(None, None, None, None, None, None, None)):
             parse_games(data, sport_id=8, config={'timezone': 'America/Chicago'})
 
         teams = captured.get('teams', {}).get('team_abbreviation', {})
@@ -1276,7 +1279,7 @@ class TestWbcAbbreviationOverride:
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
              patch('fetch_games._attach_pregame_weather'), \
-             patch('fetch_games.fetch_win_probability', return_value=(None, None, None)):
+             patch('fetch_games.fetch_win_probability', return_value=(None, None, None, None, None, None, None)):
             parse_games(data, sport_id=1, config={'timezone': 'America/Chicago'})
 
         teams = captured.get('teams', {}).get('team_abbreviation', {})
