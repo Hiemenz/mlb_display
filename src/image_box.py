@@ -123,6 +123,18 @@ def _fielder_seq_from_desc(description, max_pos=5):
     return ''
 
 
+def _draw_backwards_k(img, x, y, fnt):
+    """Paste a horizontally-mirrored 'K' glyph at text anchor (x, y) on a mode-'1' img."""
+    bbox = fnt.getbbox('K')
+    ox, oy, ox2, oy2 = bbox
+    gw, gh = ox2 - ox, oy2 - oy
+    pad = 1
+    tmp = Image.new('L', (gw + 2 * pad, gh + 2 * pad), 255)
+    ImageDraw.Draw(tmp).text((-ox + pad, -oy + pad), 'K', font=fnt, fill=0)
+    tmp = tmp.transpose(Image.FLIP_LEFT_RIGHT)
+    img.paste(0, (x + ox - pad, y + oy - pad), ImageOps.invert(tmp))
+
+
 def set_historical_mode(enabled=True):
     global _historical_mode
     _historical_mode = enabled
@@ -1089,6 +1101,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             elif play_display == 'PK':
                 _fseq = _fielder_seq_from_desc(_lp_desc)
                 play_display = f'PO {_fseq}' if _fseq else 'PO'
+            elif play_display == 'E':
+                _ep = _fielder_from_desc(_lp_desc)
+                if _ep:
+                    play_display = f'E{_ep}'
         # Prepend RBI count when the play drove in runs.
         # Between innings the inning ended on an out — only tag-out plays (CS/PO/RO) can
         # legitimately have an RBI credited on the same play as the final out.
@@ -1100,7 +1116,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _is_tag_out = bool(play_display) and play_display.startswith(('CS', 'PO', 'RO'))
         if _rbi > 0 and play_display and not _sub_ev and not game_data.get('last_review_result') and not _is_error:
             if not _between_innings or _is_tag_out:
-                play_display = f'RBI {play_display}' if _rbi == 1 else f'{_rbi}R {play_display}'
+                play_display = f'{_rbi}RBI {play_display}'
         _header_right = _ser_content_left_x - 2 * s
 
         def _draw_play_right(text, fnt=None, y_off=4):
@@ -1109,13 +1125,28 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _fnt = fnt or _get_font(12 * s)
             _max_w = max(_header_right - start_x - _total_time_w - 10 * s, 0)
             _t = text
-            while len(_t) > 1 and int(_fnt.getlength(_t)) > _max_w:
+            _meas = _t.replace('Kl', 'K')
+            while len(_t) > 1 and int(_fnt.getlength(_meas)) > _max_w:
                 _t = _t[:-2] + '.'
-            if _t and int(_fnt.getlength(_t)) <= _max_w:
-                _pw = int(_fnt.getlength(_t))
+                _meas = _t.replace('Kl', 'K')
+            if _meas and int(_fnt.getlength(_meas)) <= _max_w:
+                _pw = int(_fnt.getlength(_meas))
                 _px = _header_right - _pw
-                draw.text((_px,         start_y + y_off * s), _t, font=_fnt, fill=0)
-                draw.text((_px + 1 * s, start_y + y_off * s), _t, font=_fnt, fill=0)
+                _py = start_y + y_off * s
+                if 'Kl' not in _t:
+                    draw.text((_px,         _py), _t, font=_fnt, fill=0)
+                    draw.text((_px + 1 * s, _py), _t, font=_fnt, fill=0)
+                else:
+                    _parts = _t.split('Kl')
+                    for _bx in (_px, _px + 1 * s):
+                        _cx = _bx
+                        for _i, _seg in enumerate(_parts):
+                            if _seg:
+                                draw.text((_cx, _py), _seg, font=_fnt, fill=0)
+                                _cx += int(_fnt.getlength(_seg))
+                            if _i < len(_parts) - 1:
+                                _draw_backwards_k(Himage, _cx, _py, _fnt)
+                                _cx += int(_fnt.getlength('K'))
 
         if _active_no_no:
             # Right-align label; inning state stays on left as-is
