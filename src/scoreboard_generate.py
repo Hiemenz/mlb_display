@@ -825,7 +825,10 @@ def _fetch_game_timeline(game_pk):
     # Running score: score after last completed play (used for pitch events mid-at-bat)
     running_away = 0
     running_home = 0
-    cumulative_last_play = None  # last non-substitution event description seen so far
+    cumulative_last_play      = None  # last non-substitution event name seen so far
+    cumulative_last_play_inn  = None  # inning of that event
+    cumulative_last_play_top  = None  # True if top half, False if bottom
+    cumulative_last_play_desc = None  # full description (for fielder notation)
 
     for i, play in enumerate(all_plays):
         about  = play.get('about', {})
@@ -938,13 +941,21 @@ def _fetch_game_timeline(game_pk):
         event        = wp_result.get('event') or result.get('event') or ''
         event_type   = (wp_result.get('eventType') or '').lower()
         if event and not any(s in event_type for s in _WP_SKIP_TYPES):
-            cumulative_last_play = event
+            cumulative_last_play      = event
+            cumulative_last_play_inn  = inning
+            cumulative_last_play_top  = (half_inning == 'top')
+            cumulative_last_play_desc = (
+                wp_result.get('description') or result.get('description') or ''
+            )
 
         wp_events.append({
-            'time':      end_time,
-            'away_wp':   away_wp,
-            'home_wp':   home_wp,
-            'last_play': cumulative_last_play,
+            'time':            end_time,
+            'away_wp':         away_wp,
+            'home_wp':         home_wp,
+            'last_play':       cumulative_last_play,
+            'last_play_inn':   cumulative_last_play_inn,
+            'last_play_top':   cumulative_last_play_top,
+            'last_play_desc':  cumulative_last_play_desc,
         })
 
     timeline.sort(key=lambda p: p['end_time'])
@@ -1095,6 +1106,7 @@ def _game_state_at_time(base_game, tl, target_utc):
             'num_of_outs': None, 'balls': None, 'strikes': None,
             'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
             'away_win_probability': None, 'home_win_probability': None, 'last_play': None,
+            'last_play_inning': None, 'last_play_is_top': None, 'last_play_description': '',
             'away_team_is_winner': False, 'home_team_is_winner': False,
         })
         return state
@@ -1113,9 +1125,13 @@ def _game_state_at_time(base_game, tl, target_utc):
             'inningState': None, 'away_win_probability': None,
             'home_win_probability': None,
         })
-        # Keep last_play from final play if available
+        # Keep last_play and inning context from final wp_event if available
         wp_events = tl.get('wp_events', [])
-        state['last_play'] = wp_events[-1]['last_play'] if wp_events else None
+        last_wp = wp_events[-1] if wp_events else None
+        state['last_play']             = last_wp['last_play'] if last_wp else None
+        state['last_play_inning']      = last_wp.get('last_play_inn') if last_wp else None
+        state['last_play_is_top']      = last_wp.get('last_play_top') if last_wp else None
+        state['last_play_description'] = (last_wp.get('last_play_desc') or '') if last_wp else ''
         return state
 
     # --- In Progress: reconstruct detailed state from pitch events and completed plays ---
@@ -1207,13 +1223,19 @@ def _game_state_at_time(base_game, tl, target_utc):
             break
 
     if last_wp:
-        state['away_win_probability'] = last_wp['away_wp']
-        state['home_win_probability'] = last_wp['home_wp']
-        state['last_play']            = last_wp['last_play']
+        state['away_win_probability']  = last_wp['away_wp']
+        state['home_win_probability']  = last_wp['home_wp']
+        state['last_play']             = last_wp['last_play']
+        state['last_play_inning']      = last_wp.get('last_play_inn')
+        state['last_play_is_top']      = last_wp.get('last_play_top')
+        state['last_play_description'] = last_wp.get('last_play_desc') or ''
     else:
-        state['away_win_probability'] = None
-        state['home_win_probability'] = None
-        state['last_play']            = None
+        state['away_win_probability']  = None
+        state['home_win_probability']  = None
+        state['last_play']             = None
+        state['last_play_inning']      = None
+        state['last_play_is_top']      = None
+        state['last_play_description'] = ''
 
     state.update({
         'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
