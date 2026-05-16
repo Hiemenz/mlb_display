@@ -648,6 +648,24 @@ def parse_games(data, sport_id=None, config=None):
                 from game_detail_fetch import fetch_scoreboard_live_extras
                 extras = fetch_scoreboard_live_extras(game_id, away_team_id, home_team_id)
                 game_dict.update(extras)
+                # Between-innings PC: inningState may flip to Top/Bottom before the first pitch.
+                # Restore it so the break is still treated as active and fetch_between_inning_info runs.
+                if (
+                    (game_dict.get('sub_event') or '').startswith('PC:')
+                    and game_dict.get('inningState') in ('Top', 'Bottom')
+                    and not (game_dict.get('at_bat_pitch_count') or 0)
+                ):
+                    if game_dict['inningState'] == 'Bottom':
+                        game_dict['inningState'] = 'Middle'
+                    else:
+                        game_dict['inningState'] = 'End'
+                        _prev_inn = max(1, (game_dict.get('current_inning') or 1) - 1)
+                        game_dict['current_inning'] = _prev_inn
+                        _mod = _prev_inn % 10
+                        _sfx = {1: 'st', 2: 'nd', 3: 'rd'}.get(
+                            _mod if _prev_inn % 100 not in (11, 12, 13) else 0, 'th'
+                        )
+                        game_dict['currentInningOrdinal'] = f'{_prev_inn}{_sfx}'
             if game_dict.get('inningState') in ('Middle', 'End') and live_calls_made < max_live_calls:
                 from game_detail_fetch import fetch_between_inning_info
                 bi_info = fetch_between_inning_info(game_id, game_dict['inningState'])

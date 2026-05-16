@@ -365,6 +365,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         live_last_play = None
         live_last_play_inning = None
         live_last_play_is_top = None
+        live_last_play_rbi = 0
         for _lp in reversed(plays.get('allPlays', [])):
             if not _lp.get('about', {}).get('isComplete'):
                 continue
@@ -377,6 +378,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             live_last_play = _build_scorecard_notation(_lp)
             live_last_play_inning = _lp.get('about', {}).get('inning')
             live_last_play_is_top = _lp.get('about', {}).get('isTopInning')
+            live_last_play_rbi = int(_lp.get('result', {}).get('rbi') or 0)
             break
 
         return {
@@ -403,6 +405,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'runner_third_number': runner_third_number,
             'last_review_result': _find_recent_review_result(plays),
             'last_play': live_last_play,
+            'last_play_rbi': live_last_play_rbi,
             'last_play_inning': live_last_play_inning,
             'last_play_is_top': live_last_play_is_top,
         }
@@ -433,47 +436,95 @@ def fetch_between_inning_info(game_pk, inning_state):
         batting_half = 'bottom' if batting_side == 'home' else 'top'
 
         team_box = boxscore.get('teams', {}).get(batting_side, {})
-        batting_order_ids = team_box.get('battingOrder', [])
         players = team_box.get('players', {})
 
-        if not batting_order_ids:
-            return {}
+        # Build all_players: both teams combined (needed for sub lookups)
+        all_players = {}
+        for _side in ('away', 'home'):
+            all_players.update(boxscore.get('teams', {}).get(_side, {}).get('players', {}))
 
-        # Build slot (1-9) -> current player id map; last entry per slot = current player
-        slot_to_pid = {}
-        for pid in batting_order_ids:
-            pdata = players.get(f'ID{pid}', {})
-            bat_str = str(pdata.get('battingOrder', ''))
-            slot = int(bat_str[0]) if bat_str and bat_str[0].isdigit() else None
-            if slot:
-                slot_to_pid[slot] = pid
+        def _full_name(pid):
+            pdata = all_players.get(f'ID{pid}', {})
+            return pdata.get('person', {}).get('fullName', '')
 
-        ordered_pids = [slot_to_pid[s] for s in sorted(slot_to_pid.keys())]
+        all_plays = plays.get('allPlays', [])
+
+        # Build the 9-slot batting order from play history — much more reliable than
+        # parsing 'battingOrder' field which can be null or missing in the API response.
+        # Walk through all plays for this team's half-inning in forward order:
+        # the first 9 unique batter IDs encountered are the original batting order slots.
+        # Subsequent new batters are substitutes; resolve their slot via 'battingOrder'
+        # field (first digit = slot, e.g. '300' → slot 3) and update that slot.
+        ordered_pids = [None] * 9  # slots 0-8 (batting positions 1-9)
+        seen_pids = set()
+        original_slot = 0  # tracks next available slot for first-seen original batters
+        for play in all_plays:
+            if play.get('about', {}).get('halfInning') != batting_half:
+                continue
+            bid = play.get('matchup', {}).get('batter', {}).get('id')
+            if not bid or bid in seen_pids:
+                continue
+            seen_pids.add(bid)
+            if original_slot < 9:
+                # Original lineup member — assign to next open slot
+                ordered_pids[original_slot] = bid
+                original_slot += 1
+            else:
+                # Substitute — use battingOrder field to find their slot
+                pdata = all_players.get(f'ID{bid}', {})
+                bat_str = str(pdata.get('battingOrder', ''))
+                if bat_str and bat_str[0].isdigit():
+                    slot_idx = int(bat_str[0]) - 1  # 0-indexed
+                    if 0 <= slot_idx < 9:
+                        ordered_pids[slot_idx] = bid
+
+        # Remove unfilled slots (team hasn't sent all 9 batters up yet)
+        ordered_pids = [p for p in ordered_pids if p is not None]
+
+        # Fallback for teams that haven't batted yet (e.g. home team in Middle of 1st):
+        # no plays exist for batting_half, so build order from battingOrder field instead.
+        if not ordered_pids:
+            batting_order_ids = team_box.get('battingOrder', [])
+            slot_to_pid = {}
+            for pid in batting_order_ids:
+                pdata = all_players.get(f'ID{pid}', {})
+                bat_str = str(pdata.get('battingOrder', ''))
+                slot = int(bat_str[0]) if bat_str and bat_str[0].isdigit() else None
+                if slot:
+                    slot_to_pid[slot] = pid
+            ordered_pids = [slot_to_pid[s] for s in sorted(slot_to_pid.keys())]
+
         if not ordered_pids:
             return {}
 
         # Find the last batter from this team's most recent half-inning
-        all_plays = plays.get('allPlays', [])
         last_batter_pid = None
         for play in reversed(all_plays):
             if play.get('about', {}).get('halfInning', '') != batting_half:
                 continue
             bid = play.get('matchup', {}).get('batter', {}).get('id')
-            if bid and bid in ordered_pids:
+            if bid:
                 last_batter_pid = bid
                 break
 
-        if last_batter_pid and last_batter_pid in ordered_pids:
-            last_idx = ordered_pids.index(last_batter_pid)
-            start = (last_idx + 1) % len(ordered_pids)
-        else:
-            start = 0  # team hasn't batted yet → start from top of order
+        start = 0  # default: top of order if team hasn't batted yet
+        if last_batter_pid:
+            if last_batter_pid in ordered_pids:
+                last_idx = ordered_pids.index(last_batter_pid)
+                start = (last_idx + 1) % len(ordered_pids)
+            else:
+                # Subbed-out player — resolve slot from battingOrder field
+                pdata = all_players.get(f'ID{last_batter_pid}', {})
+                bat_str = str(pdata.get('battingOrder', ''))
+                if bat_str and bat_str[0].isdigit():
+                    last_slot = int(bat_str[0])
+                    start = last_slot % len(ordered_pids)
 
         n = len(ordered_pids)
         next_3_pids = [ordered_pids[(start + i) % n] for i in range(min(3, n))]
 
         def _name(pid):
-            return players.get(f'ID{pid}', {}).get('person', {}).get('fullName', '')
+            return _full_name(pid)
 
         names = [_name(pid) for pid in next_3_pids]
 
