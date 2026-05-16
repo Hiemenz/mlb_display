@@ -677,7 +677,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _pit_w = int(_pit_fnt.getlength(_pit_name))
             draw.text((_right_x - _pit_w, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
-        if _between_innings:
+        if _between_innings or _pitching_change:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
         else:
             # Active play: pitch/pitcher/batter info
@@ -1081,9 +1081,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _fseq = _fielder_seq_from_desc(_lp_desc)
                 if _fseq:
                     play_display = f'{_fseq} GDP'
-        # Bare fielder-sequence groundouts (e.g. "6-3", "5-3") get a GO suffix
-        # so the play type is clear alongside the position sequence.
-        if play_display and _re.match(r'^\d(-\d)+$', play_display):
+        # Bare fielder-sequence groundouts (e.g. "6-3", "5-3", "3") get a GO suffix.
+        # The regex matches both single-fielder (unassisted "3") and multi-fielder sequences.
+        if play_display and _re.match(r'^\d(-\d)*$', play_display):
             play_display = play_display + ' GO'
         # Prepend RBI count when the play drove in runs.
         # Between innings the inning ended on an out — only tag-out plays (CS/PK/RO) can
@@ -1423,6 +1423,33 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
                             _pit_name = _pit_name[:-1]
                 draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
+        elif _pitching_change:
+            # Mid-inning PC: show current batter (bottom slot) and new pitcher below sep.
+            _right_x = start_x + horizonta_len - 2 * s
+            _left_x = start_x + 88 * s
+            _max_name_w = _right_x - _left_x
+            _ab_name = _last_name(game_data.get('current_hitter') or '')
+            _pc_name = (game_data.get('sub_event') or '')[3:].strip()
+            # Put batter in the bottom name slot (same position as leadoff in between-innings)
+            _name_y = start_y + 21 * s
+            for _nm in ('', '', _ab_name):
+                if _nm:
+                    _nm_disp = _nm
+                    while _nm_disp and int(font14.getlength(_nm_disp)) > _max_name_w:
+                        _nm_disp = _nm_disp[:-1]
+                    draw.text((_left_x, _name_y), _nm_disp, font=font14, fill=0)
+                _name_y += 12 * s
+            _sep_y = _name_y + 5 * s
+            draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
+            if _pc_name:
+                _pit_fnt = font14
+                if int(font14.getlength(_pc_name)) > _max_name_w:
+                    _pit_fnt = font11
+                    if int(font11.getlength(_pc_name)) > _max_name_w:
+                        _pit_fnt = font9
+                        while _pc_name and int(font9.getlength(_pc_name)) > _max_name_w:
+                            _pc_name = _pc_name[:-1]
+                draw.text((_left_x, _sep_y + 2 * s), _pc_name, font=_pit_fnt, fill=0)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)
