@@ -1036,8 +1036,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             bool(_lp_is_top) == _cur_is_top
         )
         _last_play_val = game_data.get('last_play') if _lp_same_half else None
-        # Between innings: show the play that ended the half-inning, not the PC/sub event.
-        if _between_innings:
+        # Between innings or pitching change: show the last real play, never the PC/sub label.
+        if _between_innings or _pitching_change:
             raw_play = (game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
         else:
             raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
@@ -1048,7 +1048,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         # When the live-feed path already returned scorecard notation (e.g. "F7"), _abbr_play
         # leaves it unchanged and it won't match any of the bare types below.
         _lp_desc = game_data.get('last_play_description', '') or ''
-        if _lp_desc and not _sub_ev and not game_data.get('last_review_result'):
+        if _lp_desc and not game_data.get('last_review_result'):
             if play_display == 'FO':
                 _fp = _fielder_from_desc(_lp_desc)
                 if _fp:
