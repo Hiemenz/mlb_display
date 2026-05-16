@@ -54,9 +54,12 @@ _PLAY_ABBR = {
     'popout':           'PO',
     'pickoff':          'PK',
     'balk':             'BLK',
-    'force out':        'FO',
+    'forceout':         'FOUT',
+    'force out':        'FOUT',
     'field out':        'FO',
     'runner out':       'RO',
+    'infield fly':      'IF',
+    'interference':     'INT',
 }
 
 
@@ -776,7 +779,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         # In Progress (and any other live state not matched above)
         _inn_state = game_data.get('inningState') or ''
         _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(_inn_state, _inn_state[:3].capitalize() if _inn_state else '')
-        _inn_ord = game_data.get('currentInningOrdinal') or str(game_data.get('current_inning') or 1)
+        _inn_ord_raw = game_data.get('currentInningOrdinal') or str(game_data.get('current_inning') or 1)
+        _inn_ord = _re.sub(r'(?:st|nd|rd|th)$', '', _inn_ord_raw, flags=_re.IGNORECASE)
         game_state_str = (f'{_inn_label} {_inn_ord}').strip()
 
     # Pre-draw SWEEP ghost before header text so Final / logo sit on top
@@ -1066,25 +1070,36 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _fp = _fielder_from_desc(_lp_desc)
                 if _fp:
                     play_display = f'SF{_fp}'
-            elif play_display == 'GO':
+            elif play_display in ('GO', 'FOUT'):
                 _fseq = _fielder_seq_from_desc(_lp_desc)
                 if _fseq:
-                    play_display = f'{_fseq} GO'
+                    play_display = f'{_fseq}'
             elif play_display in ('GDP', 'DP'):
                 _fseq = _fielder_seq_from_desc(_lp_desc)
                 if _fseq:
-                    play_display = f'{_fseq} GDP'
-        # Bare fielder-sequence groundouts (e.g. "6-3", "5-3", "3") get a GO suffix.
-        # The regex matches both single-fielder (unassisted "3") and multi-fielder sequences.
-        if play_display and _re.match(r'^\d(-\d)*$', play_display):
-            play_display = play_display + ' GO'
+                    play_display = f'{_fseq} DP'
+            elif play_display == 'TP':
+                _fseq = _fielder_seq_from_desc(_lp_desc)
+                if _fseq:
+                    play_display = f'{_fseq} TP'
+            elif play_display == 'CS':
+                _fseq = _fielder_seq_from_desc(_lp_desc)
+                if _fseq:
+                    play_display = f'CS {_fseq}'
+            elif play_display == 'PK':
+                _fseq = _fielder_seq_from_desc(_lp_desc)
+                play_display = f'PO {_fseq}' if _fseq else 'PO'
         # Prepend RBI count when the play drove in runs.
-        # Between innings the inning ended on an out — only tag-out plays (CS/PK/RO) can
+        # Between innings the inning ended on an out — only tag-out plays (CS/PO/RO) can
         # legitimately have an RBI credited on the same play as the final out.
+        # Errors never receive RBI credit.
         _rbi = int(game_data.get('last_play_rbi') or 0)
-        _TAG_OUT_PLAYS = {'CS', 'PK', 'RO'}
-        if _rbi > 0 and play_display and not _sub_ev and not game_data.get('last_review_result'):
-            if not _between_innings or play_display in _TAG_OUT_PLAYS:
+        _is_error = bool(play_display) and (
+            play_display.startswith('E') or ' E' in play_display
+        )
+        _is_tag_out = bool(play_display) and play_display.startswith(('CS', 'PO', 'RO'))
+        if _rbi > 0 and play_display and not _sub_ev and not game_data.get('last_review_result') and not _is_error:
+            if not _between_innings or _is_tag_out:
                 play_display = f'RBI {play_display}' if _rbi == 1 else f'{_rbi}R {play_display}'
         _header_right = _ser_content_left_x - 2 * s
 
