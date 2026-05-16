@@ -71,6 +71,49 @@ def _abbr_play(raw):
     return raw
 
 
+# Ordered longest-first so "left fielder" matches before "fielder", etc.
+_POS_KEYWORDS = [
+    ('center fielder',  '8'),
+    ('right fielder',   '9'),
+    ('left fielder',    '7'),
+    ('first baseman',   '3'),
+    ('second baseman',  '4'),
+    ('third baseman',   '5'),
+    ('shortstop',       '6'),
+    ('catcher',         '2'),
+    ('pitcher',         '1'),
+]
+
+
+def _fielder_from_desc(description):
+    """Return the primary (putout) fielder position code from a play description."""
+    if not description:
+        return ''
+    dl = description.lower()
+    for kw, code in _POS_KEYWORDS:
+        if kw in dl:
+            return code
+    return ''
+
+
+def _fielder_seq_from_desc(description):
+    """Return a fielder position sequence (e.g. '6-3') from a groundout description."""
+    if not description:
+        return ''
+    dl = description.lower()
+    hits = []
+    for kw, code in _POS_KEYWORDS:
+        idx = dl.find(kw)
+        if idx >= 0:
+            hits.append((idx, code))
+    hits.sort()
+    if len(hits) >= 2:
+        return '-'.join(h[1] for h in hits[:2])
+    if hits:
+        return hits[0][1]
+    return ''
+
+
 def set_historical_mode(enabled=True):
     global _historical_mode
     _historical_mode = enabled
@@ -330,7 +373,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Normalize mid-game review/challenge states to In Progress
     if game_data.get('detailed_state') in ('Player challenge', 'Manager challenge'):
         game_data = dict(game_data)
-        game_data['last_play'] = 'P Challenge' if game_data['detailed_state'] == 'Player challenge' else 'M Challenge'
+        _prefix = 'P CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
+        _chal_abbr = game_data.get('challenge_team_abbr', '')
+        game_data['last_play'] = f'{_prefix} {_chal_abbr}'.strip() if _chal_abbr else _prefix
         game_data['detailed_state'] = 'In Progress'
 
     # Delayed Start = game hasn't begun yet; treat like Pre-Game (show pitcher probables)
@@ -988,6 +1033,32 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             raw_play = (_sub_ev or game_data.get('last_review_result') or _last_play_val or '').replace('**', '').strip()
         # Abbreviate verbose play names so they fit cleanly without truncation
         play_display = _abbr_play(raw_play) if raw_play else ''
+        # Enhance bare out-type abbreviations with fielder position from description.
+        # Only applies when last_play came from the winProbability endpoint (e.g. "Flyout"→"FO").
+        # When the live-feed path already returned scorecard notation (e.g. "F7"), _abbr_play
+        # leaves it unchanged and it won't match any of the bare types below.
+        _lp_desc = game_data.get('last_play_description', '') or ''
+        if _lp_desc and not _sub_ev and not game_data.get('last_review_result'):
+            if play_display == 'FO':
+                _fp = _fielder_from_desc(_lp_desc)
+                if _fp:
+                    play_display = f'F{_fp}'
+            elif play_display == 'LO':
+                _fp = _fielder_from_desc(_lp_desc)
+                if _fp:
+                    play_display = f'L{_fp}'
+            elif play_display == 'PO':
+                _fp = _fielder_from_desc(_lp_desc)
+                if _fp:
+                    play_display = f'P{_fp}'
+            elif play_display == 'SF':
+                _fp = _fielder_from_desc(_lp_desc)
+                if _fp:
+                    play_display = f'SF{_fp}'
+            elif play_display == 'GO':
+                _fseq = _fielder_seq_from_desc(_lp_desc)
+                if _fseq:
+                    play_display = f'{_fseq} GO'
         # Bare fielder-sequence groundouts (e.g. "6-3", "5-3") get a GO suffix
         # so the play type is clear alongside the position sequence.
         if play_display and _re.match(r'^\d(-\d)+$', play_display):
