@@ -32,6 +32,7 @@ _PLAY_ABBR = {
     'intentional walk': 'IBB',
     'hit by pitch':     'HBP',
     'walk':             'BB',
+    'strikeout looking': 'Kl',
     'strikeout':        'K',
     'sac fly':          'SF',
     'sacrifice fly':    'SF',
@@ -1122,7 +1123,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _is_tag_out = bool(play_display) and play_display.startswith(('CS', 'PO', 'RO'))
         if _rbi > 0 and play_display and not _sub_ev and not game_data.get('last_review_result') and not _is_error:
             if not _between_innings or _is_tag_out:
-                play_display = f'{_rbi}RBI {play_display}'
+                if play_display == 'HR':
+                    if _rbi >= 2:
+                        play_display = f'{_rbi}R HR'
+                    # solo HR: no prefix
+                elif _rbi == 1:
+                    play_display = f'RBI {play_display}'
+                else:
+                    play_display = f'{_rbi}RBI {play_display}'
         _header_right = _ser_content_left_x - 2 * s
 
         def _draw_play_right(text, fnt=None, y_off=4):
@@ -1493,9 +1501,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _sep_y = _name_y + 5 * s
             draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
             _pc_outs = game_data.get('num_of_outs') or 0
-            _pc_outs_str = f'{_pc_outs} out{"s" if _pc_outs != 1 else ""}'
-            _pc_outs_w = int(font9.getlength(_pc_outs_str))
-            _pc_name_max = max(0, _max_name_w - _pc_outs_w - 3 * s)
+            # Three out circles (radius 4) right-aligned; 10px spacing between centers.
+            _pc_circ_r = 4 * s
+            _pc_circ_spacing = 10 * s
+            _pc_circ_y = _sep_y + _pc_circ_r + 3 * s
+            _pc_circ_total_w = 2 * _pc_circ_spacing + 2 * _pc_circ_r
+            _pc_name_max = max(0, _max_name_w - _pc_circ_total_w - 4 * s)
             if _pc_name:
                 _pit_fnt = font14
                 if int(font14.getlength(_pc_name)) > _pc_name_max:
@@ -1505,7 +1516,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         while _pc_name and int(font9.getlength(_pc_name)) > _pc_name_max:
                             _pc_name = _pc_name[:-1]
                 draw.text((_left_x, _sep_y + 2 * s), _pc_name, font=_pit_fnt, fill=0)
-            draw.text((_right_x - _pc_outs_w, _sep_y + 4 * s), _pc_outs_str, font=font9, fill=0)
+            _pc_c3x = _right_x - _pc_circ_r
+            _pc_c2x = _pc_c3x - _pc_circ_spacing
+            _pc_c1x = _pc_c2x - _pc_circ_spacing
+            Himage = draw_circle(Himage, (_pc_c1x, _pc_circ_y), _pc_circ_r, _pc_outs >= 1, outline_width=2)
+            Himage = draw_circle(Himage, (_pc_c2x, _pc_circ_y), _pc_circ_r, _pc_outs >= 2, outline_width=2)
+            Himage = draw_circle(Himage, (_pc_c3x, _pc_circ_y), _pc_circ_r, _pc_outs >= 3, outline_width=2)
+            draw = ImageDraw.Draw(Himage)
         else:
             _hi_third = isinstance(game_data['runner_on_third'], str)
             _hi_second = isinstance(game_data['runner_on_second'], str)

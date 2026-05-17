@@ -904,7 +904,16 @@ def _build_scorecard_notation(play):
         'Stolen Base 2B': 'SB', 'Stolen Base 3B': 'SB', 'Stolen Base Home': 'SB',
     }
     if event in _SIMPLE:
-        return _SIMPLE[event]
+        code = _SIMPLE[event]
+        # MLB API sometimes returns 'Strikeout' for both swinging and looking.
+        # Fall back to checking the last pitch call code: 'C' = called strike.
+        if code == 'K':
+            for pe in reversed(play.get('playEvents', [])):
+                if pe.get('isPitch'):
+                    if (pe.get('details', {}).get('call', {}).get('code') or '').upper() == 'C':
+                        code = 'Kl'
+                    break
+        return code
 
     if event == 'Field Error':
         assists = []

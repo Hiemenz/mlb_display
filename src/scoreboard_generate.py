@@ -1474,7 +1474,13 @@ def _generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame
     # --- Step 4b: Trailing final frame — all games in their end state ---
     # Use a target time well past all last plays so every game enters the Final
     # branch of _game_state_at_time (requires target > last_play + 5 min).
-    if all_last_plays:
+    # Skip when any game is still active (no last_play_utc) — generating a
+    # "final" frame with in-progress games would misrepresent the scoreboard.
+    _any_active = any(
+        game_timelines.get(str(g.get('game_pk', '')), {}).get('last_play_utc') is None
+        for g in base_games if str(g.get('game_pk', '')) in game_timelines
+    )
+    if all_last_plays and not _any_active:
         final_utc = max(all_last_plays) + timedelta(minutes=10)
         print("  [final ] rendering trailing end-state frame...", end=' ', flush=True)
         final_games = []
