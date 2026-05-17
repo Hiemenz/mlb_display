@@ -647,6 +647,11 @@ def parse_games(data, sport_id=None, config=None):
             if config.get('scoreboard_live_details', False):
                 from game_detail_fetch import fetch_scoreboard_live_extras
                 extras = fetch_scoreboard_live_extras(game_id, away_team_id, home_team_id)
+                # Don't clobber a valid last_play from the win-probability endpoint with None
+                # (can happen in the brief window between a play completing and allPlays updating).
+                if extras.get('last_play') is None:
+                    for _k in ('last_play', 'last_play_inning', 'last_play_is_top', 'last_play_rbi'):
+                        extras.pop(_k, None)
                 game_dict.update(extras)
                 # Between-innings PC: inningState may flip to Top/Bottom before the first pitch.
                 # Restore it so the break is still treated as active and fetch_between_inning_info runs.
@@ -670,6 +675,10 @@ def parse_games(data, sport_id=None, config=None):
                 from game_detail_fetch import fetch_between_inning_info
                 bi_info = fetch_between_inning_info(game_id, game_dict['inningState'])
                 live_calls_made += 1
+                # Don't clobber an existing last_play with None if between-inning fetch didn't find one.
+                if bi_info.get('last_play') is None:
+                    for _k in ('last_play', 'last_play_inning', 'last_play_is_top'):
+                        bi_info.pop(_k, None)
                 game_dict.update(bi_info)
         elif _is_featured and game_dict.get('detailed_state') == 'Delayed' and (game_dict.get('current_inning') or 0) > 0 and live_calls_made < max_live_calls:
             # Fetch upcoming batters/pitcher so the delay screen can show who's due up

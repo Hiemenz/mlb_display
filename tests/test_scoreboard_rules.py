@@ -1931,6 +1931,17 @@ class TestAbbrPlay:
     def test_strikeout_case_insensitive(self):
         assert _abbr_play('STRIKEOUT') == 'K'
 
+    def test_strikeout_looking(self):
+        assert _abbr_play('Strikeout Looking') == 'Kl'
+
+    def test_strikeout_looking_before_strikeout(self):
+        """'strikeout looking' must be checked before 'strikeout' to avoid early match."""
+        assert _abbr_play('Strikeout Looking') == 'Kl'
+
+    def test_kl_passthrough(self):
+        """'Kl' (already scorecard notation from live feed) passes through unchanged."""
+        assert _abbr_play('Kl') == 'Kl'
+
     def test_home_run(self):
         assert _abbr_play('Home Run') == 'HR'
 
@@ -2416,6 +2427,55 @@ class TestBuildScorecardNotation:
     def test_strikeout_looking(self):
         play = _make_play('Strikeout Looking')
         assert _build_scorecard_notation(play) == 'Kl'
+
+    def test_strikeout_looking_via_call_code(self):
+        """event='Strikeout' + last pitch call code 'C' → 'Kl'."""
+        play = {
+            'result': {'event': 'Strikeout', 'eventType': 'strikeout'},
+            'credits': [],
+            'playEvents': [
+                {'isPitch': True, 'details': {'call': {'code': 'B'}}},
+                {'isPitch': True, 'details': {'call': {'code': 'S'}}},
+                {'isPitch': True, 'details': {'call': {'code': 'C'}}},
+            ],
+        }
+        assert _build_scorecard_notation(play) == 'Kl'
+
+    def test_strikeout_looking_via_description(self):
+        """event='Strikeout' + 'called out on strikes' description → 'Kl' even with no pitch data."""
+        play = {
+            'result': {
+                'event': 'Strikeout',
+                'description': 'Aaron Judge called out on strikes.',
+            },
+            'credits': [],
+            'playEvents': [],
+        }
+        assert _build_scorecard_notation(play) == 'Kl'
+
+    def test_strikeout_looking_via_description_strikes_out_looking(self):
+        """event='Strikeout' + 'strikes out looking' description → 'Kl'."""
+        play = {
+            'result': {
+                'event': 'Strikeout',
+                'description': 'Ronald Acuña Jr. strikes out looking.',
+            },
+            'credits': [],
+            'playEvents': [],
+        }
+        assert _build_scorecard_notation(play) == 'Kl'
+
+    def test_strikeout_swinging_description_not_upgraded(self):
+        """event='Strikeout' + 'strikes out swinging' description stays 'K'."""
+        play = {
+            'result': {
+                'event': 'Strikeout',
+                'description': 'Aaron Judge strikes out swinging.',
+            },
+            'credits': [],
+            'playEvents': [],
+        }
+        assert _build_scorecard_notation(play) == 'K'
 
     def test_home_run(self):
         play = _make_play('Home Run')
