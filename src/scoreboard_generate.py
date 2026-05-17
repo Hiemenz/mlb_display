@@ -822,9 +822,10 @@ def _fetch_game_timeline(game_pk):
     except Exception:
         pass
 
-    # Running score: score after last completed play (used for pitch events mid-at-bat)
+    # Running score/runners: state after last completed play (used for pitch events mid-at-bat)
     running_away = 0
     running_home = 0
+    running_runners = {'first': None, 'second': None, 'third': None}
     cumulative_last_play      = None  # last non-substitution event name seen so far
     cumulative_last_play_inn  = None  # inning of that event
     cumulative_last_play_top  = None  # True if top half, False if bottom
@@ -853,6 +854,8 @@ def _fetch_game_timeline(game_pk):
         at_bat_pitcher   = matchup.get('pitcher', {}).get('fullName') or ''
         at_bat_batter    = matchup.get('batter',  {}).get('fullName') or ''
         at_bat_batter_id = matchup.get('batter',  {}).get('id')
+        # Runners at START of this at-bat = running_runners before the play completes
+        at_bat_runners = dict(running_runners)
 
         for ev in play.get('playEvents', []):
             # ABS challenge tracking
@@ -874,16 +877,19 @@ def _fetch_game_timeline(game_pk):
                 continue
             count = ev.get('count', {})
             pitch_events.append({
-                'time':        ev_time,
-                'balls':       count.get('balls', 0) or 0,
-                'strikes':     count.get('strikes', 0) or 0,
-                'outs':        count.get('outs', about.get('outs', 0)) or 0,
-                'inning':      inning,
-                'half_inning': half_inning,
-                'away_score':  at_bat_away,
-                'home_score':  at_bat_home,
-                'pitcher':     at_bat_pitcher,
-                'batter':      at_bat_batter,
+                'time':             ev_time,
+                'balls':            count.get('balls', 0) or 0,
+                'strikes':          count.get('strikes', 0) or 0,
+                'outs':             count.get('outs', about.get('outs', 0)) or 0,
+                'inning':           inning,
+                'half_inning':      half_inning,
+                'away_score':       at_bat_away,
+                'home_score':       at_bat_home,
+                'pitcher':          at_bat_pitcher,
+                'batter':           at_bat_batter,
+                'runner_on_first':  at_bat_runners['first'],
+                'runner_on_second': at_bat_runners['second'],
+                'runner_on_third':  at_bat_runners['third'],
             })
 
         # --- Completed-play timeline (for score/inning snapshots) ---
@@ -900,17 +906,25 @@ def _fetch_game_timeline(game_pk):
         away_score = result.get('awayScore', 0) or 0
         home_score = result.get('homeScore', 0) or 0
 
+        post_first  = (matchup.get('postOnFirst')  or {}).get('fullName') or None
+        post_second = (matchup.get('postOnSecond') or {}).get('fullName') or None
+        post_third  = (matchup.get('postOnThird')  or {}).get('fullName') or None
+        running_runners = {'first': post_first, 'second': post_second, 'third': post_third}
+
         timeline.append({
-            'end_time':    end_time,
-            'away_score':  away_score,
-            'home_score':  home_score,
-            'inning':      inning,
-            'half_inning': half_inning,
-            'outs':        about.get('outs', 0),
-            'outs_after':  play.get('count', {}).get('outs', 0) or 0,
-            'pitcher':     at_bat_pitcher,
-            'batter':      at_bat_batter,
-            'batter_id':   at_bat_batter_id,
+            'end_time':         end_time,
+            'away_score':       away_score,
+            'home_score':       home_score,
+            'inning':           inning,
+            'half_inning':      half_inning,
+            'outs':             about.get('outs', 0),
+            'outs_after':       play.get('count', {}).get('outs', 0) or 0,
+            'pitcher':          at_bat_pitcher,
+            'batter':           at_bat_batter,
+            'batter_id':        at_bat_batter_id,
+            'runner_on_first':  post_first,
+            'runner_on_second': post_second,
+            'runner_on_third':  post_third,
         })
 
         if away_chal_used > 0 or home_chal_used > 0:
@@ -1237,9 +1251,20 @@ def _game_state_at_time(base_game, tl, target_utc):
         state['last_play_is_top']      = None
         state['last_play_description'] = ''
 
-    state.update({
-        'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
-    })
+    # Runner state: use last_event (mid-at-bat) or last_play (between at-bats).
+    # During an inning break (outs_after >= 3) bases are empty.
+    if last_event and not between_plays:
+        state['runner_on_first']  = last_event.get('runner_on_first')
+        state['runner_on_second'] = last_event.get('runner_on_second')
+        state['runner_on_third']  = last_event.get('runner_on_third')
+    elif between_plays and last_play and last_play.get('outs_after', 0) < 3:
+        state['runner_on_first']  = last_play.get('runner_on_first')
+        state['runner_on_second'] = last_play.get('runner_on_second')
+        state['runner_on_third']  = last_play.get('runner_on_third')
+    else:
+        state['runner_on_first']  = None
+        state['runner_on_second'] = None
+        state['runner_on_third']  = None
 
     # ABS challenges: replay cumulative state up to target_utc.
     # Default to full allotment when no challenges have been used yet.

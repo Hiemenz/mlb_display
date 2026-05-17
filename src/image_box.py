@@ -1639,6 +1639,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if game_data.get('home_team_is_winner'):
             draw.text((start_x + 7 * s, start_y + 55 * s), home_team_name, font=font24, fill=0)
 
+    # Batting team indicator: ▲ left of away logo row when top half (away batting),
+    # ▼ left of home logo row when bottom half (home batting). Live games only.
+    _bi_state = game_data.get('inningState') or ''
+    if game_data['detailed_state'] == 'In Progress' and _bi_state in ('Top', 'Bottom'):
+        _r = 4 * s
+        _bi_cx = start_x + _r - 6
+        if _bi_state == 'Top':
+            _bi_cy = start_y + 25 * s + 14 * s  # vertical center of away logo row
+        else:
+            _bi_cy = start_y + 55 * s + 14 * s  # vertical center of home logo row
+        draw.ellipse([_bi_cx - _r, _bi_cy - _r, _bi_cx + _r, _bi_cy + _r], fill=0)
+
     # Bold-offset score for winner (both modes)
     if game_data.get('away_team_is_winner'):
         draw.text((start_x + 67 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
