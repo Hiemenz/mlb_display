@@ -167,13 +167,21 @@ def _count_replay_challenges_used(plays, away_id, home_id):
     return away_used, home_used
 
 
-def _find_recent_review_result(plays):
-    """Return 'Call Overturned', 'Call Stands', or None if a review just resolved.
+def _find_recent_review_result(plays, away_id=None, home_id=None, away_abbr='', home_abbr=''):
+    """Return a formatted review result string, or None if no review just resolved.
 
-    A review is considered fresh if no pitch has been thrown since it completed:
-    - ABS challenge mid-AB: check currentPlay events from the end
-    - Play-ending challenge: check allPlays[-1] when currentPlay has no pitches yet
+    Format: 'OVERTURN {team}' or 'STANDS {team}' when team is known, else bare.
+    A review is considered fresh if no pitch has been thrown since it completed.
     """
+    def _fmt(rd):
+        result = 'OVERTURN' if rd.get('isOverturned') else 'STANDS'
+        cid = rd.get('challengeTeamId')
+        if cid and away_id and home_id:
+            abbr = away_abbr if cid == away_id else (home_abbr if cid == home_id else '')
+            if abbr:
+                return f'{result} {abbr}'
+        return result
+
     current_events = plays.get('currentPlay', {}).get('playEvents', [])
     current_has_pitches = any(ev.get('isPitch') for ev in current_events)
 
@@ -183,7 +191,7 @@ def _find_recent_review_result(plays):
             return None  # pitch thrown after review — stale
         rd = ev.get('reviewDetails')
         if rd and not rd.get('inProgress'):
-            return 'Call Overturned' if rd.get('isOverturned') else 'Call Stands'
+            return _fmt(rd)
 
     # If current AB has no pitches yet, check the last completed play
     if not current_has_pitches:
@@ -192,7 +200,7 @@ def _find_recent_review_result(plays):
             for ev in reversed(all_plays[-1].get('playEvents', [])):
                 rd = ev.get('reviewDetails')
                 if rd and not rd.get('inProgress'):
-                    return 'Call Overturned' if rd.get('isOverturned') else 'Call Stands'
+                    return _fmt(rd)
 
     return None
 
@@ -403,7 +411,13 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'runner_first_number': runner_first_number,
             'runner_second_number': runner_second_number,
             'runner_third_number': runner_third_number,
-            'last_review_result': _find_recent_review_result(plays),
+            'last_review_result': _find_recent_review_result(
+                plays,
+                away_id=away_id,
+                home_id=home_id,
+                away_abbr=data.get('gameData', {}).get('teams', {}).get('away', {}).get('abbreviation', ''),
+                home_abbr=data.get('gameData', {}).get('teams', {}).get('home', {}).get('abbreviation', ''),
+            ),
             'last_play': live_last_play,
             'last_play_rbi': live_last_play_rbi,
             'last_play_inning': live_last_play_inning,

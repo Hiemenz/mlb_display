@@ -44,6 +44,8 @@ _PLAY_ABBR = {
     "fielder's choice": 'FC',
     'fielders choice':  'FC',
     'field error':      'E',
+    'call overturned':  'OVERTURN',
+    'call stands':      'STANDS',
     'flyout':           'FO',
     'fly out':          'FO',
     'lineout':          'LO',
@@ -128,11 +130,15 @@ def _draw_backwards_k(img, x, y, fnt):
     bbox = fnt.getbbox('K')
     ox, oy, ox2, oy2 = bbox
     gw, gh = ox2 - ox, oy2 - oy
-    pad = 1
-    tmp = Image.new('L', (gw + 2 * pad, gh + 2 * pad), 255)
+    pad = 2
+    # Render in mode '1' to match the main image — avoids anti-aliasing artifacts
+    tmp = Image.new('1', (gw + 2 * pad, gh + 2 * pad), 255)
     ImageDraw.Draw(tmp).text((-ox + pad, -oy + pad), 'K', font=fnt, fill=0)
     tmp = tmp.transpose(Image.FLIP_LEFT_RIGHT)
-    img.paste(0, (x + ox - pad, y + oy - pad), ImageOps.invert(tmp))
+    # Build mask: 255 where glyph is black, 0 where background is white
+    mask = ImageOps.invert(tmp.convert('L'))
+    px, py = x + ox - pad, y + oy - pad
+    img.paste(0, (px, py, px + gw + 2 * pad, py + gh + 2 * pad), mask)
 
 
 def set_historical_mode(enabled=True):
@@ -394,7 +400,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Normalize mid-game review/challenge states to In Progress
     if game_data.get('detailed_state') in ('Player challenge', 'Manager challenge'):
         game_data = dict(game_data)
-        _prefix = 'P CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
+        _prefix = 'ABS CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
         _chal_abbr = game_data.get('challenge_team_abbr', '')
         _chal_label = f'{_prefix} {_chal_abbr}'.strip() if _chal_abbr else _prefix
         # Write into sub_event so the challenge label has highest display priority
