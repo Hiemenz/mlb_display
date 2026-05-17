@@ -1112,6 +1112,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _ep = _fielder_from_desc(_lp_desc)
                 if _ep:
                     play_display = f'E{_ep}'
+            elif play_display == 'K':
+                # Win-probability endpoint sometimes returns 'Strikeout' for called strikeouts.
+                # When the description says "called out on strikes" / "strikes out looking",
+                # upgrade to 'Kl' so the backwards K is rendered.
+                _dl = _lp_desc.lower()
+                if 'called out on strikes' in _dl or 'strikes out looking' in _dl:
+                    play_display = 'Kl'
         # Prepend RBI count when the play drove in runs.
         # Between innings the inning ended on an out — only tag-out plays (CS/PO/RO) can
         # legitimately have an RBI credited on the same play as the final out.

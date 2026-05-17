@@ -913,6 +913,11 @@ def _build_scorecard_notation(play):
                     if (pe.get('details', {}).get('call', {}).get('code') or '').upper() == 'C':
                         code = 'Kl'
                     break
+            # Final fallback: check the play description when pitch data is absent or incomplete.
+            if code == 'K':
+                _desc = (result.get('description') or '').lower()
+                if 'called out on strikes' in _desc or 'strikes out looking' in _desc:
+                    code = 'Kl'
         return code
 
     if event == 'Field Error':
