@@ -704,6 +704,23 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             print('images the same')
             return None
 
+        # In fullscreen mode the display shows only one game, so skip re-render
+        # if that specific game's data hasn't changed, even if other games did.
+        if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
+            primary = config.get('primary', '')
+            featured_game = _find_featured_game(game_state_data, team_data, primary)
+            if featured_game:
+                featured_pk = str(featured_game.get('game_pk', ''))
+                old_featured = old_by_pk.get(featured_pk)
+                if old_featured is not None and featured_game == old_featured:
+                    _feat_linescore_changed = (
+                        _old_win_state.get(featured_pk) is True
+                        and not _new_win_state.get(featured_pk, False)
+                    )
+                    if not _feat_linescore_changed:
+                        print('images the same (fullscreen — featured game unchanged)')
+                        return None
+
     print('image is different')
 
     league_mode = config.get('league_mode', 'mlb')
