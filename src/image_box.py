@@ -1869,6 +1869,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
+    # Invert header for stolen base events
+    _sb_event = (
+        is_game_started and not is_game_finished and not _between_innings and not _pitching_change and
+        'stolen base' in (game_data.get('last_play') or '').lower()
+    )
+    if _sb_event:
+        header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
     # Invert header for mid-inning pitching changes to draw attention
     if _pitching_change:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
