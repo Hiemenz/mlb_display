@@ -423,7 +423,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     BAR_W = horizonta_len - 2 * s
 
     abbr_map = team_data.get('team_abbreviation', {})
-    LOGO_SZ = 11 * s
+    LOGO_SZ = 14 * s
     logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2
     font9 = _get_font(9 * s)
     _text_y = BAR_Y + (BAR_H - 9 * s) // 2
@@ -450,6 +450,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
                 return g
         return None
 
+    GAP = 1 * s  # gap between each element in the strip
+
     def _place_logo(abbr, team_id, x):
         nonlocal draw
         if use_logos and team_id:
@@ -457,10 +459,15 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
             if lg:
                 _paste_logo(Himage, lg, (x, logo_y))
                 draw = ImageDraw.Draw(Himage)
-                return x + LOGO_SZ + 1 * s
+                return x + LOGO_SZ  # no trailing gap — caller adds GAP where needed
         t = (str(abbr) or '')[:3]
         draw.text((x, _text_y), t, font=font9, fill=0)
-        return x + int(font9.getlength(t)) + 2 * s
+        return x + int(font9.getlength(t)) + GAP
+
+    def _entry_w(t_str):
+        """Total pixel width of one [away]@[home] TIME entry."""
+        t_w = int(font9.getlength(t_str)) if t_str else 0
+        return LOGO_SZ + GAP + at_w + GAP + LOGO_SZ + (GAP + t_w if t_str else 0)
 
     away_game = _find_game(today_away_id)
     home_game = _find_game(today_home_id)
@@ -476,7 +483,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     )
 
     if same_series:
-        # Series continues — single entry, left-aligned, time right-aligned
+        # Series continues — single entry left-aligned, time right-aligned
         g = away_game
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
@@ -484,7 +491,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         cur_x = BAR_X + 1 * s
         cur_x = _place_logo(a_abbr, g['away_team_id'], cur_x)
         draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
-        cur_x += at_w + 2 * s
+        cur_x += at_w + GAP
         _place_logo(h_abbr, g['home_team_id'], cur_x)
         if t_str:
             t_w = int(font9.getlength(t_str))
@@ -499,25 +506,22 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         cur_x = BAR_X + 1 * s
         cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
         draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
-        cur_x += at_w + 2 * s
+        cur_x += at_w + GAP
         cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
         if t_str:
-            draw.text((cur_x + 1 * s, _text_y), t_str, font=font9, fill=0)
+            draw.text((cur_x + GAP, _text_y), t_str, font=font9, fill=0)
 
     if home_game:
         a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(home_game['home_team_id']), '')
         t_str = _game_time(home_game)
-        # Right-align the full entry: [away] @ [home]  TIME
-        t_w = int(font9.getlength(t_str)) if t_str else 0
-        total_w = LOGO_SZ + 1 * s + at_w + 2 * s + LOGO_SZ + 1 * s + (2 * s + t_w if t_str else 0)
-        cur_x = BAR_X + BAR_W - total_w
+        cur_x = BAR_X + BAR_W - _entry_w(t_str)
         cur_x = _place_logo(a_abbr, home_game['away_team_id'], cur_x)
         draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
-        cur_x += at_w + 2 * s
+        cur_x += at_w + GAP
         cur_x = _place_logo(h_abbr, home_game['home_team_id'], cur_x)
         if t_str:
-            draw.text((cur_x + 1 * s, _text_y), t_str, font=font9, fill=0)
+            draw.text((cur_x + GAP, _text_y), t_str, font=font9, fill=0)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
