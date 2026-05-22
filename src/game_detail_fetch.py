@@ -901,7 +901,7 @@ def _build_scorecard_notation(play):
         'Single': '1B', 'Double': '2B', 'Triple': '3B', 'Home Run': 'HR',
         'Balk': 'BLK', 'Wild Pitch': 'WP', 'Passed Ball': 'PB',
         'Catcher Interf': 'CI', 'Batter Interference': 'BI',
-        'Stolen Base 2B': 'SB', 'Stolen Base 3B': 'SB', 'Stolen Base Home': 'SB',
+        'Stolen Base': 'SB', 'Stolen Base 2B': 'SB', 'Stolen Base 3B': 'SB', 'Stolen Base Home': 'SB',
     }
     if event in _SIMPLE:
         code = _SIMPLE[event]

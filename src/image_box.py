@@ -584,15 +584,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] = 'Final'
 
     # Normalize mid-game review/challenge states to In Progress
+    _challenge_abbr = ''
     if game_data.get('detailed_state') in ('Player challenge', 'Manager challenge'):
         game_data = dict(game_data)
-        _prefix = 'ABS CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
-        _chal_abbr = game_data.get('challenge_team_abbr', '')
-        _chal_label = f'{_prefix} {_chal_abbr}'.strip() if _chal_abbr else _prefix
+        _chal_prefix = 'ABS CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
+        _challenge_abbr = game_data.get('challenge_team_abbr', '')
         # Write into sub_event so the challenge label has highest display priority
         # (sub_event wins over last_play, preventing "PC: Name" from overriding it).
-        game_data['sub_event'] = _chal_label
-        game_data['last_play'] = _chal_label
+        # Logo rendering shows the team; keep text label as prefix only.
+        game_data['sub_event'] = _chal_prefix
+        game_data['last_play'] = _chal_prefix
         game_data['detailed_state'] = 'In Progress'
 
     # Delayed Start = game hasn't begun yet; treat like Pre-Game (show pitcher probables)
@@ -1323,6 +1324,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     play_display = f'RBI {play_display}'
                 else:
                     play_display = f'{_rbi}RBI {play_display}'
+        # Extra-inning automatic runner: show "Manfred Man" before any play this half
+        if (
+            not _between_innings and not play_display and not _pitching_change and
+            (game_data.get('current_inning') or 0) >= 10 and
+            game_data.get('runner_on_second') and
+            not (game_data.get('num_of_outs') or 0) and
+            not (game_data.get('at_bat_pitch_count') or 0)
+        ):
+            play_display = 'Manfred Man'
+
         _header_right = _ser_content_left_x - 2 * s
 
         def _draw_play_right(text, fnt=None, y_off=4):
@@ -1381,6 +1392,24 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _due_x = _header_right - _due_w
                     draw.text((_due_x,         start_y + 5 * s), _due_str, font=_due_fnt, fill=0)
                     draw.text((_due_x + 1 * s, start_y + 5 * s), _due_str, font=_due_fnt, fill=0)
+        elif _challenge_abbr and play_display and use_logos:
+            # Challenge: show challenging team logo to the left of right-aligned challenge text
+            _fnt = _get_font(12 * s)
+            _chal_w = int(_fnt.getlength(play_display))
+            _chal_tid = away_team_id if _challenge_abbr == away_team_name else (
+                home_team_id if _challenge_abbr == home_team_name else None
+            )
+            _chal_logo = _logo_small(_challenge_abbr, str(_chal_tid), size=14 * s) if _chal_tid else None
+            if _chal_logo:
+                _lw, _lh = _chal_logo.size
+                _tx = _header_right - _chal_w
+                _ly = start_y + (21 * s - _lh) // 2
+                Himage.paste(_chal_logo, (_tx - 2 * s - _lw, _ly))
+                draw = ImageDraw.Draw(Himage)
+                draw.text((_tx,         start_y + 4 * s), play_display, font=_fnt, fill=0)
+                draw.text((_tx + 1 * s, start_y + 4 * s), play_display, font=_fnt, fill=0)
+            else:
+                _draw_play_right(f'{play_display} {_challenge_abbr}'.strip())
         elif play_display:
             _draw_play_right(play_display)
 
@@ -1870,16 +1899,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
     # Invert header for stolen base events
+    _lp_lower = (game_data.get('last_play') or '').lower()
     _sb_event = (
         is_game_started and not is_game_finished and not _between_innings and not _pitching_change and
-        'stolen base' in (game_data.get('last_play') or '').lower()
+        ('stolen base' in _lp_lower or _lp_lower == 'sb')
     )
     if _sb_event:
-        header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
-        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
-
-    # Invert header for mid-inning pitching changes to draw attention
-    if _pitching_change:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
