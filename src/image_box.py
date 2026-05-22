@@ -1575,8 +1575,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             Himage.paste(_ghost_strip.convert('1'), (BAR_X, BAR_Y))
             draw = ImageDraw.Draw(Himage)
 
-            logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2  # center logo in strip
-
             away_px = BAR_X + int(BAR_W * away_wp / 100.0)
             away_logo_x = max(BAR_X, min(BAR_X + BAR_W - LOGO_SZ, away_px - LOGO_SZ // 2))
 
@@ -1600,9 +1598,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 away_logo = _logo_small(away_team_name, away_team_id, size=LOGO_SZ)
                 home_logo = _logo_small(home_team_name, home_team_id, size=LOGO_SZ)
                 if away_logo:
-                    _paste_logo(Himage, away_logo, (away_logo_x, logo_y))
+                    _paste_logo(Himage, away_logo, (away_logo_x, BAR_Y + (BAR_H - away_logo.size[1]) // 2))
                 if home_logo:
-                    _paste_logo(Himage, home_logo, (home_logo_x, logo_y))
+                    _paste_logo(Himage, home_logo, (home_logo_x, BAR_Y + (BAR_H - home_logo.size[1]) // 2))
 
                 # During inning breaks, draw each team's % in the AB area
                 # directly above their logo position in the bar
@@ -1867,7 +1865,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = is_game_started and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
-    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings:
+    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
