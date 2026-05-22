@@ -512,7 +512,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         a_abbr = abbr_map.get(str(away_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(away_game['home_team_id']), '')
         t_str = _game_time(away_game)
-        cur_x = BAR_X + 1 * s
+        cur_x = BAR_X - 1 * s  # 2px left of default BAR_X+1
         cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
         cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
@@ -525,7 +525,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(home_game['home_team_id']), '')
         t_str = _game_time(home_game)
-        cur_x = BAR_X + BAR_W - _entry_w(t_str)
+        cur_x = BAR_X + BAR_W - _entry_w(t_str) + 5 * s
         cur_x = _place_logo(a_abbr, home_game['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
         cur_x = _place_logo(h_abbr, home_game['home_team_id'], cur_x)
