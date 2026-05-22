@@ -1878,16 +1878,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
-    # Invert header during an active challenge (ABS or manager) only — review result shows text only, no invert
-    _chal_sub = (game_data.get('sub_event') or '')
-    _challenge_active = (
-        is_game_started and not is_game_finished and
-        (_chal_sub.startswith('ABS CHAL') or _chal_sub.startswith('M CHAL'))
-    )
-    if _challenge_active:
-        header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
-        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
-
     # Invert header for mid-inning pitching changes to draw attention
     if _pitching_change:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
