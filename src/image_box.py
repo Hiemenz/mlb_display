@@ -498,22 +498,16 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(home_game['home_team_id']), '')
         t_str = _game_time(home_game)
-        # Build the right-side entry width to right-align it
-        entry_parts = []
-        if t_str:
-            entry_parts.append(int(font9.getlength(t_str)) + 2 * s)
-        entry_parts.append(LOGO_SZ + 1 * s)  # away logo
-        entry_parts.append(at_w + 2 * s)      # @
-        entry_parts.append(LOGO_SZ + 1 * s)   # home logo
-        total_w = sum(entry_parts)
+        # Right-align the full entry: [away] @ [home]  TIME
+        t_w = int(font9.getlength(t_str)) if t_str else 0
+        total_w = LOGO_SZ + 1 * s + at_w + 2 * s + LOGO_SZ + 1 * s + (2 * s + t_w if t_str else 0)
         cur_x = BAR_X + BAR_W - total_w
-        if t_str:
-            draw.text((cur_x, _text_y), t_str, font=font9, fill=0)
-            cur_x += int(font9.getlength(t_str)) + 2 * s
         cur_x = _place_logo(a_abbr, home_game['away_team_id'], cur_x)
         draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
         cur_x += at_w + 2 * s
-        _place_logo(h_abbr, home_game['home_team_id'], cur_x)
+        cur_x = _place_logo(h_abbr, home_game['home_team_id'], cur_x)
+        if t_str:
+            draw.text((cur_x + 1 * s, _text_y), t_str, font=font9, fill=0)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
