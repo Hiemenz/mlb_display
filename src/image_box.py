@@ -427,6 +427,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     font9 = _get_font(9 * s)
     font11 = _get_font(11 * s)
     _text_y = BAR_Y + (BAR_H - 9 * s) // 2
+    _time_y = _text_y + 2 * s
     _vs_y = BAR_Y + (BAR_H - 11 * s) // 2
     at_str = '@'
     at_w = int(font11.getlength(at_str))
@@ -503,8 +504,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         if t_str:
             t_w = int(font9.getlength(t_str))
             _tx = BAR_X + BAR_W - t_w - 1 * s
-            draw.text((_tx,         _text_y), t_str, font=font9, fill=0)
-            draw.text((_tx + 1 * s, _text_y), t_str, font=font9, fill=0)
+            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
         return
 
     # New series — away team's game LEFT, home team's game RIGHT
@@ -518,8 +519,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
         if t_str:
             _tx = cur_x + TIME_PAD
-            draw.text((_tx,         _text_y), t_str, font=font9, fill=0)
-            draw.text((_tx + 1 * s, _text_y), t_str, font=font9, fill=0)
+            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
 
     if home_game:
         a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
@@ -531,8 +532,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         cur_x = _place_logo(h_abbr, home_game['home_team_id'], cur_x)
         if t_str:
             _tx = cur_x + TIME_PAD
-            draw.text((_tx,         _text_y), t_str, font=font9, fill=0)
-            draw.text((_tx + 1 * s, _text_y), t_str, font=font9, fill=0)
+            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
