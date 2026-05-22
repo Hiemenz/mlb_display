@@ -1869,6 +1869,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
+    # Invert header for mid-inning pitching changes to draw attention
+    if _pitching_change:
+        header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
     # Invert header for special states: no-hitter (>= 6 innings), perfect game
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
        (is_game_finished or _active_no_no):
