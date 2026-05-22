@@ -426,9 +426,11 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     LOGO_SZ = 14 * s
     logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2
     font9 = _get_font(9 * s)
+    font11 = _get_font(11 * s)
     _text_y = BAR_Y + (BAR_H - 9 * s) // 2
+    _vs_y = BAR_Y + (BAR_H - 11 * s) // 2
     at_str = 'vs.'
-    at_w = int(font9.getlength(at_str))
+    at_w = int(font11.getlength(at_str))
 
     _cfg = load_yaml_file('config.yaml')
     _tz_str = _cfg.get('timezone', 'America/Chicago')
@@ -490,7 +492,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         t_str = _game_time(g)
         cur_x = BAR_X + 1 * s
         cur_x = _place_logo(a_abbr, g['away_team_id'], cur_x)
-        draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
+        draw.text((cur_x, _vs_y), at_str, font=font11, fill=0)
         cur_x += at_w + GAP
         _place_logo(h_abbr, g['home_team_id'], cur_x)
         if t_str:
@@ -505,7 +507,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         t_str = _game_time(away_game)
         cur_x = BAR_X + 1 * s
         cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
-        draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
+        draw.text((cur_x, _vs_y), at_str, font=font11, fill=0)
         cur_x += at_w + GAP
         cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
         if t_str:
@@ -517,7 +519,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         t_str = _game_time(home_game)
         cur_x = BAR_X + BAR_W - _entry_w(t_str)
         cur_x = _place_logo(a_abbr, home_game['away_team_id'], cur_x)
-        draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
+        draw.text((cur_x, _vs_y), at_str, font=font11, fill=0)
         cur_x += at_w + GAP
         cur_x = _place_logo(h_abbr, home_game['home_team_id'], cur_x)
         if t_str:
