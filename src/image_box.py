@@ -1363,7 +1363,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((_nh_lx + 1 * s, start_y + 3 * s), _nh_label, font=font14, fill=0)
         elif _pitching_change:
             # Mid-inning pitching change: show "PC" right-aligned in header
-            _draw_play_right('PC')
+            _draw_play_right('P.CHG')
         elif _between_innings and play_display:
             # Mid-inning break: show abbreviated play that ended the half-inning
             _draw_play_right(play_display)
