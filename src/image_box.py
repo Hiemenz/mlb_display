@@ -1867,7 +1867,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = is_game_started and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
-    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change:
+    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
