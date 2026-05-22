@@ -427,7 +427,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2
     font9 = _get_font(9 * s)
     _text_y = BAR_Y + (BAR_H - 9 * s) // 2
-    at_str = '@'
+    at_str = 'vs.'
     at_w = int(font9.getlength(at_str))
 
     _cfg = load_yaml_file('config.yaml')
