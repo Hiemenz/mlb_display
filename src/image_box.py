@@ -1361,6 +1361,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _nh_lx = _header_right - _nh_lw
             draw.text((_nh_lx,         start_y + 3 * s), _nh_label, font=font14, fill=0)
             draw.text((_nh_lx + 1 * s, start_y + 3 * s), _nh_label, font=font14, fill=0)
+        elif _pitching_change:
+            # Mid-inning pitching change: show "PC" right-aligned in header
+            _draw_play_right('PC')
         elif _between_innings and play_display:
             # Mid-inning break: show abbreviated play that ended the half-inning
             _draw_play_right(play_display)
@@ -1864,7 +1867,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = is_game_started and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
-    if (score_changed or _run_scored) and is_game_started and not is_game_finished:
+    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
