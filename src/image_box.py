@@ -391,6 +391,86 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
                 return
 
 
+def _load_tomorrow_games():
+    """Load tomorrow's pre-fetched schedule from data/tomorrow_games.json."""
+    try:
+        return load_json_file('tomorrow_games.json') or None
+    except Exception:
+        return None
+
+
+def _draw_next_game_preview(draw, Himage, start_x, start_y, next_game, today_home_id, today_away_id,
+                             team_data, use_logos, horizonta_len, vertical_len, scale=1):
+    """Draw tomorrow's matchup for the home team in the win-prob strip."""
+    s = scale
+    BAR_Y = start_y + vertical_len + 21 * s
+    BAR_H = 19 * s
+    BAR_X = start_x + 1 * s
+    BAR_W = horizonta_len - 2 * s
+
+    abbr_map = team_data.get('team_abbreviation', {})
+    tmrw_away_id = next_game.get('away_team_id')
+    tmrw_home_id = next_game.get('home_team_id')
+    same_series = (tmrw_away_id == today_away_id and tmrw_home_id == today_home_id)
+
+    LOGO_SZ = 15 * s if same_series else 12 * s
+    logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2
+
+    _cfg = load_yaml_file('config.yaml')
+    _tz_str = _cfg.get('timezone', 'America/Chicago')
+    _time_str = ''
+    _game_start_utc = next_game.get('game_start_utc')
+    if _game_start_utc:
+        try:
+            _utc = pytz.utc.localize(_datetime.strptime(_game_start_utc[:19], '%Y-%m-%dT%H:%M:%S'))
+            _local = _utc.astimezone(pytz.timezone(_tz_str))
+            _time_str = _local.strftime('%-I:%M') + _local.strftime('%p').lower()[0]
+        except Exception:
+            pass
+
+    font9 = _get_font(9 * s)
+    _time_w = int(font9.getlength(_time_str)) if _time_str else 0
+    _time_x = BAR_X + BAR_W - _time_w - 1 * s
+    _text_y = BAR_Y + (BAR_H - 9 * s) // 2
+
+    cur_x = BAR_X + 1 * s
+
+    def _place_logo(abbr, team_id, x):
+        nonlocal draw
+        if use_logos and team_id:
+            lg = _logo_small(str(abbr), str(team_id), size=LOGO_SZ)
+            if lg:
+                _paste_logo(Himage, lg, (x, logo_y))
+                draw = ImageDraw.Draw(Himage)
+                return x + LOGO_SZ + 2 * s
+        t = (str(abbr) or '')[:3]
+        draw.text((x, _text_y), t, font=font9, fill=0)
+        return x + int(font9.getlength(t)) + 2 * s
+
+    at_str = '@'
+    at_w = int(font9.getlength(at_str))
+
+    if same_series:
+        away_abbr = abbr_map.get(str(tmrw_away_id), f'T{tmrw_away_id}')
+        home_abbr = abbr_map.get(str(tmrw_home_id), f'T{tmrw_home_id}')
+        cur_x = _place_logo(away_abbr, tmrw_away_id, cur_x)
+        draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
+        cur_x += at_w + 2 * s
+        _place_logo(home_abbr, tmrw_home_id, cur_x)
+    else:
+        today_away_abbr = abbr_map.get(str(today_away_id), '')
+        tmrw_away_abbr = abbr_map.get(str(tmrw_away_id), f'T{tmrw_away_id}')
+        tmrw_home_abbr = abbr_map.get(str(tmrw_home_id), f'T{tmrw_home_id}')
+        cur_x = _place_logo(today_away_abbr, today_away_id, cur_x)
+        cur_x = _place_logo(tmrw_away_abbr, tmrw_away_id, cur_x)
+        draw.text((cur_x, _text_y), at_str, font=font9, fill=0)
+        cur_x += at_w + 2 * s
+        _place_logo(tmrw_home_abbr, tmrw_home_id, cur_x)
+
+    if _time_str:
+        draw.text((_time_x, _text_y), _time_str, font=font9, fill=0)
+
+
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
     s = scale
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
@@ -1426,6 +1506,33 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     end_y = start_y + vertical_len + 20 * s
     draw.line((start_x, start_y + vertical_len + 20 * s, end_x, end_y), fill=0)
 
+    # Next game preview — shown in the win-prob strip for Final games 1+ hour after end
+    if _game_is_final and not _historical_mode:
+        _one_hour = False
+        if _end_utc_str:
+            try:
+                _end_utc = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
+                _one_hour = (_datetime.now(pytz.utc) - _end_utc).total_seconds() >= 3600
+            except Exception:
+                pass
+        if not _one_hour:
+            _fts = _get_or_set_final_time(game_data.get('game_pk'))
+            _one_hour = (_time.time() - _fts) >= 3600
+        if _one_hour:
+            _tmrw = _load_tomorrow_games()
+            if _tmrw and _tmrw.get('games'):
+                _h_id = game_data.get('home_team_id')
+                _a_id = game_data.get('away_team_id')
+                _next = None
+                for _tg in _tmrw['games']:
+                    if _tg.get('home_team_id') == _h_id or _tg.get('away_team_id') == _h_id:
+                        _next = _tg
+                        break
+                if _next:
+                    _draw_next_game_preview(
+                        draw, Himage, start_x, start_y, _next, _h_id, _a_id,
+                        team_data, use_logos, horizonta_len, vertical_len, s
+                    )
 
     # vertical line
     end_x = start_x
