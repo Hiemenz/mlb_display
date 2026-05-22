@@ -794,6 +794,65 @@ def parse_games(data, sport_id=None, config=None):
     save_off_results({'team_abbreviation': team_abbreviations}, 'teams')
 
 
+def fetch_tomorrow_games(config=None):
+    """Fetch tomorrow's schedule and save minimal data to data/tomorrow_games.json."""
+    import time as _tm
+    if config is None:
+        config = load_config()
+
+    from datetime import date as _date
+    tomorrow = (_date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    sport_id_priority = config.get('sport_id_priority', [1])
+    sport_id = None
+    for sid in sport_id_priority:
+        cnt = check_games_for_sport(tomorrow, sid)
+        if cnt > 0:
+            sport_id = sid
+            break
+    if sport_id is None:
+        sport_id = sport_id_priority[0] if sport_id_priority else 1
+
+    endpoint = (
+        f'https://statsapi.mlb.com/api/v1/schedule?'
+        f'startDate={tomorrow}&endDate={tomorrow}&sportId={sport_id}'
+        f'&hydrate=team'
+    )
+    try:
+        resp = requests.get(endpoint, timeout=10)
+        if resp.status_code != 200:
+            print(f"Warning: tomorrow's schedule fetch returned {resp.status_code}")
+            return
+        data = resp.json()
+        game_dates = data.get('dates', [])
+        if not game_dates:
+            save_off_results({'date': tomorrow, 'fetched_at': _tm.time(), 'games': []}, 'tomorrow_games')
+            return
+
+        games_raw = game_dates[0].get('games', [])
+        if sport_id == 1:
+            regular = [g for g in games_raw if g.get('gameType') not in ('S', 'E')]
+            if regular:
+                games_raw = regular
+
+        games = []
+        for g in games_raw:
+            teams = g.get('teams', {})
+            away = teams.get('away', {}).get('team', {})
+            home = teams.get('home', {}).get('team', {})
+            games.append({
+                'away_team_id': away.get('id'),
+                'home_team_id': home.get('id'),
+                'game_start_utc': g.get('gameDate'),
+                'game_pk': g.get('gamePk'),
+            })
+
+        save_off_results({'date': tomorrow, 'fetched_at': _tm.time(), 'games': games}, 'tomorrow_games')
+        print(f"✓ Tomorrow's games ({len(games)}) written to data/tomorrow_games.json")
+    except Exception as e:
+        print(f"Warning: failed to fetch tomorrow's games: {e}")
+
+
 def fetch_scoreboard_for_date(date, sport_id=None, config=None):
     """Fetch schedule API for date, parse games, write data/games.json + data/teams.json."""
     if config is None:

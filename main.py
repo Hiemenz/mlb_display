@@ -17,7 +17,7 @@ import pytz
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from config_loader import load_config, add_config_arg
-from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, SPORT_NAMES
+from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
@@ -536,6 +536,18 @@ Examples:
     if _is_fullscreen:
         config['_featured_abbr'] = config.get('primary', '')
     fetch_scoreboard_for_date(date_str, sport_id, config)
+
+    # 6b. Fetch tomorrow's schedule for next-game preview (cached, refreshes hourly)
+    if not args.date:
+        import time as _tm_mod
+        _tmrw_cache = load_json_file('tomorrow_games.json') or {}
+        _tmrw_target = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
+        _tmrw_age = _tm_mod.time() - _tmrw_cache.get('fetched_at', 0)
+        if _tmrw_cache.get('date') != _tmrw_target or _tmrw_age > 3600:
+            try:
+                fetch_tomorrow_games(config)
+            except Exception as _e:
+                print(f"Warning: fetch_tomorrow_games failed: {_e}")
 
     # 7. Update schedule state
     if not args.date and not _no_throttle:

@@ -391,6 +391,191 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
                 return
 
 
+def _load_tomorrow_games():
+    """Load tomorrow's schedule, fetching from the API if the cache is missing or stale."""
+    from datetime import date as _date, timedelta as _td
+    tomorrow = (_date.today() + _td(days=1)).strftime('%Y-%m-%d')
+    try:
+        data = load_json_file('tomorrow_games.json') or {}
+        if data.get('date') == tomorrow and data.get('games') is not None:
+            return data
+        # Cache is missing, wrong date, or empty — fetch now
+        from fetch_games import fetch_tomorrow_games
+        fetch_tomorrow_games()
+        data = load_json_file('tomorrow_games.json') or {}
+        return data if data.get('games') is not None else None
+    except Exception as _e:
+        print(f"Warning: could not load tomorrow's games: {_e}")
+        return None
+
+
+def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_home_id, today_away_id,
+                             team_data, use_logos, horizonta_len, vertical_len, scale=1):
+    """Draw tomorrow's matchup in the win-prob strip.
+
+    Away team's next game is left-aligned; home team's next game is right-aligned.
+    If the same series continues, a single entry is shown left-aligned.
+    """
+    s = scale
+    BAR_Y = start_y + vertical_len + 21 * s
+    BAR_H = 19 * s
+    BAR_X = start_x + 1 * s
+    BAR_W = horizonta_len - 2 * s
+
+    abbr_map = team_data.get('team_abbreviation', {})
+    LOGO_SZ = 14 * s
+    font9 = _get_font(9 * s)
+    font11 = _get_font(11 * s)
+    _text_y = BAR_Y + (BAR_H - 9 * s) // 2
+    _time_y = _text_y + 2 * s
+    _vs_y = BAR_Y + (BAR_H - 11 * s) // 2
+    at_str = '@'
+    at_w = int(font11.getlength(at_str))
+
+    _cfg = load_yaml_file('config.yaml')
+    _tz_str = _cfg.get('timezone', 'America/Chicago')
+
+    def _game_time(game):
+        utc_str = game.get('game_start_utc', '')
+        if not utc_str:
+            return ''
+        try:
+            _utc = pytz.utc.localize(_datetime.strptime(utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
+            _local = _utc.astimezone(pytz.timezone(_tz_str))
+            return _local.strftime('%-I:%M') + _local.strftime('%p').lower()[0]
+        except Exception:
+            return ''
+
+    def _find_game(team_id):
+        for g in tmrw_games:
+            if g.get('home_team_id') == team_id or g.get('away_team_id') == team_id:
+                return g
+        return None
+
+    VS_PAD = 1 * s   # pixels on each side of the vs. text
+    TIME_PAD = 2 * s # gap before the time string
+
+    def _place_logo(abbr, team_id, x):
+        nonlocal draw
+        if use_logos and team_id:
+            lg = _logo_small(str(abbr), str(team_id), size=LOGO_SZ)
+            if lg:
+                # Center vertically by actual rendered height, not LOGO_SZ
+                actual_y = BAR_Y + (BAR_H - lg.size[1]) // 2
+                _paste_logo(Himage, lg, (x, actual_y))
+                draw = ImageDraw.Draw(Himage)
+                return x + lg.size[0]  # advance by actual width
+        t = (str(abbr) or '')[:3]
+        draw.text((x, _text_y), t, font=font9, fill=0)
+        return x + int(font9.getlength(t))
+
+    def _draw_vs(x):
+        draw.text((x + VS_PAD, _vs_y), at_str, font=font11, fill=0)
+        return x + VS_PAD + at_w + VS_PAD
+
+
+    away_game = _find_game(today_away_id)
+    home_game = _find_game(today_home_id)
+
+    if not away_game and not home_game:
+        return
+
+    same_series = (
+        away_game and home_game and
+        away_game.get('game_pk') == home_game.get('game_pk') and
+        away_game.get('away_team_id') == today_away_id and
+        away_game.get('home_team_id') == today_home_id
+    )
+
+    if same_series:
+        # Series continues — single entry left-aligned, time right-aligned
+        g = away_game
+        a_abbr = abbr_map.get(str(g['away_team_id']), '')
+        h_abbr = abbr_map.get(str(g['home_team_id']), '')
+        t_str = _game_time(g)
+        cur_x = BAR_X + 1 * s
+        cur_x = _place_logo(a_abbr, g['away_team_id'], cur_x)
+        cur_x = _draw_vs(cur_x)
+        _place_logo(h_abbr, g['home_team_id'], cur_x)
+        if t_str:
+            t_w = int(font9.getlength(t_str))
+            _tx = BAR_X + BAR_W - t_w - 1 * s
+            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
+        return
+
+    # New series — away team's game LEFT, home team's game RIGHT
+    if away_game:
+        a_abbr = abbr_map.get(str(away_game['away_team_id']), '')
+        h_abbr = abbr_map.get(str(away_game['home_team_id']), '')
+        t_str = _game_time(away_game)
+        cur_x = BAR_X - 1 * s  # 2px left of default BAR_X+1
+        cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
+        cur_x = _draw_vs(cur_x)
+        cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
+        if t_str:
+            _tx = cur_x + TIME_PAD
+            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
+
+    if home_game:
+        a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
+        h_abbr = abbr_map.get(str(home_game['home_team_id']), '')
+        t_str = _game_time(home_game)
+
+        # Draw right-to-left so the entry is truly anchored to the cell's right edge.
+        right = start_x + horizonta_len  # rightmost cell pixel
+
+        # Time (rightmost element)
+        if t_str:
+            t_w = int(font9.getlength(t_str))
+            _tx = right - t_w
+            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
+            right = _tx - TIME_PAD
+
+        # Home logo
+        if use_logos and home_game.get('home_team_id'):
+            lg = _logo_small(str(h_abbr), str(home_game['home_team_id']), size=LOGO_SZ)
+            if lg:
+                actual_y = BAR_Y + (BAR_H - lg.size[1]) // 2
+                right -= lg.size[0]
+                _paste_logo(Himage, lg, (right, actual_y))
+                draw = ImageDraw.Draw(Himage)
+            else:
+                t = (h_abbr or '')[:3]
+                tw = int(font9.getlength(t))
+                right -= tw
+                draw.text((right, _text_y), t, font=font9, fill=0)
+        else:
+            t = (h_abbr or '')[:3]
+            tw = int(font9.getlength(t))
+            right -= tw
+            draw.text((right, _text_y), t, font=font9, fill=0)
+
+        # vs. separator
+        right -= at_w + VS_PAD
+        draw.text((right, _vs_y), at_str, font=font11, fill=0)
+        right -= VS_PAD
+
+        # Away logo
+        if use_logos and home_game.get('away_team_id'):
+            lg = _logo_small(str(a_abbr), str(home_game['away_team_id']), size=LOGO_SZ)
+            if lg:
+                actual_y = BAR_Y + (BAR_H - lg.size[1]) // 2
+                right -= lg.size[0]
+                _paste_logo(Himage, lg, (right, actual_y))
+                draw = ImageDraw.Draw(Himage)
+            else:
+                t = (a_abbr or '')[:3]
+                right -= int(font9.getlength(t))
+                draw.text((right, _text_y), t, font=font9, fill=0)
+        else:
+            t = (a_abbr or '')[:3]
+            right -= int(font9.getlength(t))
+            draw.text((right, _text_y), t, font=font9, fill=0)
+
+
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
     s = scale
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
@@ -1176,6 +1361,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _nh_lx = _header_right - _nh_lw
             draw.text((_nh_lx,         start_y + 3 * s), _nh_label, font=font14, fill=0)
             draw.text((_nh_lx + 1 * s, start_y + 3 * s), _nh_label, font=font14, fill=0)
+        elif _pitching_change:
+            # Mid-inning pitching change: show "PC" right-aligned in header
+            _draw_play_right('PC')
         elif _between_innings and play_display:
             # Mid-inning break: show abbreviated play that ended the half-inning
             _draw_play_right(play_display)
@@ -1387,8 +1575,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             Himage.paste(_ghost_strip.convert('1'), (BAR_X, BAR_Y))
             draw = ImageDraw.Draw(Himage)
 
-            logo_y = BAR_Y + (BAR_H - LOGO_SZ) // 2  # center logo in strip
-
             away_px = BAR_X + int(BAR_W * away_wp / 100.0)
             away_logo_x = max(BAR_X, min(BAR_X + BAR_W - LOGO_SZ, away_px - LOGO_SZ // 2))
 
@@ -1412,9 +1598,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 away_logo = _logo_small(away_team_name, away_team_id, size=LOGO_SZ)
                 home_logo = _logo_small(home_team_name, home_team_id, size=LOGO_SZ)
                 if away_logo:
-                    _paste_logo(Himage, away_logo, (away_logo_x, logo_y))
+                    _paste_logo(Himage, away_logo, (away_logo_x, BAR_Y + (BAR_H - away_logo.size[1]) // 2))
                 if home_logo:
-                    _paste_logo(Himage, home_logo, (home_logo_x, logo_y))
+                    _paste_logo(Himage, home_logo, (home_logo_x, BAR_Y + (BAR_H - home_logo.size[1]) // 2))
 
                 # During inning breaks, draw each team's % in the AB area
                 # directly above their logo position in the bar
@@ -1426,6 +1612,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     end_y = start_y + vertical_len + 20 * s
     draw.line((start_x, start_y + vertical_len + 20 * s, end_x, end_y), fill=0)
 
+    # Next game preview — shown in the win-prob strip for Final games 1+ hour after end
+    if _game_is_final and not _historical_mode:
+        _one_hour = False
+        if _end_utc_str:
+            try:
+                _end_utc = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
+                _one_hour = (_datetime.now(pytz.utc) - _end_utc).total_seconds() >= 3600
+            except Exception:
+                pass
+        if not _one_hour:
+            _fts = _get_or_set_final_time(game_data.get('game_pk'))
+            _one_hour = (_time.time() - _fts) >= 3600
+        if _one_hour:
+            _tmrw = _load_tomorrow_games()
+            if _tmrw and _tmrw.get('games'):
+                _draw_next_game_preview(
+                    draw, Himage, start_x, start_y, _tmrw['games'],
+                    game_data.get('home_team_id'), game_data.get('away_team_id'),
+                    team_data, use_logos, horizonta_len, vertical_len, s
+                )
 
     # vertical line
     end_x = start_x
@@ -1659,7 +1865,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = is_game_started and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
-    if (score_changed or _run_scored) and is_game_started and not is_game_finished:
+    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
