@@ -392,10 +392,20 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
 
 
 def _load_tomorrow_games():
-    """Load tomorrow's pre-fetched schedule from data/tomorrow_games.json."""
+    """Load tomorrow's schedule, fetching from the API if the cache is missing or stale."""
+    from datetime import date as _date, timedelta as _td
+    tomorrow = (_date.today() + _td(days=1)).strftime('%Y-%m-%d')
     try:
-        return load_json_file('tomorrow_games.json') or None
-    except Exception:
+        data = load_json_file('tomorrow_games.json') or {}
+        if data.get('date') == tomorrow and data.get('games') is not None:
+            return data
+        # Cache is missing, wrong date, or empty — fetch now
+        from fetch_games import fetch_tomorrow_games
+        fetch_tomorrow_games()
+        data = load_json_file('tomorrow_games.json') or {}
+        return data if data.get('games') is not None else None
+    except Exception as _e:
+        print(f"Warning: could not load tomorrow's games: {_e}")
         return None
 
 
