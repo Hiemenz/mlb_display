@@ -1638,19 +1638,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     end_y = start_y + vertical_len + 20 * s
     draw.line((start_x, start_y + vertical_len + 20 * s, end_x, end_y), fill=0)
 
-    # Next game preview — shown in the win-prob strip for Final games 1+ hour after end
+    # Next game preview — shown in the win-prob strip for Final games after final_linescore_minutes expires
     if _game_is_final and not _historical_mode:
-        _one_hour = False
+        _window_expired = False
         if _end_utc_str:
             try:
                 _end_utc = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
-                _one_hour = (_datetime.now(pytz.utc) - _end_utc).total_seconds() >= 3600
+                _window_expired = (_datetime.now(pytz.utc) - _end_utc).total_seconds() >= _FINAL_LINESCORE_SECS
             except Exception:
                 pass
-        if not _one_hour:
+        if not _window_expired:
             _fts = _get_or_set_final_time(game_data.get('game_pk'))
-            _one_hour = (_time.time() - _fts) >= 3600
-        if _one_hour:
+            _window_expired = (_time.time() - _fts) >= _FINAL_LINESCORE_SECS
+        if _window_expired:
             _tmrw = _load_tomorrow_games()
             if _tmrw and _tmrw.get('games'):
                 # Compute how far left the "Game X" doubleheader label extends so the
