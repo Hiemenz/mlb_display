@@ -1498,8 +1498,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             _aml_s = _ml_str(_away_ml)
             _hml_s = _ml_str(_home_ml)
-            _away_odds_y = start_y + (32 * s if use_logos else 25 * s)
-            _home_odds_y = start_y + (62 * s if use_logos else 55 * s)
+            # Centre font11 odds in the same row as the team abbreviation (font14).
+            # With logos: 28px row starting at +25/+55; centre font11 = +8 not +7.
+            # Without logos: record is font14 at +25/+55; nudge font11 down 1px.
+            _away_odds_y = start_y + 25 * s + ((28 * s - 11 * s) // 2 if use_logos else (14 * s - 11 * s) // 2)
+            _home_odds_y = start_y + 55 * s + ((28 * s - 11 * s) // 2 if use_logos else (14 * s - 11 * s) // 2)
             # Left-align both strings from the same x so +/- signs are column-aligned.
             _odds_x = _odds_right - max(int(font11.getlength(_aml_s)), int(font11.getlength(_hml_s)))
             draw.text((_odds_x, _away_odds_y), _aml_s, font=font11, fill=0)
