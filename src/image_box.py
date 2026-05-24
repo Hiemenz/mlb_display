@@ -1515,8 +1515,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _is_ppd = game_data['detailed_state'] == 'Postponed'
         _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14, show_tv=not _is_ppd, scale=s)
 
-    # Game duration — header-center for non-sweep finals; between team rows for sweep
-    _sweep_dur_right_x = None  # right edge of sweep duration; used for GM label placement
+    # DH label vars — defined early so the duration block can co-centre them
+    _dh    = game_data.get('double_header', 'N')
+    _gnum  = game_data.get('game_number')
+    _dh_is_active = _dh in ('Y', 'S') and _gnum
+
+    # Game duration — header for non-sweep finals (GM+duration centred together for DH);
+    # between team rows for sweep (GM placed immediately right of duration).
+    _sweep_dur_right_x  = None   # right edge of sweep duration; GM uses this for x
+    _gm_drawn_in_header = False  # True once GM was already rendered inside this block
     if _game_is_final and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
         _dur_mins = game_data.get('game_duration_minutes')
         if _dur_mins:
@@ -1526,12 +1533,29 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _dur_x = start_x + logo_x_offset + 28 * s + 2 * s + 3 * s if use_logos else start_x + 8 * s
                 _dur_y = start_y + 50 * s
                 _sweep_dur_right_x = _dur_x + int(_dur_font.getlength(_dur_str))
+                draw.text((_dur_x,         _dur_y), _dur_str, font=_dur_font, fill=0)
+                draw.text((_dur_x + 1 * s, _dur_y), _dur_str, font=_dur_font, fill=0)
+            elif _dh_is_active:
+                # DH non-sweep: centre "GM1  3:12" as a single group in the header
+                _gn_str_h = f'GM{_gnum}'
+                _gn_w     = int(font14.getlength(_gn_str_h))
+                _gap_h    = 4 * s
+                _dur_w    = int(font14.getlength(_dur_str))
+                _group_x  = start_x + horizonta_len // 2 - (_gn_w + _gap_h + _dur_w) // 2
+                _hdr_y    = start_y + 3 * s
+                draw.text((_group_x,         _hdr_y), _gn_str_h, font=font14, fill=0)
+                draw.text((_group_x + 1 * s, _hdr_y), _gn_str_h, font=font14, fill=0)
+                _dur_x = _group_x + _gn_w + _gap_h
+                draw.text((_dur_x,         _hdr_y), _dur_str, font=font14, fill=0)
+                draw.text((_dur_x + 1 * s, _hdr_y), _dur_str, font=font14, fill=0)
+                _gm_drawn_in_header = True
             else:
+                # Non-DH: centre duration alone
                 _dur_font = font14
                 _dur_x = start_x + horizonta_len // 2 - int(_dur_font.getlength(_dur_str)) // 2
                 _dur_y = start_y + 3 * s
-            draw.text((_dur_x,         _dur_y), _dur_str, font=_dur_font, fill=0)
-            draw.text((_dur_x + 1 * s, _dur_y), _dur_str, font=_dur_font, fill=0)
+                draw.text((_dur_x,         _dur_y), _dur_str, font=_dur_font, fill=0)
+                draw.text((_dur_x + 1 * s, _dur_y), _dur_str, font=_dur_font, fill=0)
 
     # End time — right-aligned in the win-probability strip below the box.
     # Default: shown only while the linescore window is active (disappears with the linescore).
@@ -1555,24 +1579,25 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             pass
 
     # Doubleheader game number — in header for non-sweep; beside sweep duration for sweeps
-    _dh = game_data.get('double_header', 'N')
-    _gnum = game_data.get('game_number')
     _dh_state = game_data['detailed_state'] in (
         'Scheduled', 'Pre-Game', 'Warmup', 'Final', 'Game Over', 'Final: Tied', 'Postponed')
-    if _dh in ('Y', 'S') and _gnum and _dh_state:
+    if _dh_is_active and _dh_state:
         _gn_str = f'GM{_gnum}'
         if _is_sweep and _sweep_dur_right_x is not None:
-            # Sweep: place GM label immediately right of the sweep duration (at +50 row)
+            # Sweep Final: GM immediately right of sweep duration (font9, +50 row)
             _gn_x = _sweep_dur_right_x + 3 * s
             _gn_y = start_y + 50 * s
-            _gn_font = font9
-        else:
-            # Non-sweep: left-anchored in the header at the same y as the game duration
-            _gn_x = start_x + 2 * s
+            draw.text((_gn_x,         _gn_y), _gn_str, font=font9, fill=0)
+            draw.text((_gn_x + 1 * s, _gn_y), _gn_str, font=font9, fill=0)
+        elif not _gm_drawn_in_header:
+            # Non-Final DH (Scheduled / Pre-Game / Warmup / Postponed) or no duration:
+            # centre GM alone in the header
+            _gn_w = int(font14.getlength(_gn_str))
+            _gn_x = start_x + horizonta_len // 2 - _gn_w // 2
             _gn_y = start_y + 3 * s
-            _gn_font = font14
-        draw.text((_gn_x,         _gn_y), _gn_str, font=_gn_font, fill=0)
-        draw.text((_gn_x + 1 * s, _gn_y), _gn_str, font=_gn_font, fill=0)
+            draw.text((_gn_x,         _gn_y), _gn_str, font=font14, fill=0)
+            draw.text((_gn_x + 1 * s, _gn_y), _gn_str, font=font14, fill=0)
+        # else: GM already drawn together with duration above — nothing to do
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
