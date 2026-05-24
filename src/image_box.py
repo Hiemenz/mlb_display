@@ -1498,11 +1498,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             _aml_s = _ml_str(_away_ml)
             _hml_s = _ml_str(_home_ml)
-            # Centre font11 odds in the same row as the team abbreviation (font14).
-            # With logos: 28px row starting at +25/+55; centre font11 = +8 not +7.
-            # Without logos: record is font14 at +25/+55; nudge font11 down 1px.
-            _away_odds_y = start_y + 25 * s + ((28 * s - 11 * s) // 2 if use_logos else (14 * s - 11 * s) // 2)
-            _home_odds_y = start_y + 55 * s + ((28 * s - 11 * s) // 2 if use_logos else (14 * s - 11 * s) // 2)
+            # Pixel-align font11 odds with the font14 abbreviation.
+            # Measured glyph centres: font14 bbox top=4 bottom=14 → centre=+9 from draw_y.
+            #                         font11 bbox top=3 bottom=11 → centre=+7 from draw_y.
+            # font14 abbr draw_y (with logos) = start_y + 25 + (28-14)//2 = start_y + 32.
+            # To share that glyph centre: font11 draw_y = abbr_draw_y + (9-7) = abbr_draw_y + 2.
+            _abbr_draw_y_away = start_y + 25 * s + ((28 * s - 14 * s) // 2 if use_logos else 0)
+            _abbr_draw_y_home = start_y + 55 * s + ((28 * s - 14 * s) // 2 if use_logos else 0)
+            _away_odds_y = _abbr_draw_y_away + 2 * s
+            _home_odds_y = _abbr_draw_y_home + 2 * s
             # Left-align both strings from the same x so +/- signs are column-aligned.
             _odds_x = _odds_right - max(int(font11.getlength(_aml_s)), int(font11.getlength(_hml_s)))
             draw.text((_odds_x, _away_odds_y), _aml_s, font=font11, fill=0)
