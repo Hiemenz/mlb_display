@@ -1516,6 +1516,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _draw_weather_footer(draw, start_x, start_y, horizonta_len, game_data, font14, show_tv=not _is_ppd, scale=s)
 
     # Game duration — header-center for non-sweep finals; between team rows for sweep
+    _sweep_dur_right_x = None  # right edge of sweep duration; used for GM label placement
     if _game_is_final and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
         _dur_mins = game_data.get('game_duration_minutes')
         if _dur_mins:
@@ -1524,6 +1525,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _dur_font = font9
                 _dur_x = start_x + logo_x_offset + 28 * s + 2 * s + 3 * s if use_logos else start_x + 8 * s
                 _dur_y = start_y + 50 * s
+                _sweep_dur_right_x = _dur_x + int(_dur_font.getlength(_dur_str))
             else:
                 _dur_font = font14
                 _dur_x = start_x + horizonta_len // 2 - int(_dur_font.getlength(_dur_str)) // 2
@@ -1552,18 +1554,25 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         except Exception:
             pass
 
-    # Doubleheader game number — left-anchored in the win-prob strip for non-live states
+    # Doubleheader game number — in header for non-sweep; beside sweep duration for sweeps
     _dh = game_data.get('double_header', 'N')
     _gnum = game_data.get('game_number')
     _dh_state = game_data['detailed_state'] in (
-        'Scheduled', 'Pre-Game', 'Warmup', 'Final', 'Game Over', 'Final: Tied')
+        'Scheduled', 'Pre-Game', 'Warmup', 'Final', 'Game Over', 'Final: Tied', 'Postponed')
     if _dh in ('Y', 'S') and _gnum and _dh_state:
         _gn_str = f'GM{_gnum}'
-        _gn_strip_y = start_y + vertical_len + 21 * s
-        _gn_strip_h = 19 * s
-        _gn_y = _gn_strip_y + (_gn_strip_h - 14 * s) // 2
-        draw.text((start_x + 2 * s, _gn_y), _gn_str, font=font14, fill=0)
-        draw.text((start_x + 3 * s, _gn_y), _gn_str, font=font14, fill=0)
+        if _is_sweep and _sweep_dur_right_x is not None:
+            # Sweep: place GM label immediately right of the sweep duration (at +50 row)
+            _gn_x = _sweep_dur_right_x + 3 * s
+            _gn_y = start_y + 50 * s
+            _gn_font = font9
+        else:
+            # Non-sweep: left-anchored in the header at the same y as the game duration
+            _gn_x = start_x + 2 * s
+            _gn_y = start_y + 3 * s
+            _gn_font = font14
+        draw.text((_gn_x,         _gn_y), _gn_str, font=_gn_font, fill=0)
+        draw.text((_gn_x + 1 * s, _gn_y), _gn_str, font=_gn_font, fill=0)
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
@@ -1660,30 +1669,23 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _window_expired:
             _tmrw = _load_tomorrow_games()
             if _tmrw and _tmrw.get('games'):
-                # Compute how far left the "Game X" doubleheader label extends so the
-                # next-game preview starts to the right of it and doesn't overlap.
-                _dh_label_w = 0
-                if _dh in ('Y', 'S') and _gnum:
-                    _dh_label_w = int(font14.getlength(f'GM{_gnum}')) + 4 * s
+                # GM label is now in the header, so the full strip width is available.
                 _draw_next_game_preview(
                     draw, Himage, start_x, start_y, _tmrw['games'],
                     game_data.get('home_team_id'), game_data.get('away_team_id'),
                     team_data, use_logos, horizonta_len, vertical_len, s,
-                    left_offset=_dh_label_w,
+                    left_offset=0,
                 )
 
     # Next game preview — shown immediately for postponed games (game will not be played today)
     elif game_data['detailed_state'] == 'Postponed' and not _historical_mode:
         _tmrw = _load_tomorrow_games()
         if _tmrw and _tmrw.get('games'):
-            _dh_label_w = 0
-            if _dh in ('Y', 'S') and _gnum:
-                _dh_label_w = int(font14.getlength(f'GM{_gnum}')) + 4 * s
             _draw_next_game_preview(
                 draw, Himage, start_x, start_y, _tmrw['games'],
                 game_data.get('home_team_id'), game_data.get('away_team_id'),
                 team_data, use_logos, horizonta_len, vertical_len, s,
-                left_offset=_dh_label_w,
+                left_offset=0,
             )
 
     # vertical line
