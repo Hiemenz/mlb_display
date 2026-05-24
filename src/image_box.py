@@ -1665,6 +1665,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     left_offset=_dh_label_w,
                 )
 
+    # Next game preview — shown immediately for postponed games (game will not be played today)
+    elif game_data['detailed_state'] == 'Postponed' and not _historical_mode:
+        _tmrw = _load_tomorrow_games()
+        if _tmrw and _tmrw.get('games'):
+            _dh_label_w = 0
+            if _dh in ('Y', 'S') and _gnum:
+                _dh_label_w = int(font14.getlength(f'GM{_gnum}')) + 4 * s
+            _draw_next_game_preview(
+                draw, Himage, start_x, start_y, _tmrw['games'],
+                game_data.get('home_team_id'), game_data.get('away_team_id'),
+                team_data, use_logos, horizonta_len, vertical_len, s,
+                left_offset=_dh_label_w,
+            )
+
     # vertical line
     end_x = start_x
     end_y = start_y + vertical_len  # noqa: F841
