@@ -506,6 +506,9 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         return
 
     # New series — away team's game LEFT, home team's game RIGHT
+    # Track the rightmost pixel used by the left entry so we can detect overlap.
+    away_end_x = BAR_X - 1 * s  # nothing drawn yet
+
     if away_game:
         a_abbr = abbr_map.get(str(away_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(away_game['home_team_id']), '')
@@ -518,63 +521,68 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
             _tx = cur_x + TIME_PAD
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
+            away_end_x = _tx + int(font14.getlength(t_str)) + 1 * s
+        else:
+            away_end_x = cur_x
 
     if home_game:
         a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(home_game['home_team_id']), '')
         t_str = _game_time(home_game)
 
-        # Draw right-to-left so the entry is truly anchored to the cell's right edge.
-        right = start_x + horizonta_len  # rightmost cell pixel
+        # Pre-load logos to measure their widths before committing to draw,
+        # so we can check for overlap with the left entry.
+        _h_lg = (_logo_small(str(h_abbr), str(home_game['home_team_id']), size=LOGO_SZ)
+                 if use_logos and home_game.get('home_team_id') else None)
+        _a_lg = (_logo_small(str(a_abbr), str(home_game['away_team_id']), size=LOGO_SZ)
+                 if use_logos and home_game.get('away_team_id') else None)
+        h_w = _h_lg.size[0] if _h_lg else int(font14.getlength((h_abbr or '')[:3]))
+        a_w = _a_lg.size[0] if _a_lg else int(font14.getlength((a_abbr or '')[:3]))
+        t_w = int(font14.getlength(t_str)) if t_str else 0
+        right_entry_w = a_w + VS_PAD + at_w + VS_PAD + h_w + ((TIME_PAD + t_w) if t_str else 0)
 
-        # Time (rightmost element)
-        if t_str:
-            t_w = int(font14.getlength(t_str))
-            _tx = right - t_w
-            draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
-            draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
-            right = _tx - TIME_PAD
+        # Only draw the right entry if it won't collide with the left entry.
+        MIN_GAP = 2 * s
+        home_left = start_x + horizonta_len - right_entry_w
+        if away_game and home_left < away_end_x + MIN_GAP:
+            pass  # would overlap — skip home entry
+        else:
+            # Draw right-to-left so the entry is truly anchored to the cell's right edge.
+            right = start_x + horizonta_len  # rightmost cell pixel
 
-        # Home logo
-        if use_logos and home_game.get('home_team_id'):
-            lg = _logo_small(str(h_abbr), str(home_game['home_team_id']), size=LOGO_SZ)
-            if lg:
-                actual_y = BAR_Y + (BAR_H - lg.size[1]) // 2
-                right -= lg.size[0]
-                _paste_logo(Himage, lg, (right, actual_y))
+            # Time (rightmost element)
+            if t_str:
+                _tx = right - t_w
+                draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
+                draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
+                right = _tx - TIME_PAD
+
+            # Home logo (already loaded above)
+            if _h_lg:
+                actual_y = BAR_Y + (BAR_H - _h_lg.size[1]) // 2
+                right -= _h_lg.size[0]
+                _paste_logo(Himage, _h_lg, (right, actual_y))
                 draw = ImageDraw.Draw(Himage)
             else:
                 t = (h_abbr or '')[:3]
-                tw = int(font14.getlength(t))
-                right -= tw
+                right -= h_w
                 draw.text((right, _text_y), t, font=font14, fill=0)
-        else:
-            t = (h_abbr or '')[:3]
-            tw = int(font14.getlength(t))
-            right -= tw
-            draw.text((right, _text_y), t, font=font14, fill=0)
 
-        # vs. separator
-        right -= at_w + VS_PAD
-        draw.text((right, _vs_y), at_str, font=font14, fill=0)
-        right -= VS_PAD
+            # vs. separator
+            right -= at_w + VS_PAD
+            draw.text((right, _vs_y), at_str, font=font14, fill=0)
+            right -= VS_PAD
 
-        # Away logo
-        if use_logos and home_game.get('away_team_id'):
-            lg = _logo_small(str(a_abbr), str(home_game['away_team_id']), size=LOGO_SZ)
-            if lg:
-                actual_y = BAR_Y + (BAR_H - lg.size[1]) // 2
-                right -= lg.size[0]
-                _paste_logo(Himage, lg, (right, actual_y))
+            # Away logo (already loaded above)
+            if _a_lg:
+                actual_y = BAR_Y + (BAR_H - _a_lg.size[1]) // 2
+                right -= _a_lg.size[0]
+                _paste_logo(Himage, _a_lg, (right, actual_y))
                 draw = ImageDraw.Draw(Himage)
             else:
                 t = (a_abbr or '')[:3]
-                right -= int(font14.getlength(t))
+                right -= a_w
                 draw.text((right, _text_y), t, font=font14, fill=0)
-        else:
-            t = (a_abbr or '')[:3]
-            right -= int(font14.getlength(t))
-            draw.text((right, _text_y), t, font=font14, fill=0)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
