@@ -1183,16 +1183,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _ppd_is_tied = 'tied' in _ppd_sr.lower()
         _ppd_sw = game_data.get('series_wins') or 0
         _ppd_sl = game_data.get('series_losses') or 0
-        _ppd_total = game_data.get('series_total_games') or 1
         _rx = start_x + horizonta_len - 2 * s
 
         if (_ppd_sw + _ppd_sl) == 0:
-            # Series hasn't started — show "0/X"
-            _ppd_score = f'0/{_ppd_total}'
-            _ppd_score_w = int(font11.getlength(_ppd_score))
-            _ppd_score_x = _rx - _ppd_score_w
-            draw.text((_ppd_score_x, start_y + 5 * s), _ppd_score, font=font11, fill=0)
-            _ser_content_left_x = _ppd_score_x
+            # Series hasn't started (or API returned stale 0-0 data for a mid-series PPD).
+            # Don't show "0/X" — the count is unreliable; teams may have played yesterday.
+            pass
         elif not _ppd_is_tied and len(_ppd_parts) >= 3 and _ppd_parts[1] == 'leads':
             _ppd_score = _ppd_parts[2]
             _ppd_leader_str = _ppd_parts[0].upper()
