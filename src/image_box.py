@@ -410,11 +410,13 @@ def _load_tomorrow_games():
 
 
 def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_home_id, today_away_id,
-                             team_data, use_logos, horizonta_len, vertical_len, scale=1):
+                             team_data, use_logos, horizonta_len, vertical_len, scale=1, left_offset=0):
     """Draw tomorrow's matchup in the win-prob strip.
 
     Away team's next game is left-aligned; home team's next game is right-aligned.
     If the same series continues, a single entry is shown left-aligned.
+    left_offset: pixels to skip on the left edge (e.g. to clear a doubleheader "Game X" label).
+    Text and time use font14 to match the game-end-time display.
     """
     s = scale
     BAR_Y = start_y + vertical_len + 21 * s
@@ -424,13 +426,12 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
 
     abbr_map = team_data.get('team_abbreviation', {})
     LOGO_SZ = 14 * s
-    font9 = _get_font(9 * s)
-    font11 = _get_font(11 * s)
-    _text_y = BAR_Y + (BAR_H - 9 * s) // 2
-    _time_y = _text_y + 2 * s
-    _vs_y = BAR_Y + (BAR_H - 11 * s) // 2
+    font14 = _get_font(14 * s)
+    _text_y = BAR_Y + (BAR_H - 14 * s) // 2
+    _time_y = _text_y
+    _vs_y = _text_y
     at_str = '@'
-    at_w = int(font11.getlength(at_str))
+    at_w = int(font14.getlength(at_str))
 
     _cfg = load_yaml_file('config.yaml')
     _tz_str = _cfg.get('timezone', 'America/Chicago')
@@ -466,11 +467,11 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
                 draw = ImageDraw.Draw(Himage)
                 return x + lg.size[0]  # advance by actual width
         t = (str(abbr) or '')[:3]
-        draw.text((x, _text_y), t, font=font9, fill=0)
-        return x + int(font9.getlength(t))
+        draw.text((x, _text_y), t, font=font14, fill=0)
+        return x + int(font14.getlength(t))
 
     def _draw_vs(x):
-        draw.text((x + VS_PAD, _vs_y), at_str, font=font11, fill=0)
+        draw.text((x + VS_PAD, _vs_y), at_str, font=font14, fill=0)
         return x + VS_PAD + at_w + VS_PAD
 
 
@@ -493,15 +494,15 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
         t_str = _game_time(g)
-        cur_x = BAR_X + 1 * s
+        cur_x = BAR_X + 1 * s + left_offset
         cur_x = _place_logo(a_abbr, g['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
         _place_logo(h_abbr, g['home_team_id'], cur_x)
         if t_str:
-            t_w = int(font9.getlength(t_str))
+            t_w = int(font14.getlength(t_str))
             _tx = BAR_X + BAR_W - t_w - 1 * s
-            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
-            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
         return
 
     # New series — away team's game LEFT, home team's game RIGHT
@@ -509,14 +510,14 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         a_abbr = abbr_map.get(str(away_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(away_game['home_team_id']), '')
         t_str = _game_time(away_game)
-        cur_x = BAR_X - 1 * s  # 2px left of default BAR_X+1
+        cur_x = BAR_X - 1 * s + left_offset  # start after any doubleheader label
         cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
         cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
         if t_str:
             _tx = cur_x + TIME_PAD
-            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
-            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
 
     if home_game:
         a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
@@ -528,10 +529,10 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
 
         # Time (rightmost element)
         if t_str:
-            t_w = int(font9.getlength(t_str))
+            t_w = int(font14.getlength(t_str))
             _tx = right - t_w
-            draw.text((_tx,         _time_y), t_str, font=font9, fill=0)
-            draw.text((_tx + 1 * s, _time_y), t_str, font=font9, fill=0)
+            draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
             right = _tx - TIME_PAD
 
         # Home logo
@@ -544,18 +545,18 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
                 draw = ImageDraw.Draw(Himage)
             else:
                 t = (h_abbr or '')[:3]
-                tw = int(font9.getlength(t))
+                tw = int(font14.getlength(t))
                 right -= tw
-                draw.text((right, _text_y), t, font=font9, fill=0)
+                draw.text((right, _text_y), t, font=font14, fill=0)
         else:
             t = (h_abbr or '')[:3]
-            tw = int(font9.getlength(t))
+            tw = int(font14.getlength(t))
             right -= tw
-            draw.text((right, _text_y), t, font=font9, fill=0)
+            draw.text((right, _text_y), t, font=font14, fill=0)
 
         # vs. separator
         right -= at_w + VS_PAD
-        draw.text((right, _vs_y), at_str, font=font11, fill=0)
+        draw.text((right, _vs_y), at_str, font=font14, fill=0)
         right -= VS_PAD
 
         # Away logo
@@ -568,12 +569,12 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
                 draw = ImageDraw.Draw(Himage)
             else:
                 t = (a_abbr or '')[:3]
-                right -= int(font9.getlength(t))
-                draw.text((right, _text_y), t, font=font9, fill=0)
+                right -= int(font14.getlength(t))
+                draw.text((right, _text_y), t, font=font14, fill=0)
         else:
             t = (a_abbr or '')[:3]
-            right -= int(font9.getlength(t))
-            draw.text((right, _text_y), t, font=font9, fill=0)
+            right -= int(font14.getlength(t))
+            draw.text((right, _text_y), t, font=font14, fill=0)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
@@ -1554,7 +1555,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _dh_state = game_data['detailed_state'] in (
         'Scheduled', 'Pre-Game', 'Warmup', 'Final', 'Game Over', 'Final: Tied')
     if _dh in ('Y', 'S') and _gnum and _dh_state:
-        _gn_str = f'Game {_gnum}'
+        _gn_str = f'GM{_gnum}'
         _gn_strip_y = start_y + vertical_len + 21 * s
         _gn_strip_h = 19 * s
         _gn_y = _gn_strip_y + (_gn_strip_h - 14 * s) // 2
@@ -1656,10 +1657,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _one_hour:
             _tmrw = _load_tomorrow_games()
             if _tmrw and _tmrw.get('games'):
+                # Compute how far left the "Game X" doubleheader label extends so the
+                # next-game preview starts to the right of it and doesn't overlap.
+                _dh_label_w = 0
+                if _dh in ('Y', 'S') and _gnum:
+                    _dh_label_w = int(font14.getlength(f'GM{_gnum}')) + 4 * s
                 _draw_next_game_preview(
                     draw, Himage, start_x, start_y, _tmrw['games'],
                     game_data.get('home_team_id'), game_data.get('away_team_id'),
-                    team_data, use_logos, horizonta_len, vertical_len, s
+                    team_data, use_logos, horizonta_len, vertical_len, s,
+                    left_offset=_dh_label_w,
                 )
 
     # vertical line

@@ -561,6 +561,17 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                     game_list.insert(0, game_list.pop(i))
                     break
 
+    # With 16+ games, a doubleheader, and a rainout, push postponed/cancelled games
+    # off the 5×3 grid (to position 16+) so the doubleheader pair stays visible
+    # instead. This applies even if the affected team is the featured team.
+    _RAINOUT_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
+    _has_dh = any(g.get('double_header', 'N') not in ('N', '', None) for g in game_list)
+    _ppd_games = [g for g in game_list if g.get('detailed_state', '') in _RAINOUT_STATES]
+    if len(game_list) >= 16 and _has_dh and _ppd_games:
+        for _ppd_g in _ppd_games:
+            game_list.remove(_ppd_g)
+            game_list.append(_ppd_g)
+
     # Build per-team stats lookup {str(team_id): {'streak': ..., 'l10_wins': ..., 'l10_losses': ...}}
     _standings = load_json_file('standings.json')
     streak_map = {}
