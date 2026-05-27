@@ -794,14 +794,24 @@ def parse_games(data, sport_id=None, config=None):
     save_off_results({'team_abbreviation': team_abbreviations}, 'teams')
 
 
-def fetch_tomorrow_games(config=None):
-    """Fetch tomorrow's schedule and save minimal data to data/tomorrow_games.json."""
+def fetch_tomorrow_games(config=None, for_date=None):
+    """Fetch the next-day schedule and save minimal data to data/tomorrow_games.json.
+
+    for_date: a date string 'YYYY-MM-DD' or datetime.date object.  When provided
+    (e.g. today's date during the morning window) that date is fetched instead of
+    the default tomorrow (today + 1).
+    """
     import time as _tm
     if config is None:
         config = load_config()
 
     from datetime import date as _date
-    tomorrow = (_date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+    if for_date is None:
+        tomorrow = (_date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+    elif isinstance(for_date, str):
+        tomorrow = for_date
+    else:
+        tomorrow = for_date.strftime('%Y-%m-%d')
 
     sport_id_priority = config.get('sport_id_priority', [1])
     sport_id = None

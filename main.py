@@ -537,15 +537,21 @@ Examples:
         config['_featured_abbr'] = config.get('primary', '')
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
-    # 6b. Fetch tomorrow's schedule for next-game preview (cached, refreshes hourly)
+    # 6b. Fetch next-day schedule for next-game preview (cached, refreshes hourly).
+    # In morning mode we are displaying yesterday's results, so "next games" are
+    # today's — fetch today's schedule instead of actual tomorrow.
     if not args.date:
         import time as _tm_mod
         _tmrw_cache = load_json_file('tomorrow_games.json') or {}
-        _tmrw_target = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
+        if _pre9am:
+            # Morning: next game after last night's results is today
+            _tmrw_target = _now.date().strftime('%Y-%m-%d')
+        else:
+            _tmrw_target = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
         _tmrw_age = _tm_mod.time() - _tmrw_cache.get('fetched_at', 0)
         if _tmrw_cache.get('date') != _tmrw_target or _tmrw_age > 3600:
             try:
-                fetch_tomorrow_games(config)
+                fetch_tomorrow_games(config, for_date=_tmrw_target)
             except Exception as _e:
                 print(f"Warning: fetch_tomorrow_games failed: {_e}")
 

@@ -392,12 +392,18 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
 
 
 def _load_tomorrow_games():
-    """Load tomorrow's schedule, fetching from the API if the cache is missing or stale."""
+    """Load the next-day schedule, fetching from the API if the cache is missing or stale.
+
+    During the morning window main.py stores today's games in tomorrow_games.json
+    (since 'next game' relative to last night's results is today).  Accept either
+    today's or tomorrow's date so the cache hit works in both cases.
+    """
     from datetime import date as _date, timedelta as _td
+    today    = _date.today().strftime('%Y-%m-%d')
     tomorrow = (_date.today() + _td(days=1)).strftime('%Y-%m-%d')
     try:
         data = load_json_file('tomorrow_games.json') or {}
-        if data.get('date') == tomorrow and data.get('games') is not None:
+        if data.get('date') in (today, tomorrow) and data.get('games') is not None:
             return data
         # Cache is missing, wrong date, or empty — fetch now
         from fetch_games import fetch_tomorrow_games
@@ -443,7 +449,10 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         try:
             _utc = pytz.utc.localize(_datetime.strptime(utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
             _local = _utc.astimezone(pytz.timezone(_tz_str))
-            return _local.strftime('%-I') + _local.strftime('%p').lower()[0]
+            _mins = _local.strftime('%M')
+            if _mins == '00':
+                return _local.strftime('%-I') + _local.strftime('%p').lower()[0]
+            return _local.strftime('%-I:') + _mins + _local.strftime('%p').lower()[0]
         except Exception:
             return ''
 
