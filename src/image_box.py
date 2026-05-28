@@ -392,16 +392,33 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
 
 
 def _load_tomorrow_games():
-    """Load tomorrow's schedule, fetching from the API if the cache is missing or stale."""
-    from datetime import date as _date, timedelta as _td
+    """Load the next-day schedule, fetching from the API if the cache is missing or stale.
+
+    In the morning window (before 9am local time) the 'next game' relative to
+    last night's results is today, so we accept today's date and fall back to
+    fetching today rather than actual tomorrow.
+    """
+    from datetime import date as _date, timedelta as _td, datetime as _dt
+    today    = _date.today().strftime('%Y-%m-%d')
     tomorrow = (_date.today() + _td(days=1)).strftime('%Y-%m-%d')
+
+    # Determine whether we're in the morning window (before 9am local)
+    try:
+        _cfg = load_yaml_file('config.yaml')
+        _tz_str = _cfg.get('timezone', 'America/Chicago')
+        _now_local = _dt.now(pytz.timezone(_tz_str))
+        _is_morning = _now_local.hour < 9
+    except Exception:
+        _is_morning = False
+    _target = today if _is_morning else tomorrow
+
     try:
         data = load_json_file('tomorrow_games.json') or {}
-        if data.get('date') == tomorrow and data.get('games') is not None:
+        if data.get('date') in (today, tomorrow) and data.get('games') is not None:
             return data
-        # Cache is missing, wrong date, or empty — fetch now
+        # Cache is missing, wrong date, or empty — fetch for the right target date
         from fetch_games import fetch_tomorrow_games
-        fetch_tomorrow_games()
+        fetch_tomorrow_games(for_date=_target)
         data = load_json_file('tomorrow_games.json') or {}
         return data if data.get('games') is not None else None
     except Exception as _e:
@@ -1683,8 +1700,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             except Exception:
                 pass
         if not _window_expired:
-            _fts = _get_or_set_final_time(game_data.get('game_pk'))
-            _window_expired = (_time.time() - _fts) >= _FINAL_LINESCORE_SECS
+            # game_date before today UTC → definitely a past-day game (morning window showing yesterday)
+            _gd_prefix = (game_data.get('game_date') or '')[:10]
+            if _gd_prefix and _gd_prefix < _datetime.now(pytz.utc).strftime('%Y-%m-%d'):
+                _window_expired = True
+            else:
+                _fts = _get_or_set_final_time(game_data.get('game_pk'))
+                _window_expired = (_time.time() - _fts) >= _FINAL_LINESCORE_SECS
         if _window_expired:
             _tmrw = _load_tomorrow_games()
             if _tmrw and _tmrw.get('games'):
@@ -1736,11 +1758,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _right_x = start_x + horizonta_len - 2 * s
             _left_x = start_x + 88 * s
             _max_name_w = _right_x - _left_x
-            # Next half-inning order: in-hole (top), on-deck (middle), leadoff (bottom)
+            # Next half-inning order: leadoff first (top), on-deck, in-hole (bottom)
             _batter_names = [
-                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
-                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
                 _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
             ]
             # If there's a pitching change announced between innings, use that pitcher name.
             _pc_raw = (game_data.get('sub_event') or '')[3:].strip() if _pitching_change else ''
