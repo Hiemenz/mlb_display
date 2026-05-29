@@ -428,13 +428,17 @@ def _load_tomorrow_games():
 
 
 def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_home_id, today_away_id,
-                             team_data, use_logos, horizonta_len, vertical_len, scale=1, left_offset=0):
+                             team_data, use_logos, horizonta_len, vertical_len, scale=1, left_offset=0,
+                             show_time=True):
     """Draw tomorrow's matchup in the win-prob strip.
 
     Away team's next game is left-aligned; home team's next game is right-aligned.
     If the same series continues, a single entry is shown left-aligned.
     left_offset: pixels to skip on the left edge (e.g. to clear a doubleheader "Game X" label).
     Text and time use font14 to match the game-end-time display.
+    show_time: when False, only logos/abbreviations are drawn — no game-time text.  Used during
+               the first hour after the strip appears so the preview doesn't overlap the
+               game-end-time text that may still be visible in the same strip.
     """
     s = scale
     BAR_Y = start_y + vertical_len + 21 * s
@@ -516,7 +520,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         cur_x = _place_logo(a_abbr, g['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
         _place_logo(h_abbr, g['home_team_id'], cur_x)
-        if t_str:
+        if t_str and show_time:
             t_w = int(font14.getlength(t_str))
             _tx = BAR_X + BAR_W - t_w - 1 * s
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
@@ -532,7 +536,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
         cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
-        if t_str:
+        if t_str and show_time:
             _tx = cur_x + TIME_PAD
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
@@ -554,8 +558,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         # Draw right-to-left so the entry is truly anchored to the cell's right edge.
         right = start_x + horizonta_len  # rightmost cell pixel
 
-        # Time (rightmost element)
-        if t_str:
+        # Time (rightmost element) — only drawn after the logos-only grace period expires
+        if t_str and show_time:
             _tx = right - t_w
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
@@ -1694,10 +1698,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Next game preview — shown in the win-prob strip for Final games after final_linescore_minutes expires
     if _game_is_final and not _historical_mode:
         _window_expired = False
+        _elapsed_since_end = None  # seconds since game ended (None = unknown)
         if _end_utc_str:
             try:
                 _end_utc = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
-                _window_expired = (_datetime.now(pytz.utc) - _end_utc).total_seconds() >= _FINAL_LINESCORE_SECS
+                _elapsed_since_end = (_datetime.now(pytz.utc) - _end_utc).total_seconds()
+                _window_expired = _elapsed_since_end >= _FINAL_LINESCORE_SECS
             except Exception:
                 pass
         if not _window_expired:
@@ -1705,18 +1711,28 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _gd_prefix = (game_data.get('game_date') or '')[:10]
             if _gd_prefix and _gd_prefix < _datetime.now(pytz.utc).strftime('%Y-%m-%d'):
                 _window_expired = True
+                # Past-day games are always old enough to show the time
+                _elapsed_since_end = _elapsed_since_end if _elapsed_since_end is not None else float('inf')
             else:
                 _fts = _get_or_set_final_time(game_data.get('game_pk'))
-                _window_expired = (_time.time() - _fts) >= _FINAL_LINESCORE_SECS
+                _elapsed_since_end = _time.time() - _fts
+                _window_expired = _elapsed_since_end >= _FINAL_LINESCORE_SECS
         if _window_expired:
             _tmrw = _load_tomorrow_games()
             if _tmrw and _tmrw.get('games'):
-                # GM label is now in the header, so the full strip width is available.
+                # For the first hour after the preview strip appears, show logos only — no game
+                # time.  This prevents the time from overlapping the game-end-time label that
+                # may still be present in the same strip.  After one additional hour the time
+                # is added.  If elapsed is unknown (None) we default to showing the time.
+                _show_next_time = (
+                    _elapsed_since_end is None or
+                    _elapsed_since_end >= _FINAL_LINESCORE_SECS + 3600
+                )
                 _draw_next_game_preview(
                     draw, Himage, start_x, start_y, _tmrw['games'],
                     game_data.get('home_team_id'), game_data.get('away_team_id'),
                     team_data, use_logos, horizonta_len, vertical_len, s,
-                    left_offset=0,
+                    left_offset=0, show_time=_show_next_time,
                 )
 
     # Next game preview — shown immediately for postponed games (game will not be played today)
