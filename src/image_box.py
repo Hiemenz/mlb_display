@@ -402,12 +402,13 @@ def _load_tomorrow_games():
     today    = _date.today().strftime('%Y-%m-%d')
     tomorrow = (_date.today() + _td(days=1)).strftime('%Y-%m-%d')
 
-    # Determine whether we're in the morning window (before 9am local)
+    # Determine whether we're in the morning window (before morning_end local)
     try:
         _cfg = load_yaml_file('config.yaml')
         _tz_str = _cfg.get('timezone', 'America/Chicago')
+        _morning_end = _cfg.get('morning_end', 9)
         _now_local = _dt.now(pytz.timezone(_tz_str))
-        _is_morning = _now_local.hour < 9
+        _is_morning = _now_local.hour < _morning_end
     except Exception:
         _is_morning = False
     _target = today if _is_morning else tomorrow

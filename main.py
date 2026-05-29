@@ -472,10 +472,12 @@ Examples:
     else:
         tz = config.get('timezone', 'America/Chicago')
         _now = datetime.now(pytz.timezone(tz))
-        if _now.hour >= 9:
+        _morning_end  = config.get('morning_end', 9)
+        _morning_start = config.get('night_end', 7)
+        if _now.hour >= _morning_end:
             date_str = _now.date().strftime('%Y-%m-%d')
             print(f"Using today's date: {date_str}")
-        elif _now.hour >= 7 and config.get('morning_alternate_games', True):
+        elif _now.hour >= _morning_start and config.get('morning_alternate_games', True):
             # 7am–9am: alternate between yesterday and today every 5 minutes
             _pre9am = True
             _morning_block = (_now.hour * 60 + _now.minute) // 5
