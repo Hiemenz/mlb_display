@@ -414,9 +414,9 @@ def _load_tomorrow_games():
 
     try:
         data = load_json_file('tomorrow_games.json') or {}
-        if data.get('date') in (today, tomorrow) and data.get('games') is not None:
+        if data.get('date') == _target and data.get('games') is not None:
             return data
-        # Cache is missing, wrong date, or empty — fetch for the right target date
+        # Cache is missing or has wrong date — fetch for the right target date
         from fetch_games import fetch_tomorrow_games
         fetch_tomorrow_games(for_date=_target)
         data = load_json_file('tomorrow_games.json') or {}
