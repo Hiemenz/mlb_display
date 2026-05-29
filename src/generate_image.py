@@ -15,13 +15,14 @@ from image_utils import (
     normalize_dict, standings_dict,
     draw_diamond, draw_circle, check_if_two_chars,
     _last_name, _pitcher_line, _clean_venue_name, _is_game_effectively_over,
+    _format_player_name,
 )
 from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
     draw_standings_sidebar_fullscreen,
 )
-from image_box import draw_box
+from image_box import draw_box, _abbr_play, _draw_linescore_grid
 
 # ---------------------------------------------------------------------------
 # logging.basicConfig(level=logging.DEBUG)
@@ -845,6 +846,396 @@ def _find_featured_game(game_state_data, team_data, primary_abbr):
     return primary_games[-1]
 
 
+def draw_live_fullscreen_game(game_data, team_data, config=None):
+    """Full 800×480 canvas for a live (In Progress) featured game.
+
+    Called from draw_featured_game_fullscreen when the featured game is
+    actively In Progress (any sub-state: active pitch, between innings, or
+    pitching change).  No standings sidebars — the game fills the entire
+    display.
+
+    Layout (top → bottom)
+    ---------------------
+    y=0..29    Header strip  : inning label | last play | matchup + date
+    y=30..47   R / H / E column labels
+    y=48..146  Away team row : logo  abbr  R  H  E
+    y=147..245 Home team row : logo  abbr  R  H  E
+    y=246      Divider line
+    y=247..479 Situation (233 px):
+        Active pitch    : bases diamond (left)  +  B/S/O circles (right)
+                          pitcher / batter info at bottom
+        Between innings : upcoming batters + pitcher (left)
+                          outs + per-inning linescore (right)
+    """
+    import re as _re_lf
+
+    if config is None:
+        config = load_yaml_file('config.yaml')
+
+    use_logos = config.get('use_team_logos', False)
+
+    # Normalise mid-game review/challenge states
+    if game_data.get('detailed_state') in ('Player challenge', 'Manager challenge'):
+        game_data = dict(game_data)
+        game_data['sub_event'] = (
+            'ABS CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
+        )
+        game_data['detailed_state'] = 'In Progress'
+
+    canvas = Image.new('1', (800, 480), 255)
+    draw   = ImageDraw.Draw(canvas)
+
+    # ── Fonts ─────────────────────────────────────────────────────────────────
+    f11 = _get_font(11)   # runner jersey numbers inside bases
+    f14 = _get_font(14)   # header detail, column labels, pitch info
+    f20 = _get_font(20)   # pitcher / batter lines
+    f28 = _get_font(28)   # between-innings batter / pitcher names
+    f36 = _get_font(36)   # errors column value
+    f42 = _get_font(42)   # team abbreviations + B/S/O labels (= draw_box scale×3 font14)
+    f48 = _get_font(48)   # hits column value
+    f72 = _get_font(72)   # runs column value  (= draw_box scale×3 font24)
+
+    # ── Team identifiers ──────────────────────────────────────────────────────
+    abbr_map  = team_data.get('team_abbreviation', {})
+    away_id   = str(game_data.get('away_team_id', ''))
+    home_id   = str(game_data.get('home_team_id', ''))
+    away_abbr = abbr_map.get(away_id, f'T{away_id}')
+    home_abbr = abbr_map.get(home_id, f'T{home_id}')
+
+    # ── Inning state ──────────────────────────────────────────────────────────
+    _inn_state   = game_data.get('inningState') or ''
+    _cur_inn     = game_data.get('current_inning') or 1
+    _inn_ord_raw = game_data.get('currentInningOrdinal') or str(_cur_inn)
+    _inn_ord     = _re_lf.sub(r'(?:st|nd|rd|th)$', '', _inn_ord_raw, flags=_re_lf.IGNORECASE)
+    _lbl_map     = {'Top': '▲', 'Bottom': '▼', 'Middle': 'Mid', 'End': 'End'}
+    _inn_lbl     = _lbl_map.get(_inn_state, (_inn_state[:3] if _inn_state else ''))
+    inning_str   = f'{_inn_lbl} {_inn_ord}'.strip()
+
+    _between_innings = _inn_state in ('Middle', 'End')
+    _pitching_change = (game_data.get('sub_event') or '').startswith('PC:')
+
+    # ── Layout constants ──────────────────────────────────────────────────────
+    HEADER_H   = 30
+    LABEL_H    = 18
+    TEAM_ROW_H = 99           # tall enough for 84 px logo + 7 px margin each side
+    AWAY_Y     = HEADER_H + LABEL_H          # y = 48
+    HOME_Y     = AWAY_Y + TEAM_ROW_H         # y = 147
+    DIV_Y      = HOME_Y + TEAM_ROW_H         # y = 246
+    SIT_Y      = DIV_Y + 1                   # y = 247
+
+    LOGO_SZ  = 84             # matches draw_box scale=3 logo size
+    LOGO_X   = 14
+    ABBR_X   = LOGO_X + LOGO_SZ + 6          # x = 104
+
+    R_CX = 310                # x-centre of Runs column
+    H_CX = 490                # x-centre of Hits column
+    E_CX = 655                # x-centre of Errors column
+
+    # Situation: bases diamond (left half of situation area)
+    # 2nd-base top  = DIAMOND_CY - BASE_DIST - BASE_SZ = 360-55-28 = 277 > SIT_Y ✓
+    # home-base bot = DIAMOND_CY + BASE_DIST + BASE_SZ = 360+55+28 = 443 < 480 ✓
+    DIAMOND_CX = 170
+    DIAMOND_CY = 360
+    BASE_DIST  = 55
+    BASE_SZ    = 28
+
+    # Situation: B/S/O circles — 20 % larger than the normal 3× scale view
+    # Normal 3× = r12 balls/strikes, r18 outs → +25 %/+17 % → r15/r21
+    BSO_Y = DIAMOND_CY        # same vertical centre as diamond
+    B_R   = 15
+    O_R   = 21
+    C_GAP = 6
+
+    INFO_Y = 402              # y-start for pitcher / batter text
+
+    # ── HEADER ────────────────────────────────────────────────────────────────
+    draw.text((10, 5), inning_str, font=f20, fill=0)
+    draw.text((11, 5), inning_str, font=f20, fill=0)   # pseudo-bold
+
+    _gd_str = (game_data.get('game_date') or '')[:10]
+    _date_lbl = ''
+    if _gd_str:
+        try:
+            _gd_dt = datetime.strptime(_gd_str, '%Y-%m-%d')
+            _date_lbl = _gd_dt.strftime('%b %-d')
+        except Exception:
+            _date_lbl = _gd_str
+    _hdr_right = f'{away_abbr} @ {home_abbr}' + (f'  ·  {_date_lbl}' if _date_lbl else '')
+    _hrw = int(f14.getlength(_hdr_right))
+    draw.text((800 - _hrw - 8, 8), _hdr_right, font=f14, fill=0)
+
+    # Last play / sub-event centred in header (active pitch only)
+    if not _between_innings:
+        _sub_ev_hdr = (game_data.get('sub_event') or '').strip()
+        _lp_hdr     = game_data.get('last_play') or ''
+        _play_raw   = _sub_ev_hdr or _lp_hdr
+        if _play_raw:
+            _pd = _abbr_play(_play_raw)
+            _rbi = int(game_data.get('last_play_rbi') or 0)
+            if _rbi > 0 and not _sub_ev_hdr:
+                if _pd == 'HR':
+                    if _rbi >= 2:
+                        _pd = f'{_rbi}R HR'
+                elif _rbi == 1:
+                    _pd = f'RBI {_pd}'
+                else:
+                    _pd = f'{_rbi}RBI {_pd}'
+            _inn_end_x  = 10 + int(f20.getlength(inning_str)) + 10
+            _hdr_x_end  = 800 - _hrw - 16
+            _pw         = int(f14.getlength(_pd))
+            _avail      = _hdr_x_end - _inn_end_x - 4
+            if _avail > 0 and _pw <= _avail:
+                _ppx = _inn_end_x + (_avail - _pw) // 2
+                draw.text((_ppx,     8), _pd, font=f14, fill=0)
+                draw.text((_ppx + 1, 8), _pd, font=f14, fill=0)
+
+    draw.line((0, HEADER_H - 1, 799, HEADER_H - 1), fill=0)
+
+    # ── R / H / E COLUMN LABELS ───────────────────────────────────────────────
+    for _lbl2, _cx2 in (('R', R_CX), ('H', H_CX), ('E', E_CX)):
+        _lw2 = int(f14.getlength(_lbl2))
+        draw.text((_cx2 - _lw2 // 2,     HEADER_H + 2), _lbl2, font=f14, fill=0)
+        draw.text((_cx2 - _lw2 // 2 + 1, HEADER_H + 2), _lbl2, font=f14, fill=0)
+
+    # ── SCORE DATA ────────────────────────────────────────────────────────────
+    away_runs = str(game_data.get('away_runs') or 0)
+    home_runs = str(game_data.get('home_runs') or 0)
+    away_hits = str(game_data.get('away_hits') or 0)
+    home_hits = str(game_data.get('home_hits') or 0)
+    away_errs = str(game_data.get('away_errors') or 0)
+    home_errs = str(game_data.get('home_errors') or 0)
+
+    _away_ahead = (game_data.get('away_runs') or 0) > (game_data.get('home_runs') or 0)
+    _home_ahead = (game_data.get('home_runs') or 0) > (game_data.get('away_runs') or 0)
+
+    def _draw_team_row(abbr, tid, row_y, runs, hits, errs, bold_score=False, batting=False):
+        nonlocal draw, canvas
+        # Batting indicator: filled dot at far-left edge
+        if batting:
+            _bi_r  = 7
+            _bi_cy = row_y + TEAM_ROW_H // 2
+            draw.ellipse([5 - _bi_r, _bi_cy - _bi_r,
+                          5 + _bi_r, _bi_cy + _bi_r], fill=0)
+        # Logo (84 px square, vertically centred in 99 px row)
+        if use_logos:
+            _lg = _logo_small(abbr, tid, size=LOGO_SZ)
+            if _lg:
+                _lw3, _lh3 = _lg.size
+                _paste_logo(canvas, _lg,
+                            (LOGO_X + (LOGO_SZ - _lw3) // 2,
+                             row_y  + (TEAM_ROW_H - _lh3) // 2))
+                draw = ImageDraw.Draw(canvas)
+        # Abbreviation (f42, vertically centred)
+        _abbr_y = row_y + (TEAM_ROW_H - 42) // 2
+        draw.text((ABBR_X,     _abbr_y), abbr, font=f42, fill=0)
+        draw.text((ABBR_X + 1, _abbr_y), abbr, font=f42, fill=0)
+        # Runs (f72, centred in R column)
+        _rw3 = int(f72.getlength(runs))
+        _rx  = R_CX - _rw3 // 2
+        _ry  = row_y + (TEAM_ROW_H - 72) // 2
+        draw.text((_rx,     _ry), runs, font=f72, fill=0)
+        if bold_score:
+            draw.text((_rx + 1, _ry), runs, font=f72, fill=0)
+        # Hits (f48, centred in H column)
+        _hw4 = int(f48.getlength(hits))
+        draw.text((H_CX - _hw4 // 2, row_y + (TEAM_ROW_H - 48) // 2), hits, font=f48, fill=0)
+        # Errors (f36, centred in E column)
+        _ew3 = int(f36.getlength(errs))
+        draw.text((E_CX - _ew3 // 2, row_y + (TEAM_ROW_H - 36) // 2), errs, font=f36, fill=0)
+
+    _draw_team_row(away_abbr, away_id, AWAY_Y, away_runs, away_hits, away_errs,
+                   bold_score=_away_ahead, batting=(_inn_state == 'Top'))
+    _draw_team_row(home_abbr, home_id,  HOME_Y, home_runs, home_hits, home_errs,
+                   bold_score=_home_ahead, batting=(_inn_state == 'Bottom'))
+
+    draw.line((0, DIV_Y, 799, DIV_Y), fill=0)
+
+    # ── SITUATION AREA ────────────────────────────────────────────────────────
+    if _between_innings or _pitching_change:
+        # ── Between innings / pitching change ─────────────────────────────────
+        _batter_names = [
+            _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+            _last_name(game_data.get('next_batter_2') or game_data.get('due_up')         or ''),
+            _last_name(game_data.get('next_batter_3') or game_data.get('in_hole')        or ''),
+        ]
+        _pc_raw = (game_data.get('sub_event') or '')[3:].strip() if _pitching_change else ''
+        _pit_nm = _pc_raw or _last_name(
+            game_data.get('next_pitcher') or game_data.get('current_pitcher') or ''
+        )
+
+        # Left side: next three batters + pitcher (f28)
+        _ny = SIT_Y + 12
+        for _nm in _batter_names:
+            if _nm:
+                draw.text((20, _ny), _nm, font=f28, fill=0)
+            _ny += 34
+        _sep_y = _ny + 6
+        draw.line((20, _sep_y, 290, _sep_y), fill=0)
+        if _pit_nm:
+            draw.text((20, _sep_y + 8), _pit_nm, font=f28, fill=0)
+
+        # Outs indicator (right side, above linescore)
+        _outs  = game_data.get('num_of_outs') or 0
+        _oc_cy = SIT_Y + 55          # ≈ y=302; circles span 281..323
+        _o_lbl_y = _oc_cy - O_R - 10
+        draw.text((392, _o_lbl_y), 'O', font=f28, fill=0)
+        draw.text((393, _o_lbl_y), 'O', font=f28, fill=0)
+        for i in range(3):
+            _ocx = 414 + i * (2 * O_R + C_GAP) + O_R
+            canvas = draw_circle(canvas, (_ocx, _oc_cy), O_R, i < _outs, outline_width=2)
+        draw = ImageDraw.Draw(canvas)
+
+        # Per-inning linescore (scale=2, right panel beginning at x=340)
+        # grid top = _ls_sy + 83*2; target grid top ≈ SIT_Y + 100 = 347
+        _ls_sy = SIT_Y + 100 - 83 * 2
+        draw, canvas = _draw_linescore_grid(
+            draw, canvas, 340, _ls_sy,
+            game_data, team_data, use_logos, scale=2,
+        )
+
+    else:
+        # ── Active pitch ──────────────────────────────────────────────────────
+
+        # Bases diamond (centred at DIAMOND_CX=170, DIAMOND_CY=360)
+        _hi_third  = isinstance(game_data.get('runner_on_third'),  str)
+        _hi_second = isinstance(game_data.get('runner_on_second'), str)
+        _hi_first  = isinstance(game_data.get('runner_on_first'),  str)
+
+        _b3 = (DIAMOND_CX - BASE_DIST, DIAMOND_CY)
+        _b2 = (DIAMOND_CX,             DIAMOND_CY - BASE_DIST)
+        _b1 = (DIAMOND_CX + BASE_DIST, DIAMOND_CY)
+
+        canvas = draw_diamond(canvas, _b3, BASE_SZ, _hi_third)
+        canvas = draw_diamond(canvas, _b2, BASE_SZ, _hi_second)
+        canvas = draw_diamond(canvas, _b1, BASE_SZ, _hi_first)
+        draw   = ImageDraw.Draw(canvas)
+
+        # Runner jersey numbers (white text inside filled base diamonds)
+        for _bfill, _bc, _bkey in (
+            (_hi_third,  _b3, 'runner_third_number'),
+            (_hi_second, _b2, 'runner_second_number'),
+            (_hi_first,  _b1, 'runner_first_number'),
+        ):
+            if _bfill:
+                _raw  = game_data.get(_bkey)
+                _bnum = str(_raw) if _raw is not None else ''
+                if _bnum:
+                    _bnw = int(f11.getlength(_bnum))
+                    draw.text((_bc[0] - _bnw // 2, _bc[1] - 7), _bnum, font=f11, fill=255)
+
+        # ── B / S / O circles ─────────────────────────────────────────────────
+        # Horizontal layout, vertically centred at BSO_Y=360, starting at x=295.
+        # B label(f42~28px) + gap8 + 4×(2×15+6) → right≈469
+        # S label + gap8 + 2×(2×15+6) → right≈585
+        # O label + gap8 + 3×(2×21+6) → right≈773  (fits within 800)
+        _bx = 295
+
+        # B label + 4 ball circles
+        draw.text((_bx, BSO_Y - 21), 'B', font=f42, fill=0)
+        draw.text((_bx + 1, BSO_Y - 21), 'B', font=f42, fill=0)
+        _bx += int(f42.getlength('B')) + 8
+        _balls = game_data.get('balls') or 0
+        for i in range(4):
+            _cx = _bx + B_R
+            canvas = draw_circle(canvas, (_cx, BSO_Y), B_R, i < _balls)
+            _bx += 2 * B_R + C_GAP
+        draw = ImageDraw.Draw(canvas)
+
+        # S label + 2 strike circles
+        _sx = _bx + 14
+        draw.text((_sx, BSO_Y - 21), 'S', font=f42, fill=0)
+        draw.text((_sx + 1, BSO_Y - 21), 'S', font=f42, fill=0)
+        _sx += int(f42.getlength('S')) + 8
+        _strikes = game_data.get('strikes') or 0
+        _scalls  = game_data.get('strike_calls', [])
+        for i in range(2):
+            _cx   = _sx + B_R
+            _call = _scalls[i] if i < len(_scalls) else None
+            if i < _strikes and _call in ('S', 'F'):
+                # Swinging / foul: ring outline with solid centre dot
+                canvas = draw_circle(canvas, (_cx, BSO_Y), B_R, False)
+                draw   = ImageDraw.Draw(canvas)
+                draw.ellipse([_cx - 5, BSO_Y - 5, _cx + 5, BSO_Y + 5],
+                             fill='black', outline='black')
+            else:
+                canvas = draw_circle(canvas, (_cx, BSO_Y), B_R, i < _strikes)
+                draw   = ImageDraw.Draw(canvas)
+            _sx += 2 * B_R + C_GAP
+
+        # O label + 3 out circles
+        _ox = _sx + 14
+        draw.text((_ox, BSO_Y - 21), 'O', font=f42, fill=0)
+        draw.text((_ox + 1, BSO_Y - 21), 'O', font=f42, fill=0)
+        _ox += int(f42.getlength('O')) + 8
+        _outs2 = game_data.get('num_of_outs') or 0
+        for i in range(3):
+            _cx = _ox + O_R
+            canvas = draw_circle(canvas, (_cx, BSO_Y), O_R, i < _outs2, outline_width=2)
+            _ox += 2 * O_R + C_GAP
+        draw = ImageDraw.Draw(canvas)
+
+        # Pitch info (count · speed · type) — just below circles
+        _lps = game_data.get('last_pitch_speed')
+        _pt  = game_data.get('last_pitch_type', '')
+        _pc  = game_data.get('pitch_count')
+        _pitch_parts = []
+        if _pc is not None:
+            _pitch_parts.append(f'{_pc}P')
+        if _lps:
+            _pitch_parts.append(f'{int(_lps)}mph')
+        if _pt:
+            _pitch_parts.append(_pt)
+        if _pitch_parts:
+            draw.text((295, BSO_Y + O_R + 8), '  '.join(_pitch_parts), font=f14, fill=0)
+
+        # Save situation indicator (above BSO row)
+        if game_data.get('save_situation'):
+            draw.text((295,     BSO_Y - O_R - 28), 'SV', font=f14, fill=0)
+            draw.text((295 + 1, BSO_Y - O_R - 28), 'SV', font=f14, fill=0)
+
+        # ── Pitcher / batter info ─────────────────────────────────────────────
+        _pitcher = _format_player_name(game_data.get('current_pitcher') or '')
+        if _pitcher:
+            draw.text((12, INFO_Y), f'P: {_pitcher}', font=f20, fill=0)
+
+        _bh      = game_data.get('batter_hits')
+        _ba      = game_data.get('batter_at_bats')
+        _ba_str2 = f'({_bh}-{_ba})' if _bh is not None and _ba is not None else ''
+        _ab_done = game_data.get('current_at_bat_complete', False)
+        if _ab_done and not _is_game_effectively_over(game_data):
+            _batter  = _format_player_name(
+                game_data.get('due_up') or game_data.get('next_batter_1') or ''
+            )
+            _bat_lbl = 'Next'
+        else:
+            _batter  = _format_player_name(game_data.get('current_hitter') or '')
+            _bat_lbl = 'AB'
+        if _batter:
+            _bat_str2 = f'{_bat_lbl}: {_batter}  {_ba_str2}'.strip()
+            draw.text((12, INFO_Y + 26), _bat_str2, font=f20, fill=0)
+
+        # Last play — right-aligned beside pitcher/batter lines
+        _sub_ev2 = (game_data.get('sub_event') or '').strip()
+        _lp_val  = game_data.get('last_play') or ''
+        _play_f  = _sub_ev2 or _lp_val
+        if _play_f:
+            _pd2  = _abbr_play(_play_f) if not _sub_ev2 else _play_f
+            _rbi2 = int(game_data.get('last_play_rbi') or 0)
+            if _rbi2 > 0 and not _sub_ev2:
+                if _pd2 == 'HR':
+                    if _rbi2 >= 2:
+                        _pd2 = f'{_rbi2}R HR'
+                elif _rbi2 == 1:
+                    _pd2 = f'RBI {_pd2}'
+                else:
+                    _pd2 = f'{_rbi2}RBI {_pd2}'
+            _pdw = int(f20.getlength(_pd2))
+            draw.text((799 - _pdw - 10, INFO_Y), _pd2, font=f20, fill=0)
+            draw.text((800 - _pdw - 10, INFO_Y), _pd2, font=f20, fill=0)
+
+    return canvas
+
+
 def draw_featured_game_fullscreen(game_data, team_data, config=None):
     """Enlarge a single scoreboard cell while preserving its 1:1 aspect ratio.
 
@@ -854,6 +1245,9 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     """
     if config is None:
         config = load_yaml_file('config.yaml')
+
+    _ds = game_data.get('detailed_state', '')
+    _is_live = _ds in ('In Progress', 'Player challenge', 'Manager challenge')
 
     use_logos   = config.get('use_team_logos', False)
     logo_offset = config.get('small_logo_x_offset', 2)
@@ -924,8 +1318,8 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     _right_sb_w = 800 - _right_sb_x  # 198
     _sb_logo_sz = 52
 
-    # Overlay wildcard header and standings sidebars (standings_data already loaded above)
-    if standings_data and 'standings' in standings_data:
+    # Overlay wildcard header and standings sidebars (skipped for live games)
+    if not _is_live and standings_data and 'standings' in standings_data:
         if config.get('show_wildcard_standings', False) and league_mode != 'aaa':
             wildcard_data = derive_wildcard_from_standings(standings_data)
             canvas = draw_wildcard_header(canvas, wildcard_data)
