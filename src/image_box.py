@@ -454,14 +454,23 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     _cfg = load_yaml_file('config.yaml')
     _tz_str = _cfg.get('timezone', 'America/Chicago')
 
-    def _game_time(game):
+    def _game_time(game, full=False):
+        """Return a localised start-time string for game.
+
+        full=False  →  '7p'     (hour + am/pm letter, no minutes)
+        full=True   →  '7:05p'  (hour:minute + am/pm letter)
+        """
         utc_str = game.get('game_start_utc', '')
         if not utc_str:
             return ''
         try:
             _utc = pytz.utc.localize(_datetime.strptime(utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
             _local = _utc.astimezone(pytz.timezone(_tz_str))
-            return _local.strftime('%-I') + _local.strftime('%p').lower()[0]
+            _ampm = _local.strftime('%p').lower()[0]
+            if full:
+                return _local.strftime('%-I:%M') + _ampm
+            else:
+                return _local.strftime('%-I') + _ampm
         except Exception:
             return ''
 
@@ -472,18 +481,25 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         return None
 
     VS_PAD = 1 * s   # pixels on each side of the vs. text
-    TIME_PAD = 2 * s # gap before the time string
+    TIME_PAD = 2 * s # gap between matchup and time string
+
+    def _logo_w(abbr, team_id):
+        """Return the pixel width of the logo or abbreviation text for sizing."""
+        if use_logos and team_id:
+            lg = _logo_small(str(abbr), str(team_id), size=LOGO_SZ)
+            if lg:
+                return lg.size[0]
+        return int(font14.getlength((str(abbr) or '')[:3]))
 
     def _place_logo(abbr, team_id, x):
         nonlocal draw
         if use_logos and team_id:
             lg = _logo_small(str(abbr), str(team_id), size=LOGO_SZ)
             if lg:
-                # Center vertically by actual rendered height, not LOGO_SZ
                 actual_y = BAR_Y + (BAR_H - lg.size[1]) // 2
                 _paste_logo(Himage, lg, (x, actual_y))
                 draw = ImageDraw.Draw(Himage)
-                return x + lg.size[0]  # advance by actual width
+                return x + lg.size[0]
         t = (str(abbr) or '')[:3]
         draw.text((x, _text_y), t, font=font14, fill=0)
         return x + int(font14.getlength(t))
@@ -491,7 +507,6 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     def _draw_vs(x):
         draw.text((x + VS_PAD, _vs_y), at_str, font=font14, fill=0)
         return x + VS_PAD + at_w + VS_PAD
-
 
     away_game = _find_game(today_away_id)
     home_game = _find_game(today_home_id)
@@ -506,12 +521,17 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         away_game.get('home_team_id') == today_home_id
     )
 
+    # Use full "H:MMp" time when only one matchup fills the whole strip (room to breathe).
+    # When two different games must share the strip, fall back to abbreviated "Hp".
+    _two_games = (not same_series) and away_game and home_game
+    _use_full_time = not _two_games
+
     if same_series:
-        # Series continues — single entry left-aligned, time right-aligned
+        # Series continues — teams left-aligned, start time right-aligned, full format
         g = away_game
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
-        t_str = _game_time(g)
+        t_str = _game_time(g, full=True)
         cur_x = BAR_X + 1 * s + left_offset
         cur_x = _place_logo(a_abbr, g['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
@@ -523,12 +543,71 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
         return
 
-    # New series — away team's game LEFT, home team's game RIGHT
+    # New series — only draw the entry for each team that actually has a game.
+    # If only one team has a game, it gets the full strip width → use full time.
+    # If both teams have different games, each gets half the strip → use abbreviated time.
+
+    if away_game and not home_game:
+        # Only the away team plays tomorrow — left-aligned, full time right-aligned
+        a_abbr = abbr_map.get(str(away_game['away_team_id']), '')
+        h_abbr = abbr_map.get(str(away_game['home_team_id']), '')
+        t_str = _game_time(away_game, full=True)
+        cur_x = BAR_X + left_offset
+        cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
+        cur_x = _draw_vs(cur_x)
+        _place_logo(h_abbr, away_game['home_team_id'], cur_x)
+        if t_str:
+            t_w = int(font14.getlength(t_str))
+            _tx = BAR_X + BAR_W - t_w - 1 * s
+            draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
+        return
+
+    if home_game and not away_game:
+        # Only the home team plays tomorrow — right-aligned, full time right-anchored
+        a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
+        h_abbr = abbr_map.get(str(home_game['home_team_id']), '')
+        t_str = _game_time(home_game, full=True)
+
+        _h_lg = (_logo_small(str(h_abbr), str(home_game['home_team_id']), size=LOGO_SZ)
+                 if use_logos and home_game.get('home_team_id') else None)
+        _a_lg = (_logo_small(str(a_abbr), str(home_game['away_team_id']), size=LOGO_SZ)
+                 if use_logos and home_game.get('away_team_id') else None)
+        h_w = _h_lg.size[0] if _h_lg else int(font14.getlength((h_abbr or '')[:3]))
+        a_w = _a_lg.size[0] if _a_lg else int(font14.getlength((a_abbr or '')[:3]))
+        t_w = int(font14.getlength(t_str)) if t_str else 0
+
+        right = start_x + horizonta_len
+        if t_str:
+            _tx = right - t_w
+            draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
+            draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
+            right = _tx - TIME_PAD
+        if _h_lg:
+            right -= _h_lg.size[0]
+            _paste_logo(Himage, _h_lg, (right, BAR_Y + (BAR_H - _h_lg.size[1]) // 2))
+            draw = ImageDraw.Draw(Himage)
+        else:
+            right -= h_w
+            draw.text((right, _text_y), (h_abbr or '')[:3], font=font14, fill=0)
+        right -= at_w + VS_PAD
+        draw.text((right, _vs_y), at_str, font=font14, fill=0)
+        right -= VS_PAD
+        if _a_lg:
+            right -= _a_lg.size[0]
+            _paste_logo(Himage, _a_lg, (right, BAR_Y + (BAR_H - _a_lg.size[1]) // 2))
+            draw = ImageDraw.Draw(Himage)
+        else:
+            right -= a_w
+            draw.text((right, _text_y), (a_abbr or '')[:3], font=font14, fill=0)
+        return
+
+    # Both teams have different games — abbreviated time, away LEFT / home RIGHT
     if away_game:
         a_abbr = abbr_map.get(str(away_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(away_game['home_team_id']), '')
-        t_str = _game_time(away_game)
-        cur_x = BAR_X - 1 * s + left_offset  # start after any doubleheader label
+        t_str = _game_time(away_game, full=False)
+        cur_x = BAR_X - 1 * s + left_offset
         cur_x = _place_logo(a_abbr, away_game['away_team_id'], cur_x)
         cur_x = _draw_vs(cur_x)
         cur_x = _place_logo(h_abbr, away_game['home_team_id'], cur_x)
@@ -540,9 +619,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     if home_game:
         a_abbr = abbr_map.get(str(home_game['away_team_id']), '')
         h_abbr = abbr_map.get(str(home_game['home_team_id']), '')
-        t_str = _game_time(home_game)
+        t_str = _game_time(home_game, full=False)
 
-        # Pre-load logos to get their actual pixel widths.
         _h_lg = (_logo_small(str(h_abbr), str(home_game['home_team_id']), size=LOGO_SZ)
                  if use_logos and home_game.get('home_team_id') else None)
         _a_lg = (_logo_small(str(a_abbr), str(home_game['away_team_id']), size=LOGO_SZ)
@@ -551,42 +629,31 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         a_w = _a_lg.size[0] if _a_lg else int(font14.getlength((a_abbr or '')[:3]))
         t_w = int(font14.getlength(t_str)) if t_str else 0
 
-        # Draw right-to-left so the entry is truly anchored to the cell's right edge.
-        right = start_x + horizonta_len  # rightmost cell pixel
-
-        # Time (rightmost element)
+        right = start_x + horizonta_len
         if t_str:
             _tx = right - t_w
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
             right = _tx - TIME_PAD
-
-        # Home logo (already loaded above)
         if _h_lg:
             actual_y = BAR_Y + (BAR_H - _h_lg.size[1]) // 2
             right -= _h_lg.size[0]
             _paste_logo(Himage, _h_lg, (right, actual_y))
             draw = ImageDraw.Draw(Himage)
         else:
-            t = (h_abbr or '')[:3]
             right -= h_w
-            draw.text((right, _text_y), t, font=font14, fill=0)
-
-        # vs. separator
+            draw.text((right, _text_y), (h_abbr or '')[:3], font=font14, fill=0)
         right -= at_w + VS_PAD
         draw.text((right, _vs_y), at_str, font=font14, fill=0)
         right -= VS_PAD
-
-        # Away logo (already loaded above)
         if _a_lg:
             actual_y = BAR_Y + (BAR_H - _a_lg.size[1]) // 2
             right -= _a_lg.size[0]
             _paste_logo(Himage, _a_lg, (right, actual_y))
             draw = ImageDraw.Draw(Himage)
         else:
-            t = (a_abbr or '')[:3]
             right -= a_w
-            draw.text((right, _text_y), t, font=font14, fill=0)
+            draw.text((right, _text_y), (a_abbr or '')[:3], font=font14, fill=0)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
