@@ -526,15 +526,26 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     _two_games = (not same_series) and away_game and home_game
     _use_full_time = not _two_games
 
+    strip_right = BAR_X + BAR_W - 1 * s   # rightmost pixel the strip may use
+
+    def _fit_time(t_full, t_abbr, cx, right_limit):
+        """Return the best time string that fits to the right of cx, or '' if none fits."""
+        for t in (t_full, t_abbr):
+            if t and cx + TIME_PAD + int(font14.getlength(t)) <= right_limit:
+                return t
+        return ''
+
     def _draw_single(g, full=True):
-        """Left-to-right: away logo  @  home logo  TIME (immediately after)."""
+        """Left-to-right: away logo  @  home logo  TIME (immediately after, if it fits)."""
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
-        t_str  = _game_time(g, full=full)
         cx = BAR_X + 1 * s + left_offset
         cx = _place_logo(a_abbr, g['away_team_id'], cx)
         cx = _draw_vs(cx)
         cx = _place_logo(h_abbr, g['home_team_id'], cx)
+        t_full  = _game_time(g, full=True)
+        t_abbr  = _game_time(g, full=False)
+        t_str   = _fit_time(t_full, t_abbr, cx, strip_right)
         if t_str:
             _tx = cx + TIME_PAD
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
@@ -545,8 +556,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         return
 
     # New series — only draw the entry for each team that actually has a game.
-    # Single-team entries use full "H:MMp" time immediately after the matchup.
-    # Two different games share the strip → abbreviated time, away LEFT / home RIGHT.
+    # Single-team entries use full "H:MMp" time if it fits, abbreviated otherwise.
+    # Two different games share the strip → abbreviated preferred; each half checked independently.
 
     if away_game and not home_game:
         _draw_single(away_game, full=True)
@@ -556,25 +567,29 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         _draw_single(home_game, full=True)
         return
 
-    # Both teams have different games — abbreviated time, time immediately after each matchup.
-    # Away team's game starts at the left edge; home team's game starts at the strip midpoint.
-    def _draw_half(g, start_cx):
+    # Both teams have different games.
+    # Away entry starts at left edge, may use up to the strip midpoint.
+    # Home entry starts at the strip midpoint, may use up to strip_right.
+    mid = BAR_X + BAR_W // 2
+
+    def _draw_half(g, start_cx, right_limit):
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
-        t_str  = _game_time(g, full=False)
         cx = start_cx
         cx = _place_logo(a_abbr, g['away_team_id'], cx)
         cx = _draw_vs(cx)
         cx = _place_logo(h_abbr, g['home_team_id'], cx)
+        t_abbr = _game_time(g, full=False)
+        t_str  = _fit_time('', t_abbr, cx, right_limit)   # abbreviated only for split strip
         if t_str:
             _tx = cx + TIME_PAD
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
 
     if away_game:
-        _draw_half(away_game, BAR_X + left_offset)
+        _draw_half(away_game, BAR_X + left_offset, mid - 2 * s)
     if home_game:
-        _draw_half(home_game, BAR_X + BAR_W // 2)
+        _draw_half(home_game, mid, strip_right)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
