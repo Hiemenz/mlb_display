@@ -24,15 +24,15 @@ def normalize_dict(d):
     return d
 
 
-def draw_diamond(Himage, center, size, fill=False):
+def draw_diamond(Himage, center, size, fill=False, outline_width=1):
     draw = ImageDraw.Draw(Himage)
     x, y = center
     diamond = [(x, y - size), (x + size, y), (x, y + size), (x - size, y)]
 
     if fill:
-        draw.polygon(diamond, fill='black', outline='black')
+        draw.polygon(diamond, fill='black', outline='black', width=outline_width)
     else:
-        draw.polygon(diamond, outline='black')
+        draw.polygon(diamond, outline='black', width=outline_width)
     return Himage
 
 

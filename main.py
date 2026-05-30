@@ -539,15 +539,21 @@ Examples:
         config['_featured_abbr'] = config.get('primary', '')
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
-    # 6b. Fetch tomorrow's schedule for next-game preview (cached, refreshes hourly)
+    # 6b. Fetch the "next-day" schedule for next-game preview strips (cached, refreshes hourly).
+    # In morning mode (showing yesterday's games) the "next" day relative to last night is
+    # today, so we fetch today instead of actual tomorrow — keeping image_box._load_tomorrow_games
+    # in sync and avoiding a silent cache-miss every render.
     if not args.date:
         import time as _tm_mod
         _tmrw_cache = load_json_file('tomorrow_games.json') or {}
-        _tmrw_target = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
+        _today_str  = datetime.now().date().strftime('%Y-%m-%d')
+        _tmrw_str   = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
+        _tmrw_target = _today_str if _pre9am else _tmrw_str
+        _for_date_arg = _today_str if _pre9am else None   # None → fetch_tomorrow_games uses tomorrow
         _tmrw_age = _tm_mod.time() - _tmrw_cache.get('fetched_at', 0)
         if _tmrw_cache.get('date') != _tmrw_target or _tmrw_age > 3600:
             try:
-                fetch_tomorrow_games(config)
+                fetch_tomorrow_games(config, for_date=_for_date_arg)
             except Exception as _e:
                 print(f"Warning: fetch_tomorrow_games failed: {_e}")
 
