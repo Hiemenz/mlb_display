@@ -284,16 +284,17 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
     rect_gap = 2 * s  # gap between consecutive rectangles
 
     if use_logos:
-        # x: immediately right of logo + abbr (original position)
-        rect_x0 = start_x + logo_x_offset + _LOGO_SIZE + 2 * s + 3 * s
-        # ABS y: vertically centred in each team row
+        # x: same left edge as the team abbreviation text (logo_x_offset + logo + 2px gap)
+        rect_x0 = start_x + logo_x_offset + _LOGO_SIZE + 2 * s
+        # ABS y: just above the abbreviation text (abbr starts at row_base+7*s; rect top at row_base+5*s)
         away_abs_y    = start_y + 30 * s
         home_abs_y    = start_y + 60 * s
         # Replay y: below the abbr text
         away_replay_y = start_y + (25 + 7 + 14 + 4) * s   # = start_y + 50*s
         home_replay_y = start_y + (55 + 7 + 14 + 4) * s   # = start_y + 80*s
     else:
-        rect_x0 = start_x + (5 + 3) * s
+        # x: same as the text-only team name (font24 at start_x + 5)
+        rect_x0 = start_x + 5 * s
         away_abs_y    = start_y + 30 * s
         home_abs_y    = start_y + 60 * s
         away_replay_y = start_y + (25 + 23 + 4) * s        # = start_y + 52*s
