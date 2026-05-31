@@ -475,7 +475,11 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             _batter_full = (game_data.get('due_up') or game_data.get('next_batter_1') or '').strip()
             _od_full     = (game_data.get('in_hole') or '').strip()
         else:
-            _batter_full = (game_data.get('current_hitter') or '').strip()
+            # Prefer current_play_batter (currentPlay.matchup) over current_hitter
+            # (linescore) — they update atomically, eliminating the lag-driven flip-flop.
+            _batter_full = (
+                game_data.get('current_play_batter') or game_data.get('current_hitter') or ''
+            ).strip()
             _od_full     = (game_data.get('due_up') or '').strip()
         # Safety: on-deck must never be the same person as at-bat
         if _od_full == _batter_full:

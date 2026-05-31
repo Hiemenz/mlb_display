@@ -347,8 +347,14 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                 last_type = _PITCH_TYPE_ABBR.get(raw_code, raw_code)
                 last_speed = pd.get('startSpeed')
 
+        _current_play = plays.get('currentPlay', {})
         current_at_bat_complete = bool(
-            plays.get('currentPlay', {}).get('result', {}).get('event')
+            _current_play.get('result', {}).get('event')
+        )
+        # Batter name from currentPlay.matchup — updates atomically with current_at_bat_complete,
+        # so it never lags behind the linescore like linescore.offense.batter can.
+        current_play_batter = (
+            _current_play.get('matchup', {}).get('batter', {}).get('fullName') or None
         )
 
         # ABS max grows by 1 per extra inning (10th = 3 total, 11th = 4, ...)
@@ -402,6 +408,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'strike_calls': strike_calls,
             'at_bat_pitch_count': at_bat_pitch_count,
             'current_at_bat_complete': current_at_bat_complete,
+            'current_play_batter': current_play_batter,
             'sub_event': sub_event,
             'abs_challenge_max': abs_max,
             'away_challenges_remaining': away_remaining,

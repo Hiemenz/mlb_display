@@ -943,7 +943,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _next_str, _next_font = fit_text(f'AB: {_next_hitter}', max(1, max_text_width - _ba_w))
                     draw.text((start_x + 2 * s, start_y + 25 * s + 89 * s), _next_str, font=_next_font, fill=0)
             else:
-                _hitter_name = _format_player_name(game_data.get('current_hitter') or '')
+                # Prefer current_play_batter (from currentPlay.matchup) over current_hitter
+                # (from linescore.offense.batter) — both fields update when the at-bat changes,
+                # but linescore can lag by one poll cycle, causing the AB label to briefly flip
+                # back to the previous batter.
+                _hitter_name = _format_player_name(
+                    game_data.get('current_play_batter') or game_data.get('current_hitter') or ''
+                )
                 hitter_str, hitter_font = fit_text(
                     f'AB: {_hitter_name}',
                     max(1, max_text_width - _ba_w),
