@@ -22,7 +22,7 @@ from image_standings import (
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
     draw_standings_sidebar_fullscreen,
 )
-from image_box import draw_box, _abbr_play, _draw_linescore_grid
+from image_box import draw_box, _abbr_play, _draw_linescore_grid, _draw_backwards_k
 
 # ---------------------------------------------------------------------------
 # logging.basicConfig(level=logging.DEBUG)
@@ -977,7 +977,8 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
                 _pd = f'{_rbi}RBI {_pd}'
         return _pd
 
-    _last_ev = _build_last_event()
+    _last_ev    = _build_last_event()
+    _run_scored = int(game_data.get('last_play_rbi') or 0) > 0
 
     # ---- HEADER (69px — full-width thick line below) ------------------------
     # Inning: f56 fits in 69px header. Triangle 80% of numeral height.
@@ -1020,10 +1021,27 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     _hdr_x = 800 - _hrw - 8
     if _hdr_x > _inn_min_right:
         _hry = max(4, (HEADER_H - _hdr_right_font.size) // 2)
-        draw.text((_hdr_x,     _hry), _hdr_right_txt, font=_hdr_right_font, fill=0)
-        draw.text((_hdr_x + 1, _hry), _hdr_right_txt, font=_hdr_right_font, fill=0)
+        if 'Kl' not in _hdr_right_txt:
+            draw.text((_hdr_x,     _hry), _hdr_right_txt, font=_hdr_right_font, fill=0)
+            draw.text((_hdr_x + 1, _hry), _hdr_right_txt, font=_hdr_right_font, fill=0)
+        else:
+            _parts = _hdr_right_txt.split('Kl')
+            for _ox in (_hdr_x, _hdr_x + 1):
+                _cx = _ox
+                for _i, _seg in enumerate(_parts):
+                    if _seg:
+                        draw.text((_cx, _hry), _seg, font=_hdr_right_font, fill=0)
+                        _cx += int(_hdr_right_font.getlength(_seg))
+                    if _i < len(_parts) - 1:
+                        _draw_backwards_k(canvas, _cx, _hry, _hdr_right_font)
+                        _cx += int(_hdr_right_font.getlength('K'))
 
     draw.line((0, HEADER_H - 1, 799, HEADER_H - 1), fill=0, width=5)
+
+    if _run_scored:
+        _hdr_crop = canvas.crop((0, 0, 800, HEADER_H))
+        canvas.paste(ImageOps.invert(_hdr_crop.convert('L')).convert('1'), (0, 0))
+        draw = ImageDraw.Draw(canvas)
 
     # ---- SCORE DATA ---------------------------------------------------------
     away_runs = str(game_data.get('away_runs') or 0)
