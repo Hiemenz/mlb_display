@@ -209,10 +209,9 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     for k in range(N_COLS):
         inn_label = str(first_inn + k)
         cell_x = start_x + LOGO_COL_W + k * COL_W
-        bbox = font9.getbbox(inn_label)
-        vis_w = bbox[2] - bbox[0]
-        tx = cell_x + (COL_W - vis_w) // 2 - bbox[0] + 1
-        draw.text((tx, y0 + (ROW_H_HDR - 9 * s) // 2), inn_label, font=font9, fill=0)
+        cx = cell_x + COL_W // 2
+        cy = y0 + ROW_H_HDR // 2
+        draw.text((cx, cy), inn_label, font=font9, fill=0, anchor='mm')
 
     # --- logos / abbr in team rows ---
     away_id  = str(game_data.get('away_team_id', ''))
@@ -265,10 +264,9 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
             if 0 <= col_k < N_COLS:
                 cell_x = start_x + LOGO_COL_W + col_k * COL_W
                 _xfont = font11
-                bbox = _xfont.getbbox('X')
-                vis_w = bbox[2] - bbox[0]
-                tx = cell_x + (COL_W - vis_w) // 2 - bbox[0] + 1
-                draw.text((tx, y2 + (ROW_H_TEAM - 11 * s) // 2), 'X', font=_xfont, fill=0)
+                cx = cell_x + COL_W // 2
+                cy = y2 + ROW_H_TEAM // 2
+                draw.text((cx, cy), 'X', font=_xfont, fill=0, anchor='mm')
 
     return draw, Himage
 
