@@ -297,16 +297,15 @@ NEW_FUNC = r'''def draw_live_fullscreen_game(game_data, team_data, config=None):
         _strikes = game_data.get('strikes') or 0
         _scalls  = game_data.get('strike_calls', [])
         for i in range(2):
-            _cx   = _sx + B_R
-            _call = _scalls[i] if i < len(_scalls) else None
-            if i < _strikes and _call in ('S', 'F'):
-                canvas = draw_circle(canvas, (_cx, _bso_cy), B_R, False)
-                draw   = ImageDraw.Draw(canvas)
-                draw.ellipse([_cx - 5, _bso_cy - 5, _cx + 5, _bso_cy + 5],
-                             fill='black', outline='black')
-            else:
-                canvas = draw_circle(canvas, (_cx, _bso_cy), B_R, i < _strikes)
-                draw   = ImageDraw.Draw(canvas)
+            _cx    = _sx + B_R
+            _call  = _scalls[i] if i < len(_scalls) else None
+            _swing = i < _strikes and _call in ('S', 'F')
+            canvas = draw_circle(canvas, (_cx, _bso_cy), B_R, i < _strikes and not _swing)
+            draw   = ImageDraw.Draw(canvas)
+            if _swing:
+                _ir = int(B_R * 0.8)
+                draw.ellipse([_cx - _ir, _bso_cy - _ir, _cx + _ir, _bso_cy + _ir],
+                             fill=0, outline=0)
             _sx += 2 * B_R + C_GAP
 
         # Outs
