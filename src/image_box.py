@@ -1883,10 +1883,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             ]):
                 _call = _strike_calls[_si] if _si < len(_strike_calls) else None
                 if strikes_list[_si] and _call in ('S', 'F'):
-                    # Swinging or foul: outline ring with filled center dot
+                    # Swinging or foul: outline ring with ~80%-filled center
+                    _ir = 4 * s - 2
                     Himage = draw_circle(Himage, (_scx, _scy), 4 * s, False)
                     draw = ImageDraw.Draw(Himage)
-                    draw.ellipse([_scx - 2 * s, _scy - 2 * s, _scx + 2 * s, _scy + 2 * s], fill='black', outline='black')
+                    draw.ellipse([_scx - _ir, _scy - _ir, _scx + _ir, _scy + _ir], fill='black', outline='black')
                 else:
                     # Looking / empty: solid filled circle
                     Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
