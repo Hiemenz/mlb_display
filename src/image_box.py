@@ -237,7 +237,8 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
             # Center of ink relative to the draw anchor (ox, oy)
             ink_cx = (min(ink_xs) + max(ink_xs)) / 2 - ox
             ink_cy = (min(ink_ys) + max(ink_ys)) / 2 - oy
-            draw.text((round(cx - ink_cx) + 1, round(cy - ink_cy) + 1), txt, font=fnt, fill=0)
+            x_nudge = 0 if txt == '1' else 1   # '1' sits 1px left of the general +1 nudge
+            draw.text((round(cx - ink_cx) + x_nudge, round(cy - ink_cy) + 1), txt, font=fnt, fill=0)
         except Exception:
             draw.text((cx, cy), txt, font=fnt, fill=0, anchor='mm')
 
