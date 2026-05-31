@@ -175,11 +175,11 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     Extra-innings: window shifts so the current inning is the rightmost column.
     """
     s = scale
-    LOGO_COL_W = 16 * s
+    LOGO_COL_W = 27 * s   # wider logo col: 27 + 9×12 = 135 = full box width
     ROW_H_HDR  = 14 * s
     ROW_H_TEAM = 16 * s
     N_COLS     = 9
-    COL_W      = 13 * s   # 16 + 9×13 = 133 ≤ 135
+    COL_W      = 12 * s   # even col width → interior 11px (odd) → exact center at col_x+6
 
     y0 = start_y + 83 * s            # grid top — bottom half of box (scores/logos/bases stay above)
     y1 = y0 + ROW_H_HDR          # = start_y + 97  (away row top)
@@ -244,7 +244,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
                 val = str(inn_runs[idx])
                 cell_x = start_x + LOGO_COL_W + k * COL_W
                 # Use font9 for double-digit values that won't fit in font11
-                fnt = font11 if int(font11.getlength(val)) <= COL_W - 2 else font9
+                fnt = font11 if int(font11.getlength(val)) <= COL_W - 1 else font9
                 cx = cell_x + COL_W // 2
                 cy = row_y + ROW_H_TEAM // 2
                 draw.text((cx, cy), val, font=fnt, fill=0, anchor='mm')
@@ -275,31 +275,41 @@ _ABS_CHALLENGE_MAX = 2
 
 
 def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, logo_x_offset=2, scale=1):
-    """ABS dots at original position beside the team row; replay dot below the abbreviation."""
+    """ABS challenge indicators beside each team row — wide flat rectangles, filled=remaining."""
     s = scale
     _LOGO_SIZE = 28 * s
-    r = 3 * s
-    dot_spacing = 8 * s
+    # Rectangle dimensions: wide and flat (landscape), matching featured-view style
+    rect_w = 12 * s
+    rect_h =  4 * s
+    rect_gap = 2 * s  # gap between consecutive rectangles
 
     if use_logos:
         # x: immediately right of logo + abbr (original position)
-        dot_x = start_x + logo_x_offset + _LOGO_SIZE + 2 * s + 3 * s
-        # ABS y: original positions, vertically centred in each team row
+        rect_x0 = start_x + logo_x_offset + _LOGO_SIZE + 2 * s + 3 * s
+        # ABS y: vertically centred in each team row
         away_abs_y    = start_y + 30 * s
         home_abs_y    = start_y + 60 * s
-        # Replay y: below the abbr text (abbr at row_base+7*s, font14 14*s px tall → bottom at row_base+21*s)
-        # Add a small gap so it doesn't touch the text
+        # Replay y: below the abbr text
         away_replay_y = start_y + (25 + 7 + 14 + 4) * s   # = start_y + 50*s
         home_replay_y = start_y + (55 + 7 + 14 + 4) * s   # = start_y + 80*s
     else:
-        dot_x = start_x + (5 + 3) * s
+        rect_x0 = start_x + (5 + 3) * s
         away_abs_y    = start_y + 30 * s
         home_abs_y    = start_y + 60 * s
-        # font24 glyph height ~17px, top offset ~6px → bottom at row_base + 23
         away_replay_y = start_y + (25 + 23 + 4) * s        # = start_y + 52*s
         home_replay_y = start_y + (55 + 23 + 4) * s        # = start_y + 82*s
 
     abs_max = game_data.get('abs_challenge_max') or _ABS_CHALLENGE_MAX
+
+    def _draw_rect(rx, ry_center, filled):
+        """Draw one wide rectangle centered vertically on ry_center."""
+        ry0 = ry_center - rect_h // 2
+        ry1 = ry0 + rect_h
+        box = (rx, ry0, rx + rect_w, ry1)
+        if filled:
+            draw.rectangle(box, fill=0)
+        else:
+            draw.rectangle(box, fill=255, outline=0, width=max(1, s))
 
     for side, abs_y, replay_y in (
         ('away', away_abs_y, away_replay_y),
@@ -308,25 +318,17 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
         abs_remaining = game_data.get(f'{side}_challenges_remaining')
         replay_remaining = game_data.get(f'{side}_replay_remaining')
 
-        # ABS dots (original position, max grows +1 per extra inning)
+        # ABS rectangles — one per challenge slot, max grows +1 per extra inning
         if abs_remaining is not None:
             abs_remaining = max(0, min(abs_max, int(abs_remaining)))
             for i in range(abs_max):
-                cx = dot_x + i * dot_spacing
-                box = (cx - r, abs_y - r, cx + r, abs_y + r)
-                if i < abs_remaining:
-                    draw.ellipse(box, fill=0, outline=0)
-                else:
-                    draw.ellipse(box, fill=255, outline=0)
+                rx = rect_x0 + i * (rect_w + rect_gap)
+                _draw_rect(rx, abs_y, i < abs_remaining)
 
-        # Replay dot below the abbreviation (max 1)
+        # Replay rectangle — max 1
         if replay_remaining is not None:
             replay_remaining = max(0, min(1, int(replay_remaining)))
-            box = (dot_x - r, replay_y - r, dot_x + r, replay_y + r)
-            if replay_remaining > 0:
-                draw.ellipse(box, fill=0, outline=0)
-            else:
-                draw.ellipse(box, fill=255, outline=0)
+            _draw_rect(rect_x0, replay_y, replay_remaining > 0)
 
 
 def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show_tv=True, scale=1):
@@ -1841,61 +1843,69 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             Himage = draw_circle(Himage, (_pc_c3x, _pc_circ_y), _pc_circ_r, _pc_outs >= 3, outline_width=2)
             draw = ImageDraw.Draw(Himage)
         else:
-            _hi_third = isinstance(game_data['runner_on_third'], str)
-            _hi_second = isinstance(game_data['runner_on_second'], str)
-            _hi_first = isinstance(game_data['runner_on_first'], str)
+            # If 3 outs are recorded but inningState hasn't flipped to Middle/End yet
+            # (API lag), show the linescore instead — prevents filled base diamonds
+            # with no runner numbers from appearing at the end of a half-inning.
+            if (game_data.get('num_of_outs') or 0) >= 3:
+                draw, Himage = _draw_linescore_grid(
+                    draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale
+                )
+            else:
+                _hi_third = isinstance(game_data['runner_on_third'], str)
+                _hi_second = isinstance(game_data['runner_on_second'], str)
+                _hi_first = isinstance(game_data['runner_on_first'], str)
 
-            Himage = draw_diamond(Himage, (start_x + 97 * s,  start_y + 52 * s), 10 * s, _hi_third)
-            Himage = draw_diamond(Himage, (start_x + 109 * s, start_y + 40 * s), 10 * s, _hi_second)
-            Himage = draw_diamond(Himage, (start_x + 121 * s, start_y + 52 * s), 10 * s, _hi_first)
-            draw = ImageDraw.Draw(Himage)
-            for _bfill, _bcx, _bcy, _bkey in (
-                (_hi_third,  start_x + 97 * s,  start_y + 52 * s, 'runner_third_number'),
-                (_hi_second, start_x + 109 * s, start_y + 40 * s, 'runner_second_number'),
-                (_hi_first,  start_x + 121 * s, start_y + 52 * s, 'runner_first_number'),
-            ):
-                if _bfill:
-                    _raw = game_data.get(_bkey)
-                    _bnum = str(_raw) if _raw is not None else ''
-                    _bnw = int(font9.getlength(_bnum)) if _bnum else 0
-                    draw.text((_bcx - _bnw // 2, _bcy - 5 * s), _bnum, font=font9, fill=255)
+                Himage = draw_diamond(Himage, (start_x + 97 * s,  start_y + 52 * s), 10 * s, _hi_third)
+                Himage = draw_diamond(Himage, (start_x + 109 * s, start_y + 40 * s), 10 * s, _hi_second)
+                Himage = draw_diamond(Himage, (start_x + 121 * s, start_y + 52 * s), 10 * s, _hi_first)
+                draw = ImageDraw.Draw(Himage)
+                for _bfill, _bcx, _bcy, _bkey in (
+                    (_hi_third,  start_x + 97 * s,  start_y + 52 * s, 'runner_third_number'),
+                    (_hi_second, start_x + 109 * s, start_y + 40 * s, 'runner_second_number'),
+                    (_hi_first,  start_x + 121 * s, start_y + 52 * s, 'runner_first_number'),
+                ):
+                    if _bfill:
+                        _raw = game_data.get(_bkey)
+                        _bnum = str(_raw) if _raw is not None else ''
+                        _bnw = int(font9.getlength(_bnum)) if _bnum else 0
+                        draw.text((_bcx - _bnw // 2, _bcy - 5 * s), _bnum, font=font9, fill=255)
 
-            outs_list = [None] * 3
-            for i in range(1, 4):
-                outs_list[i-1] = i <= game_data['num_of_outs']
-            Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, outs_list[0], outline_width=2)
-            Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, outs_list[1], outline_width=2)
-            Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, outs_list[2], outline_width=2)
+                outs_list = [None] * 3
+                for i in range(1, 4):
+                    outs_list[i-1] = i <= game_data['num_of_outs']
+                Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, outs_list[0], outline_width=2)
+                Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, outs_list[1], outline_width=2)
+                Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, outs_list[2], outline_width=2)
 
-            balls_list = [None] * 4
-            for i in range(1, 4):
-                balls_list[i-1] = i <= game_data['balls']
+                balls_list = [None] * 4
+                for i in range(1, 4):
+                    balls_list[i-1] = i <= game_data['balls']
 
-            draw.text((start_x + 2 * s, start_y + 25 * s + 59 * s), 'B', font=font14, fill=0)
-            Himage = draw_circle(Himage, (start_x + 19 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[0])
-            Himage = draw_circle(Himage, (start_x + 31 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[1])
-            Himage = draw_circle(Himage, (start_x + 43 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[2])
+                draw.text((start_x + 2 * s, start_y + 25 * s + 59 * s), 'B', font=font14, fill=0)
+                Himage = draw_circle(Himage, (start_x + 19 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[0])
+                Himage = draw_circle(Himage, (start_x + 31 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[1])
+                Himage = draw_circle(Himage, (start_x + 43 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[2])
 
-            _num_strikes = game_data.get('strikes') or 0
-            strikes_list = [i + 1 <= _num_strikes for i in range(2)]
-            _strike_calls = game_data.get('strike_calls', [])
+                _num_strikes = game_data.get('strikes') or 0
+                strikes_list = [i + 1 <= _num_strikes for i in range(2)]
+                _strike_calls = game_data.get('strike_calls', [])
 
-            draw.text((start_x + 19 * s + 39 * s, start_y + 25 * s + 59 * s), 'S', font=font14, fill=0)
-            for _si, (_scx, _scy) in enumerate([
-                (start_x + 19 * s + 55 * s, start_y + 25 * s + 68 * s),
-                (start_x + 31 * s + 55 * s, start_y + 25 * s + 68 * s),
-            ]):
-                _call = _strike_calls[_si] if _si < len(_strike_calls) else None
-                if strikes_list[_si] and _call in ('S', 'F'):
-                    # Swinging or foul: outline ring with ~80%-filled center
-                    _ir = 4 * s - 2
-                    Himage = draw_circle(Himage, (_scx, _scy), 4 * s, False)
-                    draw = ImageDraw.Draw(Himage)
-                    draw.ellipse([_scx - _ir, _scy - _ir, _scx + _ir, _scy + _ir], fill='black', outline='black')
-                else:
-                    # Looking / empty: solid filled circle
-                    Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
-                    draw = ImageDraw.Draw(Himage)
+                draw.text((start_x + 19 * s + 39 * s, start_y + 25 * s + 59 * s), 'S', font=font14, fill=0)
+                for _si, (_scx, _scy) in enumerate([
+                    (start_x + 19 * s + 55 * s, start_y + 25 * s + 68 * s),
+                    (start_x + 31 * s + 55 * s, start_y + 25 * s + 68 * s),
+                ]):
+                    _call = _strike_calls[_si] if _si < len(_strike_calls) else None
+                    if strikes_list[_si] and _call in ('S', 'F'):
+                        # Swinging or foul: outline ring with ~80%-filled center
+                        _ir = 4 * s - 2
+                        Himage = draw_circle(Himage, (_scx, _scy), 4 * s, False)
+                        draw = ImageDraw.Draw(Himage)
+                        draw.ellipse([_scx - _ir, _scy - _ir, _scx + _ir, _scy + _ir], fill='black', outline='black')
+                    else:
+                        # Looking / empty: solid filled circle
+                        Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
+                        draw = ImageDraw.Draw(Himage)
 
         if game_data.get('save_situation') and not _between_innings and not _pitching_change:
             _sv_w = int(font9.getlength('SV'))
