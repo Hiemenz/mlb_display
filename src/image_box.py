@@ -210,13 +210,22 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
         vx = grid_x0 + LOGO_COL_W + k * COL_W
         draw.line((vx, y0, vx, y3), fill=0)
 
+    def _draw_centered(fnt, val, cx, cy):
+        """Draw val centered at (cx, cy) using actual ink bounds (not advance width)."""
+        try:
+            bb = fnt.getbbox(val)
+            tw, th = bb[2] - bb[0], bb[3] - bb[1]
+            draw.text((cx - tw // 2 - bb[0], cy - th // 2 - bb[1]), val, font=fnt, fill=0)
+        except Exception:
+            draw.text((cx, cy), val, font=fnt, fill=0, anchor='mm')
+
     # --- inning header labels ---
     for k in range(N_COLS):
         inn_label = str(first_inn + k)
         cell_x = grid_x0 + LOGO_COL_W + k * COL_W
         cx = cell_x + COL_W // 2
         cy = y0 + ROW_H_HDR // 2
-        draw.text((cx, cy), inn_label, font=font9, fill=0, anchor='mm')
+        _draw_centered(font9, inn_label, cx, cy)
 
     # --- logos / abbr in team rows ---
     away_id  = str(game_data.get('away_team_id', ''))
@@ -253,7 +262,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
                 fnt = font11 if int(font11.getlength(val)) <= COL_W - 1 else font9
                 cx = cell_x + COL_W // 2
                 cy = row_y + ROW_H_TEAM // 2
-                draw.text((cx, cy), val, font=fnt, fill=0, anchor='mm')
+                _draw_centered(fnt, val, cx, cy)
 
     _draw_row(away_inn, y1)
     _draw_row(home_inn, y2)
@@ -270,7 +279,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
                 cell_x = grid_x0 + LOGO_COL_W + col_k * COL_W
                 cx = cell_x + COL_W // 2
                 cy = y2 + ROW_H_TEAM // 2
-                draw.text((cx, cy), 'X', font=font11, fill=0, anchor='mm')
+                _draw_centered(font11, 'X', cx, cy)
 
     return draw, Himage
 
@@ -573,10 +582,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         return
 
     # Both teams have different games.
-    # Away entry starts at left edge, may use up to the strip midpoint.
-    # Home entry starts at the strip midpoint, may use up to strip_right.
-    mid = BAR_X + BAR_W // 2
-
+    # Away entry is left-anchored; home entry is right-anchored.
     def _draw_half(g, start_cx, right_limit):
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
@@ -591,10 +597,31 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
             draw.text((_tx,         _time_y), t_str, font=font14, fill=0)
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
 
-    if away_game:
-        _draw_half(away_game, BAR_X + left_offset, mid - 2 * s)
-    if home_game:
-        _draw_half(home_game, mid, strip_right)
+    def _measure_half(g):
+        """Return pixel width of one game entry (away @ home + optional time)."""
+        a_abbr = abbr_map.get(str(g['away_team_id']), '')
+        h_abbr = abbr_map.get(str(g['home_team_id']), '')
+        w  = _logo_w(a_abbr, g['away_team_id'])
+        w += VS_PAD + at_w + VS_PAD
+        w += _logo_w(h_abbr, g['home_team_id'])
+        t_abbr = _game_time(g, full=False)
+        if t_abbr:
+            w += TIME_PAD + int(font14.getlength(t_abbr))
+        return int(w)
+
+    if away_game and home_game:
+        # Right-anchor the home game so it ends flush with the right edge.
+        home_w     = _measure_half(home_game)
+        home_start = strip_right - home_w
+        # Left-anchor the away game; limit it to just before the home game starts.
+        _draw_half(away_game, BAR_X + left_offset, home_start - 2 * s)
+        _draw_half(home_game, home_start, strip_right)
+    elif away_game:
+        _draw_half(away_game, BAR_X + left_offset, strip_right)
+    elif home_game:
+        home_w     = _measure_half(home_game)
+        home_start = strip_right - home_w
+        _draw_half(home_game, home_start, strip_right)
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
