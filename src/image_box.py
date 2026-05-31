@@ -164,27 +164,30 @@ def _get_or_set_final_time(game_pk):
 
 
 def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=1):
-    """Full-width per-inning linescore grid for between-inning scoreboard tiles.
+    """Per-inning linescore grid for between-inning scoreboard tiles.
 
-    Layout (135px wide box):
-      Row 0 (14px): inning number labels  — starts at start_y+20 (header line)
-      Row 1 (16px): away logo + per-inning runs
-      Row 2 (16px): home logo + per-inning runs
+    All 10 cells (1 logo + 9 inning) are equal width (12px each = 120px).
+    The 120px grid is centred inside the 135px box (~7px margins each side).
+    Row dividers span the full box width for a clean framed look.
 
-    Columns: 16px logo col + 9 × 13px inning cols = 133px
     Extra-innings: window shifts so the current inning is the rightmost column.
     """
     s = scale
-    LOGO_COL_W = 27 * s   # wider logo col: 27 + 9×12 = 135 = full box width
+    BOX_W      = 135 * s   # full tile width
+    COL_W      = 12 * s    # all cells equal — interior 11px (odd) → exact center at +6
+    LOGO_COL_W = COL_W     # logo column same width as inning columns
     ROW_H_HDR  = 14 * s
     ROW_H_TEAM = 16 * s
     N_COLS     = 9
-    COL_W      = 12 * s   # even col width → interior 11px (odd) → exact center at col_x+6
 
-    y0 = start_y + 83 * s            # grid top — bottom half of box (scores/logos/bases stay above)
-    y1 = y0 + ROW_H_HDR          # = start_y + 97  (away row top)
-    y2 = y1 + ROW_H_TEAM         # = start_y + 113 (home row top)
-    y3 = y2 + ROW_H_TEAM         # = start_y + 129 (grid bottom)
+    # Centre the 120px (10 × 12) grid inside the 135px box
+    _total_w  = LOGO_COL_W + N_COLS * COL_W   # = 120 * s
+    grid_x0   = start_x + (BOX_W - _total_w) // 2  # ≈ start_x + 7*s
+
+    y0 = start_y + 83 * s            # grid top
+    y1 = y0 + ROW_H_HDR              # away row top  (start_y + 97)
+    y2 = y1 + ROW_H_TEAM             # home row top  (start_y + 113)
+    y3 = y2 + ROW_H_TEAM             # grid bottom   (start_y + 129)
 
     current_inning = game_data.get('current_inning') or 1
     first_inn = max(1, current_inning - N_COLS + 1) if current_inning > N_COLS else 1
@@ -195,20 +198,22 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     font9  = _get_font(9 * s)
     font11 = _get_font(11 * s)
 
-    grid_right = start_x + LOGO_COL_W + N_COLS * COL_W
+    grid_right = grid_x0 + _total_w
 
-    # --- tic-tac-toe grid: internal lines only, no outer border ---
-    draw.line((start_x, y1, grid_right, y1), fill=0)  # row divider 1
-    draw.line((start_x, y2, grid_right, y2), fill=0)  # row divider 2
-    draw.line((start_x + LOGO_COL_W, y0, start_x + LOGO_COL_W, y3), fill=0)  # logo col divider
+    # --- horizontal row dividers span full box width ---
+    draw.line((start_x, y1, start_x + BOX_W, y1), fill=0)
+    draw.line((start_x, y2, start_x + BOX_W, y2), fill=0)
+
+    # --- vertical column dividers within the centred grid ---
+    draw.line((grid_x0 + LOGO_COL_W, y0, grid_x0 + LOGO_COL_W, y3), fill=0)
     for k in range(1, N_COLS):
-        cx = start_x + LOGO_COL_W + k * COL_W
-        draw.line((cx, y0, cx, y3), fill=0)
+        vx = grid_x0 + LOGO_COL_W + k * COL_W
+        draw.line((vx, y0, vx, y3), fill=0)
 
     # --- inning header labels ---
     for k in range(N_COLS):
         inn_label = str(first_inn + k)
-        cell_x = start_x + LOGO_COL_W + k * COL_W
+        cell_x = grid_x0 + LOGO_COL_W + k * COL_W
         cx = cell_x + COL_W // 2
         cy = y0 + ROW_H_HDR // 2
         draw.text((cx, cy), inn_label, font=font9, fill=0, anchor='mm')
@@ -222,27 +227,28 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
 
     def _place(abbr, tid, row_y):
         nonlocal draw
-        lsz = 12 * s
+        lsz = 10 * s  # slightly smaller than column width so logo has a 1px margin
         logo = _logo_small(abbr, tid, size=lsz) if use_logos else None
         if logo:
             lw, lh = logo.size
-            Himage.paste(logo, (start_x + (LOGO_COL_W - lw) // 2, row_y + 1 + (ROW_H_TEAM - 1 - lh) // 2))
+            Himage.paste(logo, (grid_x0 + (LOGO_COL_W - lw) // 2, row_y + 1 + (ROW_H_TEAM - 1 - lh) // 2))
             draw = ImageDraw.Draw(Himage)
         else:
-            abbr_str = (abbr or '')[:3]
+            # 12px column — use at most 2 chars at font9 to avoid overflow
+            abbr_str = (abbr or '')[:2]
             tw = int(font9.getlength(abbr_str))
-            draw.text((start_x + (LOGO_COL_W - tw) // 2, row_y + (ROW_H_TEAM - 9 * s) // 2), abbr_str, font=font9, fill=0)
+            draw.text((grid_x0 + max(0, (LOGO_COL_W - tw) // 2), row_y + (ROW_H_TEAM - 9 * s) // 2), abbr_str, font=font9, fill=0)
 
     _place(away_abbr, away_id, y1)
     _place(home_abbr, home_id, y2)
 
-    # --- per-inning scores (blank for incomplete innings) ---
+    # --- per-inning scores ---
     def _draw_row(inn_runs, row_y):
         for k in range(N_COLS):
             idx = first_inn - 1 + k
             if idx < len(inn_runs) and inn_runs[idx] is not None:
                 val = str(inn_runs[idx])
-                cell_x = start_x + LOGO_COL_W + k * COL_W
+                cell_x = grid_x0 + LOGO_COL_W + k * COL_W
                 # Use font9 for double-digit values that won't fit in font11
                 fnt = font11 if int(font11.getlength(val)) <= COL_W - 1 else font9
                 cx = cell_x + COL_W // 2
@@ -253,7 +259,6 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     _draw_row(home_inn, y2)
 
     # X in the home team's last column when the bottom half wasn't played.
-    # The API always returns 9 entries; the unplayed inning has value None.
     _is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
     if _is_final and away_inn:
         last_idx = len(away_inn) - 1
@@ -262,11 +267,10 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
         if home_last is None and away_last is not None:
             col_k = last_idx - (first_inn - 1)
             if 0 <= col_k < N_COLS:
-                cell_x = start_x + LOGO_COL_W + col_k * COL_W
-                _xfont = font11
+                cell_x = grid_x0 + LOGO_COL_W + col_k * COL_W
                 cx = cell_x + COL_W // 2
                 cy = y2 + ROW_H_TEAM // 2
-                draw.text((cx, cy), 'X', font=_xfont, fill=0, anchor='mm')
+                draw.text((cx, cy), 'X', font=font11, fill=0, anchor='mm')
 
     return draw, Himage
 
