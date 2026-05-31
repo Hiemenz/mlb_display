@@ -1,6 +1,6 @@
 # MLB E-Ink Display
 
-Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480) running on a Raspberry Pi. Fetches live MLB data and renders it in five switchable display modes. Controllable via Discord bot.
+Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480) running on a Raspberry Pi. Fetches live MLB data and renders it in four switchable display modes. Controllable via Discord bot.
 
 ![Full scoreboard — May 31 2026, pre-game](docs/scoreboard_pregame.png)
 
@@ -27,14 +27,6 @@ Each tile adapts to game state — see [Tile States](#scoreboard-tile-states) be
 **Finals** — shows R/H/E, winning/losing pitcher (with record), save, and the winning team's logo as a large ghost watermark behind the score.
 
 ![Scoreboard — all finals](docs/scoreboard_finals.png)
-
----
-
-### Linescore Mode
-
-Two selected games shown in full detail side by side, with live division standings below.
-
-![Linescore Mode](docs/linescore_mode.png)
 
 ---
 
@@ -119,7 +111,7 @@ Edit `config/config.yaml`:
 
 ```yaml
 # ── Display mode ──────────────────────────────────────────────
-# scoreboard | linescore | field | scorecard | pitch
+# scoreboard | field | scorecard | pitch
 display_mode: scoreboard
 
 # ── Primary team (for single-game modes and favorite-first slot) ──
@@ -212,9 +204,6 @@ poetry run python main.py                # Raspberry Pi
 # Specific date or sport
 poetry run python main.py --date 2026-04-19
 poetry run python main.py --sport-id 8   # World Baseball Classic
-
-# Linescore mode
-poetry run python src/render_scoreboard.py --mode linescore
 ```
 
 **Crontab** — run every 14 minutes:
@@ -249,7 +238,6 @@ Control the display from a Discord channel using `!display` prefix commands.
 
 ```
 !display mode scoreboard    — switch to 15-game scoreboard grid
-!display mode linescore     — switch to linescore + standings
 !display mode field         — switch to single-game field view
 !display mode scorecard     — switch to at-bat scorecard grid
 !display mode pitch         — switch to pitch location view

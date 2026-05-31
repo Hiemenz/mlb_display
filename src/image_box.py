@@ -246,11 +246,9 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
                 cell_x = start_x + LOGO_COL_W + k * COL_W
                 # Use font9 for double-digit values that won't fit in font11
                 fnt = font11 if int(font11.getlength(val)) <= COL_W - 2 else font9
-                fnt_h = 11 * s if fnt is font11 else 9 * s
-                bbox = fnt.getbbox(val)
-                vis_w = bbox[2] - bbox[0]
-                tx = cell_x + (COL_W - vis_w) // 2 - bbox[0] + 1
-                draw.text((tx, row_y + (ROW_H_TEAM - fnt_h) // 2), val, font=fnt, fill=0)
+                cx = cell_x + COL_W // 2
+                cy = row_y + ROW_H_TEAM // 2
+                draw.text((cx, cy), val, font=fnt, fill=0, anchor='mm')
 
     _draw_row(away_inn, y1)
     _draw_row(home_inn, y2)
