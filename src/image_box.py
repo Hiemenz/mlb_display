@@ -34,10 +34,10 @@ _PLAY_ABBR = {
     'walk':             'BB',
     'strikeout looking': 'Kl',
     'strikeout':        'K',
-    'sac fly':          'SF',
-    'sacrifice fly':    'SF',
-    'sac bunt':         'SH',
-    'sacrifice bunt':   'SH',
+    'sac fly':          'SAC F',
+    'sacrifice fly':    'SAC F',
+    'sac bunt':         'SAC B',
+    'sacrifice bunt':   'SAC B',
     'stolen base':      'SB',
     'caught stealing':  'CS',
     'wild pitch':       'WP',
@@ -1281,7 +1281,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _fp = _fielder_from_desc(_lp_desc)
                 if _fp:
                     play_display = f'P{_fp}'
-            elif play_display in ('SF', 'SH'):
+            elif play_display in ('SAC F', 'SAC B'):
                 _fp = _fielder_from_desc(_lp_desc)
                 if _fp:
                     play_display = f'{play_display}{_fp}'
