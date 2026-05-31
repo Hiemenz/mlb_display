@@ -303,7 +303,7 @@ NEW_FUNC = r'''def draw_live_fullscreen_game(game_data, team_data, config=None):
             canvas = draw_circle(canvas, (_cx, _bso_cy), B_R, i < _strikes and not _swing)
             draw   = ImageDraw.Draw(canvas)
             if _swing:
-                _ir = int(B_R * 0.8)
+                _ir = B_R - 2
                 draw.ellipse([_cx - _ir, _bso_cy - _ir, _cx + _ir, _bso_cy + _ir],
                              fill=0, outline=0)
             _sx += 2 * B_R + C_GAP
