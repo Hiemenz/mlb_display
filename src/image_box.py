@@ -166,31 +166,31 @@ def _get_or_set_final_time(game_pk):
 def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=1):
     """Per-inning linescore grid for between-inning scoreboard tiles.
 
-    All 10 cells (1 logo + 9 inning) are equal width (12px each = 120px).
-    The 120px grid is centred inside the 135px box (~7px margins each side).
+    Standard games: 10 cells (1 logo + 9 inning) × 12px = 120px centred in 135px box.
+    Extra-inning games: expand to 11 cells (+ 10th column) when current_inning >= 10,
+    then slide the window for innings beyond 10 so the current inning stays rightmost.
     Row dividers span the full box width for a clean framed look.
-
-    Extra-innings: window shifts so the current inning is the rightmost column.
     """
     s = scale
     BOX_W      = 135 * s   # full tile width
-    COL_W      = 12 * s    # all cells equal — interior 11px (odd) → exact center at +6
+    COL_W      = 12 * s    # all cells equal width
     LOGO_COL_W = COL_W     # logo column same width as inning columns
     ROW_H_HDR  = 14 * s
     ROW_H_TEAM = 16 * s
-    N_COLS     = 9
-
-    # Centre the 120px (10 × 12) grid inside the 135px box
-    _total_w  = LOGO_COL_W + N_COLS * COL_W   # = 120 * s
-    grid_x0   = start_x + (BOX_W - _total_w) // 2  # ≈ start_x + 7*s
-
-    y0 = start_y + 83 * s            # grid top
-    y1 = y0 + ROW_H_HDR              # away row top  (start_y + 97)
-    y2 = y1 + ROW_H_TEAM             # home row top  (start_y + 113)
-    y3 = y2 + ROW_H_TEAM             # grid bottom   (start_y + 129)
 
     current_inning = game_data.get('current_inning') or 1
+    # Expand to 10 inning columns once extra innings begin; slide window beyond that
+    N_COLS    = 10 if current_inning >= 10 else 9
     first_inn = max(1, current_inning - N_COLS + 1) if current_inning > N_COLS else 1
+
+    # Centre the grid (logo col + N_COLS inning cols) inside the 135px box
+    _total_w  = LOGO_COL_W + N_COLS * COL_W
+    grid_x0   = start_x + (BOX_W - _total_w) // 2
+
+    y0 = start_y + 83 * s            # grid top
+    y1 = y0 + ROW_H_HDR              # away row top
+    y2 = y1 + ROW_H_TEAM             # home row top
+    y3 = y2 + ROW_H_TEAM             # grid bottom
 
     away_inn = game_data.get('away_inning_runs') or []
     home_inn = game_data.get('home_inning_runs') or []
@@ -211,13 +211,36 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
         draw.line((vx, y0, vx, y3), fill=0)
 
     def _draw_centered(fnt, val, cx, cy):
-        """Draw val centered at (cx, cy) using actual ink bounds (not advance width)."""
+        """Draw val pixel-centered at (cx, cy) by scanning actual rendered ink bounds.
+
+        getbbox() returns the advance-width cell for this bitmap/pixel font (all digits
+        share the same box), so centering by bounding-box width leaves narrow glyphs
+        like '1' visually off-center.  Rendering to a scratch buffer at a known anchor
+        (ox, oy) and measuring the real ink extents gives ≤0.5 px accuracy in both axes.
+        """
+        txt = str(val)
+        if not txt:
+            return
         try:
-            bb = fnt.getbbox(val)
-            tw, th = bb[2] - bb[0], bb[3] - bb[1]
-            draw.text((cx - tw // 2 - bb[0], cy - th // 2 - bb[1]), val, font=fnt, fill=0)
+            bb = fnt.getbbox(txt)
+            ox, oy = 2, 2          # guard border; draw at (ox, oy) so subtracting them
+            buf_w = max(bb[2] + ox + 2, 6)   # gives center relative to draw position
+            buf_h = max(bb[3] + oy + 2, 6)
+            buf = Image.new('L', (buf_w, buf_h), 255)
+            ImageDraw.Draw(buf).text((ox, oy), txt, font=fnt, fill=0)
+            bpx = buf.load()
+            ink_xs = [c for r in range(buf_h) for c in range(buf_w) if bpx[c, r] < 128]
+            ink_ys = [r for r in range(buf_h) for c in range(buf_w) if bpx[c, r] < 128]
+            if not ink_xs:
+                draw.text((cx, cy), txt, font=fnt, fill=0, anchor='mm')
+                return
+            # Center of ink relative to the draw anchor (ox, oy)
+            ink_cx = (min(ink_xs) + max(ink_xs)) / 2 - ox
+            ink_cy = (min(ink_ys) + max(ink_ys)) / 2 - oy
+            x_nudge = -1 if txt == '1' else 1  # '1' sits 2px left of the general +1 nudge
+            draw.text((round(cx - ink_cx) + x_nudge, round(cy - ink_cy) + 1), txt, font=fnt, fill=0)
         except Exception:
-            draw.text((cx, cy), val, font=fnt, fill=0, anchor='mm')
+            draw.text((cx, cy), txt, font=fnt, fill=0, anchor='mm')
 
     # --- inning header labels ---
     for k in range(N_COLS):
@@ -267,7 +290,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     _draw_row(away_inn, y1)
     _draw_row(home_inn, y2)
 
-    # X in the home team's last column when the bottom half wasn't played.
+    # Short dash in the home team's last column when the bottom half wasn't played.
     _is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
     if _is_final and away_inn:
         last_idx = len(away_inn) - 1
@@ -278,8 +301,9 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
             if 0 <= col_k < N_COLS:
                 cell_x = grid_x0 + LOGO_COL_W + col_k * COL_W
                 cx = cell_x + COL_W // 2
-                cy = y2 + ROW_H_TEAM // 2
-                _draw_centered(font11, 'X', cx, cy)
+                cy = y2 + ROW_H_TEAM // 2 + 1
+                dash_half = 3 * s
+                draw.line((cx - dash_half, cy, cx + dash_half, cy), fill=0)
 
     return draw, Himage
 

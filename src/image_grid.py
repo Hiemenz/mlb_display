@@ -349,27 +349,46 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
     draw.line((col_start, 60 + row_start, 580 + col_start, 60 + row_start), fill = 0)
     draw.line((col_start, 90 + row_start, 580 + col_start, 90 + row_start), fill = 0)
 
+    def _cell_center(fnt, val, cell_idx, y):
+        """Draw val horizontally centred in the 40-px column at index cell_idx.
+
+        Renders to a scratch buffer at a known anchor (ox, oy) and measures
+        the actual leftmost/rightmost ink pixel so the ink center lands at
+        the column midpoint.  Max horizontal error ≤ 0.5 px (rounding).
+        """
+        cell_left = 100 + 40 * cell_idx + col_start
+        cell_cx = cell_left + 20   # midpoint of the 40-px column
+        txt = str(val)
+        if not txt:
+            return
+        try:
+            bb = fnt.getbbox(txt)
+            ox, oy = 2, 2
+            buf_w = max(bb[2] + ox + 2, 6)
+            buf_h = max(bb[3] + oy + 2, 6)
+            buf = Image.new('L', (buf_w, buf_h), 255)
+            ImageDraw.Draw(buf).text((ox, oy), txt, font=fnt, fill=0)
+            bpx = buf.load()
+            ink_xs = [c for r in range(buf_h) for c in range(buf_w) if bpx[c, r] < 128]
+            if not ink_xs:
+                draw.text((cell_left + 10, y), txt, font=fnt, fill=0)
+                return
+            ink_cx = (min(ink_xs) + max(ink_xs)) / 2 - ox   # relative to draw anchor
+            draw.text((round(cell_cx - ink_cx), y), txt, font=fnt, fill=0)
+        except Exception:
+            tw = int(fnt.getlength(txt))
+            draw.text((cell_left + (40 - tw) // 2, y), txt, font=fnt, fill=0)
+
     for i in range(13):
-        # inning
-        sub_header, sub_away, sub_home = 0,0,0
         if i < 12:
-
-            if 1 < len(str(inning_header[i])):
-                sub_header = -7
-            if 1 < len(str(away[i])):
-                sub_away = -7
-            if 1 < len(str(home[i])):
-                sub_home = -7
-
-            if away[i] == None:
+            if away[i] is None:
                 away[i] = ''
-
-            if home[i] == None:
+            if home[i] is None:
                 home[i] = ''
 
-            draw.text((115 + sub_header + (40*i) + col_start, 0 + row_start), str(inning_header[i]), font = font24, fill = 0)
-            draw.text((115 + sub_away + (40*i) + col_start, 30 + row_start), str(away[i]), font = font24, fill = 0)
-            draw.text((115 + sub_home + (40*i) + col_start, 60 + row_start), str(home[i]), font = font24, fill = 0)
+            _cell_center(font24, inning_header[i], i, 0 + row_start)
+            _cell_center(font24, away[i], i, 30 + row_start)
+            _cell_center(font24, home[i], i, 60 + row_start)
 
         # vertical line
         if i >= 1 and i <= 8 and DISPLAY_PROBS:
