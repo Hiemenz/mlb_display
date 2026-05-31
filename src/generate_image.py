@@ -881,7 +881,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
     # ---- Fonts ---------------------------------------------------------------
     f14  = _get_font(14)    # ABS / challenge labels
-    f22  = _get_font(22)    # runner jersey numbers inside bases (doubled)
+    f44  = _get_font(44)    # runner jersey numbers inside bases
     f24  = _get_font(24)    # pitch info / between-innings names
     f28  = _get_font(28)    # misc
     f36  = _get_font(36)    # misc
@@ -1124,7 +1124,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     canvas = draw_diamond(canvas, _b1, BASE_SZ, _hi_first,  outline_width=BASE_OW)
     draw   = ImageDraw.Draw(canvas)
 
-    # Runner jersey numbers in white inside filled bases (f22 = doubled from f11)
+    # Runner jersey numbers in white inside filled bases
     for _bfill, _bc, _bkey in (
         (_hi_third,  _b3, 'runner_third_number'),
         (_hi_second, _b2, 'runner_second_number'),
@@ -1134,8 +1134,10 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             _raw  = game_data.get(_bkey)
             _bnum = str(_raw) if _raw is not None else ''
             if _bnum:
-                _bnw = int(f22.getlength(_bnum))
-                draw.text((_bc[0] - _bnw // 2, _bc[1] - 11), _bnum, font=f22, fill=255)
+                _bbox = f44.getbbox(_bnum)
+                _tx = _bc[0] - (_bbox[0] + _bbox[2]) // 2
+                _ty = _bc[1] - (_bbox[1] + _bbox[3]) // 2
+                draw.text((_tx, _ty), _bnum, font=f44, fill=255)
 
     # ---- OUTS circles (right side, moved up, bigger) ------------------------
     _outs = game_data.get('num_of_outs') or 0
@@ -1216,10 +1218,8 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             _cx   = _sx + B_R
             _call = _scalls[i] if i < len(_scalls) else None
             if i < _strikes and _call in ('S', 'F'):
-                canvas = draw_circle(canvas, (_cx, _bso_cy), B_R, False)
+                canvas = draw_circle(canvas, (_cx, _bso_cy), B_R, False, outline_width=10)
                 draw   = ImageDraw.Draw(canvas)
-                draw.ellipse([_cx - 5, _bso_cy - 5, _cx + 5, _bso_cy + 5],
-                             fill='black', outline='black')
             else:
                 canvas = draw_circle(canvas, (_cx, _bso_cy), B_R, i < _strikes)
                 draw   = ImageDraw.Draw(canvas)
