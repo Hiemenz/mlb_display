@@ -58,7 +58,7 @@ night_end: 7     # 7am
 # results and today's schedule every 5 minutes. Before night_end always shows yesterday;
 # at/after morning_end always shows today.
 morning_alternate_games: true
-morning_end: 9   # hour (24h) when "yesterday" mode ends and today's games take over
+morning_end: 11  # hour (24h) when "yesterday" mode ends and today's games take over
 
 
 # Team emoji overrides: display emoji instead of logo for these teams
