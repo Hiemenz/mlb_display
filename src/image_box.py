@@ -187,6 +187,11 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     _total_w  = LOGO_COL_W + N_COLS * COL_W
     grid_x0   = start_x + (BOX_W - _total_w) // 2
 
+    y0 = start_y + 83 * s            # grid top
+    y1 = y0 + ROW_H_HDR              # away row top
+    y2 = y1 + ROW_H_TEAM             # home row top
+    y3 = y2 + ROW_H_TEAM             # grid bottom
+
     away_inn = game_data.get('away_inning_runs') or []
     home_inn = game_data.get('home_inning_runs') or []
 
