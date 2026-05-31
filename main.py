@@ -472,7 +472,9 @@ Examples:
     else:
         tz = config.get('timezone', 'America/Chicago')
         _now = datetime.now(pytz.timezone(tz))
-        _morning_end  = config.get('morning_end', 9)
+        _is_weekend = _now.weekday() >= 5  # 5=Sat, 6=Sun
+        _morning_end = (config.get('morning_end_weekend', 11) if _is_weekend
+                        else config.get('morning_end', 9))
         _morning_start = config.get('night_end', 7)
         if _now.hour >= _morning_end:
             date_str = _now.date().strftime('%Y-%m-%d')

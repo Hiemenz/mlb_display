@@ -406,8 +406,10 @@ def _load_tomorrow_games():
     try:
         _cfg = load_yaml_file('config.yaml')
         _tz_str = _cfg.get('timezone', 'America/Chicago')
-        _morning_end = _cfg.get('morning_end', 9)
         _now_local = _dt.now(pytz.timezone(_tz_str))
+        _is_wkend = _now_local.weekday() >= 5
+        _morning_end = (_cfg.get('morning_end_weekend', 11) if _is_wkend
+                        else _cfg.get('morning_end', 9))
         _is_morning = _now_local.hour < _morning_end
     except Exception:
         _is_morning = False

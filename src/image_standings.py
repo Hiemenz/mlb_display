@@ -391,11 +391,10 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
         logo_sz = _FS_LOGO_SZ
 
     n_teams     = 5
-    team_area_h = height - _FS_LABEL_H
-    slot_h      = team_area_h // n_teams   # 87 px
+    team_area_h = height
+    slot_h      = team_area_h // n_teams
 
     draw       = ImageDraw.Draw(canvas)
-    font_label = _get_font(9)
 
     # --- Movement indicator detection (same logic as draw_standings_sidebar) ---
     _now_ts   = _time.time()
@@ -490,11 +489,6 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
     for col_idx, div_name in enumerate(divisions[:3]):
         col_x = x_anchor + col_idx * col_w
 
-        # Division label: first letter of direction word (East→E, Central→C, West→W)
-        label = div_name.split()[-1][0]
-        lw = int(font_label.getlength(label))
-        draw.text((col_x + (col_w - lw) // 2, y_start + 2), label, font=font_label, fill=0)
-
         teams = standings_data.get('standings', {}).get(div_name, [])
         teams = sorted(teams, key=lambda t: int(t.get('divisionRank', 99)))
 
@@ -502,7 +496,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             team_id = str(team.get('team_id', ''))
             abbr    = abbr_map.get(team_id, f'T{team_id}')
 
-            slot_y = y_start + _FS_LABEL_H + slot_idx * slot_h
+            slot_y = y_start + slot_idx * slot_h
             logo_x = col_x + (col_w - logo_sz) // 2
             logo_y = slot_y + (slot_h - logo_sz) // 2
 
