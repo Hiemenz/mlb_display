@@ -36,8 +36,8 @@ _PLAY_ABBR = {
     'strikeout':        'K',
     'sac fly':          'SF',
     'sacrifice fly':    'SF',
-    'sac bunt':         'SAC',
-    'sacrifice bunt':   'SAC',
+    'sac bunt':         'SH',
+    'sacrifice bunt':   'SH',
     'stolen base':      'SB',
     'caught stealing':  'CS',
     'wild pitch':       'WP',
@@ -1281,10 +1281,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _fp = _fielder_from_desc(_lp_desc)
                 if _fp:
                     play_display = f'P{_fp}'
-            elif play_display == 'SF':
+            elif play_display in ('SF', 'SH'):
                 _fp = _fielder_from_desc(_lp_desc)
                 if _fp:
-                    play_display = f'SF{_fp}'
+                    play_display = f'{play_display}{_fp}'
             elif play_display in ('GO', 'FOUT'):
                 _fseq = _fielder_seq_from_desc(_lp_desc)
                 if _fseq:
@@ -1949,12 +1949,23 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _bi_state = game_data.get('inningState') or ''
     if game_data['detailed_state'] == 'In Progress' and _bi_state in ('Top', 'Bottom'):
         _r = 4 * s
-        _bi_cx = start_x + _r - 6
+        _bi_cx = start_x + _r - 8
         if _bi_state == 'Top':
             _bi_cy = start_y + 25 * s + 14 * s  # vertical center of away logo row
+            # ▲ up-pointing triangle
+            draw.polygon([
+                (_bi_cx,          _bi_cy - _r),
+                (_bi_cx - _r,     _bi_cy + _r),
+                (_bi_cx + _r,     _bi_cy + _r),
+            ], fill=0)
         else:
             _bi_cy = start_y + 55 * s + 14 * s  # vertical center of home logo row
-        draw.ellipse([_bi_cx - _r, _bi_cy - _r, _bi_cx + _r, _bi_cy + _r], fill=0)
+            # ▼ down-pointing triangle
+            draw.polygon([
+                (_bi_cx - _r,     _bi_cy - _r),
+                (_bi_cx + _r,     _bi_cy - _r),
+                (_bi_cx,          _bi_cy + _r),
+            ], fill=0)
 
     # Bold-offset score for winner (both modes)
     if game_data.get('away_team_is_winner'):
