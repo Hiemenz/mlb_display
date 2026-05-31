@@ -349,27 +349,30 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
     draw.line((col_start, 60 + row_start, 580 + col_start, 60 + row_start), fill = 0)
     draw.line((col_start, 90 + row_start, 580 + col_start, 90 + row_start), fill = 0)
 
+    def _cell_center(fnt, val, cell_idx, y):
+        """Draw val horizontally centred in the 40-px column at index cell_idx."""
+        cell_left = 100 + 40 * cell_idx + col_start
+        cell_w = 40
+        txt = str(val)
+        try:
+            bb = fnt.getbbox(txt)
+            tw = bb[2] - bb[0]
+            tx = cell_left + (cell_w - tw) // 2 - bb[0]
+        except Exception:
+            tw = int(fnt.getlength(txt))
+            tx = cell_left + (cell_w - tw) // 2
+        draw.text((tx, y), txt, font=fnt, fill=0)
+
     for i in range(13):
-        # inning
-        sub_header, sub_away, sub_home = 0,0,0
         if i < 12:
-
-            if 1 < len(str(inning_header[i])):
-                sub_header = -7
-            if 1 < len(str(away[i])):
-                sub_away = -7
-            if 1 < len(str(home[i])):
-                sub_home = -7
-
-            if away[i] == None:
+            if away[i] is None:
                 away[i] = ''
-
-            if home[i] == None:
+            if home[i] is None:
                 home[i] = ''
 
-            draw.text((115 + sub_header + (40*i) + col_start, 0 + row_start), str(inning_header[i]), font = font24, fill = 0)
-            draw.text((115 + sub_away + (40*i) + col_start, 30 + row_start), str(away[i]), font = font24, fill = 0)
-            draw.text((115 + sub_home + (40*i) + col_start, 60 + row_start), str(home[i]), font = font24, fill = 0)
+            _cell_center(font24, inning_header[i], i, 0 + row_start)
+            _cell_center(font24, away[i], i, 30 + row_start)
+            _cell_center(font24, home[i], i, 60 + row_start)
 
         # vertical line
         if i >= 1 and i <= 8 and DISPLAY_PROBS:
