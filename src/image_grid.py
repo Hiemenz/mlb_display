@@ -350,18 +350,34 @@ def generate_image(Himage, col_start, row_start, away_team, home_team, away,
     draw.line((col_start, 90 + row_start, 580 + col_start, 90 + row_start), fill = 0)
 
     def _cell_center(fnt, val, cell_idx, y):
-        """Draw val horizontally centred in the 40-px column at index cell_idx."""
+        """Draw val horizontally centred in the 40-px column at index cell_idx.
+
+        Uses tight pixel-scan centering: renders to a scratch buffer to find
+        the actual leftmost/rightmost ink pixel, then positions so the ink
+        center lands at the column midpoint.  Max error ≤ 0.5 px (rounding).
+        """
         cell_left = 100 + 40 * cell_idx + col_start
-        cell_w = 40
+        cell_cx = cell_left + 20   # midpoint of the 40-px column
         txt = str(val)
+        if not txt:
+            return
         try:
             bb = fnt.getbbox(txt)
-            tw = bb[2] - bb[0]
-            tx = cell_left + (cell_w - tw) // 2 - bb[0]
+            ox, oy = 2, 2
+            buf_w = max(bb[2] - bb[0] + ox * 2, 6)
+            buf_h = max(bb[3] - bb[1] + oy * 2, 6)
+            buf = Image.new('L', (buf_w, buf_h), 255)
+            ImageDraw.Draw(buf).text((ox - bb[0], oy - bb[1]), txt, font=fnt, fill=0)
+            bpx = buf.load()
+            ink_xs = [c for r in range(buf_h) for c in range(buf_w) if bpx[c, r] < 128]
+            if not ink_xs:
+                draw.text((cell_left + 10, y), txt, font=fnt, fill=0)
+                return
+            ink_cx = (min(ink_xs) + max(ink_xs)) / 2 - ox   # relative to draw origin
+            draw.text((round(cell_cx - ink_cx), y), txt, font=fnt, fill=0)
         except Exception:
             tw = int(fnt.getlength(txt))
-            tx = cell_left + (cell_w - tw) // 2
-        draw.text((tx, y), txt, font=fnt, fill=0)
+            draw.text((cell_left + (40 - tw) // 2, y), txt, font=fnt, fill=0)
 
     for i in range(13):
         if i < 12:

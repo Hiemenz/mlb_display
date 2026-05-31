@@ -211,13 +211,35 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
         draw.line((vx, y0, vx, y3), fill=0)
 
     def _draw_centered(fnt, val, cx, cy):
-        """Draw val centered at (cx, cy) using actual ink bounds (not advance width)."""
+        """Draw val pixel-centered at (cx, cy) by scanning actual rendered ink bounds.
+
+        getbbox() returns the advance-width cell for bitmap/pixel fonts (all digits
+        report the same box), so centering by ink width alone leaves narrow glyphs
+        like '1' visually left of center.  Rendering to a scratch buffer and measuring
+        the real leftmost/rightmost ink pixel gives sub-pixel accuracy (max ±0.5 px).
+        """
+        txt = str(val)
+        if not txt:
+            return
         try:
-            bb = fnt.getbbox(val)
-            tw, th = bb[2] - bb[0], bb[3] - bb[1]
-            draw.text((cx - tw // 2 - bb[0], cy - th // 2 - bb[1]), val, font=fnt, fill=0)
+            bb = fnt.getbbox(txt)
+            # Render into a scratch 1-channel buffer with a 2-px guard border
+            ox, oy = 2, 2
+            buf_w = max(bb[2] - bb[0] + ox * 2, 6)
+            buf_h = max(bb[3] - bb[1] + oy * 2, 6)
+            buf = Image.new('L', (buf_w, buf_h), 255)
+            ImageDraw.Draw(buf).text((ox - bb[0], oy - bb[1]), txt, font=fnt, fill=0)
+            bpx = buf.load()
+            ink_xs = [c for r in range(buf_h) for c in range(buf_w) if bpx[c, r] < 128]
+            ink_ys = [r for r in range(buf_h) for c in range(buf_w) if bpx[c, r] < 128]
+            if not ink_xs:
+                draw.text((cx, cy), txt, font=fnt, fill=0, anchor='mm')
+                return
+            ink_cx = (min(ink_xs) + max(ink_xs)) / 2 - ox  # relative to draw origin
+            ink_cy = (min(ink_ys) + max(ink_ys)) / 2 - oy
+            draw.text((round(cx - ink_cx), round(cy - ink_cy)), txt, font=fnt, fill=0)
         except Exception:
-            draw.text((cx, cy), val, font=fnt, fill=0, anchor='mm')
+            draw.text((cx, cy), txt, font=fnt, fill=0, anchor='mm')
 
     # --- inning header labels ---
     for k in range(N_COLS):
