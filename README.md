@@ -1,6 +1,6 @@
 # MLB E-Ink Display
 
-Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480) running on a Raspberry Pi. Fetches live MLB data and renders it in five switchable display modes. Controllable via Discord bot.
+Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480) running on a Raspberry Pi. Fetches live MLB data and renders it in multiple display modes. Controllable via Discord bot.
 
 ![Full scoreboard — May 31 2026, pre-game](docs/scoreboard_pregame.png)
 
@@ -20,7 +20,10 @@ Each tile adapts to game state — see [Tile States](#scoreboard-tile-states) be
 
 ![Scoreboard — pre-game](docs/scoreboard_pregame.png)
 
-**Live** — shows score, inning/half, base runners, outs, ball/strike count, per-inning linescore, and a **win probability bar** with team logos sliding to their live win probability position. Live detail line shows current pitcher, batter, fastball %, and pitch count.
+**Live** — two sub-states depending on whether a pitch is in flight or the half-inning has just ended:
+
+- *Mid-inning:* shows score, inning/half indicator, **base runner diamonds**, **outs**, **ball/strike count**, per-inning linescore, and a **win probability bar** with team logos. Live detail line shows current pitcher, batter, fastball %, and pitch count.
+- *Between innings:* bases, outs, and count are hidden — replaced by the **next three batters** due up and the incoming pitcher. Per-inning linescore and win probability bar remain.
 
 ![Scoreboard — live games](docs/scoreboard_live.png)
 
@@ -30,11 +33,12 @@ Each tile adapts to game state — see [Tile States](#scoreboard-tile-states) be
 
 ---
 
-### Linescore Mode
+### Fullscreen Featured Game
 
-Two selected games shown in full detail side by side, with live division standings below.
+Single-game focus mode for your primary team. Enable by setting `FEATURED_TEAM_FULLSCREEN=true` in the environment.
 
-![Linescore Mode](docs/linescore_mode.png)
+- **Live:** custom 800×480 layout with large inning header, R/H/E columns, base-runner diagram, outs, and the same between-innings next-batters panel as the tile view.
+- **Pre-game / Final:** the normal scoreboard tile scaled up 3× and centered, with wildcard strip and standings sidebars drawn around it exactly as they appear in the grid.
 
 ---
 
@@ -74,11 +78,13 @@ Shows start time, stadium, **probable pitchers** with W-L and ERA, **team record
 
 ### Live / In Progress
 
-Shows inning and half (e.g. `END 6`), score, **base runner diamonds** (open = empty, filled = occupied), **outs** as filled circles, **ball/strike count**, and a rolling per-inning linescore grid. Live detail shows current pitcher and batter. A win probability bar anchors the bottom with each team's logo positioned at their live win chance.
+The tile has two distinct layouts depending on inning state.
+
+**Mid-inning (pitch in play):** score, inning/half indicator (e.g. `TOP 6`), **base runner diamonds** (open = empty, filled = occupied), **outs** as filled circles, **ball/strike count**, and a rolling per-inning linescore grid. Live detail line shows current pitcher, batter, fastball %, and pitch count. A **win probability bar** anchors the bottom with each team's logo at their live win chance.
 
 ![Live tile](docs/tile_live.png)
 
-For a closer look at the live tile layout:
+**Between innings:** bases, outs, and count are cleared — the tile shows the **next three batters** due up for the upcoming half-inning (leadoff, on-deck, in-hole) and the incoming pitcher below a separator line. Per-inning linescore and win probability bar remain.
 
 ![Live tile — detail](docs/tile_live_detail.png)
 
@@ -119,7 +125,7 @@ Edit `config/config.yaml`:
 
 ```yaml
 # ── Display mode ──────────────────────────────────────────────
-# scoreboard | linescore | field | scorecard | pitch
+# scoreboard | field | scorecard | pitch
 display_mode: scoreboard
 
 # ── Primary team (for single-game modes and favorite-first slot) ──
@@ -213,8 +219,8 @@ poetry run python main.py                # Raspberry Pi
 poetry run python main.py --date 2026-04-19
 poetry run python main.py --sport-id 8   # World Baseball Classic
 
-# Linescore mode
-poetry run python src/render_scoreboard.py --mode linescore
+# Fullscreen featured game (primary team, single-game focus)
+FEATURED_TEAM_FULLSCREEN=true poetry run python main.py
 ```
 
 **Crontab** — run every 14 minutes:
@@ -249,7 +255,6 @@ Control the display from a Discord channel using `!display` prefix commands.
 
 ```
 !display mode scoreboard    — switch to 15-game scoreboard grid
-!display mode linescore     — switch to linescore + standings
 !display mode field         — switch to single-game field view
 !display mode scorecard     — switch to at-bat scorecard grid
 !display mode pitch         — switch to pitch location view
@@ -288,6 +293,7 @@ mlb_display/
 │   ├── render_scoreboard.py      # Render image from cached data (CLI)
 │   ├── generate_image.py         # Core rendering logic (orchestrate_score_board)
 │   ├── image_box.py              # Per-tile drawing (draw_box)
+│   ├── image_featured.py         # Fullscreen featured-game renderer (draw_featured_game_fullscreen)
 │   ├── image_standings.py        # Standings sidebar + wildcard strip
 │   ├── field_view.py             # Field diagram renderer
 │   ├── scorecard_view.py         # At-bat scorecard renderer
