@@ -123,11 +123,13 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
                             game_end_time=game_end_time)
     return Himage, new_image_dict
 
-_LINESCORE_SHOW_SECONDS = 60 * 60  # show linescore for 60 min after last play
+def _game_in_window(team_abbr, games_scheduled, window_secs=3600):
+    """Return True if the team's game is live or ended within window_secs ago.
 
-
-def _game_in_window(team_abbr, games_scheduled):
-    """Return True if the team's game is live or ended less than 60 minutes ago."""
+    window_secs defaults to 3600 (1 hour) but callers should pass
+    ``config.get('final_linescore_minutes', 60) * 60`` so the value
+    stays in sync with the YAML setting used everywhere else.
+    """
     game_id = (games_scheduled or {}).get('team_to_game_id', {}).get(team_abbr)
     if not game_id:
         return True
@@ -139,7 +141,7 @@ def _game_in_window(team_abbr, games_scheduled):
         return False
     try:
         end_utc = pytz.utc.localize(datetime.strptime(end_utc_str[:19], "%Y-%m-%dT%H:%M:%S"))
-        return (datetime.now(pytz.utc) - end_utc).total_seconds() < _LINESCORE_SHOW_SECONDS
+        return (datetime.now(pytz.utc) - end_utc).total_seconds() < window_secs
     except Exception:
         return False
 
@@ -154,9 +156,11 @@ def draw_boards():
     col_start = 100
     row_start = 40
 
+    _window_secs = config_data.get('final_linescore_minutes', 60) * 60
+
     team_abbr = None
     for _candidate in [config_data.get('primary'), config_data.get('primary_backup'), config_data.get('primary_backup_2')]:
-        if linescore_data.get(_candidate) and _game_in_window(_candidate, games_scheduled):
+        if linescore_data.get(_candidate) and _game_in_window(_candidate, games_scheduled, _window_secs):
             team_abbr = _candidate
             break
 
@@ -165,7 +169,7 @@ def draw_boards():
 
     team_abbr = None
     for _candidate in [config_data.get('secondary'), config_data.get('secondary_backup'), config_data.get('secondary_backup_2')]:
-        if linescore_data.get(_candidate) and _game_in_window(_candidate, games_scheduled):
+        if linescore_data.get(_candidate) and _game_in_window(_candidate, games_scheduled, _window_secs):
             team_abbr = _candidate
             break
 
