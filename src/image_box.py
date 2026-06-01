@@ -317,10 +317,18 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
     """ABS challenge indicators beside each team row — wide flat rectangles, filled=remaining."""
     s = scale
     _LOGO_SIZE = 28 * s
-    # Rectangle dimensions: wide and flat (landscape), matching featured-view style
-    rect_w = 12 * s
-    rect_h =  4 * s
+    rect_h   = 4 * s
     rect_gap = 2 * s  # gap between consecutive rectangles
+
+    # Determine abs_max early so rect_w can be sized to fit the fixed band.
+    abs_max = game_data.get('abs_challenge_max') or _ABS_CHALLENGE_MAX
+
+    # Fixed band width = baseline 2-challenge layout (26 px at scale=1).
+    # Extra-inning challenges split the same space into proportionally smaller rects.
+    _BAND_W = (2 * 12 + 1 * 2) * s   # 26 px at scale=1
+    rect_w = max(3 * s, (_BAND_W - (abs_max - 1) * rect_gap) // abs_max)
+    # e.g. abs_max=2 → 12 px, abs_max=3 → 7 px, abs_max=4 → 5 px
+    replay_rect_w = 12 * s  # replay is always 1 rect — keep full baseline width
 
     if use_logos:
         # x: same left edge as the team abbreviation text (logo_x_offset + logo + 2px gap)
@@ -339,13 +347,12 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
         away_replay_y = start_y + (25 + 23 + 4) * s        # = start_y + 52*s
         home_replay_y = start_y + (55 + 23 + 4) * s        # = start_y + 82*s
 
-    abs_max = game_data.get('abs_challenge_max') or _ABS_CHALLENGE_MAX
-
-    def _draw_rect(rx, ry_center, filled):
+    def _draw_rect(rx, ry_center, filled, w=None):
         """Draw one wide rectangle centered vertically on ry_center."""
+        rw = w if w is not None else rect_w
         ry0 = ry_center - rect_h // 2
         ry1 = ry0 + rect_h
-        box = (rx, ry0, rx + rect_w, ry1)
+        box = (rx, ry0, rx + rw, ry1)
         if filled:
             draw.rectangle(box, fill=0)
         else:
@@ -365,10 +372,10 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
                 rx = rect_x0 + i * (rect_w + rect_gap)
                 _draw_rect(rx, abs_y, i < abs_remaining)
 
-        # Replay rectangle — max 1
+        # Replay rectangle — always 1 slot, stays at full baseline width
         if replay_remaining is not None:
             replay_remaining = max(0, min(1, int(replay_remaining)))
-            _draw_rect(rect_x0, replay_y, replay_remaining > 0)
+            _draw_rect(rect_x0, replay_y, replay_remaining > 0, w=replay_rect_w)
 
 
 def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show_tv=True, scale=1):
