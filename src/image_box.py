@@ -1761,16 +1761,26 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Next game preview — shown in the win-prob strip for Final games after final_linescore_minutes expires
     if _game_is_final and not _historical_mode:
         _window_expired = False
+        _end_time_resolved = False
         if _end_utc_str:
             try:
                 _end_utc = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], '%Y-%m-%dT%H:%M:%S'))
                 _window_expired = (_datetime.now(pytz.utc) - _end_utc).total_seconds() >= _FINAL_LINESCORE_SECS
+                _end_time_resolved = True  # authoritative — skip all fallbacks
             except Exception:
                 pass
-        if not _window_expired:
-            # game_date before today UTC → definitely a past-day game (morning window showing yesterday)
+        if not _end_time_resolved:
+            # No precise UTC end time — use game_date (local date) or first-seen timestamp.
+            # game_date is in local time so compare in local tz, not UTC, to avoid false
+            # expiry for evening games that cross midnight UTC.
+            try:
+                _cfg2 = load_yaml_file('config.yaml')
+                _tz_str2 = _cfg2.get('timezone', 'America/Chicago')
+                _today_local = _datetime.now(pytz.timezone(_tz_str2)).strftime('%Y-%m-%d')
+            except Exception:
+                _today_local = _datetime.now(pytz.utc).strftime('%Y-%m-%d')
             _gd_prefix = (game_data.get('game_date') or '')[:10]
-            if _gd_prefix and _gd_prefix < _datetime.now(pytz.utc).strftime('%Y-%m-%d'):
+            if _gd_prefix and _gd_prefix < _today_local:
                 _window_expired = True
             else:
                 _fts = _get_or_set_final_time(game_data.get('game_pk'))
