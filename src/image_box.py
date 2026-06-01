@@ -290,7 +290,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     _draw_row(away_inn, y1)
     _draw_row(home_inn, y2)
 
-    # Short dash in the home team's last column when the bottom half wasn't played.
+    # X mark in the home team's last column when the bottom half wasn't played.
     _is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
     if _is_final and away_inn:
         last_idx = len(away_inn) - 1
@@ -301,9 +301,11 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
             if 0 <= col_k < N_COLS:
                 cell_x = grid_x0 + LOGO_COL_W + col_k * COL_W
                 cx = cell_x + COL_W // 2
-                cy = y2 + ROW_H_TEAM // 2 + 1
-                dash_half = 3 * s
-                draw.line((cx - dash_half, cy, cx + dash_half, cy), fill=0)
+                cy = y2 + ROW_H_TEAM // 2
+                hx = 2 * s  # narrow horizontal spread → skinny X
+                hy = 4 * s  # taller vertical spread
+                draw.line((cx - hx, cy - hy, cx + hx, cy + hy), fill=0)
+                draw.line((cx + hx, cy - hy, cx - hx, cy + hy), fill=0)
 
     return draw, Himage
 
