@@ -57,22 +57,17 @@ def _find_featured_game(game_state_data, team_data, primary_abbr):
 def draw_live_fullscreen_game(game_data, team_data, config=None):
     """Full 800x480 canvas for a live (In Progress) featured game.
 
-    Layout v5 (linescore added)
+    Layout v4
     ---------
-    y=0..59    Header  : inning (f56, left)  last event/matchup (f56/f36, right)
-    y=60       Thick header line
-    y=61..78   Linescore inning-number header row
-    y=79..96   Linescore away-team row
-    y=97..114  Linescore home-team row
-    y=115      Thin linescore bottom line
-    y=115..134 R / H / E column labels (f14)
-    y=135..214 Away row : logo  abbr  R  H  E  |  bases diamond (right, spans rows)
-    y=215..294 Home row : logo  abbr  R  H  E  |
-    y=274..322 [blank left]  |  outs circles (right, under bases)
-    y=322      Thick divider line
-    y=323..425 Situation area (103 px):
-        Live           : B/S circles (f36) + pitch info (f28) + pitcher/batter (f28)
-        Between-innings: pitcher (f36, left) + due-up batters (f28, right)
+    y=0..91    Header  : inning (f56, left)  last event/matchup (f56, right)
+    y=92..111  R / H / E column labels (f14)
+    y=112..191 Away row : logo  abbr  R  H  E  |  bases diamond (right, spans rows)
+    y=192..271 Home row : logo  abbr  R  H  E  |
+    y=272..307 [blank left]  |  outs circles (right, under bases)
+    y=308      Divider line
+    y=309..479 Bottom :
+        Live           : B/S/O circles + pitch info (f36) + pitcher/batter (f42)
+        Between-innings: pitcher (f42, left, centred) + due-up batters (f42, right)
     y=425      Win % divider
     y=426..479 Win % bar (54 px)
     """
@@ -95,7 +90,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     draw   = ImageDraw.Draw(canvas)
 
     # ---- Fonts ---------------------------------------------------------------
-    f14  = _get_font(14)    # linescore team rows + ABS labels
+    f14  = _get_font(14)    # ABS / challenge labels
     f24  = _get_font(24)    # between-innings batters + OD
     f28  = _get_font(28)    # between-innings pitcher + SV badge
     f36  = _get_font(36)    # pitch info right-aligned
@@ -123,7 +118,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     _between_innings = _inn_state in ('Middle', 'End')
     _pitching_change = (game_data.get('sub_event') or '').startswith('PC:')
 
-    # ---- Layout constants (original — linescore lives in situation area) -----
+    # ---- Layout constants -------------------------------------------------------
     HEADER_H   = 69
     LABEL_H    = 20
     TEAM_ROW_H = 80
@@ -157,10 +152,6 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     B_R   = 16
     O_R   = 20
     C_GAP = 5
-
-    # Between-innings linescore metrics (used in situation area only)
-    _LS_TEAM_W = 60            # team abbr column
-    _LS_ROW_H  = 15            # height of each linescore team row
 
     # ---- Last-event helper (built early for header use) ----------------------
     _FLD_POS = [
@@ -392,20 +383,10 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     # ---- DIVIDER (full width, thick) ----------------------------------------
     draw.line((0, DIV_Y, 799, DIV_Y), fill=0, width=2)
 
-    # ---- BOTTOM SITUATION AREA (149 px: SIT_Y=277 → WIN_PCT_Y=426) ----------
-    # Detect when game is effectively over in a transient between-innings state.
-    _game_effectively_over = (
-        _between_innings and _cur_inn >= 9 and (
-            (_inn_state == 'Middle' and
-             (game_data.get('home_runs') or 0) > (game_data.get('away_runs') or 0)) or
-            (not (game_data.get('next_batter_1') or game_data.get('next_batter_2')) and
-             (game_data.get('home_runs') or 0) != (game_data.get('away_runs') or 0))
-        )
-    )
-
+    # ---- BOTTOM SITUATION AREA ----------------------------------------------
     if _between_innings or _pitching_change:
-        # ---- Between innings: pitcher (top-left) | linescore | batters (bottom-right) ----
-        _bot = WIN_PCT_Y - 2
+        # ---- Between innings: due-up batters (big, left) + pitcher (right-aligned) ----
+        _by = SIT_Y + 8
 
         _batter_names = [nm for nm in [
             _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
@@ -417,85 +398,25 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             game_data.get('next_pitcher') or game_data.get('current_pitcher') or ''
         )
 
-        if _game_effectively_over:
-            _fin_txt = 'FINAL'
-            _fin_w   = int(f42.getlength(_fin_txt))
-            _fin_y   = SIT_Y + ((_bot - SIT_Y) - 42) // 2
-            draw.text((400 - _fin_w // 2,     _fin_y), _fin_txt, font=f42, fill=0)
-            draw.text((400 - _fin_w // 2 + 1, _fin_y), _fin_txt, font=f42, fill=0)
-        else:
-            # Pitcher: top-left, f28
-            _pit_y = SIT_Y + 6
-            if _pit_nm and _pit_y + 28 <= _bot:
-                draw.text((16, _pit_y),     _pit_nm, font=f28, fill=0)
-                draw.text((17, _pit_y),     _pit_nm, font=f28, fill=0)
+        _bot = WIN_PCT_Y - 4
 
-            # Mini linescore (2 team rows, no inning header) between pitcher and batters
-            _ls_away = game_data.get('away_inning_runs') or []
-            _ls_home = game_data.get('home_inning_runs') or []
-            _ls_n     = min(max(9, _cur_inn), 12)
-            _ls_first = max(1, _cur_inn - _ls_n + 1) if _cur_inn > _ls_n else 1
-            _ls_inn_w = (800 - _LS_TEAM_W) // _ls_n   # px per inning column
+        # Pitcher: left side, vertically centred in the bottom section
+        if _pit_nm:
+            _pit_y = (SIT_Y + 8 + _bot) // 2 - 21
+            draw.text((16, _pit_y),     _pit_nm, font=f42, fill=0)
+            draw.text((17, _pit_y),     _pit_nm, font=f42, fill=0)
 
-            # Position linescore below pitcher + gap
-            _ls_top = _pit_y + 28 + 6    # y=SIT_Y+40 ≈ 317
-            _ls_a_y = _ls_top             # away row top
-            _ls_h_y = _ls_top + _LS_ROW_H + 1  # home row top (1px for divider)
-            _ls_bot = _ls_h_y + _LS_ROW_H  # bottom of linescore
-
-            # Horizontal dividers
-            draw.line((0, _ls_top, 799, _ls_top), fill=0, width=1)
-            draw.line((0, _ls_a_y + _LS_ROW_H, 799, _ls_a_y + _LS_ROW_H), fill=0, width=1)
-            draw.line((0, _ls_bot, 799, _ls_bot), fill=0, width=1)
-            # Team column divider
-            draw.line((_LS_TEAM_W, _ls_top, _LS_TEAM_W, _ls_bot), fill=0, width=1)
-            # Inning column dividers (light)
-            for _k in range(1, _ls_n):
-                _vx = _LS_TEAM_W + _k * _ls_inn_w
-                draw.line((_vx, _ls_top, _vx, _ls_bot), fill=0, width=1)
-
-            # Team abbr in team column
-            for _ls_abbr, _row_y in ((away_abbr, _ls_a_y), (home_abbr, _ls_h_y)):
-                _tw = int(f14.getlength(_ls_abbr[:3]))
-                draw.text(((_LS_TEAM_W - _tw) // 2, _row_y + (_LS_ROW_H - 14) // 2),
-                          _ls_abbr[:3], font=f14, fill=0)
-
-            # Per-inning run values
-            def _ls_val(inn_runs, row_y, val_offset=0):
-                for _k in range(_ls_n):
-                    _idx = _ls_first - 1 + _k
-                    if _idx < len(inn_runs) and inn_runs[_idx] is not None:
-                        _val = str(inn_runs[_idx])
-                        _vx  = _LS_TEAM_W + _k * _ls_inn_w + (_ls_inn_w - int(f14.getlength(_val))) // 2
-                        draw.text((_vx, row_y + val_offset), _val, font=f14, fill=0)
-
-            _ls_val(_ls_away, _ls_a_y, (_LS_ROW_H - 14) // 2)
-            _ls_val(_ls_home, _ls_h_y, (_LS_ROW_H - 14) // 2)
-
-            # X in home row when home team wins without batting in the last inning
-            _ls_finally = (
-                _inn_state == 'Middle' and _cur_inn >= 9 and
-                (game_data.get('home_runs') or 0) > (game_data.get('away_runs') or 0)
-            )
-            if _ls_finally and _ls_away:
-                _last_idx = len(_ls_away) - 1
-                _home_last = _ls_home[_last_idx] if _last_idx < len(_ls_home) else None
-                if _home_last is None:
-                    _col_k = _last_idx - (_ls_first - 1)
-                    if 0 <= _col_k < _ls_n:
-                        _cx = _LS_TEAM_W + _col_k * _ls_inn_w + _ls_inn_w // 2
-                        _cy = _ls_h_y + _LS_ROW_H // 2
-                        draw.line((_cx - 4, _cy - 5, _cx + 4, _cy + 5), fill=0, width=2)
-                        draw.line((_cx + 4, _cy - 5, _cx - 4, _cy + 5), fill=0, width=2)
-
-            # Batters: right-aligned below linescore, f24, 24px spacing
-            _by = _ls_bot + 3
-            for _nm in _batter_names:
-                if _by + 24 <= _bot:
-                    _nm_w = int(f24.getlength(_nm))
-                    draw.text((800 - _nm_w - 16, _by),     _nm, font=f24, fill=0)
-                    draw.text((800 - _nm_w - 15, _by),     _nm, font=f24, fill=0)
-                    _by += 24
+        # Batters: right-aligned, stacked from top, bounded by WIN_PCT_Y
+        _avail_h = _bot - _by
+        _n = len(_batter_names) or 1
+        _bat_spacing = min(48, _avail_h // _n)
+        for _nm in _batter_names:
+            if _by + 42 <= _bot:
+                _nm_w = int(f42.getlength(_nm))
+                _nm_x = 800 - _nm_w - 16
+                draw.text((_nm_x, _by),     _nm, font=f42, fill=0)
+                draw.text((_nm_x + 1, _by), _nm, font=f42, fill=0)
+                _by += _bat_spacing
 
     else:
         # ---- Active pitch: B/S circles (f42) + pitch info (f36) + pitcher/batter (f42) ----
