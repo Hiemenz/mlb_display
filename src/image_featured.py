@@ -277,9 +277,9 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
                             (LOGO_X + (LOGO_SZ - _lw3) // 2,
                              row_y  + (TEAM_ROW_H - _lh3) // 2))
                 draw = ImageDraw.Draw(canvas)
-        _abbr_y = row_y + (TEAM_ROW_H - 42) // 2
-        draw.text((ABBR_X,     _abbr_y), abbr, font=f42, fill=0)
-        draw.text((ABBR_X + 1, _abbr_y), abbr, font=f42, fill=0)
+        _abbr_y = row_y + (TEAM_ROW_H - 56) // 2
+        draw.text((ABBR_X,     _abbr_y), abbr, font=f56, fill=0)
+        draw.text((ABBR_X + 1, _abbr_y), abbr, font=f56, fill=0)
 
         # ABS challenges — rectangles above abbreviation, starting at ABBR_X
         # filled = challenge available, empty outline = challenge used
@@ -287,7 +287,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             _abs_max = game_data.get('abs_challenge_max') or 2
             _rw, _rh = 36, 10
             _r_gap   = 4
-            _r_top   = _abbr_y - _rh + 5   # moved down 4px more
+            _r_top   = _abbr_y - _rh + 5
             _r_left  = ABBR_X
             if _r_top >= row_y:
                 for i in range(_abs_max):
@@ -303,7 +303,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         # filled = challenge available, empty outline = used
         if replay_remaining is not None:
             _rw, _rh = 36, 10
-            _r_top   = _abbr_y + 42 + 3
+            _r_top   = _abbr_y + 56 + 3
             _r_left  = ABBR_X
             if _r_top + _rh <= row_y + TEAM_ROW_H:
                 if replay_remaining > 0:    # filled = has challenge
