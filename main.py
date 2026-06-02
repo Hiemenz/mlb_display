@@ -535,10 +535,6 @@ Examples:
                 return
 
     # 6. Fetch
-    # In fullscreen mode tell the fetcher which team is featured so it skips
-    # live-feed calls for all other games.
-    if _is_fullscreen:
-        config['_featured_abbr'] = config.get('primary', '')
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
     # 6b. Fetch the "next-day" schedule for next-game preview strips (cached, refreshes hourly).

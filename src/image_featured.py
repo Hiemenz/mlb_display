@@ -21,7 +21,8 @@ def _find_featured_game(game_state_data, team_data, primary_abbr):
     """Return the best game to display for primary_abbr in fullscreen mode.
 
     Priority: first Scheduled/Pre-Game/Warmup → first In Progress → last Final.
-    Falls back to the first game in the list if the primary team has no game.
+    Falls back to any live game in progress, then the first game, when the primary
+    team has no game today.
     """
     abbr_map = team_data.get('team_abbreviation', {})
     primary_games = []
@@ -32,6 +33,10 @@ def _find_featured_game(game_state_data, team_data, primary_abbr):
             primary_games.append(game)
 
     if not primary_games:
+        _live_states = {'In Progress', 'Player challenge', 'Manager challenge'}
+        for g in game_state_data:
+            if g.get('detailed_state') in _live_states:
+                return g
         return game_state_data[0] if game_state_data else None
 
     _scheduled = {'Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start'}
@@ -156,6 +161,9 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
     def _build_last_event():
         _sub_ev = (game_data.get('sub_event') or '').strip()
+        # PC notices display in the bottom panel; show the last real play in the header.
+        if _sub_ev.startswith('PC:'):
+            _sub_ev = ''
         _lp     = game_data.get('last_play') or ''
         _raw    = _sub_ev or _lp
         if not _raw:
@@ -389,24 +397,25 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             game_data.get('next_pitcher') or game_data.get('current_pitcher') or ''
         )
 
-        # Batters: stack vertically, bounded by WIN_PCT_Y
         _bot = WIN_PCT_Y - 4
+
+        # Pitcher: left side, vertically centred in the bottom section
+        if _pit_nm:
+            _pit_y = (SIT_Y + 8 + _bot) // 2 - 21
+            draw.text((16, _pit_y),     _pit_nm, font=f42, fill=0)
+            draw.text((17, _pit_y),     _pit_nm, font=f42, fill=0)
+
+        # Batters: right-aligned, stacked from top, bounded by WIN_PCT_Y
         _avail_h = _bot - _by
         _n = len(_batter_names) or 1
         _bat_spacing = min(48, _avail_h // _n)
         for _nm in _batter_names:
             if _by + 42 <= _bot:
-                draw.text((16, _by),     _nm, font=f42, fill=0)
-                draw.text((17, _by),     _nm, font=f42, fill=0)
+                _nm_w = int(f42.getlength(_nm))
+                _nm_x = 800 - _nm_w - 16
+                draw.text((_nm_x, _by),     _nm, font=f42, fill=0)
+                draw.text((_nm_x + 1, _by), _nm, font=f42, fill=0)
                 _by += _bat_spacing
-
-        # Pitcher: right-aligned, vertically centred in the bottom section
-        if _pit_nm:
-            _pit_w = int(f42.getlength(_pit_nm))
-            _pit_x = 800 - _pit_w - 16
-            _pit_y = (SIT_Y + 8 + _bot) // 2 - 21
-            draw.text((_pit_x, _pit_y),     _pit_nm, font=f42, fill=0)
-            draw.text((_pit_x + 1, _pit_y), _pit_nm, font=f42, fill=0)
 
     else:
         # ---- Active pitch: B/S (no O)  +  pitch info  +  pitcher/batter ----
