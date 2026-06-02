@@ -671,10 +671,7 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
 
     # Live game: custom full-screen layout (no sidebars, R/H/E + bases)
     if _is_live:
-        _live_canvas = draw_live_fullscreen_game(game_data, team_data, config)
-        if config.get('dark_mode', False):
-            _live_canvas = ImageOps.invert(_live_canvas.convert('L')).convert('1')
-        return _live_canvas
+        return draw_live_fullscreen_game(game_data, team_data, config)
 
     use_logos   = config.get('use_team_logos', False)
     logo_offset = config.get('small_logo_x_offset', 2)
