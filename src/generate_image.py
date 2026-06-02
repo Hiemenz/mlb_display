@@ -192,7 +192,33 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')
-        return (Himage, [])   # always full refresh for fullscreen
+
+        # Partial refresh for live fullscreen: if only bottom-panel fields changed
+        # (count, pitch info, pitcher/batter, win %), refresh just y=277..479.
+        # Top section (scores, bases, outs) requires a full refresh when it changes.
+        _fs_regions = []
+        if not bypass_cache and featured_game:
+            _ds = featured_game.get('detailed_state', '')
+            _is_live_fs = _ds in ('In Progress', 'Player challenge', 'Manager challenge')
+            if _is_live_fs:
+                _feat_pk = str(featured_game.get('game_pk', ''))
+                _old_feat = old_by_pk.get(_feat_pk)
+                if _old_feat is not None:
+                    _BOTTOM_ONLY = frozenset({
+                        'balls', 'strikes', 'strike_calls',
+                        'last_pitch_speed', 'last_pitch_type', 'pitch_count',
+                        'current_pitcher',
+                        'current_play_batter', 'current_hitter',
+                        'due_up', 'next_batter_1', 'next_batter_2', 'next_batter_3', 'in_hole',
+                        'current_at_bat_complete',
+                        'away_win_probability', 'home_win_probability',
+                    })
+                    _changed_fields = {k for k in set(featured_game) | set(_old_feat)
+                                       if featured_game.get(k) != _old_feat.get(k)}
+                    if _changed_fields and _changed_fields.issubset(_BOTTOM_ONLY):
+                        _fs_regions = [(0, 277, 800, 203)]  # situation area + win% bar
+
+        return (Himage, _fs_regions)
 
     # --- Normal scoreboard grid ---
     Himage = Image.new('1', (800, 480), 255)

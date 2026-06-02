@@ -1400,7 +1400,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if _rbi > 0 and play_display and not _sub_ev and not game_data.get('last_review_result') and not _is_error:
             if not _between_innings or _is_tag_out:
                 if play_display == 'HR':
-                    if _rbi >= 2:
+                    if _rbi == 4:
+                        play_display = 'Grand Slam'
+                    elif _rbi >= 2:
                         play_display = f'{_rbi}R HR'
                     # solo HR: no prefix
                 elif _rbi == 1:
