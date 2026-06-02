@@ -191,8 +191,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             Himage = Image.new('1', (800, 480), 255)
             Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
-        if config.get('dark_mode', False):
-            Himage = ImageOps.invert(Himage.convert('L')).convert('1')
+        Himage = ImageOps.invert(Himage.convert('L')).convert('1')
         return (Himage, [])   # always full refresh for fullscreen
 
     # --- Normal scoreboard grid ---
