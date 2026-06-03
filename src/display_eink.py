@@ -8,7 +8,7 @@ import logging
 from PIL import Image
 
 from util import load_json_file, load_yaml_file
-from refresh_tracker import needs_full_refresh, record_full_refresh
+from refresh_tracker import needs_full_refresh, record_full_refresh, record_partial_refresh
 
 # Only import waveshare hardware drivers on non-Darwin platforms
 if platform.system() != 'Darwin':
@@ -101,6 +101,7 @@ def display_partial_regions(full_image, regions, output_filename='resulting_imag
     # Always save the full image
     full_image.save(output_filename)
     print(f"Image saved to {output_filename}")
+    record_partial_refresh()
 
     for r in regions:
         print(f"  Partial region: x={r[0]}, y={r[1]}, w={r[2]}, h={r[3]}")

@@ -272,8 +272,8 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             rh = 150
             changed_regions.append((rx, ry, rw, rh))
 
-    # If too many regions changed, signal full refresh with empty list
-    if len(changed_regions) > 5:
+    # If 10+ cells changed, signal full refresh with empty list; fewer → partial per cell
+    if len(changed_regions) >= 10:
         changed_regions = []
 
     return (Himage, changed_regions)
