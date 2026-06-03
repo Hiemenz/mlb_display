@@ -385,7 +385,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
     # ---- BOTTOM SITUATION AREA ----------------------------------------------
     if _between_innings or _pitching_change:
-        # ---- Between innings: due-up batters (big, left) + pitcher (right-aligned) ----
+        # ---- Between innings: pitcher (left) + linescore 1-9 (center) + due-up batters (right) ----
         _by = SIT_Y + 8
 
         _batter_names = [nm for nm in [
@@ -400,23 +400,112 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
         _bot = WIN_PCT_Y - 4
 
-        # Pitcher: left side, vertically centred in the bottom section
-        if _pit_nm:
-            _pit_y = (SIT_Y + 8 + _bot) // 2 - 21
-            draw.text((16, _pit_y),     _pit_nm, font=f42, fill=0)
-            draw.text((17, _pit_y),     _pit_nm, font=f42, fill=0)
+        # ---- Linescore grid: innings 1-9, centered on canvas ----
+        _ls_col_t  = 44           # team abbreviation column width
+        _ls_n_cols = 9
+        _ls_col_w  = 37           # each inning column width
+        _ls_grid_w = _ls_col_t + _ls_n_cols * _ls_col_w  # 377
+        _ls_x0     = (800 - _ls_grid_w) // 2             # 211
+        _ls_x1     = _ls_x0 + _ls_grid_w
 
-        # Batters: right-aligned, stacked from top, bounded by WIN_PCT_Y
-        _avail_h = _bot - _by
-        _n = len(_batter_names) or 1
-        _bat_spacing = min(48, _avail_h // _n)
-        for _nm in _batter_names:
-            if _by + 42 <= _bot:
-                _nm_w = int(f42.getlength(_nm))
-                _nm_x = 800 - _nm_w - 16
-                draw.text((_nm_x, _by),     _nm, font=f42, fill=0)
-                draw.text((_nm_x + 1, _by), _nm, font=f42, fill=0)
-                _by += _bat_spacing
+        _ls_y_top = SIT_Y + 3
+        _ls_y_bot = WIN_PCT_Y - 3
+        _ls_hdr_h = 25
+        _ls_row_h = (_ls_y_bot - _ls_y_top - _ls_hdr_h) // 2
+        _ls_y1    = _ls_y_top + _ls_hdr_h           # away row top
+        _ls_y2    = _ls_y1 + _ls_row_h              # home row top
+
+        f_ls_hdr  = _get_font(20)
+        f_ls_team = _get_font(18)
+        f_ls_runs = _get_font(36)
+
+        # Horizontal row dividers (tic-tac-toe — no outer border)
+        draw.line((_ls_x0, _ls_y1, _ls_x1, _ls_y1), fill=0, width=2)
+        draw.line((_ls_x0, _ls_y2, _ls_x1, _ls_y2), fill=0, width=1)
+
+        # Vertical dividers: full situation-area height, intersecting top/bottom dividers
+        _ls_div_x = _ls_x0 + _ls_col_t
+        draw.line((_ls_div_x, DIV_Y, _ls_div_x, WIN_PCT_Y - 1), fill=0, width=2)
+        for _k in range(1, _ls_n_cols):
+            _vx = _ls_div_x + _k * _ls_col_w
+            draw.line((_vx, DIV_Y, _vx, WIN_PCT_Y - 1), fill=0, width=1)
+
+        # Inning number headers (1-9)
+        for _k in range(_ls_n_cols):
+            _inn_n   = str(_k + 1)
+            _cell_cx = _ls_div_x + _k * _ls_col_w + _ls_col_w // 2
+            _hdr_cy  = _ls_y_top + _ls_hdr_h // 2
+            _nw = int(f_ls_hdr.getlength(_inn_n))
+            _nx = _cell_cx - _nw // 2
+            _ny = _hdr_cy - 10
+            draw.text((_nx,     _ny), _inn_n, font=f_ls_hdr, fill=0)
+            draw.text((_nx + 1, _ny), _inn_n, font=f_ls_hdr, fill=0)
+
+        # Team abbreviations in team column
+        away_inn_runs = game_data.get('away_inning_runs') or []
+        home_inn_runs = game_data.get('home_inning_runs') or []
+        for _t_abbr, _row_y, _row_h in (
+            (away_abbr, _ls_y1, _ls_row_h),
+            (home_abbr, _ls_y2, _ls_y_bot - _ls_y2),
+        ):
+            _aw = int(f_ls_team.getlength(_t_abbr))
+            _ax = _ls_x0 + (_ls_col_t - _aw) // 2
+            _ay = _row_y + (_row_h - 18) // 2
+            draw.text((_ax,     _ay), _t_abbr, font=f_ls_team, fill=0)
+            draw.text((_ax + 1, _ay), _t_abbr, font=f_ls_team, fill=0)
+
+        # Per-inning run values (skip None cells)
+        for _k in range(_ls_n_cols):
+            _cell_cx = _ls_div_x + _k * _ls_col_w + _ls_col_w // 2
+            for _runs_list, _row_y, _row_h in (
+                (away_inn_runs, _ls_y1, _ls_row_h),
+                (home_inn_runs, _ls_y2, _ls_y_bot - _ls_y2),
+            ):
+                if _k < len(_runs_list) and _runs_list[_k] is not None:
+                    _rv = str(_runs_list[_k])
+                    _rw = int(f_ls_runs.getlength(_rv))
+                    _rx = _cell_cx - _rw // 2
+                    _ry = _row_y + (_row_h - 36) // 2
+                    draw.text((_rx,     _ry), _rv, font=f_ls_runs, fill=0)
+                    draw.text((_rx + 1, _ry), _rv, font=f_ls_runs, fill=0)
+
+        # Pitcher: left of linescore — start at f42, shrink until it fits
+        if _pit_nm:
+            _pit_max_w = _ls_x0 - 16 - 8
+            _f_pit = _get_font(18)
+            for _fsize in (42, 36, 28, 24, 20, 18):
+                _f = _get_font(_fsize)
+                if int(_f.getlength(_pit_nm)) <= _pit_max_w:
+                    _f_pit = _f
+                    break
+            _pit_h = _f_pit.size
+            _pit_y = (SIT_Y + 8 + _bot) // 2 - _pit_h // 2
+            draw.text((16, _pit_y),     _pit_nm, font=_f_pit, fill=0)
+            draw.text((17, _pit_y),     _pit_nm, font=_f_pit, fill=0)
+
+        # Batters: right of linescore — start at f42, shrink until all names fit
+        if _batter_names:
+            _bat_max_w = 800 - _ls_x1 - 16 - 8
+            _f_bat = _get_font(18)
+            for _fsize in (42, 36, 28, 24, 20, 18):
+                _f = _get_font(_fsize)
+                if all(int(_f.getlength(nm)) <= _bat_max_w for nm in _batter_names):
+                    _f_bat = _f
+                    break
+            _bat_h      = _f_bat.size
+            _avail_h    = _bot - (SIT_Y + 8)
+            _n          = len(_batter_names)
+            _bat_gap    = min(6, max(0, (_avail_h - _n * _bat_h) // max(1, _n)))
+            _bat_stride = _bat_h + _bat_gap
+            _stack_h    = _n * _bat_stride - _bat_gap
+            _by         = (SIT_Y + 8 + _bot - _stack_h) // 2
+            for _nm in _batter_names:
+                if _by + _bat_h <= _bot:
+                    _nm_w = int(_f_bat.getlength(_nm))
+                    _nm_x = 800 - _nm_w - 16
+                    draw.text((_nm_x, _by),     _nm, font=_f_bat, fill=0)
+                    draw.text((_nm_x + 1, _by), _nm, font=_f_bat, fill=0)
+                _by += _bat_stride
 
     else:
         # ---- Active pitch: B/S circles (f42) + pitch info (f36) + pitcher/batter (f42) ----
@@ -490,20 +579,23 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         if _od_full == _batter_full:
             _od_full = ''
 
-        # AB: and OD: left-aligned at x=400 so labels stack vertically
-        _lbl_x  = 400
-        _name_x = _lbl_x + int(f42.getlength('AB:')) + 8
+        # AB: / OD: — right-align labels to a shared colon edge; names start after
+        _lbl_x   = 400
+        _lbl_col = _lbl_x + max(int(f42.getlength('AB:')), int(f42.getlength('OD:')))
+        _name_x  = _lbl_col + 8
 
         if _batter_full and _pb_y + 42 <= WIN_PCT_Y:
-            draw.text((_lbl_x,      _pb_y), 'AB:', font=f42, fill=0)
-            draw.text((_lbl_x + 1,  _pb_y), 'AB:', font=f42, fill=0)
+            _ab_w = int(f42.getlength('AB:'))
+            draw.text((_lbl_col - _ab_w,      _pb_y), 'AB:', font=f42, fill=0)
+            draw.text((_lbl_col - _ab_w + 1,  _pb_y), 'AB:', font=f42, fill=0)
             draw.text((_name_x,     _pb_y), _batter_full, font=f42, fill=0)
             draw.text((_name_x + 1, _pb_y), _batter_full, font=f42, fill=0)
 
         _od_y = _pb_y + 46
         if _od_full and _od_y + 42 <= WIN_PCT_Y - 2:
-            draw.text((_lbl_x,      _od_y), 'OD:', font=f42, fill=0)
-            draw.text((_lbl_x + 1,  _od_y), 'OD:', font=f42, fill=0)
+            _od_w = int(f42.getlength('OD:'))
+            draw.text((_lbl_col - _od_w,      _od_y), 'OD:', font=f42, fill=0)
+            draw.text((_lbl_col - _od_w + 1,  _od_y), 'OD:', font=f42, fill=0)
             draw.text((_name_x,     _od_y), _od_full, font=f42, fill=0)
             draw.text((_name_x + 1, _od_y), _od_full, font=f42, fill=0)
 
