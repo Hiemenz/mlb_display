@@ -314,49 +314,36 @@ _ABS_CHALLENGE_MAX = 2
 
 
 def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, logo_x_offset=2, scale=1):
-    """ABS challenge indicators beside each team row — wide flat rectangles, filled=remaining."""
+    """ABS challenge circles over each team's abbreviation; replay circle under it. Filled=remaining."""
     s = scale
     _LOGO_SIZE = 28 * s
-    rect_h   = 4 * s
-    rect_gap = 2 * s  # gap between consecutive rectangles
+    r = 3 * s
+    dot_spacing = 8 * s
 
-    # Determine abs_max early so rect_w can be sized to fit the fixed band.
     abs_max = game_data.get('abs_challenge_max') or _ABS_CHALLENGE_MAX
 
-    # Fixed band width = baseline 2-challenge layout (26 px at scale=1).
-    # Extra-inning challenges split the same space into proportionally smaller rects.
-    _BAND_W = (2 * 12 + 1 * 2) * s   # 26 px at scale=1
-    rect_w = max(3 * s, (_BAND_W - (abs_max - 1) * rect_gap) // abs_max)
-    # e.g. abs_max=2 → 12 px, abs_max=3 → 7 px, abs_max=4 → 5 px
-    replay_rect_w = 12 * s  # replay is always 1 rect — keep full baseline width
-
     if use_logos:
-        # x: same left edge as the team abbreviation text (logo_x_offset + logo + 2px gap)
-        rect_x0 = start_x + logo_x_offset + _LOGO_SIZE + 2 * s
-        # ABS y: just above the abbreviation text (abbr starts at row_base+7*s; rect top at row_base+5*s)
+        # x: first dot centred just inside the team abbreviation left edge
+        dot_x = start_x + logo_x_offset + _LOGO_SIZE + 2 * s + r
+        # ABS dots over the abbreviation, replay dot under it
         away_abs_y    = start_y + 30 * s
         home_abs_y    = start_y + 60 * s
-        # Replay y: below the abbr text
         away_replay_y = start_y + (25 + 7 + 14 + 4) * s   # = start_y + 50*s
         home_replay_y = start_y + (55 + 7 + 14 + 4) * s   # = start_y + 80*s
     else:
-        # x: same as the text-only team name (font24 at start_x + 5)
-        rect_x0 = start_x + 5 * s
+        dot_x = start_x + 5 * s + r
         away_abs_y    = start_y + 30 * s
         home_abs_y    = start_y + 60 * s
         away_replay_y = start_y + (25 + 23 + 4) * s        # = start_y + 52*s
         home_replay_y = start_y + (55 + 23 + 4) * s        # = start_y + 82*s
 
-    def _draw_rect(rx, ry_center, filled, w=None):
-        """Draw one wide rectangle centered vertically on ry_center."""
-        rw = w if w is not None else rect_w
-        ry0 = ry_center - rect_h // 2
-        ry1 = ry0 + rect_h
-        box = (rx, ry0, rx + rw, ry1)
+    def _draw_dot(cx, cy_center, filled):
+        """Draw one circle centred on (cx, cy_center)."""
+        box = (cx - r, cy_center - r, cx + r, cy_center + r)
         if filled:
-            draw.rectangle(box, fill=0)
+            draw.ellipse(box, fill=0, outline=0)
         else:
-            draw.rectangle(box, fill=255, outline=0, width=max(1, s))
+            draw.ellipse(box, fill=255, outline=0, width=max(1, s))
 
     for side, abs_y, replay_y in (
         ('away', away_abs_y, away_replay_y),
@@ -365,17 +352,16 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
         abs_remaining = game_data.get(f'{side}_challenges_remaining')
         replay_remaining = game_data.get(f'{side}_replay_remaining')
 
-        # ABS rectangles — one per challenge slot, max grows +1 per extra inning
+        # ABS dots — one per challenge slot, max grows +1 per extra inning
         if abs_remaining is not None:
             abs_remaining = max(0, min(abs_max, int(abs_remaining)))
             for i in range(abs_max):
-                rx = rect_x0 + i * (rect_w + rect_gap)
-                _draw_rect(rx, abs_y, i < abs_remaining)
+                _draw_dot(dot_x + i * dot_spacing, abs_y, i < abs_remaining)
 
-        # Replay rectangle — always 1 slot, stays at full baseline width
+        # Replay dot — always 1 slot, under the abbreviation
         if replay_remaining is not None:
             replay_remaining = max(0, min(1, int(replay_remaining)))
-            _draw_rect(rect_x0, replay_y, replay_remaining > 0, w=replay_rect_w)
+            _draw_dot(dot_x, replay_y, replay_remaining > 0)
 
 
 def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show_tv=True, scale=1):
@@ -1521,8 +1507,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Display score if game has started
     if is_game_started:
-        draw.text((start_x + 66 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
-        draw.text((start_x + 66 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
+        draw.text((start_x + 68 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
+        draw.text((start_x + 68 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
         if is_game_finished:
             # hits
@@ -2062,9 +2048,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Bold-offset score for winner (both modes)
     if game_data.get('away_team_is_winner'):
-        draw.text((start_x + 67 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
+        draw.text((start_x + 69 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
     if game_data.get('home_team_is_winner'):
-        draw.text((start_x + 67 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
+        draw.text((start_x + 69 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = is_game_started and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
