@@ -724,6 +724,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] == 'In Progress'
         and (game_data.get('sub_event') or '').startswith('PC:')
     )
+    # True when the PC happens during a live half-inning (< 3 outs AND the inning
+    # has already started — at least one out recorded or a pitch already thrown).
+    _mid_inning_pc = (
+        _pitching_change and not _between_innings
+        and (
+            (game_data.get('num_of_outs') or 0) > 0
+            or (game_data.get('at_bat_pitch_count') or 0) > 0
+        )
+    )
     # End of 9th+ with one team leading, or Mid 9th+ with home team winning — game is effectively over
     _inn_state_ge = game_data.get('inningState') or ''
     _game_ending_state = (
@@ -1460,7 +1469,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((_nh_lx,         start_y + 3 * s), _nh_label, font=font14, fill=0)
             draw.text((_nh_lx + 1 * s, start_y + 3 * s), _nh_label, font=font14, fill=0)
         elif _pitching_change:
-            _draw_play_right('P.CHG' if _between_innings else 'Mid PC')
+            _draw_play_right('Mid PC' if _mid_inning_pc else 'P.CHG')
         elif _between_innings and play_display:
             # Mid-inning break: show abbreviated play that ended the half-inning
             _draw_play_right(play_display)
