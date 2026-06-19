@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 from image_assets import (
     _get_font, _logo_small, _logo_ghost, _paste_logo,
-    _load_codepoint_ghost, _TEAM_ID_ABBR_OVERRIDE, _PPD_EMOJI_CODEPOINTS,
+    _load_codepoint_ghost, _TEAM_ID_ABBR_OVERRIDE, _PPD_EMOJI_CODEPOINTS, _SUSP_EMOJI_CODEPOINTS,
 )
 from image_utils import (
     draw_diamond, draw_circle, check_if_two_chars,
@@ -769,6 +769,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             Himage.paste(_ppd_ghost, (_gx, _gy))
             draw = ImageDraw.Draw(Himage)
 
+    # Suspended lightning emoji ghost
+    if game_data['detailed_state'] == 'Suspended':
+        import random as _random
+        _susp_cp = _random.Random(game_data.get('game_pk', 0) ^ int(_time.time() // 60)).choice(_SUSP_EMOJI_CODEPOINTS)
+        _susp_ghost = _load_codepoint_ghost(_susp_cp, size=90 * s)
+        if _susp_ghost:
+            _gw, _gh = _susp_ghost.size
+            _gx = start_x + (horizonta_len - _gw) // 2
+            _gy = start_y + (vertical_len + 20 * s - _gh) // 2
+            Himage.paste(_susp_ghost, (_gx, _gy))
+            draw = ImageDraw.Draw(Himage)
+
     # Winner ghost logo — drawn first so all text/scores render on top of it
     if show_winner_logo and use_logos and game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
         winner_abbr = winner_id = None
@@ -910,6 +922,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if desc.lower().startswith('makeup') and game_data.get('postpone_reason'):
             makeup_line, makeup_fnt = fit_text(desc, max_text_width)
             draw.text((start_x + 7 * s, start_y + 25 * s + 74 * s), makeup_line, font=makeup_fnt, fill=0)
+    elif game_data['detailed_state'] == 'Suspended':
+        draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
     elif _delayed_with_score:
         draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
         # Next 3 batters + pitcher — same panel used for between-innings
@@ -1052,7 +1066,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_state_str = 'Susp' if game_data['detailed_state'] == 'Suspended' else 'Canc'
         _inn = game_data.get('current_inning')
         if _inn:
-            game_state_str += f' {_inn}'
+            _susp_half = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
+                game_data.get('inningState') or '', '')
+            game_state_str += f' {_susp_half} {_inn}' if _susp_half else f' {_inn}'
     else:
         # In Progress (and any other live state not matched above)
         _inn_state = game_data.get('inningState') or ''
@@ -1444,8 +1460,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             draw.text((_nh_lx,         start_y + 3 * s), _nh_label, font=font14, fill=0)
             draw.text((_nh_lx + 1 * s, start_y + 3 * s), _nh_label, font=font14, fill=0)
         elif _pitching_change:
-            # Mid-inning pitching change: show "PC" right-aligned in header
-            _draw_play_right('P.CHG')
+            _draw_play_right('P.CHG' if _between_innings else 'Mid PC')
         elif _between_innings and play_display:
             # Mid-inning break: show abbreviated play that ended the half-inning
             _draw_play_right(play_display)
@@ -1502,7 +1517,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
 
-    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress', 'Final: Tied'] or _delayed_with_score
+    is_game_started = game_data['detailed_state'] in ['Final', 'Game Over', 'In Progress', 'Final: Tied', 'Suspended'] or _delayed_with_score
     is_game_finished = game_data['detailed_state'] in ['Final', 'Game Over', 'Final: Tied']
 
     # Display score if game has started
@@ -2025,8 +2040,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Batting team indicator: ▲ left of away logo row when top half (away batting),
     # ▼ left of home logo row when bottom half (home batting). Live games only.
+    # Suppress when 3 outs are recorded (API lag before inningState flips to Middle/End).
     _bi_state = game_data.get('inningState') or ''
-    if game_data['detailed_state'] == 'In Progress' and _bi_state in ('Top', 'Bottom'):
+    if (game_data['detailed_state'] == 'In Progress' and _bi_state in ('Top', 'Bottom')
+            and (game_data.get('num_of_outs') or 0) < 3):
         _r = 4 * s
         _bi_cx = start_x + _r - 8
         if _bi_state == 'Top':
@@ -2053,7 +2070,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 69 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
     # Invert header to indicate a score change or run-scoring play during an active game
-    _run_scored = is_game_started and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
+    _run_scored = game_data['detailed_state'] == 'In Progress' and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
     if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
@@ -2061,7 +2078,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # Invert header for stolen base events
     _lp_lower = (game_data.get('last_play') or '').lower()
     _sb_event = (
-        is_game_started and not is_game_finished and not _between_innings and not _pitching_change and
+        game_data['detailed_state'] == 'In Progress' and not is_game_finished and not _between_innings and not _pitching_change and
         ('stolen base' in _lp_lower or _lp_lower == 'sb')
     )
     if _sb_event:

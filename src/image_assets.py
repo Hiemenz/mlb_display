@@ -231,6 +231,8 @@ _char_emoji_cache: dict = {}
 
 # Rain/weather emojis cycled on postponed cards (Twemoji codepoints)
 _PPD_EMOJI_CODEPOINTS = ['1f327', '2602', '1f302', '1f4a7']  # 🌧 ☂ 🌂 💧
+# Lightning/storm emojis for suspended games
+_SUSP_EMOJI_CODEPOINTS = ['26a1', '1f329', '1f4a8', '1f300']  # ⚡ 🌩 💨 🌀
 
 
 def _get_team_emojis():

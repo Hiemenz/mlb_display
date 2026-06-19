@@ -115,7 +115,8 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     _inn_lbl     = _lbl_map.get(_inn_state, (_inn_state[:3] if _inn_state else ''))
     inning_str   = f'{_inn_lbl} {_inn_ord}'.strip()
 
-    _between_innings = _inn_state in ('Middle', 'End')
+    _three_outs_lag = _inn_state in ('Top', 'Bottom') and (game_data.get('num_of_outs') or 0) >= 3
+    _between_innings = _inn_state in ('Middle', 'End') or _three_outs_lag
     _pitching_change = (game_data.get('sub_event') or '').startswith('PC:')
 
     # ---- Layout constants -------------------------------------------------------
@@ -194,10 +195,11 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
     # ---- HEADER (69px — full-width thick line below) ------------------------
     # Inning: f56 fits in 69px header. Triangle 80% of numeral height.
+    # Suppress arrow when 3 outs recorded but API hasn't flipped inningState yet.
     _inn_x = 8
     _inn_y = 4
     _inn_font = f56
-    if _inn_lbl in ('▲', '▼'):
+    if _inn_lbl in ('▲', '▼') and not _three_outs_lag:
         _nbbox   = _inn_font.getbbox(_inn_ord)
         _n_top   = _inn_y + _nbbox[1]
         _n_bot   = _inn_y + _nbbox[3]
@@ -217,9 +219,10 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         draw.text((_num_x + 1, _inn_y), _inn_ord, font=_inn_font, fill=0)
         _inn_right_edge = _num_x + int(_inn_font.getlength(_inn_ord))
     else:
-        draw.text((_inn_x,     _inn_y), inning_str, font=_inn_font, fill=0)
-        draw.text((_inn_x + 1, _inn_y), inning_str, font=_inn_font, fill=0)
-        _inn_right_edge = _inn_x + int(_inn_font.getlength(inning_str))
+        _hdr_inn_str = f'Mid {_inn_ord}' if _three_outs_lag else inning_str
+        draw.text((_inn_x,     _inn_y), _hdr_inn_str, font=_inn_font, fill=0)
+        draw.text((_inn_x + 1, _inn_y), _hdr_inn_str, font=_inn_font, fill=0)
+        _inn_right_edge = _inn_x + int(_inn_font.getlength(_hdr_inn_str))
 
     # Right side of header: last event (f56) right-aligned; fall back to matchup (f36)
     _inn_min_right = _inn_right_edge + 16
