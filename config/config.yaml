@@ -84,6 +84,11 @@ show_standings_sidebar: true
 # Run `python src/standings.py` once to seed the cache, then wildcard refreshes automatically.
 show_wildcard_standings: true
 
+# Show postseason bracket in the top header strip instead of wildcard standings.
+# Fetches series win totals via the MLB schedule API (gameType F/D/L/W).
+# Set to true during October; mutually exclusive with show_wildcard_standings.
+show_playoff_bracket: false
+
 # Small logo X offset: pixels from the left edge of each score box where the small logo is placed.
 # Set to 2 to align with the box edge. Increase to shift the logo right.
 small_logo_x_offset: 2

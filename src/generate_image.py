@@ -20,7 +20,7 @@ from image_utils import (
 from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
-    draw_standings_sidebar_fullscreen,
+    draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
 )
 from image_box import draw_box, _abbr_play, _draw_linescore_grid, _draw_backwards_k
 
@@ -228,7 +228,11 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
         standings_data = load_json_file('standings.json')
 
-    if config.get('show_wildcard_standings', False) and league_mode != 'aaa':
+    if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
+        _bracket = load_json_file('playoff_bracket.json')
+        if _bracket and _bracket.get('series'):
+            Himage = draw_playoff_bracket_header(Himage, _bracket)
+    elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
         if standings_data and 'standings' in standings_data:
             wildcard_data = derive_wildcard_from_standings(standings_data)
             Himage = draw_wildcard_header(Himage, wildcard_data)

@@ -21,7 +21,7 @@ from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations,
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
-from standings import get_standings
+from standings import get_standings, fetch_playoff_bracket
 from image_box import set_historical_mode
 
 
@@ -298,10 +298,21 @@ def _should_skip_poll(date_str, config, sched):
         for g in cached_games
     )
 
+    # Doubleheader game 2 is pre-game while game 1 is already Final — poll every 5 min
+    # so we catch the moment game 2 is live without waiting the full 15/60 min interval.
+    _dh_game2_soon = any(
+        g.get('double_header') in ('Y', 'S')
+        and g.get('game_number') == 2
+        and g.get('detailed_state') in {'Scheduled', 'Pre-Game', 'Warmup'}
+        for g in cached_games
+    )
+
     if any_final_undecided:
         interval_min = 2
     elif any_live:
         interval_min = config.get('live_game_interval', 1)
+    elif _dh_game2_soon:
+        interval_min = 5  # between DH games: check every 5 min for game 2 start
     elif all_done:
         interval_min = 60
     elif not cached_games or all_pregame:
@@ -323,6 +334,7 @@ def _should_skip_poll(date_str, config, sched):
                 state_label = (
                     'final_undecided' if any_final_undecided
                     else 'live' if any_live
+                    else 'dh_between' if _dh_game2_soon
                     else 'all_done' if all_done
                     else 'pregame' if all_pregame
                     else 'mixed'
@@ -350,7 +362,16 @@ def _update_schedule_state(game_state_data, date_str, config, sched):
         sched.pop('next_game_date', None)
         _final_states = {'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Completed Early'}
         _all_done_now = all(g.get('detailed_state') in _final_states for g in game_state_data)
-        if _all_done_now:
+        # Don't mark all_done if a DH game 2 is still unplayed — game 2 might not have
+        # appeared in the schedule yet, causing a false "all done" that would skip it.
+        _dh_g1_final = any(
+            g.get('double_header') in ('Y', 'S')
+            and g.get('game_number') == 1
+            and g.get('detailed_state') in _final_states
+            for g in game_state_data
+        )
+        _dh_g2_present = any(g.get('game_number') == 2 for g in game_state_data)
+        if _all_done_now and not (_dh_g1_final and not _dh_g2_present):
             sched['all_done_refreshed'] = True
         else:
             sched.pop('all_done_refreshed', None)
@@ -532,6 +553,11 @@ Examples:
                                       date=_sl_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
                     except Exception as _sl_e:
                         print(f"Warning: standings refresh on poll-skip: {_sl_e}")
+                if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
+                    try:
+                        fetch_playoff_bracket()
+                    except Exception as _bp_e:
+                        print(f"Warning: playoff bracket fetch on poll-skip: {_bp_e}")
                 return
 
     # 6. Fetch
@@ -608,6 +634,12 @@ Examples:
             except Exception as e:
                 print(f"Warning: standings refresh failed: {e}")
 
+    # 7c. Playoff bracket refresh (postseason only)
+    if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
+        try:
+            fetch_playoff_bracket()
+        except Exception as e:
+            print(f"Warning: playoff bracket fetch failed: {e}")
 
     # 8. Render
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')

@@ -12,7 +12,7 @@ from image_utils import (
 from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header,
-    draw_standings_sidebar_fullscreen,
+    draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
 )
 from image_box import draw_box, _abbr_play, _draw_backwards_k
 
@@ -553,9 +553,9 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         _pt  = game_data.get('last_pitch_type', '')
         _pc  = game_data.get('pitch_count')
         _pitch_parts = []
-        if _pc  is not None: _pitch_parts.append(f'{_pc}P')
-        if _lps:             _pitch_parts.append(f'{int(_lps)}mph')
-        if _pt:              _pitch_parts.append(_pt)
+        if _pt:              _pitch_parts.append(_pt)               # type first (broadcast style)
+        if _lps:             _pitch_parts.append(f'{int(_lps)}mph') # speed
+        if _pc  is not None: _pitch_parts.append(f'{_pc}P')        # count last
         if _pitch_parts:
             _ptxt    = '  '.join(_pitch_parts)
             _ptw     = int(f36.getlength(_ptxt))
@@ -759,11 +759,17 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     _right_sb_w = 800 - _right_sb_x  # 198
     _sb_logo_sz = 52
 
-    # Overlay wildcard header and standings sidebars (skipped for live games)
-    if not _is_live and standings_data and 'standings' in standings_data:
-        if config.get('show_wildcard_standings', False) and league_mode != 'aaa':
+    # Overlay wildcard/bracket header and standings sidebars (skipped for live games)
+    if not _is_live:
+        if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
+            _bracket = load_json_file('playoff_bracket.json')
+            if _bracket and _bracket.get('series'):
+                canvas = draw_playoff_bracket_header(canvas, _bracket)
+        elif standings_data and 'standings' in standings_data and \
+                config.get('show_wildcard_standings', False) and league_mode != 'aaa':
             wildcard_data = derive_wildcard_from_standings(standings_data)
             canvas = draw_wildcard_header(canvas, wildcard_data)
+    if not _is_live and standings_data and 'standings' in standings_data:
         if config.get('show_standings_sidebar', False):
             canvas = draw_standings_sidebar_fullscreen(
                 canvas, standings_data, team_data, side='left', league_mode=league_mode,
