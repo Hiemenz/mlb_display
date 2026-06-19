@@ -33,7 +33,7 @@ from generate_image import (
 )
 from image_utils import _format_player_name
 from image_box import _abbr_play, _fielder_from_desc, _fielder_seq_from_desc
-from game_detail_fetch import _build_scorecard_notation
+from game_detail_fetch import _build_scorecard_notation, _parse_review_context, _find_recent_review_result
 from fetch_games import _pick_tv_channel
 
 try:
@@ -2484,3 +2484,487 @@ class TestBuildScorecardNotation:
     def test_walk(self):
         play = _make_play('Walk')
         assert _build_scorecard_notation(play) == 'BB'
+
+
+# ===========================================================================
+# 22. ARROW SUPPRESSION (3-outs API lag)
+# ===========================================================================
+
+class TestArrowSuppression:
+    """Batting-team arrows must vanish when num_of_outs >= 3, even if
+    inningState hasn't flipped to Middle/End yet (API lag after final out)."""
+
+    # Triangle sits just left of start_x=32.  _bi_cx = 32+4-8 = 28, _r = 4.
+    _AWAY_ARROW = (22, 63, 35, 76)   # ▲ for Top-half (away batting)
+    _HOME_ARROW = (22, 93, 35, 106)  # ▼ for Bottom-half (home batting)
+
+    def _render(self, game, team_data):
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    @needs_pil
+    def test_arrow_visible_when_top_and_less_than_3_outs(self, minimal_team_data):
+        """▲ appears when inningState='Top' and fewer than 3 outs."""
+        game = _in_progress_game(inningState='Top', num_of_outs=0)
+        img = self._render(game, minimal_team_data)
+        assert _has_dark_pixels(img, *self._AWAY_ARROW), \
+            "▲ should be drawn for top-half with 0 outs"
+
+    @needs_pil
+    def test_arrow_visible_home_batting_2_outs(self, minimal_team_data):
+        """▼ appears when inningState='Bottom' and 2 outs."""
+        game = _in_progress_game(inningState='Bottom', num_of_outs=2)
+        img = self._render(game, minimal_team_data)
+        assert _has_dark_pixels(img, *self._HOME_ARROW), \
+            "▼ should be drawn for bottom-half with 2 outs"
+
+    @needs_pil
+    def test_arrow_suppressed_when_3_outs_top(self, minimal_team_data):
+        """▲ must NOT appear when num_of_outs=3 (API lag — inningState still 'Top')."""
+        game_3 = _in_progress_game(inningState='Top', num_of_outs=3)
+        game_0 = _in_progress_game(inningState='Top', num_of_outs=0)
+        img_3 = self._render(game_3, minimal_team_data)
+        img_0 = self._render(game_0, minimal_team_data)
+        assert _has_dark_pixels(img_0, *self._AWAY_ARROW), "sanity: arrow exists at 0 outs"
+        assert not _has_dark_pixels(img_3, *self._AWAY_ARROW), \
+            "▲ must be suppressed when 3 outs recorded"
+
+    @needs_pil
+    def test_arrow_suppressed_when_3_outs_bottom(self, minimal_team_data):
+        """▼ must NOT appear when num_of_outs=3 (API lag — inningState still 'Bottom')."""
+        game_3 = _in_progress_game(inningState='Bottom', num_of_outs=3)
+        game_1 = _in_progress_game(inningState='Bottom', num_of_outs=1)
+        img_3 = self._render(game_3, minimal_team_data)
+        img_1 = self._render(game_1, minimal_team_data)
+        assert _has_dark_pixels(img_1, *self._HOME_ARROW), "sanity: arrow exists at 1 out"
+        assert not _has_dark_pixels(img_3, *self._HOME_ARROW), \
+            "▼ must be suppressed when 3 outs recorded"
+
+    @needs_pil
+    def test_arrow_absent_for_final_game(self, minimal_team_data):
+        """No arrow drawn for a finished game."""
+        game = _base_game(detailed_state='Final', inningState='End', num_of_outs=3)
+        img = self._render(game, minimal_team_data)
+        assert not _has_dark_pixels(img, *self._AWAY_ARROW)
+        assert not _has_dark_pixels(img, *self._HOME_ARROW)
+
+    @needs_pil
+    def test_arrow_absent_for_suspended_game(self, minimal_team_data):
+        """No arrow drawn for a suspended game."""
+        game = _base_game(
+            detailed_state='Suspended',
+            inningState='Bottom', num_of_outs=1,
+            away_runs=3, home_runs=1, current_inning=5,
+        )
+        img = self._render(game, minimal_team_data)
+        assert not _has_dark_pixels(img, *self._AWAY_ARROW)
+        assert not _has_dark_pixels(img, *self._HOME_ARROW)
+
+
+# ===========================================================================
+# 23. MID-INNING PITCHING CHANGE LABEL
+# ===========================================================================
+
+class TestMidInningPC:
+    """'Mid PC' label appears only when the PC occurs during a live half-inning
+    (≥1 out recorded OR ≥1 pitch thrown in the current AB).  Otherwise 'P.CHG'."""
+
+    def _render(self, game, team_data):
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    @needs_pil
+    def test_mid_pc_differs_from_start_of_inning_pc(self, minimal_team_data):
+        """A PC with 1 out (mid-inning) renders differently than a PC with 0 outs
+        (start of inning) — the header label changes from 'P.CHG' to 'Mid PC'."""
+        common = dict(
+            inningState='Top', current_inning=4,
+            current_pitcher='Smith', current_hitter='Jones',
+            sub_event='PC: Smith',
+        )
+        mid = _in_progress_game(num_of_outs=1, at_bat_pitch_count=0, **common)
+        start = _in_progress_game(num_of_outs=0, at_bat_pitch_count=0, **common)
+        img_mid = self._render(mid, minimal_team_data)
+        img_start = self._render(start, minimal_team_data)
+        assert list(img_mid.getdata()) != list(img_start.getdata()), \
+            "Mid-inning PC ('Mid PC') must render differently from start-of-inning PC ('P.CHG')"
+
+    @needs_pil
+    def test_pc_with_pitch_count_is_mid_inning(self, minimal_team_data):
+        """A PC with 0 outs but at_bat_pitch_count=1 counts as mid-inning."""
+        common = dict(
+            inningState='Top', current_inning=4,
+            current_pitcher='Smith', current_hitter='Jones',
+            sub_event='PC: Smith',
+            num_of_outs=0,
+        )
+        with_pitches = _in_progress_game(at_bat_pitch_count=1, **common)
+        without_pitches = _in_progress_game(at_bat_pitch_count=0, **common)
+        img_p = self._render(with_pitches, minimal_team_data)
+        img_np = self._render(without_pitches, minimal_team_data)
+        assert list(img_p.getdata()) != list(img_np.getdata()), \
+            "PC with at_bat_pitch_count=1 (mid-inning) must differ from pitch_count=0 (P.CHG)"
+
+    @needs_pil
+    def test_between_innings_pc_uses_pchg_not_midpc(self, minimal_team_data):
+        """A PC between innings (Middle state) must use 'P.CHG', not 'Mid PC'."""
+        between = _in_progress_game(
+            inningState='Middle', current_inning=4,
+            current_pitcher='Smith', current_hitter='Jones',
+            sub_event='PC: Smith', num_of_outs=3,
+        )
+        mid = _in_progress_game(
+            inningState='Top', current_inning=4,
+            current_pitcher='Smith', current_hitter='Jones',
+            sub_event='PC: Smith', num_of_outs=1,
+        )
+        img_between = self._render(between, minimal_team_data)
+        img_mid = self._render(mid, minimal_team_data)
+        assert list(img_between.getdata()) != list(img_mid.getdata()), \
+            "Between-innings PC ('P.CHG') must render differently from mid-inning PC ('Mid PC')"
+
+    @needs_pil
+    def test_no_crash_pc_with_zero_outs_zero_pitches(self, minimal_team_data):
+        """PC at the very start of a half-inning must not crash."""
+        game = _in_progress_game(
+            inningState='Top', current_inning=4,
+            sub_event='PC: Smith', num_of_outs=0, at_bat_pitch_count=0,
+        )
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+
+# ===========================================================================
+# 24. SUSPENDED GAME DISPLAY
+# ===========================================================================
+
+class TestSuspendedGame:
+    """Suspended games must show scores, the linescore grid, and a header
+    indicating the inning/half when the game was stopped."""
+
+    _SCORE_REGION = (92, 52, 118, 77)  # away score area (same as TestScoreDisplayRules)
+    _HEADER_REGION = (32, 30, 167, 51)
+
+    def _render(self, game, team_data):
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    @needs_pil
+    def test_no_crash_suspended(self, minimal_team_data):
+        """A suspended game must render without raising any exception."""
+        game = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1,
+            current_inning=5, inningState='Bottom',
+            away_inning_runs=[0,0,2,0,1], home_inning_runs=[0,1,0,0,0],
+        )
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+    @needs_pil
+    def test_suspended_shows_score(self, minimal_team_data):
+        """Suspended games must display the score (away_runs visible in score region)."""
+        game = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1,
+            current_inning=5, inningState='Bottom',
+            away_inning_runs=[0,0,2,0,1], home_inning_runs=[0,1,0,0,0],
+        )
+        img = self._render(game, minimal_team_data)
+        assert _has_dark_pixels(img, *self._SCORE_REGION), \
+            "Score must be rendered for a suspended game"
+
+    @needs_pil
+    def test_suspended_header_differs_from_final(self, minimal_team_data):
+        """A suspended game header must look different from a final game header."""
+        susp = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1,
+            current_inning=5, inningState='Bottom',
+            away_inning_runs=[0,0,2,0,1], home_inning_runs=[0,1,0,0,0],
+        )
+        final = _base_game(away_runs=3, home_runs=1)
+        img_susp = self._render(susp, minimal_team_data)
+        img_final = self._render(final, minimal_team_data)
+        assert list(img_susp.getdata()) != list(img_final.getdata()), \
+            "Suspended header must differ from Final (shows 'Susp Bot 5' not just scores)"
+
+    @needs_pil
+    def test_suspended_header_varies_by_inning_half(self, minimal_team_data):
+        """Suspended Top 5 must render a different header than Suspended Bottom 5."""
+        top = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1, current_inning=5, inningState='Top',
+            away_inning_runs=[0,0,2,0,0], home_inning_runs=[0,1,0,0,0],
+        )
+        bot = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1, current_inning=5, inningState='Bottom',
+            away_inning_runs=[0,0,2,0,1], home_inning_runs=[0,1,0,0,0],
+        )
+        img_top = self._render(top, minimal_team_data)
+        img_bot = self._render(bot, minimal_team_data)
+        assert list(img_top.getdata()) != list(img_bot.getdata()), \
+            "Susp Top 5 and Susp Bot 5 must show different headers"
+
+    @needs_pil
+    def test_suspended_no_arrow(self, minimal_team_data):
+        """No batting-team arrow for a suspended game even with inningState='Bottom'."""
+        game = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1,
+            current_inning=5, inningState='Bottom', num_of_outs=1,
+            away_inning_runs=[0,0,2,0,1], home_inning_runs=[0,1,0,0,0],
+        )
+        img = self._render(game, minimal_team_data)
+        arrow_region = (22, 93, 35, 106)
+        assert not _has_dark_pixels(img, *arrow_region), \
+            "No batting arrow should appear for a suspended game"
+
+
+# ===========================================================================
+# 25. REVIEW CONTEXT PARSING (_parse_review_context)
+# ===========================================================================
+
+class TestReviewContextParsing:
+    """_parse_review_context extracts a short play label from MLB API review
+    descriptions. No PIL required — pure string logic."""
+
+    def test_out_at_first_base(self):
+        # 'first base' → '1B'; 'at' stays lowercase (in skip set) → 'Out at 1B'
+        desc = 'Manager challenge (out at first base): Play stands, batter is out.'
+        assert _parse_review_context(desc) == 'Out at 1B'
+
+    def test_safe_at_second_base(self):
+        desc = 'Manager challenge (safe at second base): Call overturned, runner safe.'
+        assert _parse_review_context(desc) == 'Safe at 2B'
+
+    def test_safe_at_third_base(self):
+        desc = 'Manager challenge (safe at third base): Call confirmed.'
+        assert _parse_review_context(desc) == 'Safe at 3B'
+
+    def test_safe_at_home_plate(self):
+        # 'home plate' → 'Home'; 'at' stays lowercase → 'Safe at Home'
+        desc = 'Manager challenge (safe at home plate): Call confirmed, runner safe.'
+        assert _parse_review_context(desc) == 'Safe at Home'
+
+    def test_strike_call(self):
+        desc = 'Player challenge (strike): Call stands.'
+        assert _parse_review_context(desc) == 'Strike'
+
+    def test_fair_foul_slash_capitalized(self):
+        """Both words in a slash-compound must be capitalized (Fair/Foul, not Fair/foul)."""
+        desc = 'Player challenge (fair/foul): Call overturned.'
+        result = _parse_review_context(desc)
+        assert result == 'Fair/Foul'
+
+    def test_prepositions_stay_lowercase(self):
+        """'at' must remain lowercase in output (it's in _REVIEW_CTX_SKIP)."""
+        desc = 'Manager challenge (out at first base): Overturned.'
+        result = _parse_review_context(desc)
+        assert 'at' in result.lower()
+        assert 'At' not in result, "'at' must not be title-cased"
+        assert result == 'Out at 1B'
+
+    def test_empty_string_returns_empty(self):
+        assert _parse_review_context('') == ''
+
+    def test_none_returns_empty(self):
+        assert _parse_review_context(None) == ''
+
+    def test_no_parens_returns_empty(self):
+        assert _parse_review_context('No parentheses in this description') == ''
+
+    def test_tag_play(self):
+        """'tag play' maps cleanly without any base substitution."""
+        desc = 'Manager challenge (tag play): Call confirmed.'
+        result = _parse_review_context(desc)
+        assert result == 'Tag Play'
+
+    def test_hit_by_pitch(self):
+        # 'by' is NOT in _REVIEW_CTX_SKIP → it gets capitalized to 'By'
+        desc = 'Player challenge (hit by pitch): Call overturned.'
+        result = _parse_review_context(desc)
+        assert result == 'Hit By Pitch'
+
+
+# ===========================================================================
+# 26. REVIEW RESULT FORMAT (_find_recent_review_result)
+# ===========================================================================
+
+def _make_plays_with_review(is_overturned, description='', followed_by_pitch=False, in_progress=False):
+    """Build a minimal plays dict containing one review event in the current AB."""
+    review_event = {
+        'isPitch': False,
+        'reviewDetails': {
+            'isOverturned': is_overturned,
+            'inProgress': in_progress,
+            'challengeTeamId': None,
+        },
+        'details': {'description': description},
+    }
+    events = [review_event]
+    if followed_by_pitch:
+        events.append({'isPitch': True, 'details': {}})
+    return {
+        'currentPlay': {'playEvents': events},
+        'allPlays': [],
+    }
+
+
+class TestReviewResultFormat:
+    """_find_recent_review_result returns formatted OVR/CFM labels or None."""
+
+    def test_overturned_with_context(self):
+        plays = _make_plays_with_review(
+            is_overturned=True,
+            description='Manager challenge (out at first base): Call overturned.',
+        )
+        result = _find_recent_review_result(plays)
+        assert result == 'OVR: Out at 1B'
+
+    def test_confirmed_with_context(self):
+        plays = _make_plays_with_review(
+            is_overturned=False,
+            description='Manager challenge (safe at second base): Call confirmed.',
+        )
+        result = _find_recent_review_result(plays)
+        assert result == 'CFM: Safe at 2B'
+
+    def test_overturned_at_home(self):
+        plays = _make_plays_with_review(
+            is_overturned=True,
+            description='Manager challenge (safe at home plate): Call overturned.',
+        )
+        result = _find_recent_review_result(plays)
+        assert result == 'OVR: Safe at Home'
+
+    def test_confirmed_strike(self):
+        plays = _make_plays_with_review(
+            is_overturned=False,
+            description='Player challenge (strike): Call confirmed.',
+        )
+        result = _find_recent_review_result(plays)
+        assert result == 'CFM: Strike'
+
+    def test_returns_none_when_pitch_follows_review(self):
+        """If a pitch was thrown after the review, the result is stale → return None."""
+        plays = _make_plays_with_review(
+            is_overturned=True,
+            description='Manager challenge (out at first base): Overturned.',
+            followed_by_pitch=True,
+        )
+        assert _find_recent_review_result(plays) is None
+
+    def test_returns_none_when_review_in_progress(self):
+        """An in-progress (unresolved) review must return None."""
+        plays = _make_plays_with_review(
+            is_overturned=False,
+            description='Manager challenge (out at first base): Under review.',
+            in_progress=True,
+        )
+        assert _find_recent_review_result(plays) is None
+
+    def test_returns_none_when_no_review_events(self):
+        """No review events in plays → None."""
+        plays = {
+            'currentPlay': {'playEvents': [{'isPitch': True, 'details': {}}]},
+            'allPlays': [],
+        }
+        assert _find_recent_review_result(plays) is None
+
+    def test_overturned_fair_foul(self):
+        plays = _make_plays_with_review(
+            is_overturned=True,
+            description='Player challenge (fair/foul): Call overturned.',
+        )
+        result = _find_recent_review_result(plays)
+        assert result == 'OVR: Fair/Foul'
+
+    def test_team_fallback_when_no_context(self):
+        """When description has no parenthetical context, fall back to team abbreviation."""
+        plays = _make_plays_with_review(is_overturned=True, description='Review completed.')
+        plays['currentPlay']['playEvents'][0]['reviewDetails']['challengeTeamId'] = 133
+        result = _find_recent_review_result(plays, away_id=133, home_id=144,
+                                            away_abbr='OAK', home_abbr='ATL')
+        assert result == 'OVR OAK'
+
+    def test_plain_label_when_no_context_no_team(self):
+        """No context, no team → plain 'OVR' or 'CFM'."""
+        plays = _make_plays_with_review(is_overturned=False, description='')
+        result = _find_recent_review_result(plays)
+        assert result == 'CFM'
+
+
+# ===========================================================================
+# 27. RUN-SCORED HEADER INVERSION GUARD
+# ===========================================================================
+
+class TestRunScoredGuard:
+    """The header-inversion triggered by last_play_rbi must fire only for
+    'In Progress' games — NOT for Suspended, Final, or other states."""
+
+    _HEADER_REGION = (32, 30, 167, 51)
+
+    def _render(self, game, team_data, score_changed=False):
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False,
+                 score_changed=score_changed)
+        return img
+
+    def _is_inverted(self, img):
+        region = img.crop(self._HEADER_REGION).convert('L')
+        pixels = list(region.getdata())
+        dark = sum(1 for p in pixels if p < 128)
+        return dark > len(pixels) * 0.5
+
+    @needs_pil
+    def test_in_progress_run_scored_inverts_header(self, minimal_team_data):
+        """last_play_rbi > 0 on an In Progress game triggers header inversion."""
+        game = _in_progress_game(
+            last_play_rbi=1, inningState='Top', num_of_outs=1,
+            balls=0, strikes=0,
+        )
+        img = self._render(game, minimal_team_data)
+        assert self._is_inverted(img), \
+            "In Progress + last_play_rbi=1 must invert the header"
+
+    @needs_pil
+    def test_suspended_run_scored_does_not_invert_header(self, minimal_team_data):
+        """last_play_rbi > 0 on a Suspended game must NOT invert the header."""
+        game = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1, current_inning=5, inningState='Bottom',
+            away_inning_runs=[0,0,2,0,1], home_inning_runs=[0,1,0,0,0],
+            last_play_rbi=2,
+        )
+        img = self._render(game, minimal_team_data)
+        assert not self._is_inverted(img), \
+            "Suspended + last_play_rbi=2 must NOT invert the header"
+
+    @needs_pil
+    def test_final_run_scored_does_not_invert_header(self, minimal_team_data):
+        """last_play_rbi > 0 on a Final game must NOT invert the header."""
+        game = _base_game(last_play_rbi=1)
+        img = self._render(game, minimal_team_data)
+        assert not self._is_inverted(img), \
+            "Final + last_play_rbi=1 must NOT invert the header"
+
+    @needs_pil
+    def test_suspended_no_rbi_not_inverted(self, minimal_team_data):
+        """Suspended game with no RBI is never inverted (baseline check)."""
+        game = _base_game(
+            detailed_state='Suspended',
+            away_runs=3, home_runs=1, current_inning=5, inningState='Bottom',
+            away_inning_runs=[0,0,2,0,1], home_inning_runs=[0,1,0,0,0],
+            last_play_rbi=0,
+        )
+        img_no_rbi = self._render(game, minimal_team_data)
+        game_rbi = dict(game)
+        game_rbi['last_play_rbi'] = 3
+        img_with_rbi = self._render(game_rbi, minimal_team_data)
+        assert list(img_no_rbi.getdata()) == list(img_with_rbi.getdata()), \
+            "last_play_rbi must not affect suspended game rendering at all"
