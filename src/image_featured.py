@@ -166,8 +166,9 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         # PC notices display in the bottom panel; show the last real play in the header.
         if _sub_ev.startswith('PC:'):
             _sub_ev = ''
+        _review = game_data.get('last_review_result') or ''
         _lp     = game_data.get('last_play') or ''
-        _raw    = _sub_ev or _lp
+        _raw    = _sub_ev or _review or _lp
         if not _raw:
             return ''
         _pd  = _abbr_play(_raw)

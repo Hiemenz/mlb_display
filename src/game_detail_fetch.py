@@ -167,20 +167,55 @@ def _count_replay_challenges_used(plays, away_id, home_id):
     return away_used, home_used
 
 
+_REVIEW_CTX_SKIP = {'at', 'on', 'in', 'a', 'an', 'the', 'of'}
+
+
+def _parse_review_context(description):
+    """Extract a short play-context label from a review event description.
+
+    'Manager challenge (out at first base): ...'  → 'Out 1B'
+    'Manager challenge (safe at home plate): ...'  → 'Safe Home'
+    'Player challenge (strike): ...'               → 'Strike'
+    """
+    import re as _re
+    if not description:
+        return ''
+    m = _re.search(r'\(([^)]+)\)', description)
+    if not m:
+        return ''
+    ctx = m.group(1).strip().lower()
+    for old, new in [
+        ('first base', '1B'), ('second base', '2B'), ('third base', '3B'),
+        ('home plate', 'Home'), (' base', ''),
+    ]:
+        ctx = ctx.replace(old, new)
+    # Capitalize content words; keep abbreviations and prepositions as-is
+    def _cap(word):
+        if word.isupper() or word in _REVIEW_CTX_SKIP:
+            return word
+        return '/'.join(s.capitalize() for s in word.split('/'))
+
+    return ' '.join(_cap(p) for p in ctx.split())
+
+
 def _find_recent_review_result(plays, away_id=None, home_id=None, away_abbr='', home_abbr=''):
     """Return a formatted review result string, or None if no review just resolved.
 
-    Format: 'OVERTURN {team}' or 'STANDS {team}' when team is known, else bare.
+    Format: 'OVR: {ctx}' or 'CFM: {ctx}' with play context when available,
+    falling back to 'OVR {team}' / 'CFM {team}'.
     A review is considered fresh if no pitch has been thrown since it completed.
     """
-    def _fmt(rd):
-        result = 'OVERTURN' if rd.get('isOverturned') else 'STANDS'
+    def _fmt(rd, desc=''):
+        label = 'OVR' if rd.get('isOverturned') else 'CFM'
+        ctx = _parse_review_context(desc)
+        if ctx:
+            return f'{label}: {ctx}'
         cid = rd.get('challengeTeamId')
         if cid and away_id and home_id:
             abbr = away_abbr if cid == away_id else (home_abbr if cid == home_id else '')
             if abbr:
-                return f'{result} {abbr}'
-        return result
+                return f'{label} {abbr}'
+        return label
 
     current_events = plays.get('currentPlay', {}).get('playEvents', [])
     current_has_pitches = any(ev.get('isPitch') for ev in current_events)
@@ -191,7 +226,7 @@ def _find_recent_review_result(plays, away_id=None, home_id=None, away_abbr='', 
             return None  # pitch thrown after review — stale
         rd = ev.get('reviewDetails')
         if rd and not rd.get('inProgress'):
-            return _fmt(rd)
+            return _fmt(rd, ev.get('details', {}).get('description', ''))
 
     # If current AB has no pitches yet, check the last completed play
     if not current_has_pitches:
@@ -200,7 +235,7 @@ def _find_recent_review_result(plays, away_id=None, home_id=None, away_abbr='', 
             for ev in reversed(all_plays[-1].get('playEvents', [])):
                 rd = ev.get('reviewDetails')
                 if rd and not rd.get('inProgress'):
-                    return _fmt(rd)
+                    return _fmt(rd, ev.get('details', {}).get('description', ''))
 
     return None
 
