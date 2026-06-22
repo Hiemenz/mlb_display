@@ -453,6 +453,23 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                         half_inning_plays.append(_desc)
         half_inning_plays = half_inning_plays[-3:]
 
+        # K strikeouts for wide-cell header: track swinging (K) vs looking (L) per pitcher side
+        away_pitcher_ks = []   # Ks by away pitcher (home batters struck out, isTopInning=False)
+        home_pitcher_ks = []   # Ks by home pitcher (away batters struck out, isTopInning=True)
+        for _kp in plays.get('allPlays', []):
+            if (_kp.get('result', {}).get('eventType') or '').lower() == 'strikeout':
+                _k_is_top = _kp.get('about', {}).get('isTopInning', True)
+                _k_last_code = ''
+                for _kpe in reversed(_kp.get('playEvents', [])):
+                    if _kpe.get('isPitch'):
+                        _k_last_code = _kpe.get('details', {}).get('code', '')
+                        break
+                _k_type = 'L' if _k_last_code == 'C' else 'K'
+                if _k_is_top:
+                    home_pitcher_ks.append(_k_type)
+                else:
+                    away_pitcher_ks.append(_k_type)
+
         return {
             'pitch_count': pitch_count,
             'batter_hits': batter_hits,
@@ -489,6 +506,8 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_play_is_top': live_last_play_is_top,
             'ab_pitches': ab_pitches,
             'half_inning_plays': half_inning_plays,
+            'away_pitcher_ks': away_pitcher_ks,
+            'home_pitcher_ks': home_pitcher_ks,
         }
     except Exception:
         return {}
