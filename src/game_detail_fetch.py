@@ -430,6 +430,29 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             live_last_play_rbi = int(_lp.get('result', {}).get('rbi') or 0)
             break
 
+        # Wide-cell extras: current AB pitches (locations + type) and last 3 half-inning play descriptions.
+        ab_pitches = _extract_pitches_detailed(plays)
+        for _p in ab_pitches:
+            _p['pt_abbr'] = _PITCH_TYPE_ABBR.get(_p.get('code', ''), _p.get('code', ''))
+
+        _cur_inn = linescore.get('currentInning') or 0
+        _inn_state = linescore.get('inningState', '')
+        _is_top = _inn_state in ('Top', 'Middle')
+        half_inning_plays = []
+        for _ap in plays.get('allPlays', []):
+            _about = _ap.get('about', {})
+            if (
+                _about.get('inning') == _cur_inn and
+                bool(_about.get('isTopInning')) == _is_top and
+                _about.get('isComplete', False)
+            ):
+                _ap_et = (_ap.get('result', {}).get('eventType') or '').lower().replace(' ', '_')
+                if _ap_et not in _SUBST_EVENT_TYPES:
+                    _desc = (_ap.get('result', {}).get('description') or '').strip()
+                    if _desc:
+                        half_inning_plays.append(_desc)
+        half_inning_plays = half_inning_plays[-3:]
+
         return {
             'pitch_count': pitch_count,
             'batter_hits': batter_hits,
@@ -464,6 +487,8 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_play_rbi': live_last_play_rbi,
             'last_play_inning': live_last_play_inning,
             'last_play_is_top': live_last_play_is_top,
+            'ab_pitches': ab_pitches,
+            'half_inning_plays': half_inning_plays,
         }
     except Exception:
         return {}

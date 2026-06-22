@@ -1,6 +1,6 @@
 # MLB Display Configuration
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
-scoreboard: false
+scoreboard: true
 
 # Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch"
 # If set, overrides the scoreboard: true/false flag above.

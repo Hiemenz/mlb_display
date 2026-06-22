@@ -15,7 +15,7 @@ from image_utils import (
     _pitcher_line, _clean_venue_name,
 )
 from image_standings import _WC_STRIP_H
-from image_box import draw_box
+from image_box import draw_box, draw_wide_box
 
 
 def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
@@ -496,6 +496,44 @@ def generate_standings(Himage, col_start=100, row_start=320):
     return Himage
 
 
+def _find_wide_game(game_list, config, team_data):
+    """Return the index in game_list of the game to show as the wide featured cell.
+
+    Priority: primary team's In Progress game first; otherwise the live game
+    farthest along (highest inning, then most outs as tiebreak).
+    Returns None when game_list has 15+ games (no room for a wide slot).
+    """
+    if len(game_list) >= 15:
+        return None
+
+    primary  = config.get('primary', '')
+    abbr_map = team_data.get('team_abbreviation', {})
+
+    # Check if primary team's game is live
+    if primary:
+        for i, g in enumerate(game_list):
+            away_a = abbr_map.get(str(g.get('away_team_id', '')), '')
+            home_a = abbr_map.get(str(g.get('home_team_id', '')), '')
+            if primary in (away_a, home_a) and g.get('detailed_state') == 'In Progress':
+                return i
+
+    # Fall back to highest-inning live game (most outs as tiebreak)
+    best_i = None
+    best_inn = -1
+    best_outs = -1
+    for i, g in enumerate(game_list):
+        if g.get('detailed_state') != 'In Progress':
+            continue
+        inn  = g.get('current_inning') or 0
+        outs = g.get('num_of_outs') or 0
+        if inn > best_inn or (inn == best_inn and outs > best_outs):
+            best_inn  = inn
+            best_outs = outs
+            best_i    = i
+
+    return best_i
+
+
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False):
 
     draw = ImageDraw.Draw(Himage)
@@ -577,16 +615,50 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                     'l10_losses': _t.get('last_ten_losses'),
                 }
 
-    counter = 0
-    for y in range(0,3):
-        for x in range(0,5):
-            if counter > len(game_list) - 1:
-                continue
-            if game_list[counter]:
-                game_pk_key = str(game_list[counter].get('game_pk', ''))
-                score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
-                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, streak_map=streak_map)
-            counter += 1
+    # Determine whether to show a wide (2-cell) featured game
+    _wide_idx = _find_wide_game(game_list, config, team_data)
+    _use_wide = _wide_idx is not None
+
+    # Move the wide game to the front of game_list
+    if _use_wide and _wide_idx != 0:
+        game_list = list(game_list)
+        game_list.insert(0, game_list.pop(_wide_idx))
+
+    # Build an ordered list of (slot_type, grid_x, grid_y) for each rendered game
+    if _use_wide:
+        # Wide slot at (col=0, row=0) consumes columns 0 and 1 of row 0
+        _slots = [('wide', 0, 0)]
+        for _gy in range(3):
+            for _gx in range(5):
+                if _gy == 0 and _gx in (0, 1):
+                    continue
+                _slots.append(('normal', _gx, _gy))
+    else:
+        _slots = [('normal', _gx, _gy) for _gy in range(3) for _gx in range(5)]
+
+    for game, slot_info in zip(game_list, _slots):
+        slot_type, gx, gy = slot_info
+        game_pk_key = str(game.get('game_pk', ''))
+        score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
+        sx = gx * 150 + x_start
+        sy = gy * 150 + y_start
+        if slot_type == 'wide':
+            Himage = draw_wide_box(
+                Himage, sx, sy, game, team_data,
+                score_changed=score_changed,
+                use_logos=use_logos,
+                logo_x_offset=logo_x_offset,
+                streak_map=streak_map,
+            )
+        else:
+            Himage = draw_box(
+                Himage, sx, sy, game, team_data,
+                score_changed=score_changed,
+                use_logos=use_logos,
+                logo_x_offset=logo_x_offset,
+                show_win_prob=show_win_prob,
+                streak_map=streak_map,
+            )
 
     Himage.save('score_board.bmp')
     return Himage

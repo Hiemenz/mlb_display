@@ -643,7 +643,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         _draw_half(home_game, home_start, strip_right)
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False):
     s = scale
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
@@ -967,9 +967,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _pit_w = int(_pit_fnt.getlength(_pit_name))
             draw.text((_right_x - _pit_w, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
-        if _between_innings or _pitching_change:
+        if _between_innings or _pitching_change or force_linescore:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
-        else:
+        if not _between_innings and not _pitching_change and not force_linescore:
             # Active play: pitch/pitcher/batter info
             _pc = game_data.get('pitch_count')
             _pt = game_data.get('last_pitch_type', '')   # e.g. "FB", "SL", "CH"
@@ -1534,13 +1534,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 68 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
         draw.text((start_x + 68 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
-        if is_game_finished:
+        if is_game_finished or always_show_hits:
             # hits
             away_hits = str(game_data.get('away_hits', 0) if game_data.get('away_hits', 0) is not None else 0)
             home_hits = str(game_data.get('home_hits', 0) if game_data.get('home_hits', 0) is not None else 0)
             draw.text((start_x + 95 * s + check_if_two_chars(away_hits), start_y + 25 * s),  away_hits, font=font24, fill=0)
             draw.text((start_x + 95 * s + check_if_two_chars(home_hits), start_y + 55 * s), home_hits , font=font24, fill=0)
 
+        if is_game_finished or always_show_hits:
             # errors
             draw.text((start_x + 123 * s, start_y + 25 * s),  str(game_data.get('away_errors', 0) if game_data.get('away_errors', 0) is not None else 0), font=font24, fill=0)
             draw.text((start_x + 123 * s, start_y + 55 * s),  str( game_data.get('home_errors', 0) if game_data.get('home_errors', 0) is not None else 0), font=font24, fill=0)
@@ -1845,8 +1846,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # draw.line((vert_start_x, vert_start_y, end_x, end_y), fill = 0)
 
 
-    # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
-    if game_data['detailed_state'] == 'In Progress':
+    # Show bases/outs/count only once the game is actually in progress (first pitch thrown).
+    # force_linescore (wide-cell mode) suppresses this block — the right panel handles live context.
+    if game_data['detailed_state'] == 'In Progress' and not force_linescore:
         if _between_innings and _game_ending_state:
             pass  # end of 9th+ with a lead — linescore shown, no next-batters panel
         elif _between_innings:
@@ -2099,5 +2101,243 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
        (is_game_finished or _active_no_no):
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
+    return Himage
+
+
+# ---------------------------------------------------------------------------
+# Wide (2-cell) featured game box
+# ---------------------------------------------------------------------------
+
+_WIDE_PITCH_TYPE = {
+    'FF': 'FB', 'FA': 'FB', 'FT': '2F', 'SI': 'SI',
+    'FC': 'CT', 'SL': 'SL', 'ST': 'SW', 'SW': 'SW',
+    'CH': 'CH', 'CU': 'CB', 'CS': 'CB', 'KC': 'KC',
+    'FS': 'SP', 'KN': 'KN', 'EP': 'EP',
+}
+
+# Strike zone coordinate bounds (MLB standard)
+_SZ_HALF_W = 0.708  # ±0.708 ft = 17-inch plate
+_SZ_PZ_LO  = 1.5
+_SZ_PZ_HI  = 3.5
+
+
+def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1):
+    """Strike zone with current AB pitches + bases/batter + last 3 half-inning events."""
+    s = scale
+    font9  = _get_font(9 * s)
+    font7  = _get_font(max(7 * s, 7))
+
+    state = game_data.get('detailed_state', '')
+    if state != 'In Progress':
+        return
+
+    # Layout within right panel (150 × 130 px):
+    #   [header_h]  header strip (drawn by caller)
+    #   + 3 px pad
+    #   zone block  (taller than wide — more vertical)
+    #   bases + batter line (below zone, left side)
+    #   3 events (stacked)
+
+    ZONE_W = 52 * s   # narrow width → taller ratio
+    ZONE_H = 68 * s   # taller than wide
+    zone_cx = rp_x + (rp_w - ZONE_W) // 2   # center zone in right panel
+    zone_lx = zone_cx
+    zone_rx = zone_cx + ZONE_W
+    zone_ty = rp_y + header_h + 10 * s
+    zone_by = zone_ty + ZONE_H
+
+    # Outer border (solid black) — draw first so interior fill goes over it
+    draw.rectangle([zone_lx, zone_ty, zone_rx, zone_by], outline=0)
+
+    # Interior fill with a dithered (50% gray) pattern to appear lighter than border
+    _zone_inner = Image.new('1', (int(ZONE_W) - 2, int(ZONE_H) - 2), 255)
+    _zpx = _zone_inner.load()
+    for _iy in range(_zone_inner.height):
+        for _ix in range(_zone_inner.width):
+            # Checker-board pattern at 2×2 resolution gives ~25% black = light gray
+            if (_ix // 2 + _iy // 2) % 2 == 0:
+                _zpx[_ix, _iy] = 0  # black dot
+    Himage.paste(_zone_inner, (int(zone_lx) + 1, int(zone_ty) + 1))
+    draw = ImageDraw.Draw(Himage)
+
+    # 9-zone grid lines (on top of filled interior)
+    tw = ZONE_W // 3
+    th = ZONE_H // 3
+    draw.line([zone_lx + tw,     zone_ty, zone_lx + tw,     zone_by], fill=0)
+    draw.line([zone_lx + 2 * tw, zone_ty, zone_lx + 2 * tw, zone_by], fill=0)
+    draw.line([zone_lx, zone_ty + th,     zone_rx, zone_ty + th    ], fill=0)
+    draw.line([zone_lx, zone_ty + 2 * th, zone_rx, zone_ty + 2 * th], fill=0)
+
+    # Count label above zone (left edge)
+    balls   = game_data.get('balls', 0) or 0
+    strikes = game_data.get('strikes', 0) or 0
+    count_str = f'{balls}-{strikes}'
+    draw.text((zone_lx, zone_ty - 9 * s), count_str, font=font9, fill=0)
+
+    # Pitch type legend: right of count, show types seen this AB (compact)
+    ab_pitches = game_data.get('ab_pitches') or []
+    _types_seen = []
+    for _p in ab_pitches:
+        _a = _p.get('pt_abbr') or _WIDE_PITCH_TYPE.get(_p.get('code', ''), '')
+        if _a and _a not in _types_seen:
+            _types_seen.append(_a)
+    if _types_seen:
+        _legend = ' '.join(_types_seen[:4])
+        _leg_w = int(font7.getlength(_legend))
+        draw.text((zone_rx - _leg_w, zone_ty - 9 * s), _legend, font=font7, fill=0)
+
+    def _to_pixel(px_c, pz_c):
+        tx = zone_lx + (px_c + _SZ_HALF_W) / (2 * _SZ_HALF_W) * ZONE_W
+        ty = zone_by  - (pz_c - _SZ_PZ_LO)  / (_SZ_PZ_HI - _SZ_PZ_LO)  * ZONE_H
+        # Clamp inside zone (pitch markers at the edge are still visible)
+        tx = max(rp_x + 1 * s, min(rp_x + rp_w - 1 * s, tx))
+        ty = max(rp_y + header_h + 1 * s, min(rp_y + rp_h - 1 * s, ty))
+        return int(tx), int(ty)
+
+    # Plot pitches: filled circle = strike (with seq# inside), open = ball (with seq# inside)
+    PITCH_R = max(5 * s, 5)
+    for pitch_num, pitch in enumerate(ab_pitches, start=1):
+        px_c, pz_c = pitch.get('px'), pitch.get('pz')
+        if px_c is None or pz_c is None:
+            continue
+        bx, by = _to_pixel(px_c, pz_c)
+        code = pitch.get('code', '')
+        is_strike = code in ('S', 'C', 'T', 'W', 'O', 'M', 'Q', 'K')
+        box = [bx - PITCH_R, by - PITCH_R, bx + PITCH_R, by + PITCH_R]
+        if is_strike:
+            draw.ellipse(box, fill=0, outline=0)
+            # Number inside (white text on black circle)
+            seq_str = str(pitch_num)
+            sw = int(font7.getlength(seq_str))
+            sh = 7 * s
+            draw.text((bx - sw // 2, by - sh // 2), seq_str, font=font7, fill=255)
+        else:
+            draw.ellipse(box, fill=255, outline=0)
+            # Number inside (black text on white circle)
+            seq_str = str(pitch_num)
+            sw = int(font7.getlength(seq_str))
+            sh = 7 * s
+            draw.text((bx - sw // 2, by - sh // 2), seq_str, font=font7, fill=0)
+
+    # --- Bases diamond + current batter (below zone) ---
+    BELOW_ZONE_Y = zone_by + 4 * s
+    BASES_SIZE   = 8 * s   # half-diagonal of each base diamond
+    DIAMOND_CX   = rp_x + 18 * s   # center of diamond cluster, left-ish
+    DIAMOND_CY   = BELOW_ZONE_Y + 10 * s
+
+    runner_first  = bool(game_data.get('runner_on_first'))
+    runner_second = bool(game_data.get('runner_on_second'))
+    runner_third  = bool(game_data.get('runner_on_third'))
+
+    def _base_diamond(cx, cy, filled):
+        pts = [(cx, cy - BASES_SIZE), (cx + BASES_SIZE, cy),
+               (cx, cy + BASES_SIZE), (cx - BASES_SIZE, cy)]
+        if filled:
+            draw.polygon(pts, fill=0, outline=0)
+        else:
+            draw.polygon(pts, fill=255, outline=0)
+
+    _base_diamond(DIAMOND_CX,              DIAMOND_CY - BASES_SIZE - 2 * s, runner_second)  # 2B (top)
+    _base_diamond(DIAMOND_CX + BASES_SIZE + 2 * s, DIAMOND_CY,              runner_first)   # 1B (right)
+    _base_diamond(DIAMOND_CX - BASES_SIZE - 2 * s, DIAMOND_CY,              runner_third)   # 3B (left)
+    # Home plate indicator (tiny square, never filled by runner)
+    _hp = BASES_SIZE // 2
+    draw.rectangle([DIAMOND_CX - _hp, DIAMOND_CY + BASES_SIZE + 1 * s,
+                    DIAMOND_CX + _hp, DIAMOND_CY + BASES_SIZE + 1 * s + _hp], outline=0)
+
+    # Current batter right of diamond
+    batter_name = _format_player_name(
+        game_data.get('current_play_batter') or game_data.get('current_hitter') or ''
+    )
+    if batter_name:
+        _bat_x = rp_x + 38 * s
+        _bat_y = BELOW_ZONE_Y + 2 * s
+        _bat_max_w = rp_x + rp_w - _bat_x - 2 * s
+        _bat_str = batter_name
+        while _bat_str and int(font9.getlength(_bat_str)) > _bat_max_w:
+            _bat_str = _bat_str[:-1]
+        if _bat_str:
+            draw.text((int(_bat_x), int(_bat_y)), _bat_str, font=font9, fill=0)
+
+    # Outs indicator (small circles, right side)
+    _outs = game_data.get('num_of_outs') or 0
+    _out_cx = rp_x + rp_w - 8 * s
+    for _oi in range(3):
+        _oy = int(BELOW_ZONE_Y + (2 + _oi * 8) * s)
+        _filled = _oi < _outs
+        _or = max(3 * s, 3)
+        draw.ellipse([_out_cx - _or, _oy - _or, _out_cx + _or, _oy + _or],
+                     fill=(0 if _filled else 255), outline=0)
+
+    # --- Last 3 half-inning event descriptions ---
+    half_inning_plays = game_data.get('half_inning_plays') or []
+
+    EVENT_Y    = BELOW_ZONE_Y + 24 * s
+    EVENT_LINE = 13 * s
+    MAX_W      = rp_w - 4 * s
+
+    for i, desc in enumerate(half_inning_plays[-3:]):
+        ey = EVENT_Y + i * EVENT_LINE
+        if ey + EVENT_LINE > rp_y + rp_h + 2 * s:
+            break
+        text = str(desc)
+        while text and int(font9.getlength(text)) > MAX_W:
+            text = text[:-1]
+        if text:
+            draw.text((rp_x + 2 * s, int(ey)), text, font=font9, fill=0)
+
+
+def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
+                  score_changed=False, use_logos=False, logo_x_offset=2,
+                  streak_map=None, scale=1):
+    """Featured 2-cell (285×130 px) game tile.
+
+    Left panel (135 px): standard draw_box content with linescore always
+    visible and hits shown even in-progress.
+    Right panel (150 px): strike zone with current AB pitch locations +
+    last 3 half-inning play descriptions in full wording.
+    """
+    s = scale
+    CELL_W  = 135 * s   # left panel — same as normal cell width
+    RIGHT_W = 150 * s   # right panel
+    TOTAL_W = CELL_W + RIGHT_W  # 285 px
+    HEADER_H = 20 * s
+    TOTAL_H  = 130 * s
+
+    # Left panel via draw_box: force linescore + always show hits; no win-prob bar
+    Himage = draw_box(
+        Himage, start_x, start_y, game_data, team_data,
+        score_changed=score_changed,
+        use_logos=use_logos,
+        logo_x_offset=logo_x_offset,
+        show_win_prob=False,
+        streak_map=streak_map,
+        show_winner_logo=True,
+        scale=scale,
+        force_linescore=True,
+        always_show_hits=True,
+    )
+
+    # Extend top, header-separator, and bottom borders across the right panel
+    draw = ImageDraw.Draw(Himage)
+    rp_x = start_x + CELL_W
+    rp_right = start_x + TOTAL_W
+    draw.line((rp_x, start_y,                  rp_right, start_y),                  fill=0)  # top
+    draw.line((rp_x, start_y + HEADER_H,       rp_right, start_y + HEADER_H),       fill=0)  # header sep
+    draw.line((rp_x, start_y + TOTAL_H,        rp_right, start_y + TOTAL_H),        fill=0)  # bottom
+    draw.line((rp_x, start_y,                  rp_x,     start_y + TOTAL_H),        fill=0)  # divider
+
+    # Right panel content
+    _draw_wide_right_panel(
+        draw, Himage,
+        rp_x=rp_x, rp_y=start_y,
+        rp_w=RIGHT_W, rp_h=TOTAL_H,
+        header_h=HEADER_H,
+        game_data=game_data,
+        team_data=team_data,
+        use_logos=use_logos,
+        scale=scale,
+    )
 
     return Himage
