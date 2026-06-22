@@ -2311,16 +2311,21 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
                 draw = ImageDraw.Draw(Himage)
 
-    # ── Pitcher row ────────────────────────────────────────────────────
+    # ── Pitcher row: "P: Name" left, "SL 87 10P" right (type+speed+pc, font9) ──
     _py = rp_y + 97 * s
     _max_w = rp_w - 4 * s
     _pc = game_data.get('pitch_count')
-    _pt_last = game_data.get('last_pitch_type', '')
+    _pt_last = game_data.get('last_pitch_type', '') or ''
     _lps = game_data.get('last_pitch_speed')
     _pitcher_name = _format_player_name(game_data.get('current_pitcher') or '')
 
-    _right_badge = _pt_last if _pt_last else ''
-    _rb_w = int(font11.getlength(_right_badge)) + 2 * s if _right_badge else 0
+    _rb_parts = [p for p in [
+        _pt_last,
+        str(int(_lps)) if _lps else '',
+        f'{_pc}P' if _pc is not None else '',
+    ] if p]
+    _right_badge = ' '.join(_rb_parts)
+    _rb_w = int(font9.getlength(_right_badge)) + 2 * s if _right_badge else 0
     _pit_avail = _max_w - _rb_w
     _pit_str = f'P: {_pitcher_name}'
     _pf = font14
@@ -2332,23 +2337,10 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 _pit_str = _pit_str[:-1]
     draw.text((rp_x + 2 * s, _py), _pit_str, font=_pf, fill=0)
     if _right_badge:
-        draw.text((rp_x + rp_w - _rb_w, _py), _right_badge, font=font11, fill=0)
-
-    # Pitch count + speed on same row right-side (below badge if no badge)
-    if _lps or _pc is not None:
-        _spd_str = str(int(_lps)) if _lps else ''
-        _pc_str  = f'{_pc}P' if _pc is not None else ''
-        _row2 = _py + 11 * s
-        _spd_w = int(font11.getlength(_spd_str)) + 2 * s if _spd_str else 0
-        _pc_w  = int(font11.getlength(_pc_str))  + 2 * s if _pc_str  else 0
-        if _spd_str:
-            draw.text((rp_x + rp_w - _spd_w, _row2), _spd_str, font=font11, fill=0)
-            draw.text((rp_x + rp_w - _spd_w + 1, _row2), _spd_str, font=font11, fill=0)
-        if _pc_str:
-            draw.text((rp_x + rp_w - _spd_w - _pc_w, _row2), _pc_str, font=font11, fill=0)
+        draw.text((rp_x + rp_w - _rb_w, _py), _right_badge, font=font9, fill=0)
 
     # ── Batter row ─────────────────────────────────────────────────────
-    _by = rp_y + 109 * s
+    _by = rp_y + 110 * s
     _bh = game_data.get('batter_hits')
     _ba = game_data.get('batter_at_bats')
     _ba_str = f'{_bh}-{_ba}' if _bh is not None and _ba is not None else ''
@@ -2364,21 +2356,20 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         )
         _batter_label = f'AB: {_hitter}'
     if _batter_label:
-        _bf = font14
+        # Cap at font11 so the batter row stays 11px tall, leaving room for events
+        _bf = font11
         if int(_bf.getlength(_batter_label)) > _hit_avail:
-            _bf = font11
-            if int(_bf.getlength(_batter_label)) > _hit_avail:
-                _bf = font9
-                while _batter_label and int(_bf.getlength(_batter_label)) > _hit_avail:
-                    _batter_label = _batter_label[:-1]
+            _bf = font9
+            while _batter_label and int(_bf.getlength(_batter_label)) > _hit_avail:
+                _batter_label = _batter_label[:-1]
         draw.text((rp_x + 2 * s, _by), _batter_label, font=_bf, fill=0)
     if _ba_str:
-        draw.text((rp_x + rp_w - _ba_w, _by), _ba_str, font=font11, fill=0)
+        draw.text((rp_x + rp_w - _ba_w, _by), _ba_str, font=font9, fill=0)
 
     # ── Last half-inning events (full play description, truncated to fit) ─
     half_inning_plays = game_data.get('half_inning_plays') or []
-    _ev_y = rp_y + 119 * s
-    _ev_line = 11 * s
+    _ev_y = rp_y + 121 * s
+    _ev_line = 10 * s
     for _i, _desc in enumerate(half_inning_plays[-3:]):
         _ey = _ev_y + _i * _ev_line
         if _ey + _ev_line > rp_y + rp_h:

@@ -619,22 +619,29 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     _wide_idx = _find_wide_game(game_list, config, team_data)
     _use_wide = _wide_idx is not None
 
-    # Move the wide game to the front of game_list
-    if _use_wide and _wide_idx != 0:
-        game_list = list(game_list)
-        game_list.insert(0, game_list.pop(_wide_idx))
+    # If the wide game would fall on the last column (col 4) it can't span right —
+    # fall back to a normal single cell for that game.
+    if _use_wide and (_wide_idx % 5) >= 4:
+        _use_wide = False
 
-    # Build an ordered list of (slot_type, grid_x, grid_y) for each rendered game
+    # Build an ordered list of (slot_type, grid_x, grid_y) keeping games in their
+    # natural display order (no move-to-front).
     if _use_wide:
-        # Wide slot at (col=0, row=0) consumes columns 0 and 1 of row 0
-        _slots = [('wide', 0, 0)]
-        for _gy in range(3):
-            for _gx in range(5):
-                if _gy == 0 and _gx in (0, 1):
-                    continue
-                _slots.append(('normal', _gx, _gy))
+        # Walk through every game in order; the wide game consumes 2 horizontal
+        # slot units, all others consume 1.  Track a running slot_idx counter.
+        _slots = []
+        _slot_idx = 0
+        for _gi in range(len(game_list)):
+            _row = _slot_idx // 5
+            _col = _slot_idx % 5
+            if _gi == _wide_idx:
+                _slots.append(('wide', _col, _row))
+                _slot_idx += 2
+            else:
+                _slots.append(('normal', _col, _row))
+                _slot_idx += 1
     else:
-        _slots = [('normal', _gx, _gy) for _gy in range(3) for _gx in range(5)]
+        _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
 
     for game, slot_info in zip(game_list, _slots):
         slot_type, gx, gy = slot_info
