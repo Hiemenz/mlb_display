@@ -620,15 +620,8 @@ Examples:
     image, changed_regions = result
 
     # 9. Send to display
-    from refresh_tracker import needs_full_refresh
-    if needs_full_refresh() or not changed_regions:
-        print("Scoreboard: full refresh")
-        refresh_mode = 'full'
-    else:
-        print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
-        refresh_mode = 'partial'
-
-    send_to_display(output_path, changed_regions if refresh_mode == 'partial' else None)
+    refresh_mode = send_to_display(output_path, changed_regions)
+    print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
 
     print(f"\n✓ Display updated successfully!")
     print(f"  Image: {output_path}")

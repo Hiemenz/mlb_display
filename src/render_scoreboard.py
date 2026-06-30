@@ -13,6 +13,7 @@ import argparse
 # Allow running as a standalone script from any directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from PIL import Image, ImageChops
 from util import load_json_file
 from config_loader import load_config, add_config_arg
 from generate_image import orchestrate_score_board
@@ -79,6 +80,72 @@ def _render_single_game_mode(mode, game_state_data, team_data, config, output_pa
         return None
 
 
+def _pixel_diff_bands(old_img, new_img, row_gap=4):
+    """Return tight (x, y, w, h) rectangles for every cluster of changed pixels.
+
+    Algorithm:
+      1. Pixel-diff the two images (converted to 8-bit grayscale).
+      2. Per row: find the leftmost and rightmost changed pixel (if any).
+      3. Group contiguous changed rows — tolerating up to `row_gap` unchanged
+         rows between them — into a band.
+      4. Per band: take the union of each row's x-range for the tightest box.
+      5. Align x down and x+w up to 8-pixel boundaries (e-ink driver requirement).
+
+    Returns:
+        list of (x, y, w, h)  — partial-refresh exactly these rectangles
+        []                     — >70 % of rows changed; caller should full-refresh
+        None                   — exception; caller keeps its own region list
+    """
+    try:
+        W, H = new_img.size
+        diff = ImageChops.difference(old_img.convert('L'), new_img.convert('L'))
+        raw = diff.tobytes()   # one byte per pixel in 'L' mode
+
+        # Build per-row (min_x, max_x) for every row that has at least one change
+        row_x: dict[int, tuple[int, int]] = {}
+        for y in range(H):
+            row = raw[y * W: y * W + W]
+            # Short-circuit: skip unchanged rows cheaply
+            if not any(row):
+                continue
+            min_x = next(x for x, b in enumerate(row) if b)
+            max_x = W - 1 - next(x for x, b in enumerate(reversed(row)) if b)
+            row_x[y] = (min_x, max_x)
+
+        if not row_x:
+            return []
+
+        changed_rows = sorted(row_x)
+        if len(changed_rows) > H * 0.70:   # too much changed → full-screen partial
+            return [(0, 0, W, H)]
+
+        # Group rows into bands and track the union x-range per band
+        bands = []
+        start = prev = changed_rows[0]
+        bx0, bx1 = row_x[start]
+
+        for y in changed_rows[1:]:
+            if y - prev > row_gap:
+                # Align to 8-pixel boundaries required by the e-ink driver
+                xa = (bx0 // 8) * 8
+                xb = ((bx1 + 8) // 8) * 8
+                bands.append((xa, start, xb - xa, prev - start + 1))
+                start = y
+                bx0, bx1 = row_x[y]
+            else:
+                mx0, mx1 = row_x[y]
+                bx0 = min(bx0, mx0)
+                bx1 = max(bx1, mx1)
+            prev = y
+
+        xa = (bx0 // 8) * 8
+        xb = ((bx1 + 8) // 8) * 8
+        bands.append((xa, start, xb - xa, prev - start + 1))
+        return bands
+    except Exception:
+        return None   # caller falls back to its own region list
+
+
 def render(config, date_str=None, output_path=None, bypass_cache=False):
     """
     Render display from cached data/games.json.
@@ -105,12 +172,36 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
     if mode in ('field', 'scorecard', 'pitch'):
         image = _render_single_game_mode(mode, game_state_data, team_data, config, output_path)
         if image:
-            return (image, [])
+            return (image, [(0, 0, image.width, image.height)])
         return None
+
+    # Snapshot the current saved image before overwriting so we can pixel-diff it.
+    # Only used for the fullscreen single-game display where partial updates are
+    # most valuable; the multi-game scoreboard already uses per-cell regions.
+    _is_fullscreen = os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes')
+    _old_snap = None
+    if _is_fullscreen and not bypass_cache and os.path.isfile(output_path):
+        try:
+            _old_snap = Image.open(output_path).copy()
+        except Exception:
+            pass
 
     result = orchestrate_score_board(game_state_data, team_data, date_str, bypass_cache=bypass_cache, config=config)
     if result:
         image, changed_regions = result
+
+        # Fullscreen: replace zone-based regions with pixel-exact diff bands.
+        # _pixel_diff_bands returns None on error (keep zone-based fallback),
+        # [] when too much changed or nothing changed (full refresh), or a
+        # list of (x, y, w, h) bands for a precise partial refresh.
+        if _is_fullscreen and _old_snap is not None and _old_snap.size == image.size:
+            _bands = _pixel_diff_bands(_old_snap, image)
+            if _bands is not None:
+                changed_regions = _bands
+                if _bands:
+                    total_h = sum(b[3] for b in _bands)
+                    print(f"Pixel diff: {len(_bands)} band(s), {total_h}px of {image.size[1]}px refreshed")
+
         image.save(output_path)
         print(f"Image saved to {output_path}")
         return (image, changed_regions)

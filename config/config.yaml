@@ -101,6 +101,12 @@ scoreboard_win_probability: true
 # Adds one extra API call (live feed) per in-progress game per refresh cycle.
 scoreboard_live_details: true
 
+# Wide cell: show a 2-slot expanded tile for in-progress games with pitch zone, bases, K strip, etc.
+# When false (or omitted), wide cells only appear when there are fewer than 15 games.
+# When true, always show a wide cell for the in-progress game farthest into the game (by inning),
+# even when there are 15+ games on the slate (one game will be dropped from the grid to make room).
+wide_cell_always: false
+
 # Pre-game weather footer on Scheduled/Pre-Game/Warmup tiles (temp, wind, precip%).
 # Uses Open-Meteo (no API key required) with stadium coordinates from data/stadium_weather.json.
 weather:
