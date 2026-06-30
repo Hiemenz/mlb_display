@@ -259,6 +259,30 @@ def test_wide_box_many_ks(white_image, team_data):
     assert isinstance(result, Image.Image)
 
 
+@needs_pil
+def test_wide_box_events_with_inning_triangles(white_image, team_data):
+    """Events strip with '^'/'v' half-inning markers renders up/down triangles."""
+    from image_box import draw_wide_box
+    game = _live_game(
+        half_inning_plays=['K', '6-3', 'v', '1B', 'F9', '^', 'Kl', '2B'],
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_events_leading_triangle_trimmed(white_image, team_data):
+    """A leading boundary marker left after trimming doesn't crash or render alone."""
+    from image_box import draw_wide_box
+    # Long events force trimming; a triangle may end up at the front and must be dropped.
+    game = _live_game(
+        half_inning_plays=['3RBI 2B', 'v', 'RBI 1B', 'Grand Slam', '^', 'Kl',
+                           '4-3', 'F7', 'v', '2B', '1B', '^', 'K', 'L3'],
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
 # ---------------------------------------------------------------------------
 # 2. _find_wide_games logic
 # ---------------------------------------------------------------------------
