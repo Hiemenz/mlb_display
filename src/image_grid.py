@@ -585,6 +585,70 @@ def _reorder_for_wide(game_list, wide_set):
     return game_list, wide_set
 
 
+def compute_grid_layout(game_state_data, team_data, config):
+    """Return (ordered_game_list, slots) for the 5×3 scoreboard grid.
+
+    ``slots`` is a list parallel to the returned game_list, each entry a
+    ``(slot_type, grid_col, grid_row)`` tuple where slot_type is 'wide' or
+    'normal'. This is the single source of truth for grid geometry: both the
+    renderer (draw_out_of_town_score_board) and the partial-refresh region
+    calculation must use it so wide cells (which consume 2 slot units and may
+    be reordered) line up exactly.
+    """
+    # Reorder games so the primary team's game appears first in the grid
+    game_list = list(game_state_data)
+    if config.get('favorite_team_first', False):
+        primary = config.get('primary', '')
+        if primary:
+            abbr_map = team_data.get('team_abbreviation', {})
+            for i, g in enumerate(game_list):
+                away_abbr = abbr_map.get(str(g.get('away_team_id', '')), '')
+                home_abbr = abbr_map.get(str(g.get('home_team_id', '')), '')
+                if primary in (away_abbr, home_abbr):
+                    game_list.insert(0, game_list.pop(i))
+                    break
+
+    # With 16+ games, a doubleheader, and a rainout, push postponed/cancelled games
+    # off the 5×3 grid (to position 16+) so the doubleheader pair stays visible
+    # instead. This applies even if the affected team is the featured team.
+    _RAINOUT_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
+    _has_dh = any(g.get('double_header', 'N') not in ('N', '', None) for g in game_list)
+    _ppd_games = [g for g in game_list if g.get('detailed_state', '') in _RAINOUT_STATES]
+    if len(game_list) >= 16 and _has_dh and _ppd_games:
+        for _ppd_g in _ppd_games:
+            game_list.remove(_ppd_g)
+            game_list.append(_ppd_g)
+
+    # Determine which games show as wide (2-cell) tiles, then reorder so any
+    # wide game that would land at col=4 swaps with the normal game after it.
+    _wide_set = _find_wide_games(game_list, config, team_data)
+    if _wide_set:
+        game_list, _wide_set = _reorder_for_wide(game_list, _wide_set)
+
+    # Build an ordered list of (slot_type, grid_col, grid_row).
+    # Each wide game consumes 2 horizontal slot units; normal games consume 1.
+    # Wide games on the last column (col 4) fall back to normal (can't span right).
+    # Stop adding slots once the 5×3 grid is full (15 slot units).
+    if _wide_set:
+        _slots = []
+        _slot_idx = 0
+        for _gi in range(len(game_list)):
+            if _slot_idx >= 15:
+                break
+            _row = _slot_idx // 5
+            _col = _slot_idx % 5
+            if _gi in _wide_set and _col < 4:
+                _slots.append(('wide', _col, _row))
+                _slot_idx += 2
+            else:
+                _slots.append(('normal', _col, _row))
+                _slot_idx += 1
+    else:
+        _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
+
+    return game_list, _slots
+
+
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False):
 
     draw = ImageDraw.Draw(Himage)
@@ -629,29 +693,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     x_start = 32
     y_start = 30
 
-    # Reorder games so the primary team's game appears first in the grid
-    game_list = list(game_state_data)
-    if config.get('favorite_team_first', False):
-        primary = config.get('primary', '')
-        if primary:
-            abbr_map = team_data.get('team_abbreviation', {})
-            for i, g in enumerate(game_list):
-                away_abbr = abbr_map.get(str(g.get('away_team_id', '')), '')
-                home_abbr = abbr_map.get(str(g.get('home_team_id', '')), '')
-                if primary in (away_abbr, home_abbr):
-                    game_list.insert(0, game_list.pop(i))
-                    break
-
-    # With 16+ games, a doubleheader, and a rainout, push postponed/cancelled games
-    # off the 5×3 grid (to position 16+) so the doubleheader pair stays visible
-    # instead. This applies even if the affected team is the featured team.
-    _RAINOUT_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
-    _has_dh = any(g.get('double_header', 'N') not in ('N', '', None) for g in game_list)
-    _ppd_games = [g for g in game_list if g.get('detailed_state', '') in _RAINOUT_STATES]
-    if len(game_list) >= 16 and _has_dh and _ppd_games:
-        for _ppd_g in _ppd_games:
-            game_list.remove(_ppd_g)
-            game_list.append(_ppd_g)
+    game_list, _slots = compute_grid_layout(game_state_data, team_data, config)
 
     # Build per-team stats lookup {str(team_id): {'streak', 'l10_wins', 'l10_losses', 'wins', 'losses'}}
     _standings = load_json_file('standings.json')
@@ -667,34 +709,6 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                     'wins': _t.get('league_record_wins'),
                     'losses': _t.get('league_record_losses'),
                 }
-
-    # Determine which games show as wide (2-cell) tiles: all In Progress games.
-    # _reorder_for_wide swaps any wide game that would land at col=4 with the
-    # normal game after it, ensuring it can span rightward.
-    _wide_set = _find_wide_games(game_list, config, team_data)
-    if _wide_set:
-        game_list, _wide_set = _reorder_for_wide(game_list, _wide_set)
-
-    # Build an ordered list of (slot_type, grid_x, grid_y).
-    # Each wide game consumes 2 horizontal slot units; normal games consume 1.
-    # Wide games on the last column (col 4) fall back to normal (can't span right).
-    # Stop adding slots once the 5×3 grid is full (15 slot units).
-    if _wide_set:
-        _slots = []
-        _slot_idx = 0
-        for _gi in range(len(game_list)):
-            if _slot_idx >= 15:
-                break
-            _row = _slot_idx // 5
-            _col = _slot_idx % 5
-            if _gi in _wide_set and _col < 4:
-                _slots.append(('wide', _col, _row))
-                _slot_idx += 2
-            else:
-                _slots.append(('normal', _col, _row))
-                _slot_idx += 1
-    else:
-        _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
 
     for game, slot_info in zip(game_list, _slots):
         slot_type, gx, gy = slot_info
