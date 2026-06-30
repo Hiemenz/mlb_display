@@ -50,7 +50,7 @@ def fetch_live_feed(game_pk):
 
 
 def _extract_pitches_detailed(plays):
-    """Extract pitch data with velocity and pitch type from current or last at-bat."""
+    """Extract pitch data with velocity, pitch type, and per-batter zone bounds."""
     sources = [plays.get('currentPlay', {})]
     all_plays = plays.get('allPlays', [])
     if all_plays:
@@ -74,7 +74,11 @@ def _extract_pitches_detailed(plays):
                 'seq': seq,
                 'px': px,
                 'pz': pz,
+                'sz_top': pitch_data.get('strikeZoneTop'),
+                'sz_bot': pitch_data.get('strikeZoneBottom'),
                 'code': details.get('type', {}).get('code', ''),
+                # Result/call code (B/C/S/F/X/D/E…) — drives strike-zone fill.
+                'call': details.get('call', {}).get('code', '') or details.get('code', ''),
                 'pitch_type': details.get('type', {}).get('description', ''),
                 'description': details.get('description', ''),
                 'is_strike': details.get('isStrike', False),
@@ -430,6 +434,101 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             live_last_play_rbi = int(_lp.get('result', {}).get('rbi') or 0)
             break
 
+        # Wide-cell extras: current AB pitches (locations + type) and the last 5 game events.
+        ab_pitches = _extract_pitches_detailed(plays)
+        for _p in ab_pitches:
+            _p['pt_abbr'] = _PITCH_TYPE_ABBR.get(_p.get('code', ''), _p.get('code', ''))
+
+        # Mid-at-bat "action" events worth surfacing in the header, oldest-first.
+        _ACTION_CODES = {
+            'stolen_base':      'SB',
+            'caught_stealing':  'CS',
+            'pickoff':          'PK',
+            'wild_pitch':       'WP',
+            'passed_ball':      'PB',
+            'balk':             'BLK',
+            'pitching_substitution': 'PC',
+        }
+
+        def _action_code(et):
+            for _k, _v in _ACTION_CODES.items():
+                if et.startswith(_k):
+                    return _v
+            return None
+
+        # Last 7 events of the whole game for the header, oldest-first, in scorecard
+        # notation (e.g. '6-3', 'K', 'F9', '3R HR'). Runs-batted-in plays are prefixed
+        # with the run count. Includes in-play actions (steals, pickoffs, wild pitches,
+        # pitching changes) and challenge/replay reviews.
+        # A '+' token is inserted wherever the half-inning changes so the renderer can
+        # display it as an inning-break delimiter.
+        game_plays = []
+        _last_play_half = None   # (inning, isTopInning) of the last appended play
+        for _ap in plays.get('allPlays', []):
+            _about = _ap.get('about', {})
+            _this_half = (_about.get('inning', 0), bool(_about.get('isTopInning', True)))
+            # In-play actions and challenge/replay reviews, in the order they occurred.
+            _review_added = False
+            for _pe in _ap.get('playEvents', []):
+                if _pe.get('type') == 'action':
+                    _code = _action_code((_pe.get('details', {}).get('eventType') or '').lower())
+                    if _code and (not game_plays or game_plays[-1] != _code):
+                        if _last_play_half and _this_half != _last_play_half:
+                            game_plays.append('+')
+                        game_plays.append(_code)
+                        _last_play_half = _this_half
+                _rd = _pe.get('reviewDetails')
+                if _rd and not _rd.get('inProgress') and not _review_added:
+                    game_plays.append('OVR' if _rd.get('isOverturned') else 'CHAL')
+                    _review_added = True
+            # Final result of a completed at-bat.
+            if _ap.get('about', {}).get('isComplete', False):
+                _result = _ap.get('result', {})
+                _ap_et = (_result.get('eventType') or '').lower().replace(' ', '_')
+                if _ap_et == 'pitching_substitution':
+                    if not game_plays or game_plays[-1] != 'PC':
+                        game_plays.append('PC')
+                elif _ap_et not in _SUBST_EVENT_TYPES:
+                    _ev = (_result.get('event') or '').strip()
+                    if _ev:
+                        # Same scorecard notation + RBI prefixes the normal cells use.
+                        _note = _build_scorecard_notation(_ap)
+                        _rbi = int(_result.get('rbi') or 0)
+                        _is_err = _note.startswith('E') or ' E' in _note
+                        if _rbi > 0 and not _is_err:
+                            if _note == 'HR':
+                                if _rbi == 4:
+                                    _note = 'Grand Slam'
+                                elif _rbi >= 2:
+                                    _note = f'{_rbi}R HR'
+                                # solo HR: no prefix
+                            elif _rbi == 1:
+                                _note = f'RBI {_note}'
+                            else:
+                                _note = f'{_rbi}RBI {_note}'
+                        if _last_play_half and _this_half != _last_play_half:
+                            game_plays.append('+')
+                        game_plays.append(_note)
+                        _last_play_half = _this_half
+        half_inning_plays = game_plays[-7:]
+
+        # K strikeouts for wide-cell header: track swinging (K) vs looking (L) per pitcher side
+        away_pitcher_ks = []   # Ks by away pitcher (home batters struck out, isTopInning=False)
+        home_pitcher_ks = []   # Ks by home pitcher (away batters struck out, isTopInning=True)
+        for _kp in plays.get('allPlays', []):
+            if (_kp.get('result', {}).get('eventType') or '').lower() == 'strikeout':
+                _k_is_top = _kp.get('about', {}).get('isTopInning', True)
+                _k_last_code = ''
+                for _kpe in reversed(_kp.get('playEvents', [])):
+                    if _kpe.get('isPitch'):
+                        _k_last_code = _kpe.get('details', {}).get('code', '')
+                        break
+                _k_type = 'L' if _k_last_code == 'C' else 'K'
+                if _k_is_top:
+                    home_pitcher_ks.append(_k_type)
+                else:
+                    away_pitcher_ks.append(_k_type)
+
         return {
             'pitch_count': pitch_count,
             'batter_hits': batter_hits,
@@ -464,6 +563,10 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_play_rbi': live_last_play_rbi,
             'last_play_inning': live_last_play_inning,
             'last_play_is_top': live_last_play_is_top,
+            'ab_pitches': ab_pitches,
+            'half_inning_plays': half_inning_plays,
+            'away_pitcher_ks': away_pitcher_ks,
+            'home_pitcher_ks': home_pitcher_ks,
         }
     except Exception:
         return {}
@@ -929,6 +1032,24 @@ def _map_event_to_code(event):
     return _EVENT_CODE_MAP.get(event, event[:3] if event else '')
 
 
+_POS_KEYWORDS_FETCH = [
+    ('center fielder', '8'), ('right fielder', '9'), ('left fielder', '7'),
+    ('first baseman', '3'), ('second baseman', '4'), ('third baseman', '5'),
+    ('shortstop', '6'), ('catcher', '2'), ('pitcher', '1'),
+]
+
+
+def _pos_from_desc(description):
+    """Return the primary putout fielder position code from a play description."""
+    if not description:
+        return ''
+    dl = description.lower()
+    for kw, code in _POS_KEYWORDS_FETCH:
+        if kw in dl:
+            return code
+    return ''
+
+
 def _build_scorecard_notation(play):
     """Return scorecard notation (e.g. 'F7', '6-4-3 DP', 'K', '1B') from a play dict."""
     result  = play.get('result', {})
@@ -1003,23 +1124,37 @@ def _build_scorecard_notation(play):
             if p and p.isdigit():
                 putout_pos = p
 
+    _desc = result.get('description', '')
+
     if event in ('Flyout',):
         if is_dp and pos_seq:
             return '-'.join(pos_seq) + dp_suffix
-        return f'F{putout_pos}' if putout_pos else 'FO'
+        if putout_pos:
+            return f'F{putout_pos}'
+        _fp = _pos_from_desc(_desc)
+        return f'F{_fp}' if _fp else 'FO'
 
     if event in ('Lineout',):
         if is_dp and pos_seq:
             return '-'.join(pos_seq) + dp_suffix
-        return f'L{putout_pos}' if putout_pos else 'LO'
+        if putout_pos:
+            return f'L{putout_pos}'
+        _fp = _pos_from_desc(_desc)
+        return f'L{_fp}' if _fp else 'LO'
 
     if event in ('Pop Out', 'Popout'):
-        return f'P{putout_pos}' if putout_pos else 'PO'
+        if putout_pos:
+            return f'P{putout_pos}'
+        _fp = _pos_from_desc(_desc)
+        return f'P{_fp}' if _fp else 'PO'
 
     if event in ('Sac Fly', 'Sac Fly Double Play'):
         if is_dp and pos_seq:
             return '-'.join(pos_seq) + dp_suffix
-        return f'SF{putout_pos}' if putout_pos else 'SF'
+        if putout_pos:
+            return f'SF{putout_pos}'
+        _fp = _pos_from_desc(_desc)
+        return f'SF{_fp}' if _fp else 'SF'
 
     if event in ('Sac Bunt', 'Sacrifice Bunt DP', 'Sac Bunt Double Play'):
         seq = '-'.join(pos_seq) if pos_seq else ''
@@ -1044,7 +1179,6 @@ def _build_scorecard_notation(play):
     # Credits absent — parse fielder positions from the play description.
     # Find every occurrence of each position keyword so repeated touches
     # (e.g. catcher in a rundown) are captured; cap at 5 fielders.
-    _desc = result.get('description', '')
     if _desc:
         _dl = _desc.lower()
         _pos_kws = [

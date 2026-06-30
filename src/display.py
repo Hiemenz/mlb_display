@@ -21,21 +21,25 @@ def send_to_display(image_path, changed_regions=None, force_full=False):
     """
     Load image from path and push to e-ink.
 
+    Full refresh (flash) only when force_full=True or the hourly timer fires.
+    All other updates use partial refresh — defaulting to a full-screen partial
+    when no specific regions are provided.
+
     Args:
         image_path: Path to the image file to display
         changed_regions: List of (x, y, w, h) tuples for partial refresh, or None
-        force_full: Force a full refresh even if partial is possible
+        force_full: Force a full (flashing) refresh
 
     Returns:
         'full' or 'partial'
     """
     image = Image.open(image_path)
-    if force_full or needs_full_refresh() or not changed_regions:
+    if force_full or needs_full_refresh():
         display_image(image, output_filename=image_path)
         return 'full'
-    else:
-        display_partial_regions(image, changed_regions, output_filename=image_path)
-        return 'partial'
+    regions = changed_regions or [(0, 0, image.width, image.height)]
+    display_partial_regions(image, regions, output_filename=image_path)
+    return 'partial'
 
 
 def main():

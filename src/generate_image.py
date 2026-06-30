@@ -193,9 +193,13 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 
-        # Partial refresh for live fullscreen: if only bottom-panel fields changed
-        # (count, pitch info, pitcher/batter, win %), refresh just y=277..479.
-        # Top section (scores, bases, outs) requires a full refresh when it changes.
+        # Partial refresh for live fullscreen: map changed fields to display zones and
+        # refresh only the affected zones.  Three zones:
+        #   Header  y=0..75   — inning label, last-play event
+        #   Score   y=69..276 — R/H/E rows, bases, outs, challenges
+        #   Bottom  y=277..479 — B/S/O, pitch info, pitcher/batter, win %
+        # (Header and Score overlap slightly at y=69..75 to cover the thick divider line.)
+        # If all three zones change, fall back to a full refresh (empty list).
         _fs_regions = []
         if not bypass_cache and featured_game:
             _ds = featured_game.get('detailed_state', '')
@@ -204,19 +208,48 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
                 _feat_pk = str(featured_game.get('game_pk', ''))
                 _old_feat = old_by_pk.get(_feat_pk)
                 if _old_feat is not None:
-                    _BOTTOM_ONLY = frozenset({
+                    _HEADER_FIELDS = frozenset({
+                        'inningState', 'inningHalf', 'current_inning', 'currentInningOrdinal',
+                        'last_play', 'last_review_result', 'last_play_description',
+                        'sub_event', 'last_play_rbi',
+                    })
+                    _SCORE_FIELDS = frozenset({
+                        'away_runs', 'home_runs', 'away_hits', 'home_hits',
+                        'away_errors', 'home_errors',
+                        'runner_on_first', 'runner_on_second', 'runner_on_third',
+                        'runner_first_number', 'runner_second_number', 'runner_third_number',
+                        'num_of_outs',
+                        'away_challenges_remaining', 'home_challenges_remaining',
+                        'away_replay_remaining', 'home_replay_remaining', 'abs_challenge_max',
+                        'save_situation', 'detailed_state',
+                    })
+                    _BOTTOM_FIELDS = frozenset({
                         'balls', 'strikes', 'strike_calls',
                         'last_pitch_speed', 'last_pitch_type', 'pitch_count',
                         'current_pitcher',
                         'current_play_batter', 'current_hitter',
                         'due_up', 'next_batter_1', 'next_batter_2', 'next_batter_3', 'in_hole',
-                        'current_at_bat_complete',
+                        'current_at_bat_complete', 'next_pitcher',
                         'away_win_probability', 'home_win_probability',
+                        'away_inning_runs', 'home_inning_runs',
+                        'inningState', 'inningHalf', 'current_inning',
+                        'num_of_outs',
                     })
+                    _ALL_KNOWN = _HEADER_FIELDS | _SCORE_FIELDS | _BOTTOM_FIELDS
                     _changed_fields = {k for k in set(featured_game) | set(_old_feat)
                                        if featured_game.get(k) != _old_feat.get(k)}
-                    if _changed_fields and _changed_fields.issubset(_BOTTOM_ONLY):
-                        _fs_regions = [(0, 277, 800, 203)]  # situation area + win% bar
+                    if _changed_fields and not (_changed_fields - _ALL_KNOWN):
+                        _zones = []
+                        if _changed_fields & _HEADER_FIELDS:
+                            _zones.append((0, 0, 800, 76))    # header + thick border
+                        if _changed_fields & _SCORE_FIELDS:
+                            _zones.append((0, 69, 800, 208))  # R/H/E rows through divider
+                        if _changed_fields & _BOTTOM_FIELDS:
+                            _zones.append((0, 277, 800, 203)) # situation + win% bar
+                        if len(_zones) < 3:
+                            _fs_regions = _zones
+                        else:
+                            _fs_regions = [(0, 0, 800, 480)]  # all zones → full-screen partial
 
         return (Himage, _fs_regions)
 
@@ -272,8 +305,8 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             rh = 150
             changed_regions.append((rx, ry, rw, rh))
 
-    # If 10+ cells changed, signal full refresh with empty list; fewer → partial per cell
+    # If 10+ cells changed, refresh the whole canvas as one partial region
     if len(changed_regions) >= 10:
-        changed_regions = []
+        changed_regions = [(0, 0, 800, 480)]
 
     return (Himage, changed_regions)
