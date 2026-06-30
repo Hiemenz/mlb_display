@@ -259,6 +259,30 @@ def test_wide_box_many_ks(white_image, team_data):
     assert isinstance(result, Image.Image)
 
 
+@needs_pil
+def test_wide_box_events_with_inning_triangles(white_image, team_data):
+    """Events strip with '^'/'v' half-inning markers renders up/down triangles."""
+    from image_box import draw_wide_box
+    game = _live_game(
+        half_inning_plays=['K', '6-3', 'v', '1B', 'F9', '^', 'Kl', '2B'],
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_events_leading_triangle_trimmed(white_image, team_data):
+    """A leading boundary marker left after trimming doesn't crash or render alone."""
+    from image_box import draw_wide_box
+    # Long events force trimming; a triangle may end up at the front and must be dropped.
+    game = _live_game(
+        half_inning_plays=['3RBI 2B', 'v', 'RBI 1B', 'Grand Slam', '^', 'Kl',
+                           '4-3', 'F7', 'v', '2B', '1B', '^', 'K', 'L3'],
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
 # ---------------------------------------------------------------------------
 # 2. _find_wide_games logic
 # ---------------------------------------------------------------------------
@@ -404,3 +428,51 @@ def test_grid_15_games_wide_cell_always(white_image, team_data):
     }):
         result = draw_out_of_town_score_board(white_image, games, team_data)
     assert isinstance(result, Image.Image)
+
+
+# ---------------------------------------------------------------------------
+# 4. compute_grid_layout geometry + partial-refresh region alignment
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_compute_grid_layout_two_wide_at_col0():
+    """Two in-progress games on a 13-game slate both land at col 0 (reordered)."""
+    from image_grid import compute_grid_layout
+    # In-progress games at indices 0 and 3; reorder pushes the second to col 0
+    # of row 1 instead of leaving it stranded at col 4.
+    games = _make_game_list(
+        [('In Progress', 7, 'Top'),                       # 0
+         ('Final', 9, 'End'), ('Final', 9, 'End'),         # 1, 2
+         ('In Progress', 5, 'Top')]                        # 3
+        + [('Final', 9, 'End')] * 9                         # pad to 13
+    )
+    game_list, slots = compute_grid_layout(games, {}, {})
+    wide_slots = [(gl.get('game_pk'), s) for gl, s in zip(game_list, slots)
+                  if s[0] == 'wide']
+    assert len(wide_slots) == 2
+    # Both wide tiles begin at column 0 so each can span rightward.
+    assert all(s[1] == 0 for _, s in wide_slots)
+
+
+@needs_pil
+def test_changed_region_covers_full_wide_tile():
+    """Partial-refresh region for a wide game must span the full 2-cell tile."""
+    from image_grid import compute_grid_layout
+    games = _make_game_list(
+        [('In Progress', 7, 'Top')] + [('Final', 9, 'End')] * 5
+    )
+    game_list, slots = compute_grid_layout(games, {}, {})
+    x_start = 32
+    # Replicate the region math in generate_image.draw_score_board.
+    for game, (slot_type, gx, gy) in zip(game_list, slots):
+        if slot_type != 'wide':
+            continue
+        rx = (gx * 150 + x_start) // 8 * 8
+        rw = 304
+        tile_left = gx * 150 + x_start
+        tile_right = tile_left + 285  # draw_wide_box TOTAL_W
+        assert rx <= tile_left
+        assert rx + rw >= tile_right
+        break
+    else:
+        pytest.fail('expected a wide slot in the layout')

@@ -460,8 +460,9 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         # notation (e.g. '6-3', 'K', 'F9', '3R HR'). Runs-batted-in plays are prefixed
         # with the run count. Includes in-play actions (steals, pickoffs, wild pitches,
         # pitching changes) and challenge/replay reviews.
-        # A '+' token is inserted wherever the half-inning changes so the renderer can
-        # display it as an inning-break delimiter.
+        # A direction token is inserted wherever the half-inning changes so the
+        # renderer can show an inning-break delimiter: '^' when heading into the
+        # top half (away bats), 'v' when heading into the bottom half (home bats).
         game_plays = []
         _last_play_half = None   # (inning, isTopInning) of the last appended play
         for _ap in plays.get('allPlays', []):
@@ -474,7 +475,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                     _code = _action_code((_pe.get('details', {}).get('eventType') or '').lower())
                     if _code and (not game_plays or game_plays[-1] != _code):
                         if _last_play_half and _this_half != _last_play_half:
-                            game_plays.append('+')
+                            game_plays.append('^' if _this_half[1] else 'v')
                         game_plays.append(_code)
                         _last_play_half = _this_half
                 _rd = _pe.get('reviewDetails')
@@ -507,7 +508,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                             else:
                                 _note = f'{_rbi}RBI {_note}'
                         if _last_play_half and _this_half != _last_play_half:
-                            game_plays.append('+')
+                            game_plays.append('^' if _this_half[1] else 'v')
                         game_plays.append(_note)
                         _last_play_half = _this_half
         half_inning_plays = game_plays[-7:]

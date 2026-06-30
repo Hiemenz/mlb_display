@@ -31,6 +31,7 @@ from image_grid import (
     generate_image,
     generate_standings,
     draw_out_of_town_score_board,
+    compute_grid_layout,
 )
 
 # Re-export featured/fullscreen functions for backward compatibility
@@ -275,33 +276,23 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 
     # --- Compute changed regions from changed_game_ids ---
-    # Must use the same game ordering that draw_out_of_town_score_board used,
-    # otherwise the favorite-team-first reorder causes grid positions to mismatch.
+    # Use the exact same layout draw_out_of_town_score_board used, so wide
+    # (2-cell) games — which consume two slot units and may be reordered —
+    # get a region that covers the whole tile rather than only its left half.
     x_start = 32
     y_start = 30
-    _ordered = list(game_state_data)
-    if config.get('favorite_team_first', False):
-        _primary = config.get('primary', '')
-        if _primary:
-            _abbr_map = team_data.get('team_abbreviation', {})
-            for _i, _g in enumerate(_ordered):
-                _away = _abbr_map.get(str(_g.get('away_team_id', '')), '')
-                _home = _abbr_map.get(str(_g.get('home_team_id', '')), '')
-                if _primary in (_away, _home):
-                    _ordered.insert(0, _ordered.pop(_i))
-                    break
+    _ordered, _slots = compute_grid_layout(game_state_data, team_data, config)
     changed_regions = []
-    for i, game in enumerate(_ordered):
-        if i >= 15:  # 5x3 grid max
-            break
+    for game, slot_info in zip(_ordered, _slots):
+        slot_type, gx, gy = slot_info
         pk = str(game.get('game_pk', ''))
         if pk in refreshed_game_ids:
-            col = i % 5
-            row = i // 5
             # Align x to 8-pixel boundary
-            rx = (col * 150 + x_start) // 8 * 8
-            ry = row * 150 + y_start
-            rw = 152  # slightly wider to cover alignment rounding (divisible by 8)
+            rx = (gx * 150 + x_start) // 8 * 8
+            ry = gy * 150 + y_start
+            # Wide tiles span 2 columns (≈300px); normal tiles span 1 (150px).
+            # Pad to cover 8px alignment rounding and keep width divisible by 8.
+            rw = 304 if slot_type == 'wide' else 152
             rh = 150
             changed_regions.append((rx, ry, rw, rh))
 

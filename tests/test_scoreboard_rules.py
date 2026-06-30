@@ -1965,13 +1965,13 @@ class TestAbbrPlay:
         assert _abbr_play('Hit By Pitch') == 'HBP'
 
     def test_sac_fly(self):
-        assert _abbr_play('Sac Fly to left fielder') == 'SF'
+        assert _abbr_play('Sac Fly to left fielder') == 'SAC F'
 
     def test_sacrifice_fly(self):
-        assert _abbr_play('Sacrifice Fly to center fielder') == 'SF'
+        assert _abbr_play('Sacrifice Fly to center fielder') == 'SAC F'
 
     def test_sac_bunt(self):
-        assert _abbr_play('Sac Bunt') == 'SAC'
+        assert _abbr_play('Sac Bunt') == 'SAC B'
 
     def test_stolen_base(self):
         assert _abbr_play('Stolen Base 2B') == 'SB'

@@ -2161,52 +2161,95 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _hdr_right = rp_x + rp_w - _cnt_w - (7 * s if _cnt_w else 3 * s)
     _hdr_max_w = _hdr_right - _hdr_left - 1 * s   # -1 for the bold double-strike
 
-    def _events_to_str(plays):
-        """Join play tokens into display string; '+' tokens become ' + ' inning-break separator."""
-        parts = []
-        next_sep = ''
+    # Inning-break triangle: '^' heading into the top half, 'v' into the bottom.
+    _TRI_W = 7 * s
+    _TRI_H = 7 * s
+
+    def _draw_triangle(x, y, direction):
+        """Draw a small filled up/down triangle, vertically aligned with the text."""
+        top = y + 2 * s
+        bot = top + _TRI_H
+        cx = x + _TRI_W / 2
+        if direction == 'up':
+            pts = [(cx, top), (x, bot), (x + _TRI_W, bot)]
+        else:
+            pts = [(x, top), (x + _TRI_W, top), (cx, bot)]
+        draw.polygon(pts, fill=0)
+
+    def _build_items(plays):
+        """Turn play tokens into render segments: ('text', str) | ('tri', 'up'|'dn').
+
+        '^'/'v' tokens become triangle inning-break separators; consecutive
+        events in the same half-inning are joined with ' | '.
+        """
+        items = []
+        pending = None   # None | 'bar' | 'up' | 'dn'
         for ev in plays:
-            if ev == '+':
-                next_sep = ' + '
+            if ev == '^':
+                pending = 'up'
+            elif ev == 'v':
+                pending = 'dn'
             else:
-                parts.append(next_sep + str(ev) if next_sep else str(ev))
-                next_sep = ' | '
-        return ''.join(parts)
+                if pending == 'bar':
+                    items.append(('text', ' | '))
+                elif pending in ('up', 'dn'):
+                    items.append(('text', ' '))
+                    items.append(('tri', pending))
+                    items.append(('text', ' '))
+                items.append(('text', str(ev)))
+                pending = 'bar'
+        return items
 
-    def _measure_events(text):
-        return int(font12.getlength(text.replace('Kl', 'K')))
+    def _measure_items(items):
+        total = 0
+        for kind, val in items:
+            if kind == 'tri':
+                total += int(_TRI_W)
+            else:
+                total += int(font12.getlength(val.replace('Kl', 'K')))
+        return total
 
-    def _draw_events(x, y, text):
-        """Render event string with backwards-K support (bold via 1px double-strike)."""
-        if 'Kl' not in text:
-            draw.text((x,         y), text, font=font12, fill=0)
-            draw.text((x + 1 * s, y), text, font=font12, fill=0)
-            return
-        _parts = text.split('Kl')
+    def _draw_text_seg(x, y, seg):
+        """Draw one text segment (bold double-strike, backwards-K aware); return new x."""
+        if 'Kl' not in seg:
+            draw.text((x,         y), seg, font=font12, fill=0)
+            draw.text((x + 1 * s, y), seg, font=font12, fill=0)
+            return x + int(font12.getlength(seg))
+        _parts = seg.split('Kl')
         for _bx in (x, x + 1 * s):
             _cx = _bx
-            for _i, _seg in enumerate(_parts):
-                if _seg:
-                    draw.text((_cx, y), _seg, font=font12, fill=0)
-                    _cx += int(font12.getlength(_seg))
+            for _i, _p in enumerate(_parts):
+                if _p:
+                    draw.text((_cx, y), _p, font=font12, fill=0)
+                    _cx += int(font12.getlength(_p))
                 if _i < len(_parts) - 1:
                     _draw_backwards_k(Himage, _cx, y, font12)
                     _cx += int(font12.getlength('K'))
+        return x + int(font12.getlength(seg.replace('Kl', 'K')))
+
+    def _draw_items(x, y, items):
+        cx = x
+        for kind, val in items:
+            if kind == 'tri':
+                _draw_triangle(cx, y, 'up' if val == 'up' else 'dn')
+                cx += int(_TRI_W)
+            else:
+                cx = _draw_text_seg(cx, y, val)
 
     # Show up to the last 7 events; drop oldest (leftmost) until it fits so the
     # most recent events always stay visible.
-    _hdr_event = ''
+    _hdr_items = []
     while _recent_plays:
-        _hdr_event = _events_to_str(_recent_plays)
-        if _measure_events(_hdr_event) <= _hdr_max_w:
+        _hdr_items = _build_items(_recent_plays)
+        if _measure_items(_hdr_items) <= _hdr_max_w:
             break
         _recent_plays.pop(0)
-        # Don't leave a lone '+' boundary marker at the front
-        if _recent_plays and _recent_plays[0] == '+':
+        # Don't leave a lone triangle boundary marker at the front
+        while _recent_plays and _recent_plays[0] in ('^', 'v'):
             _recent_plays.pop(0)
-    if _recent_plays and _hdr_event:
-        _tx = max(_hdr_left, _hdr_right - _measure_events(_hdr_event))
-        _draw_events(_tx, rp_y + 4 * s, _hdr_event)
+    if _recent_plays and _hdr_items:
+        _tx = max(_hdr_left, _hdr_right - _measure_items(_hdr_items))
+        _draw_items(_tx, rp_y + 4 * s, _hdr_items)
 
     if state != 'In Progress':
         return
