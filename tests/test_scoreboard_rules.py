@@ -1665,7 +1665,7 @@ class TestChangedRegionDetection:
         games = [{'game_pk': i, 'score': i} for i in range(5)]
         old = {}  # all new → all changed
         regions = self._changed_regions(games, old)
-        for rx, ry, rw, rh in regions:
+        for rx, _ry, _rw, _rh in regions:
             assert rx % 8 == 0, f"x={rx} is not 8-pixel aligned"
 
     def test_grid_column_positions_correct(self):
@@ -1675,7 +1675,7 @@ class TestChangedRegionDetection:
         old = {}
         regions = self._changed_regions(games, old)
         assert len(regions) == 5
-        for col, (rx, ry, rw, rh) in enumerate(regions):
+        for col, (rx, _ry, _rw, _rh) in enumerate(regions):
             expected_raw = col * 150 + x_start
             expected_aligned = expected_raw // 8 * 8
             assert rx == expected_aligned, f"Column {col} x mismatch: {rx} != {expected_aligned}"
@@ -1965,13 +1965,13 @@ class TestAbbrPlay:
         assert _abbr_play('Hit By Pitch') == 'HBP'
 
     def test_sac_fly(self):
-        assert _abbr_play('Sac Fly to left fielder') == 'SF'
+        assert _abbr_play('Sac Fly to left fielder') == 'SAC F'
 
     def test_sacrifice_fly(self):
-        assert _abbr_play('Sacrifice Fly to center fielder') == 'SF'
+        assert _abbr_play('Sacrifice Fly to center fielder') == 'SAC F'
 
     def test_sac_bunt(self):
-        assert _abbr_play('Sac Bunt') == 'SAC'
+        assert _abbr_play('Sac Bunt') == 'SAC B'
 
     def test_stolen_base(self):
         assert _abbr_play('Stolen Base 2B') == 'SB'
@@ -2491,12 +2491,12 @@ class TestBuildScorecardNotation:
 # ===========================================================================
 
 class TestArrowSuppression:
-    """Batting-team arrows must vanish when num_of_outs >= 3, even if
-    inningState hasn't flipped to Middle/End yet (API lag after final out)."""
+    """The batting-team ▲/▼ indicator has been removed: no arrow should ever be
+    drawn in the indicator region just left of the box, in any game state."""
 
-    # Triangle sits just left of start_x=32.  _bi_cx = 32+4-8 = 28, _r = 4.
-    _AWAY_ARROW = (22, 63, 35, 76)   # ▲ for Top-half (away batting)
-    _HOME_ARROW = (22, 93, 35, 106)  # ▼ for Bottom-half (home batting)
+    # Triangle used to sit just left of start_x=32.  _bi_cx = 32+4-8 = 28, _r = 4.
+    _AWAY_ARROW = (22, 63, 35, 76)   # ▲ region for Top-half (away batting)
+    _HOME_ARROW = (22, 93, 35, 106)  # ▼ region for Bottom-half (home batting)
 
     def _render(self, game, team_data):
         img = Image.new('1', (800, 480), 255)
@@ -2504,42 +2504,20 @@ class TestArrowSuppression:
         return img
 
     @needs_pil
-    def test_arrow_visible_when_top_and_less_than_3_outs(self, minimal_team_data):
-        """▲ appears when inningState='Top' and fewer than 3 outs."""
-        game = _in_progress_game(inningState='Top', num_of_outs=0)
-        img = self._render(game, minimal_team_data)
-        assert _has_dark_pixels(img, *self._AWAY_ARROW), \
-            "▲ should be drawn for top-half with 0 outs"
+    def test_no_arrow_top_half(self, minimal_team_data):
+        for outs in (0, 1, 2, 3):
+            game = _in_progress_game(inningState='Top', num_of_outs=outs)
+            img = self._render(game, minimal_team_data)
+            assert not _has_dark_pixels(img, *self._AWAY_ARROW), \
+                f"▲ indicator should be removed (outs={outs})"
 
     @needs_pil
-    def test_arrow_visible_home_batting_2_outs(self, minimal_team_data):
-        """▼ appears when inningState='Bottom' and 2 outs."""
-        game = _in_progress_game(inningState='Bottom', num_of_outs=2)
-        img = self._render(game, minimal_team_data)
-        assert _has_dark_pixels(img, *self._HOME_ARROW), \
-            "▼ should be drawn for bottom-half with 2 outs"
-
-    @needs_pil
-    def test_arrow_suppressed_when_3_outs_top(self, minimal_team_data):
-        """▲ must NOT appear when num_of_outs=3 (API lag — inningState still 'Top')."""
-        game_3 = _in_progress_game(inningState='Top', num_of_outs=3)
-        game_0 = _in_progress_game(inningState='Top', num_of_outs=0)
-        img_3 = self._render(game_3, minimal_team_data)
-        img_0 = self._render(game_0, minimal_team_data)
-        assert _has_dark_pixels(img_0, *self._AWAY_ARROW), "sanity: arrow exists at 0 outs"
-        assert not _has_dark_pixels(img_3, *self._AWAY_ARROW), \
-            "▲ must be suppressed when 3 outs recorded"
-
-    @needs_pil
-    def test_arrow_suppressed_when_3_outs_bottom(self, minimal_team_data):
-        """▼ must NOT appear when num_of_outs=3 (API lag — inningState still 'Bottom')."""
-        game_3 = _in_progress_game(inningState='Bottom', num_of_outs=3)
-        game_1 = _in_progress_game(inningState='Bottom', num_of_outs=1)
-        img_3 = self._render(game_3, minimal_team_data)
-        img_1 = self._render(game_1, minimal_team_data)
-        assert _has_dark_pixels(img_1, *self._HOME_ARROW), "sanity: arrow exists at 1 out"
-        assert not _has_dark_pixels(img_3, *self._HOME_ARROW), \
-            "▼ must be suppressed when 3 outs recorded"
+    def test_no_arrow_bottom_half(self, minimal_team_data):
+        for outs in (0, 1, 2, 3):
+            game = _in_progress_game(inningState='Bottom', num_of_outs=outs)
+            img = self._render(game, minimal_team_data)
+            assert not _has_dark_pixels(img, *self._HOME_ARROW), \
+                f"▼ indicator should be removed (outs={outs})"
 
     @needs_pil
     def test_arrow_absent_for_final_game(self, minimal_team_data):

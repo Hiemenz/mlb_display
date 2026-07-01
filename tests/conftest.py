@@ -13,3 +13,10 @@ if PROJECT_ROOT not in sys.path:
 
 # Change CWD to project root so config.yaml / data/*.json paths resolve
 os.chdir(PROJECT_ROOT)
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        '--update-golden', action='store_true', default=False,
+        help='Write golden-image regression renders to tests/golden/ instead of asserting.',
+    )

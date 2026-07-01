@@ -16,7 +16,7 @@ from image_utils import (
 )
 from util import load_json_file, load_yaml_file, save_off_results
 
-_final_time_cache = {}       # game_pk (str) -> unix timestamp, in-memory layer
+_final_time_cache: dict = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
 
 # Maps verbose MLB API event names (lowercased) to short header abbreviations.
@@ -198,7 +198,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     font9  = _get_font(9 * s)
     font11 = _get_font(11 * s)
 
-    grid_right = grid_x0 + _total_w
+    grid_x0 + _total_w
 
     # --- horizontal row dividers span full box width ---
     draw.line((start_x, y1, start_x + BOX_W, y1), fill=0)
@@ -643,7 +643,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         _draw_half(home_game, home_start, strip_right)
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
     s = scale
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
@@ -967,9 +967,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _pit_w = int(_pit_fnt.getlength(_pit_name))
             draw.text((_right_x - _pit_w, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
     elif game_data['detailed_state'] == 'In Progress':
-        if _between_innings or _pitching_change:
+        # A mid-inning pitching change keeps the active (bases/diamond) display —
+        # only between-inning/start-of-inning PCs swap in the linescore grid.
+        _pc_grid = _pitching_change and not _mid_inning_pc
+        _show_grid = _between_innings or _pc_grid or force_linescore
+        if _show_grid:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
-        else:
+        if not _show_grid:
             # Active play: pitch/pitcher/batter info
             _pc = game_data.get('pitch_count')
             _pt = game_data.get('last_pitch_type', '')   # e.g. "FB", "SL", "CH"
@@ -1312,7 +1316,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _venue_right = _ser_content_left_x - 2 * s
                 max_venue_w = max(_venue_right - start_x - _total_time_w - 6 * s, 0)
                 if max_venue_w > 0:
-                    for vfont, vy in ((_get_font(16 * s), 2 * s), (font14, 3 * s), (font11, 4 * s), (font9, 5 * s), (_get_font(8 * s), 6 * s)):
+                    for vfont, vy in ((_get_font(16 * s), 2 * s), (font14, 3 * s), (font11, 4 * s), (font9, 5 * s), (_get_font(8 * s), 6 * s)):  # noqa: B007 (vy used after break)
                         if vfont.getlength(venue_clean) <= max_venue_w:
                             break
                     vw = int(vfont.getlength(venue_clean))
@@ -1457,7 +1461,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                                 _draw_backwards_k(Himage, _cx, _py, _fnt)
                                 _cx += int(_fnt.getlength('K'))
 
-        if _active_no_no:
+        if hide_last_play:
+            # Wide cell: events live in the spanning header, not the left cell.
+            pass
+        elif _active_no_no:
             # Right-align label; inning state stays on left as-is
             _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
             _nh_lw = int(font14.getlength(_nh_label))
@@ -1530,13 +1537,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + 68 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
         draw.text((start_x + 68 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
-        if is_game_finished:
+        if is_game_finished or always_show_hits:
             # hits
             away_hits = str(game_data.get('away_hits', 0) if game_data.get('away_hits', 0) is not None else 0)
             home_hits = str(game_data.get('home_hits', 0) if game_data.get('home_hits', 0) is not None else 0)
             draw.text((start_x + 95 * s + check_if_two_chars(away_hits), start_y + 25 * s),  away_hits, font=font24, fill=0)
             draw.text((start_x + 95 * s + check_if_two_chars(home_hits), start_y + 55 * s), home_hits , font=font24, fill=0)
 
+        if is_game_finished or always_show_hits:
             # errors
             draw.text((start_x + 123 * s, start_y + 25 * s),  str(game_data.get('away_errors', 0) if game_data.get('away_errors', 0) is not None else 0), font=font24, fill=0)
             draw.text((start_x + 123 * s, start_y + 55 * s),  str( game_data.get('home_errors', 0) if game_data.get('home_errors', 0) is not None else 0), font=font24, fill=0)
@@ -1841,8 +1849,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     # draw.line((vert_start_x, vert_start_y, end_x, end_y), fill = 0)
 
 
-    # Show bases/outs/count only once the game is actually in progress (first pitch thrown)
-    if game_data['detailed_state'] == 'In Progress':
+    # Show bases/outs/count only once the game is actually in progress (first pitch thrown).
+    # force_linescore (wide-cell mode) suppresses this block — the right panel handles live context.
+    if game_data['detailed_state'] == 'In Progress' and not force_linescore:
         if _between_innings and _game_ending_state:
             pass  # end of 9th+ with a lead — linescore shown, no next-batters panel
         elif _between_innings:
@@ -2043,31 +2052,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if game_data.get('home_team_is_winner'):
             draw.text((start_x + 7 * s, start_y + 55 * s), home_team_name, font=font24, fill=0)
 
-    # Batting team indicator: ▲ left of away logo row when top half (away batting),
-    # ▼ left of home logo row when bottom half (home batting). Live games only.
-    # Suppress when 3 outs are recorded (API lag before inningState flips to Middle/End).
-    _bi_state = game_data.get('inningState') or ''
-    if (game_data['detailed_state'] == 'In Progress' and _bi_state in ('Top', 'Bottom')
-            and (game_data.get('num_of_outs') or 0) < 3):
-        _r = 4 * s
-        _bi_cx = start_x + _r - 8
-        if _bi_state == 'Top':
-            _bi_cy = start_y + 25 * s + 14 * s  # vertical center of away logo row
-            # ▲ up-pointing triangle
-            draw.polygon([
-                (_bi_cx,          _bi_cy - _r),
-                (_bi_cx - _r,     _bi_cy + _r),
-                (_bi_cx + _r,     _bi_cy + _r),
-            ], fill=0)
-        else:
-            _bi_cy = start_y + 55 * s + 14 * s  # vertical center of home logo row
-            # ▼ down-pointing triangle
-            draw.polygon([
-                (_bi_cx - _r,     _bi_cy - _r),
-                (_bi_cx + _r,     _bi_cy - _r),
-                (_bi_cx,          _bi_cy + _r),
-            ], fill=0)
-
     # Bold-offset score for winner (both modes)
     if game_data.get('away_team_is_winner'):
         draw.text((start_x + 69 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
@@ -2076,7 +2060,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = game_data['detailed_state'] == 'In Progress' and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
-    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change:
+    if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change and not skip_header_invert:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
@@ -2086,14 +2070,521 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data['detailed_state'] == 'In Progress' and not is_game_finished and not _between_innings and not _pitching_change and
         ('stolen base' in _lp_lower or _lp_lower == 'sb')
     )
-    if _sb_event:
+    if _sb_event and not skip_header_invert:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
     # Invert header for special states: no-hitter (>= 6 innings), perfect game
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
-       (is_game_finished or _active_no_no):
+       (is_game_finished or _active_no_no) and not skip_header_invert:
         header_box = Himage.crop((start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
+    return Himage
+
+
+# ---------------------------------------------------------------------------
+# Wide (2-cell) featured game box
+# ---------------------------------------------------------------------------
+
+_WIDE_PITCH_TYPE = {
+    'FF': 'FB', 'FA': 'FB', 'FT': '2F', 'SI': 'SI',
+    'FC': 'CT', 'SL': 'SL', 'ST': 'SW', 'SW': 'SW',
+    'CH': 'CH', 'CU': 'CB', 'CS': 'CB', 'KC': 'KC',
+    'FS': 'SP', 'KN': 'KN', 'EP': 'EP',
+}
+
+# Strike zone coordinate bounds (MLB standard)
+_SZ_HALF_W = 0.708  # ±0.708 ft = 17-inch plate
+_SZ_PZ_LO  = 1.5
+_SZ_PZ_HI  = 3.5
+
+
+def _draw_backward_k(Himage, x, y, font):
+    """Paste a horizontally-mirrored K (looking strikeout) at (x, y)."""
+    bbox = font.getbbox('K')
+    w = max(bbox[2] - bbox[0] + 2, 4)
+    h = max(bbox[3] - bbox[1] + 4, 8)
+    tmp = Image.new('1', (w, h), 1)
+    ImageDraw.Draw(tmp).text((-bbox[0] + 1, -bbox[1] + 1), 'K', font=font, fill=0)
+    Himage.paste(tmp.transpose(Image.FLIP_LEFT_RIGHT), (int(x), int(y)))
+
+
+def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1):
+    """Right panel of 2-cell wide tile.
+
+    Header strip (20 px): last half-inning event (cycling 8-sec) + count right-aligned.
+    Active at-bat content:
+      Left strip  (x+0 .. x+~32):  pitch list vertically from top (1-FB, 2-SL …)
+      Middle      (x+42 .. x+88):  bases (shifted right) + outs
+      Right       (x+90 .. x+148): strike zone (location-based fill)
+      Lower rows: P: pitcher | AB: batter (same font) | B/S indicators
+    Between-innings content: next 3 batters (outs hidden).
+    Bottom strip (below rp_h): K strikeouts for each pitcher.
+    """
+    s = scale
+    font11 = _get_font(11 * s)
+    font9  = _get_font(9 * s)
+    font7  = _get_font(max(7 * s, 7))
+
+    state = game_data.get('detailed_state', '')
+    _between_innings = game_data.get('inningState') in ('Middle', 'End')
+
+    # ── Header: last 5 game events + count ─────────────────────────────
+    # Events render in the same size as the single-cell last-play text (font12),
+    # bold, on the inning's baseline, spanning the full two-cell width (the left
+    # cell no longer draws its own event).
+    font14 = _get_font(14 * s)   # inning label size, used to reserve its width
+    font12 = _get_font(12 * s)   # event text size (matches 1-cell last-play)
+    balls   = min(game_data.get('balls', 0) or 0, 3)
+    min(game_data.get('strikes', 0) or 0, 2)
+
+    # The ball-strike count lives in the panel body (B/S rows); no count in the header.
+    _cnt_w = 0
+
+    # Reserve space for the inning label drawn in the left cell ("Top 7", "Bot 12"…).
+    _tile_left = rp_x - 135 * s
+    _inn_state = game_data.get('inningState') or ''
+    _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
+        _inn_state, (_inn_state[:3] or ''))
+    _inn_text = f"{_inn_label} {game_data.get('current_inning') or 1}".strip()
+    _inn_w = int(font14.getlength(_inn_text)) + 2 * s   # +2 for the inning's bold strike
+
+    half_inning_plays = game_data.get('half_inning_plays') or []
+    # Keep the last 7 *events* plus intervening half-inning markers ('^'/'v').
+    # A plain [-7:] would count markers as entries and show fewer than 7 events.
+    _recent_plays = []
+    _rp_events = 0
+    for _tok in reversed(half_inning_plays):
+        _recent_plays.append(_tok)
+        if _tok not in ('^', 'v'):
+            _rp_events += 1
+            if _rp_events >= 7:
+                break
+    _recent_plays.reverse()
+    # Right-anchor against the count; left bound clears the inning label.
+    _hdr_left = _tile_left + 2 * s + _inn_w + 6 * s
+    _hdr_right = rp_x + rp_w - _cnt_w - (7 * s if _cnt_w else 3 * s)
+    _hdr_max_w = _hdr_right - _hdr_left - 1 * s   # -1 for the bold double-strike
+
+    # Inning-break triangle: '^' heading into the top half, 'v' into the bottom.
+    _TRI_W = 7 * s
+    _TRI_H = 7 * s
+
+    def _draw_triangle(x, y, direction):
+        """Draw a small filled up/down triangle, vertically aligned with the text."""
+        top = y + 2 * s
+        bot = top + _TRI_H
+        cx = x + _TRI_W / 2
+        if direction == 'up':
+            pts = [(cx, top), (x, bot), (x + _TRI_W, bot)]
+        else:
+            pts = [(x, top), (x + _TRI_W, top), (cx, bot)]
+        draw.polygon(pts, fill=0)
+
+    def _build_items(plays):
+        """Turn play tokens into render segments: ('text', str) | ('tri', 'up'|'dn').
+
+        '^'/'v' tokens become triangle inning-break separators; consecutive
+        events in the same half-inning are joined with ' | '.
+        """
+        items = []
+        pending = None   # None | 'bar' | 'up' | 'dn'
+        for ev in plays:
+            if ev == '^':
+                pending = 'up'
+            elif ev == 'v':
+                pending = 'dn'
+            else:
+                if pending == 'bar':
+                    items.append(('text', ' | '))
+                elif pending in ('up', 'dn'):
+                    items.append(('text', ' '))
+                    items.append(('tri', pending))
+                    items.append(('text', ' '))
+                items.append(('text', str(ev)))
+                pending = 'bar'
+        return items
+
+    def _measure_items(items):
+        total = 0
+        for kind, val in items:
+            if kind == 'tri':
+                total += int(_TRI_W)
+            else:
+                total += int(font12.getlength(val.replace('Kl', 'K')))
+        return total
+
+    def _draw_text_seg(x, y, seg):
+        """Draw one text segment (bold double-strike, backwards-K aware); return new x."""
+        if 'Kl' not in seg:
+            draw.text((x,         y), seg, font=font12, fill=0)
+            draw.text((x + 1 * s, y), seg, font=font12, fill=0)
+            return x + int(font12.getlength(seg))
+        _parts = seg.split('Kl')
+        for _bx in (x, x + 1 * s):
+            _cx = _bx
+            for _i, _p in enumerate(_parts):
+                if _p:
+                    draw.text((_cx, y), _p, font=font12, fill=0)
+                    _cx += int(font12.getlength(_p))
+                if _i < len(_parts) - 1:
+                    _draw_backwards_k(Himage, _cx, y, font12)
+                    _cx += int(font12.getlength('K'))
+        return x + int(font12.getlength(seg.replace('Kl', 'K')))
+
+    def _draw_items(x, y, items):
+        cx = x
+        for kind, val in items:
+            if kind == 'tri':
+                _draw_triangle(cx, y, 'up' if val == 'up' else 'dn')
+                cx += int(_TRI_W)
+            else:
+                cx = _draw_text_seg(cx, y, val)
+
+    # Show up to the last 7 events; drop oldest (leftmost) until it fits so the
+    # most recent events always stay visible.
+    _hdr_items = []
+    while _recent_plays:
+        _hdr_items = _build_items(_recent_plays)
+        if _measure_items(_hdr_items) <= _hdr_max_w:
+            break
+        _recent_plays.pop(0)
+        # Don't leave a lone triangle boundary marker at the front
+        while _recent_plays and _recent_plays[0] in ('^', 'v'):
+            _recent_plays.pop(0)
+    if _recent_plays and _hdr_items:
+        _tx = max(_hdr_left, _hdr_right - _measure_items(_hdr_items))
+        _draw_items(_tx, rp_y + 4 * s, _hdr_items)
+
+    if state != 'In Progress':
+        return
+
+    ab_pitches = game_data.get('ab_pitches') or []
+
+    # ── Strike zone bounds: use per-batter sz from pitch data ──────────
+    _zone_top = _SZ_PZ_HI
+    _zone_bot = _SZ_PZ_LO
+    for _p in ab_pitches:
+        _st = _p.get('sz_top')
+        _sb = _p.get('sz_bot')
+        if _st is not None and _sb is not None:
+            _zone_top = float(_st)
+            _zone_bot = float(_sb)
+            break
+
+    # ── Strike zone (RIGHT side, fixed pixel dimensions) ───────────────
+    ZONE_W = 56 * s
+    ZONE_H = 58 * s
+    zone_rx = rp_x + rp_w - 17 * s   # nudged left 7px more to leave room for outside pitches
+    zone_lx = zone_rx - ZONE_W
+    zone_ty = rp_y + header_h + 12 * s   # nudged down
+    zone_by = zone_ty + ZONE_H
+
+    if not _between_innings:
+        draw.rectangle([zone_lx, zone_ty, zone_rx, zone_by], outline=0)
+        tw = ZONE_W // 3
+        th = ZONE_H // 3
+        draw.line([zone_lx + tw,     zone_ty, zone_lx + tw,     zone_by], fill=0)
+        draw.line([zone_lx + 2 * tw, zone_ty, zone_lx + 2 * tw, zone_by], fill=0)
+        draw.line([zone_lx, zone_ty + th,     zone_rx, zone_ty + th    ], fill=0)
+        draw.line([zone_lx, zone_ty + 2 * th, zone_rx, zone_ty + 2 * th], fill=0)
+
+        # Called balls (incl. intentional 'I', pitchout 'P', automatic ball 'V')
+        # are highlighted/filled; everything else (strikes, fouls, in-play) is outlined.
+        _BALL_CODES = frozenset({'B', 'I', 'P', 'V'})
+
+        def _to_pixel(px_c, pz_c):
+            tx = zone_lx + (px_c + _SZ_HALF_W) / (2 * _SZ_HALF_W) * ZONE_W
+            ty = zone_by  - (pz_c - _zone_bot)  / (_zone_top - _zone_bot)  * ZONE_H
+            return int(tx), int(ty)
+
+        # Pitch circles: invert only strikes that are in the zone
+        PITCH_R = max(5 * s, 5)
+        for pitch_num, pitch in enumerate(ab_pitches, start=1):
+            px_c, pz_c = pitch.get('px'), pitch.get('pz')
+            if px_c is None or pz_c is None:
+                continue
+            bx, by = _to_pixel(px_c, pz_c)
+            # Clip pitches that are entirely outside the tile (far wide/high), but
+            # allow pitches that overlap the zone border to show as "off the plate".
+            if by < rp_y - PITCH_R or by > rp_y + rp_h + PITCH_R:
+                continue
+            # Prefer the result/call code; fall back to 'code' for callers that
+            # supply the call code there directly.
+            _code = (pitch.get('call') or pitch.get('code') or '').upper()
+            # Highlight (fill) called balls; strikes / fouls / contact are outlines.
+            filled = _code in _BALL_CODES
+            box = [bx - PITCH_R, by - PITCH_R, bx + PITCH_R, by + PITCH_R]
+            seq_str = str(pitch_num)
+            sw = int(font7.getlength(seq_str))
+            if filled:
+                draw.ellipse(box, fill=0, outline=0)
+                draw.text((bx - sw // 2, by - 4 * s), seq_str, font=font7, fill=255)
+            else:
+                draw.ellipse(box, fill=255, outline=0)
+                draw.text((bx - sw // 2, by - 4 * s), seq_str, font=font7, fill=0)
+
+        # ── Bases: left side of panel ──────────────────────────────────
+        _outs_count = game_data.get('num_of_outs') or 0
+        if _outs_count < 3:
+            _hi_third  = isinstance(game_data.get('runner_on_third'), str)
+            _hi_second = isinstance(game_data.get('runner_on_second'), str)
+            _hi_first  = isinstance(game_data.get('runner_on_first'), str)
+            _b3x, _b3y = rp_x + 18 * s, rp_y + 52 * s
+            _b2x, _b2y = rp_x + 30 * s, rp_y + 40 * s
+            _b1x, _b1y = rp_x + 42 * s, rp_y + 52 * s
+            Himage = draw_diamond(Himage, (_b3x, _b3y), 9 * s, _hi_third)
+            Himage = draw_diamond(Himage, (_b2x, _b2y), 9 * s, _hi_second)
+            Himage = draw_diamond(Himage, (_b1x, _b1y), 9 * s, _hi_first)
+            draw = ImageDraw.Draw(Himage)
+            for _bfill, _bcx, _bcy, _bkey in (
+                (_hi_third,  _b3x, _b3y, 'runner_third_number'),
+                (_hi_second, _b2x, _b2y, 'runner_second_number'),
+                (_hi_first,  _b1x, _b1y, 'runner_first_number'),
+            ):
+                if _bfill:
+                    _raw = game_data.get(_bkey)
+                    _bnum = str(_raw) if _raw is not None else ''
+                    _bnw = int(font9.getlength(_bnum)) if _bnum else 0
+                    draw.text((_bcx - _bnw // 2, _bcy - 5 * s), _bnum, font=font9, fill=255)
+
+        # ── Outs circles: left side, below bases ──────────────────────
+        outs_list = [i + 1 <= _outs_count for i in range(3)]
+        Himage = draw_circle(Himage, (rp_x + 18 * s, rp_y + 71 * s), 5 * s, outs_list[0], outline_width=2)
+        Himage = draw_circle(Himage, (rp_x + 30 * s, rp_y + 71 * s), 5 * s, outs_list[1], outline_width=2)
+        Himage = draw_circle(Himage, (rp_x + 42 * s, rp_y + 71 * s), 5 * s, outs_list[2], outline_width=2)
+        draw = ImageDraw.Draw(Himage)
+
+        # ── Pitch list: vertical, right of bases/outs, left of zone ───
+        # Anchored to a fixed top (not the zone) so moving the zone down doesn't
+        # shrink the list — keeps room to show more of the at-bat's pitches.
+        _pt_x = rp_x + 56 * s   # nudged 3px right
+        _pt_max_w = zone_lx - _pt_x - 2 * s
+        _pt_step = 9 * s
+        _pt_top = rp_y + header_h + 2 * s
+        for _pn, _pp in enumerate(ab_pitches, start=1):
+            _ey = _pt_top + (_pn - 1) * _pt_step
+            if _ey + _pt_step > rp_y + rp_h - 37 * s:
+                break
+            _abbr = _pp.get('pt_abbr') or _WIDE_PITCH_TYPE.get(_pp.get('code', ''), _pp.get('code', ''))
+            _label = f'{_pn}-{_abbr}' if _abbr else str(_pn)
+            _lw = int(font7.getlength(_label))
+            if _lw > _pt_max_w:
+                _label = _label[:4]
+            draw.text((int(_pt_x), int(_ey)), _label, font=font7, fill=0)
+
+        # ── Balls / Strikes indicators (pushed below pitch list) ───────
+        balls_list = [i + 1 <= balls for i in range(3)]
+        _num_strikes = min(game_data.get('strikes') or 0, 2)
+        strikes_list = [i + 1 <= _num_strikes for i in range(2)]
+        _strike_calls = game_data.get('strike_calls') or []
+
+        draw.text((rp_x + 2 * s, rp_y + 93 * s), 'B', font=font11, fill=0)
+        Himage = draw_circle(Himage, (rp_x + 19 * s, rp_y + 102 * s), 4 * s, balls_list[0])
+        Himage = draw_circle(Himage, (rp_x + 31 * s, rp_y + 102 * s), 4 * s, balls_list[1])
+        Himage = draw_circle(Himage, (rp_x + 43 * s, rp_y + 102 * s), 4 * s, balls_list[2])
+        draw = ImageDraw.Draw(Himage)
+
+        draw.text((rp_x + 54 * s, rp_y + 93 * s), 'S', font=font11, fill=0)
+        for _si, (_scx, _scy) in enumerate([
+            (rp_x + 70 * s, rp_y + 102 * s),
+            (rp_x + 82 * s, rp_y + 102 * s),
+        ]):
+            _call = _strike_calls[_si] if _si < len(_strike_calls) else None
+            if strikes_list[_si] and _call in ('S', 'F'):
+                _ir = max(4 * s - 2, 2)
+                Himage = draw_circle(Himage, (_scx, _scy), 4 * s, False)
+                draw = ImageDraw.Draw(Himage)
+                draw.ellipse([_scx - _ir, _scy - _ir, _scx + _ir, _scy + _ir], fill='black', outline='black')
+            else:
+                Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
+                draw = ImageDraw.Draw(Himage)
+
+    else:
+        # ── Between innings: next 3 batters, outs hidden ───────────────
+        _batter_names = [
+            _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+            _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+            _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+        ]
+        _bat_y = rp_y + header_h + 10 * s
+        _bat_max_w = rp_w - 4 * s
+        for _nm in _batter_names:
+            if _nm:
+                _bat_str = _nm
+                while _bat_str and int(font11.getlength(_bat_str)) > _bat_max_w:
+                    _bat_str = _bat_str[:-1]
+                if _bat_str:
+                    draw.text((rp_x + 2 * s, _bat_y), _bat_str, font=font11, fill=0)
+            _bat_y += 16 * s
+
+    # ── Pitcher row (pushed below B/S indicators) ──────────────────────
+    _py = rp_y + 107 * s
+    _max_w = rp_w - 4 * s
+    _pc = game_data.get('pitch_count')
+    _pt_last = game_data.get('last_pitch_type', '') or ''
+    _lps = game_data.get('last_pitch_speed')
+    _pitcher_name = _format_player_name(game_data.get('current_pitcher') or '')
+
+    _rb_parts = [p for p in [
+        _pt_last,
+        str(int(_lps)) if _lps else '',
+        f'{_pc}P' if _pc is not None else '',
+    ] if p]
+    _right_badge = ' '.join(_rb_parts)
+    _rb_w = int(font9.getlength(_right_badge)) + 2 * s if _right_badge else 0
+    _pit_avail = _max_w - _rb_w
+    _pit_str = f'P: {_pitcher_name}'
+    _pf = font11
+    if int(_pf.getlength(_pit_str)) > _pit_avail:
+        _pf = font9
+        while _pit_str and int(font9.getlength(_pit_str)) > _pit_avail:
+            _pit_str = _pit_str[:-1]
+    draw.text((rp_x + 2 * s, _py), _pit_str, font=_pf, fill=0)
+    if _right_badge:
+        draw.text((rp_x + rp_w - _rb_w, _py), _right_badge, font=font9, fill=0)
+
+    # ── Batter row (hidden between innings — no one is at bat, and the
+    #    linescore's current-batter fields go stale during the break) ────
+    if not _between_innings:
+        _by = rp_y + 117 * s
+        _bh = game_data.get('batter_hits')
+        _ba = game_data.get('batter_at_bats')
+        _ba_str = f'{_bh}-{_ba}' if _bh is not None and _ba is not None else ''
+        _ba_w = int(font9.getlength(_ba_str)) + 2 * s if _ba_str else 0
+        _hit_avail = _max_w - _ba_w
+        _ab_done = game_data.get('current_at_bat_complete', False)
+        if _ab_done and not _is_game_effectively_over(game_data):
+            _next = _format_player_name(game_data.get('due_up') or game_data.get('next_batter_1') or '')
+            _batter_label = f'AB: {_next}' if _next else ''
+        else:
+            _hitter = _format_player_name(
+                game_data.get('current_play_batter') or game_data.get('current_hitter') or ''
+            )
+            _batter_label = f'AB: {_hitter}'
+        if _batter_label:
+            _bf = font11
+            if int(_bf.getlength(_batter_label)) > _hit_avail:
+                _bf = font9
+                while _batter_label and int(font9.getlength(_batter_label)) > _hit_avail:
+                    _batter_label = _batter_label[:-1]
+            draw.text((rp_x + 2 * s, _by), _batter_label, font=_bf, fill=0)
+        if _ba_str:
+            draw.text((rp_x + rp_w - _ba_w, _by), _ba_str, font=font9, fill=0)
+
+    # ── K strikeouts: current pitcher only, full width — hide between innings ─
+    if _between_innings:
+        return Himage
+    # Top half → home team pitching; Bottom half → away team pitching
+    _inning_state = game_data.get('inningState', '')
+    if _inning_state in ('Top', 'Middle'):
+        _pitcher_ks = game_data.get('home_pitcher_ks') or []
+    else:
+        _pitcher_ks = game_data.get('away_pitcher_ks') or []
+    if not _pitcher_ks:
+        return Himage
+    # Bold via a 1px horizontal double-strike. Shrink the font (from the WIN/LOSS
+    # size down) until ALL of this pitcher's Ks fit across the strip on one line.
+    _k_gap = max(2 * s, 2)
+    _k_avail = rp_w - 4 * s
+    _k_font = None
+    _k_bbox = None
+    for _px in range(18, 6, -1):
+        _f = _get_font(_px * s)
+        _bb = _f.getbbox('K')
+        _adv = (_bb[2] - _bb[0]) + 3   # +1 for the bold strike, +2 tmp padding
+        if len(_pitcher_ks) * (_adv + _k_gap) - _k_gap <= _k_avail:
+            _k_font, _k_bbox = _f, _bb
+            break
+    if _k_font is None:                # still doesn't fit at 7px — use 7px anyway
+        _k_font = _get_font(7 * s)
+        _k_bbox = _k_font.getbbox('K')
+    _k_glyph_h = _k_bbox[3] - _k_bbox[1]
+    _k_tmp_w = max(_k_bbox[2] - _k_bbox[0] + 3, 4)
+    _k_tmp_h = max(_k_glyph_h + 2, 4)
+    # Center the glyphs vertically in the 20px gap below the tile border.
+    _k_strip_y = rp_y + rp_h + (20 * s - _k_glyph_h) // 2 - 1 * s
+    _k_spacing = _k_tmp_w + _k_gap
+    _k_x = rp_x + 2 * s
+    for _k in _pitcher_ks:
+        if _k_x + _k_tmp_w > rp_x + rp_w - 2:
+            break
+        _k_tmp = Image.new('1', (_k_tmp_w, _k_tmp_h), 1)
+        _ktd = ImageDraw.Draw(_k_tmp)
+        _ktd.text((1 - _k_bbox[0], 1 - _k_bbox[1]), 'K', font=_k_font, fill=0)
+        _ktd.text((2 - _k_bbox[0], 1 - _k_bbox[1]), 'K', font=_k_font, fill=0)  # bold strike
+        if _k == 'L':
+            _k_tmp = _k_tmp.transpose(Image.FLIP_LEFT_RIGHT)
+        Himage.paste(_k_tmp, (int(_k_x), int(_k_strip_y)))
+        draw = ImageDraw.Draw(Himage)
+        _k_x += _k_spacing
+
+
+def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
+                  score_changed=False, use_logos=False, logo_x_offset=2,
+                  show_win_prob=False, streak_map=None, scale=1):
+    """Featured 2-cell (285×130 px) game tile.
+
+    Left panel (135 px): standard draw_box content with linescore always
+    visible and hits shown even in-progress. Win probability bar shown when
+    show_win_prob=True (same as single cells).
+    Right panel (150 px): pitch list (vertical left), strike zone (right),
+    bases/outs/count, pitcher/batter rows, K strip below.
+    """
+    s = scale
+    CELL_W  = 135 * s   # left panel — same as normal cell width
+    RIGHT_W = 150 * s   # right panel
+    TOTAL_W = CELL_W + RIGHT_W  # 285 px
+    HEADER_H = 20 * s
+    TOTAL_H  = 130 * s
+
+    # Left panel via draw_box: force linescore + always show hits
+    Himage = draw_box(
+        Himage, start_x, start_y, game_data, team_data,
+        score_changed=score_changed,
+        use_logos=use_logos,
+        logo_x_offset=logo_x_offset,
+        show_win_prob=show_win_prob,
+        streak_map=streak_map,
+        show_winner_logo=True,
+        scale=scale,
+        force_linescore=True,
+        always_show_hits=True,
+        hide_last_play=True,
+        skip_header_invert=True,   # the wide cell inverts the full header itself
+    )
+
+    # Extend top, header-separator, and bottom borders across the right panel (no center divider)
+    draw = ImageDraw.Draw(Himage)
+    rp_x = start_x + CELL_W
+    rp_right = start_x + TOTAL_W
+    draw.line((rp_x, start_y,            rp_right, start_y),            fill=0)  # top
+    draw.line((rp_x, start_y + HEADER_H, rp_right, start_y + HEADER_H), fill=0)  # header sep
+    draw.line((rp_x, start_y + TOTAL_H,  rp_right, start_y + TOTAL_H),  fill=0)  # bottom
+
+    # Right panel content
+    _draw_wide_right_panel(
+        draw, Himage,
+        rp_x=rp_x, rp_y=start_y,
+        rp_w=RIGHT_W, rp_h=TOTAL_H,
+        header_h=HEADER_H,
+        game_data=game_data,
+        team_data=team_data,
+        use_logos=use_logos,
+        scale=scale,
+    )
+
+    # Invert the whole two-cell header when a run scores (or the score changed),
+    # spanning both cells — mirrors the single-cell run-scored header flash.
+    _between = game_data.get('inningState') in ('Middle', 'End')
+    _run_scored = (
+        game_data.get('detailed_state') == 'In Progress'
+        and int(game_data.get('last_play_rbi') or 0) > 0
+    )
+    if (score_changed or _run_scored) and not _between:
+        header_box = Himage.crop((start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+        draw = ImageDraw.Draw(Himage)
 
     return Himage

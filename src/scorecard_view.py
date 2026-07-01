@@ -100,9 +100,8 @@ def _draw_team_scorecard(img, draw, fonts, y_offset, team_data, team_abbr, team_
     if has_extras:
         col_x = ix + display_innings * COL_INNING
         draw.text((col_x + 10, y), '10+', font=fonts['f9'], fill=0)
-        extra_col = display_innings
     else:
-        extra_col = None
+        pass
 
     # R H E headers
     rhe_x = ix + (display_innings + (1 if has_extras else 0)) * COL_INNING

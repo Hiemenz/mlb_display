@@ -15,7 +15,7 @@ from image_utils import (
     _pitcher_line, _clean_venue_name,
 )
 from image_standings import _WC_STRIP_H
-from image_box import draw_box
+from image_box import draw_box, draw_wide_box
 
 
 def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
@@ -70,7 +70,7 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     elif game_info.get('home_team_is_winner'):
         home_is_winner = 'W'
 
-    if (game_state == 'Final' or game_state == 'Game Over') and home[8] == None:
+    if (game_state == 'Final' or game_state == 'Game Over') and home[8] is None:
         home[8] = 'X'
 
     game_end_time = None
@@ -416,7 +416,7 @@ def generate_standings(Himage, col_start=100, row_start=320):
 
     teams_in_division = data.get('standings').get(standings_dict.get(ran_num))
 
-    font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
+    ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
     font15 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 15)
     draw = ImageDraw.Draw(Himage)
@@ -496,6 +496,196 @@ def generate_standings(Himage, col_start=100, row_start=320):
     return Himage
 
 
+# Live game states that qualify for a wide (2-cell) tile. Challenge/review states
+# are still an active game, so they must keep the wide slot they already had.
+_LIVE_WIDE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
+
+
+def _find_wide_games(game_list, config, team_data):
+    """Return the set of game_list indices to show as wide (2-cell) tiles.
+
+    Each wide cell consumes one extra grid slot, and the 5×3 grid holds only
+    15 slot units total. So at most ``15 - len(game_list)`` games can be widened
+    without pushing a game off the grid — e.g. with 13 games only 2 may be wide.
+    When more games are in progress than that budget allows, the games farthest
+    along (by inning) are chosen.
+
+    When wide_cell_always=true in config, always show exactly one wide cell —
+    the in-progress game farthest into the game by inning — even with 15+ games
+    (one game will be dropped from the grid to accommodate the extra slot).
+
+    When wide_cell_featured=true, the wide cell always goes to the featured
+    (primary) team's game when it is live; otherwise it falls back to the game
+    farthest along. Like wide_cell_always, this shows a wide cell even with 15+
+    games — but the choice prefers the featured team over raw game progress.
+
+    Geometry fix-up (col=4 conflicts) is handled separately by _reorder_for_wide,
+    which swaps in-progress games with adjacent normal games so they land at a
+    valid column. This function selects purely by priority.
+
+    A game under review ('Player challenge'/'Manager challenge') is still live —
+    it is treated as in-progress so it keeps its wide tile instead of collapsing
+    to a single cell and handing the slot to another game mid-review.
+    """
+    in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
+
+    # Featured-team preference: index of the primary team's live game, if enabled.
+    featured_idx = None
+    if config.get('wide_cell_featured', False):
+        primary = config.get('primary', '')
+        if primary:
+            abbr_map = team_data.get('team_abbreviation', {})
+            for i in in_progress:
+                g = game_list[i]
+                away = abbr_map.get(str(g.get('away_team_id', '')), '')
+                home = abbr_map.get(str(g.get('home_team_id', '')), '')
+                if primary in (away, home):
+                    featured_idx = i
+                    break
+
+    # Find the in-progress game farthest along:
+    # 1. highest inning  2. Bottom > Top  3. most outs  4. earliest start time
+    def _progress(idx):
+        g = game_list[idx]
+        inning = g.get('current_inning') or 0
+        # Order within an inning: Top < Middle (break) < Bottom < End (break). This
+        # keeps a game that just went to break ranked at/above where it was, so it
+        # doesn't lose its wide slot to another game when the inning turns over.
+        half  = {'Top': 0, 'Middle': 1, 'Bottom': 2, 'End': 3}.get(g.get('inningState'), 0)
+        outs  = g.get('num_of_outs') or 0
+        # Earlier start = higher priority when all else equal; negate so max() works
+        start = g.get('game_datetime') or ''
+        return (inning, half, outs, start)
+
+    # Ranking used when a subset must be chosen: the featured live game outranks
+    # everything else; ties beyond that fall back to game progress.
+    def _rank(idx):
+        return (1 if idx == featured_idx else 0,) + _progress(idx)
+
+    if len(game_list) < 15:
+        # Only widen as many games as there are spare slots (15 - games).
+        max_wide = 15 - len(game_list)
+        if len(in_progress) <= max_wide:
+            return set(in_progress)
+        return set(sorted(in_progress, key=_rank, reverse=True)[:max_wide])
+
+    # 15+ games: show a single wide cell if either always-on or featured preference
+    # is enabled. The pick prefers the featured live game (via _rank) and otherwise
+    # falls back to the game farthest along.
+    if not in_progress:
+        return set()
+    if config.get('wide_cell_always', False) or config.get('wide_cell_featured', False):
+        return {max(in_progress, key=_rank)}
+    return set()
+
+
+def _reorder_for_wide(game_list, wide_set):
+    """Reorder game_list so every game in wide_set can actually render wide.
+
+    A wide cell must start at col 0-3 (can't span from col 4 into col 5).
+    When a wide game lands at col 4, swap it with the normal game immediately
+    after it; the wide game shifts to col 0 of the next row and can span right.
+    If the next game is also wide (can't swap), drop the conflicting wide game.
+
+    Returns (new_game_list, new_wide_set).
+    """
+    game_list = list(game_list)
+    wide_set = set(wide_set)
+
+    for _ in range(len(wide_set) + 1):  # converges in at most one pass per wide game
+        slot = 0
+        conflict = None
+        for gi in range(len(game_list)):
+            if slot >= 15:
+                break
+            col = slot % 5
+            if gi in wide_set:
+                if col >= 4:
+                    conflict = gi
+                    break
+                slot += 2
+            else:
+                slot += 1
+
+        if conflict is None:
+            break
+
+        b = conflict
+        next_b = b + 1
+        if next_b < len(game_list) and next_b not in wide_set:
+            game_list[b], game_list[next_b] = game_list[next_b], game_list[b]
+            wide_set.discard(b)
+            wide_set.add(next_b)
+        else:
+            wide_set.discard(b)
+
+    return game_list, wide_set
+
+
+def compute_grid_layout(game_state_data, team_data, config):
+    """Return (ordered_game_list, slots) for the 5×3 scoreboard grid.
+
+    ``slots`` is a list parallel to the returned game_list, each entry a
+    ``(slot_type, grid_col, grid_row)`` tuple where slot_type is 'wide' or
+    'normal'. This is the single source of truth for grid geometry: both the
+    renderer (draw_out_of_town_score_board) and the partial-refresh region
+    calculation must use it so wide cells (which consume 2 slot units and may
+    be reordered) line up exactly.
+    """
+    # Reorder games so the primary team's game appears first in the grid
+    game_list = list(game_state_data)
+    if config.get('favorite_team_first', False):
+        primary = config.get('primary', '')
+        if primary:
+            abbr_map = team_data.get('team_abbreviation', {})
+            for i, g in enumerate(game_list):
+                away_abbr = abbr_map.get(str(g.get('away_team_id', '')), '')
+                home_abbr = abbr_map.get(str(g.get('home_team_id', '')), '')
+                if primary in (away_abbr, home_abbr):
+                    game_list.insert(0, game_list.pop(i))
+                    break
+
+    # With 16+ games, a doubleheader, and a rainout, push postponed/cancelled games
+    # off the 5×3 grid (to position 16+) so the doubleheader pair stays visible
+    # instead. This applies even if the affected team is the featured team.
+    _RAINOUT_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
+    _has_dh = any(g.get('double_header', 'N') not in ('N', '', None) for g in game_list)
+    _ppd_games = [g for g in game_list if g.get('detailed_state', '') in _RAINOUT_STATES]
+    if len(game_list) >= 16 and _has_dh and _ppd_games:
+        for _ppd_g in _ppd_games:
+            game_list.remove(_ppd_g)
+            game_list.append(_ppd_g)
+
+    # Determine which games show as wide (2-cell) tiles, then reorder so any
+    # wide game that would land at col=4 swaps with the normal game after it.
+    _wide_set = _find_wide_games(game_list, config, team_data)
+    if _wide_set:
+        game_list, _wide_set = _reorder_for_wide(game_list, _wide_set)
+
+    # Build an ordered list of (slot_type, grid_col, grid_row).
+    # Each wide game consumes 2 horizontal slot units; normal games consume 1.
+    # Wide games on the last column (col 4) fall back to normal (can't span right).
+    # Stop adding slots once the 5×3 grid is full (15 slot units).
+    if _wide_set:
+        _slots = []
+        _slot_idx = 0
+        for _gi in range(len(game_list)):
+            if _slot_idx >= 15:
+                break
+            _row = _slot_idx // 5
+            _col = _slot_idx % 5
+            if _gi in _wide_set and _col < 4:
+                _slots.append(('wide', _col, _row))
+                _slot_idx += 2
+            else:
+                _slots.append(('normal', _col, _row))
+                _slot_idx += 1
+    else:
+        _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
+
+    return game_list, _slots
+
+
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False):
 
     draw = ImageDraw.Draw(Himage)
@@ -540,31 +730,9 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     x_start = 32
     y_start = 30
 
-    # Reorder games so the primary team's game appears first in the grid
-    game_list = list(game_state_data)
-    if config.get('favorite_team_first', False):
-        primary = config.get('primary', '')
-        if primary:
-            abbr_map = team_data.get('team_abbreviation', {})
-            for i, g in enumerate(game_list):
-                away_abbr = abbr_map.get(str(g.get('away_team_id', '')), '')
-                home_abbr = abbr_map.get(str(g.get('home_team_id', '')), '')
-                if primary in (away_abbr, home_abbr):
-                    game_list.insert(0, game_list.pop(i))
-                    break
+    game_list, _slots = compute_grid_layout(game_state_data, team_data, config)
 
-    # With 16+ games, a doubleheader, and a rainout, push postponed/cancelled games
-    # off the 5×3 grid (to position 16+) so the doubleheader pair stays visible
-    # instead. This applies even if the affected team is the featured team.
-    _RAINOUT_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
-    _has_dh = any(g.get('double_header', 'N') not in ('N', '', None) for g in game_list)
-    _ppd_games = [g for g in game_list if g.get('detailed_state', '') in _RAINOUT_STATES]
-    if len(game_list) >= 16 and _has_dh and _ppd_games:
-        for _ppd_g in _ppd_games:
-            game_list.remove(_ppd_g)
-            game_list.append(_ppd_g)
-
-    # Build per-team stats lookup {str(team_id): {'streak': ..., 'l10_wins': ..., 'l10_losses': ...}}
+    # Build per-team stats lookup {str(team_id): {'streak', 'l10_wins', 'l10_losses', 'wins', 'losses'}}
     _standings = load_json_file('standings.json')
     streak_map = {}
     for _div_teams in _standings.get('standings', {}).values():
@@ -575,18 +743,34 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                     'streak': _t.get('streak'),
                     'l10_wins': _t.get('last_ten_wins'),
                     'l10_losses': _t.get('last_ten_losses'),
+                    'wins': _t.get('league_record_wins'),
+                    'losses': _t.get('league_record_losses'),
                 }
 
-    counter = 0
-    for y in range(0,3):
-        for x in range(0,5):
-            if counter > len(game_list) - 1:
-                continue
-            if game_list[counter]:
-                game_pk_key = str(game_list[counter].get('game_pk', ''))
-                score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
-                Himage = draw_box(Himage, x * 150 + x_start, y * 150 + y_start, game_list[counter], team_data, score_changed=score_changed, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, streak_map=streak_map)
-            counter += 1
+    for game, slot_info in zip(game_list, _slots):
+        slot_type, gx, gy = slot_info
+        game_pk_key = str(game.get('game_pk', ''))
+        score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
+        sx = gx * 150 + x_start
+        sy = gy * 150 + y_start
+        if slot_type == 'wide':
+            Himage = draw_wide_box(
+                Himage, sx, sy, game, team_data,
+                score_changed=score_changed,
+                use_logos=use_logos,
+                logo_x_offset=logo_x_offset,
+                show_win_prob=show_win_prob,
+                streak_map=streak_map,
+            )
+        else:
+            Himage = draw_box(
+                Himage, sx, sy, game, team_data,
+                score_changed=score_changed,
+                use_logos=use_logos,
+                logo_x_offset=logo_x_offset,
+                show_win_prob=show_win_prob,
+                streak_map=streak_map,
+            )
 
     Himage.save('score_board.bmp')
     return Himage

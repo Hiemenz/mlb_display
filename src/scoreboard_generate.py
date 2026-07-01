@@ -180,7 +180,6 @@ def parse_games(data, sport_id=None):
         return
 
     game_array = []
-    game_list = {}
 
     max_live_calls = config_data.get('max_live_game_calls', 5)
     fetch_last_play = config_data.get('fetch_last_play', True)
@@ -1852,7 +1851,7 @@ Examples:
     if mode in ('field', 'scorecard', 'pitch'):
         _run_single_game_mode(mode, game_state_data, team_data, config_data)
         print(f"\n✓ {mode.title()} view generated successfully!")
-        print(f"  View image at: resulting_image.bmp")
+        print("  View image at: resulting_image.bmp")
         if offline_mode and platform.system() == 'Darwin':
             import subprocess
             subprocess.run(['open', 'resulting_image.bmp'], check=False)
@@ -1867,7 +1866,7 @@ Examples:
         if args.time:
             # Time-travel: just save the image, no e-ink update
             sccoreboard_image.save('resulting_image.bmp')
-            print(f"\n✓ Time-travel snapshot saved to resulting_image.bmp")
+            print("\n✓ Time-travel snapshot saved to resulting_image.bmp")
         else:
             if needs_full_refresh() or not changed_regions:
                 print("Scoreboard: full refresh")
@@ -1875,8 +1874,8 @@ Examples:
             else:
                 print(f"Scoreboard: partial refresh ({len(changed_regions)} region(s))")
                 display_partial_regions(sccoreboard_image, changed_regions)
-            print(f"\n✓ Scoreboard generated successfully!")
-            print(f"  View image at: resulting_image.bmp")
+            print("\n✓ Scoreboard generated successfully!")
+            print("  View image at: resulting_image.bmp")
         if offline_mode and platform.system() == 'Darwin':
             import subprocess
             subprocess.run(['open', 'resulting_image.bmp'], check=False)

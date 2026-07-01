@@ -91,7 +91,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
     # ---- Fonts ---------------------------------------------------------------
     f14  = _get_font(14)    # ABS / challenge labels
-    f24  = _get_font(24)    # between-innings batters + OD
+    _get_font(24)    # between-innings batters + OD
     f28  = _get_font(28)    # between-innings pitcher + SV badge
     f36  = _get_font(36)    # pitch info right-aligned
     f42  = _get_font(42)    # BSO labels + pitcher/batter + team abbreviations
@@ -404,9 +404,11 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
         _bot = WIN_PCT_Y - 4
 
-        # ---- Linescore grid: innings 1-9, centered on canvas ----
+        # ---- Linescore grid: innings 1-9 (or sliding window in extra innings) ----
         _ls_col_t  = 44           # team abbreviation column width
         _ls_n_cols = 9
+        # In extra innings slide the window so the current inning is rightmost
+        _ls_first_inn = max(1, _cur_inn - _ls_n_cols + 1)
         _ls_col_w  = 37           # each inning column width
         _ls_grid_w = _ls_col_t + _ls_n_cols * _ls_col_w  # 377
         _ls_x0     = (800 - _ls_grid_w) // 2             # 211
@@ -434,9 +436,9 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             _vx = _ls_div_x + _k * _ls_col_w
             draw.line((_vx, DIV_Y, _vx, WIN_PCT_Y - 1), fill=0, width=1)
 
-        # Inning number headers (1-9)
+        # Inning number headers (sliding window: 1-9 normally, or e.g. 3-11 in extras)
         for _k in range(_ls_n_cols):
-            _inn_n   = str(_k + 1)
+            _inn_n   = str(_ls_first_inn + _k)
             _cell_cx = _ls_div_x + _k * _ls_col_w + _ls_col_w // 2
             _hdr_cy  = _ls_y_top + _ls_hdr_h // 2
             _nw = int(f_ls_hdr.getlength(_inn_n))
@@ -458,15 +460,16 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             draw.text((_ax,     _ay), _t_abbr, font=f_ls_team, fill=0)
             draw.text((_ax + 1, _ay), _t_abbr, font=f_ls_team, fill=0)
 
-        # Per-inning run values (skip None cells)
+        # Per-inning run values (skip None cells; index offset for extra-innings window)
         for _k in range(_ls_n_cols):
             _cell_cx = _ls_div_x + _k * _ls_col_w + _ls_col_w // 2
+            _inn_idx = _ls_first_inn - 1 + _k   # 0-based index into inning runs list
             for _runs_list, _row_y, _row_h in (
                 (away_inn_runs, _ls_y1, _ls_row_h),
                 (home_inn_runs, _ls_y2, _ls_y_bot - _ls_y2),
             ):
-                if _k < len(_runs_list) and _runs_list[_k] is not None:
-                    _rv = str(_runs_list[_k])
+                if _inn_idx < len(_runs_list) and _runs_list[_inn_idx] is not None:
+                    _rv = str(_runs_list[_inn_idx])
                     _rw = int(f_ls_runs.getlength(_rv))
                     _rx = _cell_cx - _rw // 2
                     _ry = _row_y + (_row_h - 36) // 2

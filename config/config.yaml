@@ -1,6 +1,6 @@
 # MLB Display Configuration
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
-scoreboard: false
+scoreboard: true
 
 # Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch"
 # If set, overrides the scoreboard: true/false flag above.
@@ -105,6 +105,18 @@ scoreboard_win_probability: true
 # Live details in scoreboard boxes: pitch count, batter today stats + last AB result, last pitch speed.
 # Adds one extra API call (live feed) per in-progress game per refresh cycle.
 scoreboard_live_details: true
+
+# Wide cell: show a 2-slot expanded tile for in-progress games with pitch zone, bases, K strip, etc.
+# When false (or omitted), wide cells only appear when there are fewer than 15 games.
+# When true, always show a wide cell for the in-progress game farthest into the game (by inning),
+# even when there are 15+ games on the slate (one game will be dropped from the grid to make room).
+wide_cell_always: false
+
+# Wide cell featured team: when true, the wide (2-cell) tile always goes to the
+# featured (primary) team's game while it is live. If the featured team's game is
+# not live, the tile falls back to the in-progress game farthest along. Like
+# wide_cell_always, this shows a wide cell even with 15+ games on the slate.
+wide_cell_featured: false
 
 # Pre-game weather footer on Scheduled/Pre-Game/Warmup tiles (temp, wind, precip%).
 # Uses Open-Meteo (no API key required) with stadium coordinates from data/stadium_weather.json.

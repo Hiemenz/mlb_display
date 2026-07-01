@@ -12,6 +12,10 @@ __pycache__/
 *.mp4
 # Exception: README screenshots in docs/
 !docs/*.png
+# Exception: golden-image regression references (checked in on purpose)
+!tests/golden/*.png
+# ...but not the actual-render dumps left behind by a failing golden test
+tests/golden/_failures/
 
 # Test output directory
 output/
@@ -27,3 +31,11 @@ data/*.json
 
 # Environment
 .env
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Claude Code session data
+.claude/

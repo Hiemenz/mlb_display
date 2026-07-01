@@ -107,7 +107,7 @@ def _draw_right_panel(img, draw, fonts, data):
 
     # --- Score header ---
     y = 8
-    for side, abbr_key, id_key, runs_key in (
+    for _side, abbr_key, id_key, runs_key in (
         ('away', 'away_abbr', 'away_id', 'away_runs'),
         ('home', 'home_abbr', 'home_id', 'home_runs'),
     ):
@@ -161,7 +161,6 @@ def _draw_right_panel(img, draw, fonts, data):
     y += 36
 
     # --- Legend ---
-    r = 5
     draw.text((x, y), 'Legend:', font=fonts['f11'], fill=0)
     y += 14
     draw.ellipse([x, y + 1, x + 10, y + 11], fill=0)

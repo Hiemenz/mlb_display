@@ -4,7 +4,6 @@ import time
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'refresh_state.json')
 FULL_REFRESH_INTERVAL = 3600  # 1 hour in seconds
-PARTIAL_REFRESH_BEFORE_FULL = 20  # force full refresh after this many partial refreshes
 
 
 def _load_state():
@@ -16,15 +15,12 @@ def _load_state():
 
 
 def needs_full_refresh():
-    """Return True if 1+ hour since last full refresh, or >= 10 partial refreshes since last full."""
+    """Return True if 1+ hour has passed since the last full refresh."""
     state = _load_state()
     last = state.get('last_full_refresh')
     if last is None:
         return True
-    if (time.time() - last) >= FULL_REFRESH_INTERVAL:
-        return True
-    partial_count = state.get('partial_refresh_count', 0)
-    return partial_count >= PARTIAL_REFRESH_BEFORE_FULL
+    return (time.time() - last) >= FULL_REFRESH_INTERVAL
 
 
 def record_full_refresh():

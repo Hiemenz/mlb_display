@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]        # only run on main merges…
+  pull_request:             # …and on every PR (this covers feature branches)
+
+# Cancel an in-progress run when you push again to the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # lets the sticky-comment step post the coverage table
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: poetry          # caches the resolved deps keyed on poetry.lock
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Syntax check
+        run: poetry run python -m py_compile src/*.py
+
+      - name: Lint (ruff)
+        run: poetry run ruff check .
+
+      - name: Type check (mypy)
+        run: poetry run mypy
+
+      - name: Tests
+        run: >-
+          poetry run pytest -q --tb=short
+          --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+          poetry run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      # Lets a golden-image mismatch be promoted to the new reference without
+      # guesswork: download this artifact, drop the _actual suffix, commit.
+      - name: Upload golden-image mismatches
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-image-failures
+          path: tests/golden/_failures/
+
+      # Posts/updates a single sticky PR comment with the coverage table, so
+      # coverage is visible on the PR itself, not just the Actions run summary.
+      - name: Coverage PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage.xml
+          badge: true
+          format: markdown
+          output: both
+
+      - name: Post coverage comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage
+          path: code-coverage-results.md
