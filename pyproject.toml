@@ -61,6 +61,11 @@ exclude = '(^src/waveshare_epd/|^src/test_.*\.py$)'
 # The real test suite lives in tests/. Scripts under src/ (hardware probes,
 # stale standalone checks) are not collected.
 testpaths = ["tests"]
+markers = [
+    "live: hits the real MLB API (opt-in; set MLB_LIVE_CONTRACT=1). Excluded from default runs.",
+]
+# Skip live network tests by default so CI stays offline and deterministic.
+addopts = "-m 'not live'"
 
 [tool.coverage.run]
 source = ["src"]
