@@ -2155,7 +2155,17 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _inn_w = int(font14.getlength(_inn_text)) + 2 * s   # +2 for the inning's bold strike
 
     half_inning_plays = game_data.get('half_inning_plays') or []
-    _recent_plays = list(half_inning_plays[-7:])
+    # Keep the last 7 *events* plus intervening half-inning markers ('^'/'v').
+    # A plain [-7:] would count markers as entries and show fewer than 7 events.
+    _recent_plays = []
+    _rp_events = 0
+    for _tok in reversed(half_inning_plays):
+        _recent_plays.append(_tok)
+        if _tok not in ('^', 'v'):
+            _rp_events += 1
+            if _rp_events >= 7:
+                break
+    _recent_plays.reverse()
     # Right-anchor against the count; left bound clears the inning label.
     _hdr_left = _tile_left + 2 * s + _inn_w + 6 * s
     _hdr_right = rp_x + rp_w - _cnt_w - (7 * s if _cnt_w else 3 * s)

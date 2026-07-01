@@ -496,6 +496,11 @@ def generate_standings(Himage, col_start=100, row_start=320):
     return Himage
 
 
+# Live game states that qualify for a wide (2-cell) tile. Challenge/review states
+# are still an active game, so they must keep the wide slot they already had.
+_LIVE_WIDE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
+
+
 def _find_wide_games(game_list, config, team_data):
     """Return the set of game_list indices to show as wide (2-cell) tiles.
 
@@ -512,8 +517,12 @@ def _find_wide_games(game_list, config, team_data):
     Geometry fix-up (col=4 conflicts) is handled separately by _reorder_for_wide,
     which swaps in-progress games with adjacent normal games so they land at a
     valid column. This function selects purely by priority.
+
+    A game under review ('Player challenge'/'Manager challenge') is still live —
+    it is treated as in-progress so it keeps its wide tile instead of collapsing
+    to a single cell and handing the slot to another game mid-review.
     """
-    in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') == 'In Progress']
+    in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
 
     # Find the in-progress game farthest along:
     # 1. highest inning  2. Bottom > Top  3. most outs  4. earliest start time
