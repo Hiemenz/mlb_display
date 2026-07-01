@@ -548,6 +548,99 @@ def test_compute_grid_layout_two_wide_at_col0():
     assert all(s[1] == 0 for _, s in wide_slots)
 
 
+def test_reorder_for_wide_stops_scanning_at_slot_cap():
+    """_reorder_for_wide's inner scan must stop once slot >= 15 even if more
+    games remain — the grid only has 15 slot units, so scanning further is
+    pointless. A single wide game at col 0 needs no swap; with 20 games the
+    scan should hit the slot>=15 guard before exhausting the list."""
+    from image_grid import _reorder_for_wide
+    game_list = [{'game_pk': i} for i in range(20)]
+    new_list, new_wide = _reorder_for_wide(game_list, {0})
+    # No conflict ever found (wide game already at col 0) so nothing changes.
+    assert new_wide == {0}
+    assert new_list == game_list
+
+
+def test_compute_grid_layout_favorite_team_first_moves_game_to_front():
+    """favorite_team_first reorders so the primary team's game is index 0."""
+    from image_grid import compute_grid_layout
+    games = _make_game_list([('Final', 9, 'End')] * 3)
+    games[2]['away_team_id'] = 147
+    games[2]['home_team_id'] = 111
+    team_data = {'team_abbreviation': {'147': 'NYY', '111': 'BOS'}}
+    config = {'favorite_team_first': True, 'primary': 'NYY'}
+    game_list, _slots = compute_grid_layout(games, team_data, config)
+    assert game_list[0]['away_team_id'] == 147
+
+
+def test_compute_grid_layout_pushes_rainout_past_doubleheader():
+    """16+ games with a doubleheader and a postponed game: the postponed game
+    is pushed to the back of the list so the doubleheader pair stays on the
+    visible 5x3 grid."""
+    from image_grid import compute_grid_layout
+    games = _make_game_list([('Final', 9, 'End')] * 14)
+    games.append({**games[0], 'game_pk': 9001, 'detailed_state': 'Postponed',
+                  'double_header': 'N'})
+    games.append({**games[0], 'game_pk': 9002, 'detailed_state': 'Final',
+                  'double_header': 'Y'})
+    assert len(games) == 16
+    game_list, _slots = compute_grid_layout(games, {}, {})
+    # The postponed game must have been moved to the very end of the list.
+    assert game_list[-1]['game_pk'] == 9001
+
+
+def test_compute_grid_layout_slot_building_stops_at_capacity():
+    """With 16 games and one forced wide cell, the wide tile consumes 2 slot
+    units, so total slot demand (17) exceeds the 15-unit grid — the slot-
+    building loop must stop early instead of indexing past the grid."""
+    from image_grid import compute_grid_layout
+    games = _make_game_list(
+        [('In Progress', 5, 'Top')] + [('Final', 9, 'End')] * 15
+    )
+    assert len(games) == 16
+    config = {'wide_cell_always': True}
+    game_list, slots = compute_grid_layout(games, {}, config)
+    assert len(slots) < len(game_list)
+    assert any(s[0] == 'wide' for s in slots)
+
+
+@needs_pil
+def test_grid_date_label_fits_default_width(white_image, team_data):
+    """date_str provided with default (non-wildcard) config: the header label
+    fits at a large font size on the first try."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_base_game(game_pk=i) for i in range(3)]
+    with patch('image_grid.load_yaml_file', return_value={}):
+        result = draw_out_of_town_score_board(white_image, games, team_data, date_str='2026-06-20')
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_date_label_narrow_width_fits_immediately(white_image, team_data):
+    """show_wildcard_standings shrinks the available label width to 155px;
+    a normal date still fits on the first font-size check."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_base_game(game_pk=i) for i in range(3)]
+    with patch('image_grid.load_yaml_file', return_value={'show_wildcard_standings': True}):
+        result = draw_out_of_town_score_board(white_image, games, team_data, date_str='2026-06-20')
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_date_label_malformed_falls_back_and_never_fits(white_image, team_data):
+    """A date_str that fails to parse hits the ValueError fallback (label text
+    becomes the raw string), and — combined with the narrow wildcard width —
+    that raw string doesn't fit at any font size, exercising the 'continue to
+    shorter candidate' branch even though both candidates are identical."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_base_game(game_pk=i) for i in range(3)]
+    with patch('image_grid.load_yaml_file', return_value={'show_wildcard_standings': True}):
+        result = draw_out_of_town_score_board(
+            white_image, games, team_data, date_str='not-a-real-date-value-xxxx'
+        )
+    assert isinstance(result, Image.Image)
+
+
 @needs_pil
 def test_changed_region_covers_full_wide_tile():
     """Partial-refresh region for a wide game must span the full 2-cell tile."""
