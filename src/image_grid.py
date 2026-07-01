@@ -1,7 +1,10 @@
 import os
+import socket
+
+import qrcode
 
 from util import load_json_file, load_yaml_file
-from image_assets import _get_font, ImageDraw
+from image_assets import _get_font, ImageDraw, Image
 from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box
 
@@ -196,6 +199,47 @@ def compute_grid_layout(game_state_data, team_data, config):
     return game_list, _slots
 
 
+def _get_lan_ip():
+    """Best-effort local-network IP for this machine, for the config-server QR
+    code. Doesn't actually send any packets (UDP connect() just picks a route)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('8.8.8.8', 80))
+            return s.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return None
+
+
+def _free_grid_slot(slots):
+    """Return the first free (col, row) slot-unit in the 5x3 grid given the
+    already-occupied slots (wide slots consume 2 horizontal units), or None
+    if all 15 are taken."""
+    occupied = set()
+    for slot_type, col, row in slots:
+        occupied.add((col, row))
+        if slot_type == 'wide':
+            occupied.add((col + 1, row))
+    for _idx in range(15):
+        _col, _row = _idx % 5, _idx // 5
+        if (_col, _row) not in occupied:
+            return (_col, _row)
+    return None
+
+
+def _draw_config_qr_cell(Himage, sx, sy, url):
+    """Paste a QR code linking to the config web server into a normal
+    (150x150) grid cell at (sx, sy)."""
+    qr_img = qrcode.make(url).convert('1')
+    _pad = 8
+    _size = 150 - 2 * _pad
+    qr_img = qr_img.resize((_size, _size), Image.NEAREST)
+    Himage.paste(qr_img, (sx + _pad, sy + _pad))
+    return Himage
+
+
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False):
 
     draw = ImageDraw.Draw(Himage)
@@ -281,6 +325,18 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 show_win_prob=show_win_prob,
                 streak_map=streak_map,
             )
+
+    # With a spare cell (fewer than 15 games), show a QR code linking to the
+    # local config web server instead of leaving the cell blank.
+    if config.get('show_config_qr', True):
+        _free = _free_grid_slot(_slots)
+        if _free is not None:
+            _ip = _get_lan_ip()
+            if _ip:
+                _port = config.get('config_server_port', 8080)
+                _qx = _free[0] * 150 + x_start
+                _qy = _free[1] * 150 + y_start
+                Himage = _draw_config_qr_cell(Himage, _qx, _qy, f'http://{_ip}:{_port}/')
 
     Himage.save('score_board.bmp')
     return Himage

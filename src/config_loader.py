@@ -7,11 +7,13 @@ _DEFAULT_CONFIG = os.path.join(_REPO_ROOT, 'config', 'config.yaml')
 _ENV_FILE = os.path.join(_REPO_ROOT, '.env')
 
 
-def _load_dotenv():
-    """Load key=value pairs from .env into os.environ (existing vars are not overwritten)."""
-    if not os.path.exists(_ENV_FILE):
-        return
-    with open(_ENV_FILE) as f:
+def read_env_file(path=None):
+    """Parse a .env-style file into a dict, without touching os.environ."""
+    path = path or _ENV_FILE
+    result = {}
+    if not os.path.exists(path):
+        return result
+    with open(path) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith('#') or '=' not in line:
@@ -19,8 +21,16 @@ def _load_dotenv():
             key, _, value = line.partition('=')
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
+            if key:
+                result[key] = value
+    return result
+
+
+def _load_dotenv():
+    """Load key=value pairs from .env into os.environ (existing vars are not overwritten)."""
+    for key, value in read_env_file().items():
+        if key not in os.environ:
+            os.environ[key] = value
 
 
 _load_dotenv()

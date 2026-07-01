@@ -168,6 +168,8 @@ show_standings_sidebar: true
 scoreboard_win_probability: true
 scoreboard_live_details: true
 final_linescore_minutes: 60  # minutes to keep linescore visible after Final
+show_config_qr: true         # QR code to the config web server in a spare cell (<15 games)
+config_server_port: 8080     # port for `python src/config_server.py` — see Config Web Server below
 
 # ── Weather ───────────────────────────────────────────────────
 weather:
@@ -249,6 +251,51 @@ WantedBy=multi-user.target
 
 ---
 
+## Config Web Server
+
+A mobile-first local web page for changing the most commonly-tweaked
+settings (primary team, display mode, dark mode, logos, standings/wildcard
+strips, wide-cell behavior, league mode, `.env`'s `FEATURED_TEAM_FULLSCREEN`
+and `LEAGUE_MODE` override) without SSHing in to hand-edit YAML. Writes go
+through a line-based patcher that only touches the specific value on a
+key's line, so every comment in `config/config.yaml` is preserved.
+
+Not a full config editor — it's deliberately scoped to the handful of
+settings worth changing from a phone. No authentication; it trusts the
+local network.
+
+```bash
+poetry run python src/config_server.py                # binds 0.0.0.0:8080 (config_server_port)
+poetry run python src/config_server.py --port 9000     # override the port for one run
+```
+
+Open `http://<this-machine's-LAN-IP>:8080/` from any phone/laptop on the
+same Wi-Fi. Changes apply on the next scoreboard refresh cycle — no restart
+needed. When the scoreboard grid has a spare cell (fewer than 15 games), a
+QR code pointing straight at this URL is shown there automatically (toggle
+via `show_config_qr` in `config/config.yaml`).
+
+**systemd** — run alongside (not instead of) the cron-triggered display
+pipeline, so it's always reachable:
+
+```ini
+[Unit]
+Description=MLB Display Config Server
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/mlb_display
+ExecStart=/home/pi/.local/bin/poetry run python src/config_server.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
 ## Discord Bot
 
 Control the display from a Discord channel using `!display` prefix commands.
@@ -301,12 +348,15 @@ mlb_display/
 │   ├── game_detail_fetch.py      # MLB live feed API (pitch-by-pitch)
 │   ├── standings.py              # Standings fetcher + cache
 │   ├── discord_bot.py            # Discord control bot
+│   ├── config_server.py          # Mobile-first config web server
 │   ├── download_logos.py         # Bulk logo downloader (MLB + WBC)
 │   ├── display_eink.py           # Waveshare driver wrapper (macOS-safe)
 │   ├── display.py                # CLI wrapper for display_eink
 │   ├── refresh_tracker.py        # Full-refresh interval tracker (burn-in prevention)
 │   ├── config_loader.py          # load_config() — canonical config loader
 │   └── util.py                   # JSON/YAML helpers, repo-root-relative paths
+├── templates/
+│   └── config_server.html        # Mobile-first form for config_server.py
 ├── data/                         # Runtime cache (gitignored)
 │   ├── games.json                # Cached game state from last fetch
 │   ├── teams.json                # Team abbreviation cache
