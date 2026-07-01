@@ -69,13 +69,23 @@ addopts = "-m 'not live'"
 
 [tool.coverage.run]
 source = ["src"]
-# Exclude code that cannot run in CI (e-ink hardware drivers, display I/O)
-# and the stale standalone scripts under src/ that are not part of the
-# pytest suite. Application/view modules stay in the denominator so the
-# ratchet reflects honest gaps.
+# Exclude code that cannot run in CI (e-ink hardware drivers, display I/O),
+# one-off asset/data-generation scripts run by hand once (not part of the
+# live fetch/render/display pipeline), and dead/unreferenced entry points.
+# Application/view modules that actually run every cycle stay in the
+# denominator so the ratchet reflects honest gaps in real code.
 omit = [
     "src/display.py",
+    "src/display_eink.py",
+    "src/epd_7in5_V2_test.py",
     "src/scoreboard_generate.py",
+    "src/generate_standings_image.py",   # unreferenced dead script, same category as scoreboard_generate.py
+    "src/download_logos.py",
+    "src/extract_mlbam_walls.py",
+    "src/fetch_stadium_polygons.py",
+    "src/generate_stadium_svgs.py",
+    "src/generate_wall_polygons.py",
+    "src/discord_bot.py",                # not importable: `discord` isn't a project dependency
     "src/waveshare_epd/*",
     "src/test_*.py",
 ]
@@ -83,9 +93,11 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-# Ratchet: current coverage is ~30%. Keep this just below to block
-# regressions; raise it as coverage improves. CI fails if we drop under it.
-fail_under = 28
+# Ratchet: keep this just below current coverage to block regressions;
+# raise it as coverage improves. CI fails if we drop under it.
+# (Actual coverage after the 2026-07 test-writing push is ~96-97%; 80 leaves
+# comfortable headroom for macOS/Linux CI variance without weakening the gate.)
+fail_under = 80
 
 
 [build-system]
