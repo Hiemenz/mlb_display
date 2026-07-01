@@ -57,6 +57,15 @@ jobs:
           name: coverage-xml
           path: coverage.xml
 
+      # Lets a golden-image mismatch be promoted to the new reference without
+      # guesswork: download this artifact, drop the _actual suffix, commit.
+      - name: Upload golden-image mismatches
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-image-failures
+          path: tests/golden/_failures/
+
       # Posts/updates a single sticky PR comment with the coverage table, so
       # coverage is visible on the PR itself, not just the Actions run summary.
       - name: Coverage PR comment

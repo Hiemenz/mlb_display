@@ -46,9 +46,14 @@ FAILURES_DIR = os.path.join(GOLDEN_DIR, '_failures')
 
 # Fixed config, independent of config/config.yaml, so edits to the real
 # config don't change what these tests render.
+#
+# use_team_logos is off: pic/logos/*.png are gitignored (never committed —
+# see the *.png rule in .gitignore), so a fresh CI checkout has none of them
+# and would hit the ESPN CDN to auto-download every logo on first render.
+# That's a network dependency a merge-gate test shouldn't have.
 _FIXED_CONFIG = {
     'timezone': 'America/Chicago',
-    'use_team_logos': True,
+    'use_team_logos': False,
     'small_logo_x_offset': 2,
     'wide_cell_always': False,
     'wide_cell_featured': False,
