@@ -1665,7 +1665,7 @@ class TestChangedRegionDetection:
         games = [{'game_pk': i, 'score': i} for i in range(5)]
         old = {}  # all new → all changed
         regions = self._changed_regions(games, old)
-        for rx, ry, rw, rh in regions:
+        for rx, _ry, _rw, _rh in regions:
             assert rx % 8 == 0, f"x={rx} is not 8-pixel aligned"
 
     def test_grid_column_positions_correct(self):
@@ -1675,7 +1675,7 @@ class TestChangedRegionDetection:
         old = {}
         regions = self._changed_regions(games, old)
         assert len(regions) == 5
-        for col, (rx, ry, rw, rh) in enumerate(regions):
+        for col, (rx, _ry, _rw, _rh) in enumerate(regions):
             expected_raw = col * 150 + x_start
             expected_aligned = expected_raw // 8 * 8
             assert rx == expected_aligned, f"Column {col} x mismatch: {rx} != {expected_aligned}"

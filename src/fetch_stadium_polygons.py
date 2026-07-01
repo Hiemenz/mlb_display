@@ -151,7 +151,6 @@ def _parse_path_d(d):
     points = []
     cmd = 'M'
     cx, cy = 0.0, 0.0  # current position
-    nums = []
     i = 0
 
     def consume_nums(count):
@@ -617,7 +616,7 @@ if __name__ == '__main__':
         print('No results.', file=sys.stderr)
         sys.exit(1)
 
-    print(f'\n--- Python literal (paste into stadium_polygons.py) ---\n')
+    print('\n--- Python literal (paste into stadium_polygons.py) ---\n')
     print(format_python_literal(results))
 
     if args.json:

@@ -5,7 +5,8 @@ Image 1: away teams win.  Image 2: scores flipped so home teams win.
 Run from project root: python3 src/test_scoreboard.py
 """
 
-import os, sys
+import os
+import sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from PIL import Image, ImageOps

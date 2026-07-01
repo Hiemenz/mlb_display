@@ -623,7 +623,7 @@ Examples:
     refresh_mode = send_to_display(output_path, changed_regions)
     print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
 
-    print(f"\n✓ Display updated successfully!")
+    print("\n✓ Display updated successfully!")
     print(f"  Image: {output_path}")
 
     # 10. --local: auto-open on macOS

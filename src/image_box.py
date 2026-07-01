@@ -16,7 +16,7 @@ from image_utils import (
 )
 from util import load_json_file, load_yaml_file, save_off_results
 
-_final_time_cache = {}       # game_pk (str) -> unix timestamp, in-memory layer
+_final_time_cache: dict = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
 
 # Maps verbose MLB API event names (lowercased) to short header abbreviations.
@@ -198,7 +198,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     font9  = _get_font(9 * s)
     font11 = _get_font(11 * s)
 
-    grid_right = grid_x0 + _total_w
+    grid_x0 + _total_w
 
     # --- horizontal row dividers span full box width ---
     draw.line((start_x, y1, start_x + BOX_W, y1), fill=0)
@@ -1320,7 +1320,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _venue_right = _ser_content_left_x - 2 * s
                 max_venue_w = max(_venue_right - start_x - _total_time_w - 6 * s, 0)
                 if max_venue_w > 0:
-                    for vfont, vy in ((_get_font(16 * s), 2 * s), (font14, 3 * s), (font11, 4 * s), (font9, 5 * s), (_get_font(8 * s), 6 * s)):
+                    for vfont, vy in ((_get_font(16 * s), 2 * s), (font14, 3 * s), (font11, 4 * s), (font9, 5 * s), (_get_font(8 * s), 6 * s)):  # noqa: B007 (vy used after break)
                         if vfont.getlength(venue_clean) <= max_venue_w:
                             break
                     vw = int(vfont.getlength(venue_clean))
@@ -2141,7 +2141,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     font14 = _get_font(14 * s)   # inning label size, used to reserve its width
     font12 = _get_font(12 * s)   # event text size (matches 1-cell last-play)
     balls   = min(game_data.get('balls', 0) or 0, 3)
-    strikes = min(game_data.get('strikes', 0) or 0, 2)
+    min(game_data.get('strikes', 0) or 0, 2)
 
     # The ball-strike count lives in the panel body (B/S rows); no count in the header.
     _cnt_w = 0

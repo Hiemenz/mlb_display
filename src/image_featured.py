@@ -91,7 +91,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
     # ---- Fonts ---------------------------------------------------------------
     f14  = _get_font(14)    # ABS / challenge labels
-    f24  = _get_font(24)    # between-innings batters + OD
+    _get_font(24)    # between-innings batters + OD
     f28  = _get_font(28)    # between-innings pitcher + SV badge
     f36  = _get_font(36)    # pitch info right-aligned
     f42  = _get_font(42)    # BSO labels + pitcher/batter + team abbreviations

@@ -70,7 +70,7 @@ def generate_linescore(col_start, row_start, team_abbr, Himage, new_image_dict):
     elif game_info.get('home_team_is_winner'):
         home_is_winner = 'W'
 
-    if (game_state == 'Final' or game_state == 'Game Over') and home[8] == None:
+    if (game_state == 'Final' or game_state == 'Game Over') and home[8] is None:
         home[8] = 'X'
 
     game_end_time = None
@@ -416,7 +416,7 @@ def generate_standings(Himage, col_start=100, row_start=320):
 
     teams_in_division = data.get('standings').get(standings_dict.get(ran_num))
 
-    font24 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
+    ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 24)
     font18 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 18)
     font15 = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 15)
     draw = ImageDraw.Draw(Himage)
