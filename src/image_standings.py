@@ -168,7 +168,6 @@ def draw_playoff_bracket_header(Himage, bracket_data):
 
     for i, s in enumerate(to_show):
         x0 = i * entry_w
-        x1 = x0 + entry_w
 
         away_abbr  = s.get('away_abbr', '?')
         home_abbr  = s.get('home_abbr', '?')
@@ -177,36 +176,57 @@ def draw_playoff_bracket_header(Himage, bracket_data):
         round_lbl  = s.get('round', '?')
         is_active  = not s.get('complete', False)
 
-        # "WC  NYY 2-0 TEX"
-        text = f'{round_lbl}  {away_abbr} {away_wins}-{home_wins} {home_abbr}'
-        tw   = int(font.getlength(text))
-        tx   = x0 + (entry_w - tw) // 2
+        # "WC  NYY 2-0 TEX" — when one team leads, its win count is rendered in
+        # font11 (slightly larger). Built as three segments (prefix / leader
+        # digit / suffix) with widths measured in their own fonts up front, so
+        # the larger digit gets its own reserved space instead of being
+        # overlaid on top of the font9 text and bleeding into its neighbors.
+        if away_wins != home_wins:
+            if away_wins > home_wins:
+                prefix = f'{round_lbl}  {away_abbr} '
+                ldr_str = str(away_wins)
+                suffix = f'-{home_wins} {home_abbr}'
+            else:
+                prefix = f'{round_lbl}  {away_abbr} {away_wins}-'
+                ldr_str = str(home_wins)
+                suffix = f' {home_abbr}'
+        else:
+            prefix = f'{round_lbl}  {away_abbr} {away_wins}-{home_wins} {home_abbr}'
+            ldr_str = ''
+            suffix = ''
+
+        # Font.ttc's glyphs have enough negative left-bearing at these odd
+        # pixel sizes that font11's digit visually overlaps whatever's measured
+        # as "before" it by getlength() alone — a small fixed gap on each side
+        # of the leader digit compensates (verified visually, not just by width
+        # math: font metrics said the spacing was already correct).
+        _GAP = 2 if ldr_str else 0
+
+        prefix_w = int(font.getlength(prefix))
+        ldr_w = int(font11.getlength(ldr_str)) if ldr_str else 0
+        suffix_w = int(font.getlength(suffix))
+        tw = prefix_w + (ldr_w + 2 * _GAP if ldr_str else 0) + suffix_w
+        tx = x0 + (entry_w - tw) // 2
 
         # Vertical separator between entries
         if i > 0:
             draw.line((x0, 3, x0, _WC_STRIP_H - 4), fill=0, width=1)
 
         # Bold (double-draw) for active series; single-draw for complete
-        draw.text((tx, text_y), text, font=font, fill=0)
+        draw.text((tx, text_y), prefix, font=font, fill=0)
         if is_active:
-            draw.text((tx + 1, text_y), text, font=font, fill=0)
+            draw.text((tx + 1, text_y), prefix, font=font, fill=0)
 
-        # Highlight the leading team's win count with font11 (slightly larger)
-        if away_wins != home_wins:
-            leader_wins = max(away_wins, home_wins)
-            ldr_str     = str(leader_wins)
-            # Find pixel x of the leader digit within text
-            if away_wins > home_wins:
-                prefix = f'{round_lbl}  {away_abbr} '
-            else:
-                prefix = f'{round_lbl}  {away_abbr} {away_wins}-'
-            _px = tx + int(font.getlength(prefix))
-            _py = text_y - 1
-            _old_w = int(font.getlength(ldr_str))
-            _new_w = int(font11.getlength(ldr_str))
-            _px += (_old_w - _new_w) // 2
-            if _px >= x0 and _px + _new_w <= x1:
-                draw.text((_px, _py), ldr_str, font=font11, fill=0)
+        if ldr_str:
+            _ldr_x = tx + prefix_w + _GAP
+            draw.text((_ldr_x, text_y - 1), ldr_str, font=font11, fill=0)
+            if is_active:
+                draw.text((_ldr_x + 1, text_y - 1), ldr_str, font=font11, fill=0)
+
+            _sfx_x = _ldr_x + ldr_w + _GAP
+            draw.text((_sfx_x, text_y), suffix, font=font, fill=0)
+            if is_active:
+                draw.text((_sfx_x + 1, text_y), suffix, font=font, fill=0)
 
     # Draw top/bottom borders for the strip
     draw.line((0, 0, 799, 0), fill=0, width=1)
