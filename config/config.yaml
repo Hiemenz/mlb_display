@@ -107,6 +107,12 @@ scoreboard_live_details: true
 # even when there are 15+ games on the slate (one game will be dropped from the grid to make room).
 wide_cell_always: false
 
+# Wide cell featured team: when true, the wide (2-cell) tile always goes to the
+# featured (primary) team's game while it is live. If the featured team's game is
+# not live, the tile falls back to the in-progress game farthest along. Like
+# wide_cell_always, this shows a wide cell even with 15+ games on the slate.
+wide_cell_featured: false
+
 # Pre-game weather footer on Scheduled/Pre-Game/Warmup tiles (temp, wind, precip%).
 # Uses Open-Meteo (no API key required) with stadium coordinates from data/stadium_weather.json.
 weather:

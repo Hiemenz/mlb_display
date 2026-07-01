@@ -432,6 +432,63 @@ def test_find_wide_games_challenge_does_not_displace_in_progress():
 
 
 # ---------------------------------------------------------------------------
+# 3b. wide_cell_featured — featured team gets the wide tile when live
+# ---------------------------------------------------------------------------
+
+_FEAT_TD = {'team_abbreviation': {'147': 'NYY', '111': 'BOS', '119': 'LAD', '137': 'SF'}}
+
+
+def _g(pk, away_id, home_id, state, inning=5, half='Top'):
+    return {
+        'game_pk': pk, 'away_team_id': away_id, 'home_team_id': home_id,
+        'detailed_state': state, 'current_inning': inning, 'inningState': half,
+        'num_of_outs': 1, 'game_datetime': f'2026-06-20T{20 + pk % 4}:00:00Z',
+    }
+
+
+def test_featured_live_gets_wide_at_15_games():
+    """wide_cell_featured: the featured team's live game is the wide cell even at 15 games."""
+    from image_grid import _find_wide_games
+    games = [_g(i, 119, 137, 'Final', 9, 'End') for i in range(14)]
+    games.append(_g(99, 111, 147, 'In Progress', 3, 'Top'))   # index 14 — NYY (home) live
+    result = _find_wide_games(games, {'wide_cell_featured': True, 'primary': 'NYY'}, _FEAT_TD)
+    assert result == {14}
+
+
+def test_featured_not_live_falls_back_to_latest():
+    """wide_cell_featured: when the featured game is not live, the farthest-along game wins."""
+    from image_grid import _find_wide_games
+    games = [_g(i, 119, 137, 'Final', 9, 'End') for i in range(13)]
+    games.append(_g(50, 111, 133, 'In Progress', 4, 'Top'))   # index 13 — non-featured, earlier
+    games.append(_g(51, 137, 133, 'In Progress', 8, 'Top'))   # index 14 — non-featured, farther
+    # NYY isn't playing live → fall back to the game farthest along (index 14).
+    result = _find_wide_games(games, {'wide_cell_featured': True, 'primary': 'NYY'}, _FEAT_TD)
+    assert result == {14}
+
+
+def test_featured_preferred_over_farther_game_when_capping():
+    """wide_cell_featured beats raw progress: the featured game wins the lone slot
+    even though another live game is farther along."""
+    from image_grid import _find_wide_games
+    games = [_g(i, 119, 137, 'Final', 9, 'End') for i in range(12)]
+    games.append(_g(60, 111, 147, 'In Progress', 2, 'Top'))   # index 12 — NYY, earlier
+    games.append(_g(61, 137, 133, 'In Progress', 8, 'Top'))   # index 13 — non-featured, farther
+    # 14 games → 1 spare slot. Featured preference picks NYY (12) over the farther game.
+    result = _find_wide_games(games, {'wide_cell_featured': True, 'primary': 'NYY'}, _FEAT_TD)
+    assert result == {12}
+
+
+def test_featured_default_off_preserves_old_behavior():
+    """Without wide_cell_featured, 15 games with a live featured game shows no wide cell
+    (identical to the prior behavior)."""
+    from image_grid import _find_wide_games
+    games = [_g(i, 119, 137, 'Final', 9, 'End') for i in range(14)]
+    games.append(_g(99, 111, 147, 'In Progress', 3, 'Top'))   # NYY live
+    assert _find_wide_games(games, {'primary': 'NYY'}, _FEAT_TD) == set()
+    assert _find_wide_games(games, {'wide_cell_featured': False, 'primary': 'NYY'}, _FEAT_TD) == set()
+
+
+# ---------------------------------------------------------------------------
 # 3. End-to-end grid with wide cells
 # ---------------------------------------------------------------------------
 

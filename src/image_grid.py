@@ -514,6 +514,11 @@ def _find_wide_games(game_list, config, team_data):
     the in-progress game farthest into the game by inning — even with 15+ games
     (one game will be dropped from the grid to accommodate the extra slot).
 
+    When wide_cell_featured=true, the wide cell always goes to the featured
+    (primary) team's game when it is live; otherwise it falls back to the game
+    farthest along. Like wide_cell_always, this shows a wide cell even with 15+
+    games — but the choice prefers the featured team over raw game progress.
+
     Geometry fix-up (col=4 conflicts) is handled separately by _reorder_for_wide,
     which swaps in-progress games with adjacent normal games so they land at a
     valid column. This function selects purely by priority.
@@ -523,6 +528,20 @@ def _find_wide_games(game_list, config, team_data):
     to a single cell and handing the slot to another game mid-review.
     """
     in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
+
+    # Featured-team preference: index of the primary team's live game, if enabled.
+    featured_idx = None
+    if config.get('wide_cell_featured', False):
+        primary = config.get('primary', '')
+        if primary:
+            abbr_map = team_data.get('team_abbreviation', {})
+            for i in in_progress:
+                g = game_list[i]
+                away = abbr_map.get(str(g.get('away_team_id', '')), '')
+                home = abbr_map.get(str(g.get('home_team_id', '')), '')
+                if primary in (away, home):
+                    featured_idx = i
+                    break
 
     # Find the in-progress game farthest along:
     # 1. highest inning  2. Bottom > Top  3. most outs  4. earliest start time
@@ -538,17 +557,26 @@ def _find_wide_games(game_list, config, team_data):
         start = g.get('game_datetime') or ''
         return (inning, half, outs, start)
 
+    # Ranking used when a subset must be chosen: the featured live game outranks
+    # everything else; ties beyond that fall back to game progress.
+    def _rank(idx):
+        return (1 if idx == featured_idx else 0,) + _progress(idx)
+
     if len(game_list) < 15:
         # Only widen as many games as there are spare slots (15 - games).
         max_wide = 15 - len(game_list)
         if len(in_progress) <= max_wide:
             return set(in_progress)
-        return set(sorted(in_progress, key=_progress, reverse=True)[:max_wide])
+        return set(sorted(in_progress, key=_rank, reverse=True)[:max_wide])
 
-    if not config.get('wide_cell_always', False) or not in_progress:
+    # 15+ games: show a single wide cell if either always-on or featured preference
+    # is enabled. The pick prefers the featured live game (via _rank) and otherwise
+    # falls back to the game farthest along.
+    if not in_progress:
         return set()
-
-    return {max(in_progress, key=_progress)}
+    if config.get('wide_cell_always', False) or config.get('wide_cell_featured', False):
+        return {max(in_progress, key=_rank)}
+    return set()
 
 
 def _reorder_for_wide(game_list, wide_set):
