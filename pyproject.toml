@@ -18,11 +18,69 @@ cairosvg = {version = ">=2.9.0", python = ">=3.10"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = {version = "^9.0.0", python = ">=3.10"}
+pytest-cov = {version = "^6.0.0", python = ">=3.10"}
+ruff = "^0.9.0"
+mypy = {version = "^1.14.0", python = ">=3.10"}
+types-PyYAML = "*"
+types-pytz = "*"
+types-requests = "*"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+extend-exclude = ["src/waveshare_epd", ".claude"]
+
+[tool.ruff.lint]
+# Start focused on the bug classes that actually bit us: pyflakes (F) catches
+# unused imports, undefined names, and the "fix broken tests" breakage; a few
+# pycodestyle errors (E) and bugbear (B) catch real mistakes. Style-only rules
+# are left off to keep the gate about correctness, not formatting churn.
+select = ["F", "E4", "E7", "E9", "B"]
+ignore = [
+    "E741",  # ambiguous var names (l/I/O) — pervasive in layout math
+    "E402",  # module import not at top — intentional after sys.path setup
+    "E701",  # multiple statements on one line (colon) — dense layout code
+    "E702",  # multiple statements on one line (semicolon) — dense layout code
+    # F401 (unused import) is disabled: generate_image.py and image_assets.py
+    # are deliberate re-export facades, so unused-import auto-removal breaks
+    # `from generate_image import ...` consumers. Revisit with per-file-ignores.
+    "F401",
+]
+
+[tool.mypy]
+files = ["src", "main.py"]
+# Lenient by design: this is a large, mostly-untyped codebase. We don't require
+# annotations everywhere — mypy just checks the types that ARE declared, which
+# catches real mismatches (e.g. passing datetime.date where a str is expected)
+# without a wall of "missing annotation" noise.
+ignore_missing_imports = true
+# e-ink hardware drivers and stale standalone scripts aren't shipped logic.
+exclude = '(^src/waveshare_epd/|^src/test_.*\.py$)'
 
 [tool.pytest.ini_options]
 # The real test suite lives in tests/. Scripts under src/ (hardware probes,
 # stale standalone checks) are not collected.
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src"]
+# Exclude code that cannot run in CI (e-ink hardware drivers, display I/O)
+# and the stale standalone scripts under src/ that are not part of the
+# pytest suite. Application/view modules stay in the denominator so the
+# ratchet reflects honest gaps.
+omit = [
+    "src/display.py",
+    "src/scoreboard_generate.py",
+    "src/waveshare_epd/*",
+    "src/test_*.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+# Ratchet: current coverage is ~30%. Keep this just below to block
+# regressions; raise it as coverage improves. CI fails if we drop under it.
+fail_under = 28
 
 
 [build-system]
