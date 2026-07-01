@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MLB Display Config</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, system-ui, sans-serif;
+      margin: 0;
+      padding: 16px 16px 48px;
+      max-width: 480px;
+      margin-inline: auto;
+      background: #f2f2f4;
+      color: #111;
+    }
+    h1 { font-size: 1.3rem; margin: 4px 0 20px; }
+    .banner {
+      background: #1e8e3e; color: #fff; padding: 10px 14px;
+      border-radius: 8px; margin-bottom: 16px; font-weight: 600;
+    }
+    .field {
+      background: #fff; border-radius: 12px; padding: 14px 16px;
+      margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    .help { font-size: 0.82rem; color: #666; margin-top: 4px; }
+    input[type="text"], select {
+      width: 100%; font-size: 1.05rem; padding: 10px 12px;
+      border-radius: 8px; border: 1px solid #ccc; background: #fafafa;
+    }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+    .switch { position: relative; display: inline-block; width: 52px; height: 30px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background-color: #ccc; transition: 0.15s; border-radius: 30px;
+    }
+    .slider::before {
+      position: absolute; content: ""; height: 24px; width: 24px;
+      left: 3px; bottom: 3px; background-color: #fff; transition: 0.15s; border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #1e8e3e; }
+    input:checked + .slider::before { transform: translateX(22px); }
+    button {
+      width: 100%; font-size: 1.1rem; font-weight: 600; padding: 14px;
+      border-radius: 10px; border: none; background: #1a73e8; color: #fff;
+      margin-top: 8px;
+    }
+    button:active { background: #1558b0; }
+  </style>
+</head>
+<body>
+  <h1>MLB Display Config</h1>
+  {% if saved %}
+  <div class="banner">Saved — applies on the next refresh cycle.</div>
+  {% endif %}
+  <form method="post" action="{{ url_for('save') }}">
+    {% for field in fields %}
+    <div class="field">
+      {% if field.type == 'bool' %}
+      <div class="toggle-row">
+        <label for="{{ field.key }}">{{ field.label }}</label>
+        <span class="switch">
+          <input type="checkbox" id="{{ field.key }}" name="{{ field.key }}"
+                 {% if values[field.key] %}checked{% endif %}>
+          <span class="slider"></span>
+        </span>
+      </div>
+      {% elif field.type == 'select' %}
+      <label for="{{ field.key }}">{{ field.label }}</label>
+      <select id="{{ field.key }}" name="{{ field.key }}">
+        {% for opt in field.options %}
+        <option value="{{ opt }}" {% if values[field.key] == opt %}selected{% endif %}>
+          {{ opt if opt else '(none)' }}
+        </option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <label for="{{ field.key }}">{{ field.label }}</label>
+      <input type="text" id="{{ field.key }}" name="{{ field.key }}"
+             value="{{ values[field.key] or '' }}" autocomplete="off">
+      {% endif %}
+      {% if field.help %}<div class="help">{{ field.help }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    <button type="submit">Save</button>
+  </form>
+</body>
+</html>

@@ -59,7 +59,14 @@ _FIXED_CONFIG = {
     'wide_cell_featured': False,
     'scoreboard_live_details': True,
     'final_linescore_minutes': 60,
+    'show_config_qr': True,
+    'config_server_port': 8080,
 }
+
+# The config-QR cell encodes this machine's real LAN IP, which differs on
+# every CI runner — mocked to a fixed value below so the QR's pixel pattern
+# (and therefore the golden images) is reproducible across environments.
+_FIXED_LAN_IP = '192.0.2.1'
 
 TEAM_DATA = {
     'team_abbreviation': {
@@ -215,7 +222,8 @@ def _render(games, date_str='2026-06-20'):
     import image_box
     white_image = Image.new('1', (800, 480), 255)
     with patch('image_grid.load_yaml_file', return_value=_FIXED_CONFIG), \
-         patch('image_box.load_yaml_file', return_value=_FIXED_CONFIG):
+         patch('image_box.load_yaml_file', return_value=_FIXED_CONFIG), \
+         patch('image_grid._get_lan_ip', return_value=_FIXED_LAN_IP):
         from image_grid import draw_out_of_town_score_board
         image_box.set_historical_mode(True)
         try:

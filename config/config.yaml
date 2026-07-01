@@ -118,6 +118,15 @@ wide_cell_always: false
 # wide_cell_always, this shows a wide cell even with 15+ games on the slate.
 wide_cell_featured: false
 
+# Config QR code: when there are fewer than 15 games (so the grid has a spare
+# cell), show a QR code linking to the local config web server
+# (src/config_server.py) in the first free cell instead of leaving it blank.
+show_config_qr: true
+
+# Port the config web server (src/config_server.py) listens on. Reachable at
+# http://<this-machine's-LAN-IP>:<port>/ from any device on the same network.
+config_server_port: 8080
+
 # Pre-game weather footer on Scheduled/Pre-Game/Warmup tiles (temp, wind, precip%).
 # Uses Open-Meteo (no API key required) with stadium coordinates from data/stadium_weather.json.
 weather:
