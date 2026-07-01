@@ -16,6 +16,14 @@ pyreadr = "^0.5.4"
 imageio = {extras = ["ffmpeg"], version = "^2.37.3", python = ">=3.10"}
 cairosvg = {version = ">=2.9.0", python = ">=3.10"}
 
+[tool.poetry.group.dev.dependencies]
+pytest = {version = "^9.0.0", python = ">=3.10"}
+
+[tool.pytest.ini_options]
+# The real test suite lives in tests/. Scripts under src/ (hardware probes,
+# stale standalone checks) are not collected.
+testpaths = ["tests"]
+
 
 [build-system]
 requires = ["poetry-core"]

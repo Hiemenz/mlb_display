@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]        # only run on main merges…
+  pull_request:             # …and on every PR (this covers feature branches)
+
+# Cancel an in-progress run when you push again to the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: poetry          # caches the resolved deps keyed on poetry.lock
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Syntax check
+        run: poetry run python -m py_compile src/*.py
+
+      - name: Tests
+        run: poetry run pytest -q --tb=short
