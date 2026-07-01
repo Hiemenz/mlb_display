@@ -271,6 +271,19 @@ def test_wide_box_events_with_inning_triangles(white_image, team_data):
 
 
 @needs_pil
+def test_wide_box_seven_events_with_markers(white_image, team_data):
+    """Half-inning markers ('^'/'v') must not count against the 7-event budget:
+    9 events with 2 interspersed markers should still surface 7 real events."""
+    from image_box import draw_wide_box
+    game = _live_game(
+        half_inning_plays=['K', '6-3', '1B', 'v', 'F9', 'L7', '2B', '^', 'Kl',
+                           '5-3', 'BB'],
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
 def test_wide_box_events_leading_triangle_trimmed(white_image, team_data):
     """A leading boundary marker left after trimming doesn't crash or render alone."""
     from image_box import draw_wide_box
@@ -392,6 +405,30 @@ def test_find_wide_games_15_plus_force_no_live_game():
     games = _make_game_list([('Final', 9, 'End')] * 15)
     result = _find_wide_games(games, {'wide_cell_always': True}, {})
     assert result == set()
+
+
+def test_find_wide_games_challenge_state_stays_wide():
+    """A game under review ('Player challenge'/'Manager challenge') is still live
+    and must keep its wide tile rather than handing the slot to another game."""
+    from image_grid import _find_wide_games
+    games = _make_game_list([
+        ('Player challenge', 7, 'Top'),   # 0 — under review, still live
+        ('Manager challenge', 5, 'Bottom'),  # 1 — under review, still live
+    ] + [('Final', 9, 'End')] * 11)       # pad to 13 → 2 spare slots
+    result = _find_wide_games(games, {}, {})
+    assert result == {0, 1}
+
+
+def test_find_wide_games_challenge_does_not_displace_in_progress():
+    """With only 1 spare slot, an In Progress game farther along still wins, but a
+    challenge game counts toward the live pool (not silently dropped)."""
+    from image_grid import _find_wide_games
+    games = _make_game_list([
+        ('In Progress', 9, 'Bottom'),     # 0 — farthest along
+        ('Player challenge', 2, 'Top'),   # 1 — live but earlier
+    ] + [('Final', 9, 'End')] * 12)       # pad to 14 → 1 spare slot
+    result = _find_wide_games(games, {}, {})
+    assert result == {0}
 
 
 # ---------------------------------------------------------------------------

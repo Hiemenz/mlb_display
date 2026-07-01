@@ -511,7 +511,18 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                             game_plays.append('^' if _this_half[1] else 'v')
                         game_plays.append(_note)
                         _last_play_half = _this_half
-        half_inning_plays = game_plays[-7:]
+        # Keep the last 7 *events* (plus the half-inning markers that fall between
+        # them). Slicing game_plays[-7:] directly would count '^'/'v' markers as
+        # entries and leave fewer than 7 real events showing.
+        _kept = []
+        _event_count = 0
+        for _tok in reversed(game_plays):
+            _kept.append(_tok)
+            if _tok not in ('^', 'v'):
+                _event_count += 1
+                if _event_count >= 7:
+                    break
+        half_inning_plays = list(reversed(_kept))
 
         # K strikeouts for wide-cell header: track swinging (K) vs looking (L) per pitcher side
         away_pitcher_ks = []   # Ks by away pitcher (home batters struck out, isTopInning=False)
