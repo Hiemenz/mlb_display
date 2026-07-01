@@ -26,10 +26,6 @@ from image_box import draw_box, _abbr_play, _draw_linescore_grid, _draw_backward
 
 # Re-export grid display functions for backward compatibility
 from image_grid import (
-    generate_linescore,
-    draw_boards,
-    generate_image,
-    generate_standings,
     draw_out_of_town_score_board,
     compute_grid_layout,
 )
