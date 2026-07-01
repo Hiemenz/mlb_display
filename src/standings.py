@@ -213,6 +213,103 @@ def fetch_wildcard_standings(season=None, date=None):
     return result
 
 
+def fetch_playoff_bracket(season=None):
+    """Fetch current postseason series data and save to data/playoff_bracket.json.
+
+    Queries the schedule API for all postseason game types (Wild Card through World Series),
+    aggregates games into series, and counts wins for each team.
+
+    Returns the bracket dict, or None on failure.
+    """
+    import time as _t
+    if season is None:
+        season = datetime.now().year
+
+    url = (
+        f'https://statsapi.mlb.com/api/v1/schedule'
+        f'?sportId=1&gameType=F,D,L,W'
+        f'&season={season}'
+        f'&startDate={season}-01-01&endDate={season}-12-31'
+        f'&hydrate=team'
+    )
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code != 200:
+            print(f'Warning: playoff bracket fetch returned {resp.status_code}')
+            return None
+        data = resp.json()
+    except Exception as e:
+        print(f'Error fetching playoff bracket: {e}')
+        return None
+
+    _WIN_GOAL  = {'F': 2, 'D': 3, 'L': 4, 'W': 4}
+    _ROUND_ABB = {'F': 'WC', 'D': 'DS', 'L': 'CS', 'W': 'WS'}
+    _ROUND_ORD = {'F': 0, 'D': 1, 'L': 2, 'W': 3}
+
+    series_map = {}
+
+    for date_entry in data.get('dates', []):
+        for game in date_entry.get('games', []):
+            gtype = game.get('gameType', '')
+            if gtype not in _WIN_GOAL:
+                continue
+
+            teams    = game.get('teams', {})
+            away_t   = teams.get('away', {})
+            home_t   = teams.get('home', {})
+            away_obj = away_t.get('team', {})
+            home_obj = home_t.get('team', {})
+            away_id  = str(away_obj.get('id', ''))
+            home_id  = str(home_obj.get('id', ''))
+
+            # Stable key: sort IDs so home/away swap in WS doesn't create duplicates
+            key = tuple(sorted([away_id, home_id]))
+
+            if key not in series_map:
+                series_map[key] = {
+                    'round':       _ROUND_ABB.get(gtype, '?'),
+                    'round_order': _ROUND_ORD.get(gtype, 9),
+                    'game_type':   gtype,
+                    'away_abbr':   away_obj.get('abbreviation', '???'),
+                    'home_abbr':   home_obj.get('abbreviation', '???'),
+                    'away_id':     away_id,
+                    'home_id':     home_id,
+                    'away_wins':   0,
+                    'home_wins':   0,
+                    'complete':    False,
+                    'winner_abbr': None,
+                }
+
+            entry = series_map[key]
+            state = game.get('status', {}).get('detailedState', '')
+            if state in ('Final', 'Game Over', 'Final: Tied'):
+                if away_t.get('isWinner'):
+                    entry['away_wins'] += 1
+                elif home_t.get('isWinner'):
+                    entry['home_wins'] += 1
+
+            wins_needed = _WIN_GOAL[gtype]
+            if entry['away_wins'] >= wins_needed:
+                entry['complete']    = True
+                entry['winner_abbr'] = entry['away_abbr']
+            elif entry['home_wins'] >= wins_needed:
+                entry['complete']    = True
+                entry['winner_abbr'] = entry['home_abbr']
+
+    series_list = sorted(
+        series_map.values(),
+        key=lambda s: (s.pop('round_order', 9), s.get('away_abbr', '')),
+    )
+
+    bracket_data = {
+        'season':     season,
+        'fetched_at': _t.time(),
+        'series':     series_list,
+    }
+    save_off_results(bracket_data, 'playoff_bracket')
+    return bracket_data
+
+
 def main():
     parser = argparse.ArgumentParser(description='Fetch standings for a specific season or date')
     parser.add_argument('--season', '-s', type=int, default=datetime.now().year,

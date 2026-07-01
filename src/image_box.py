@@ -979,25 +979,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _pt = game_data.get('last_pitch_type', '')   # e.g. "FB", "SL", "CH"
             _lps = game_data.get('last_pitch_speed')
 
-            # Pitcher line right badge: pitch type only; count moves into the label
-            _right_str = _pt if _pt else ''
-            _right_w = int(font11.getlength(_right_str)) + 2 * s if _right_str else 0
-
+            # Pitcher line — full width, no right badge (type moves to speed line)
             _pitcher_name = _format_player_name(game_data.get("current_pitcher") or "")
-            _pit_avail = max_text_width - _right_w
             _pit_str = f'P: {_pitcher_name}'
-            if font14.getlength(_pit_str) <= _pit_avail:
+            if font14.getlength(_pit_str) <= max_text_width:
                 pitcher_str, pitcher_font = _pit_str, font14
             else:
-                pitcher_str, pitcher_font = fit_text(_pit_str, _pit_avail)
+                pitcher_str, pitcher_font = fit_text(_pit_str, max_text_width)
             draw.text((start_x + 2 * s, start_y + 25 * s + 74 * s), pitcher_str, font=pitcher_font, fill=0)
-            if _right_str:
-                draw.text((start_x + horizonta_len - _right_w, start_y + 25 * s + 74 * s), _right_str, font=font11, fill=0)
 
-            # Speed right-aligned; pitch count left of speed on same row
+            # Speed line: "FB 95" right-aligned; pitch count left of that
             _speed_y = start_y + 25 * s + 62 * s
             if _lps:
-                _speed_str = str(int(_lps))
+                # Combine type+speed broadcast-style ("FB 95" or just "95" if no type)
+                _speed_str = f'{_pt} {int(_lps)}' if _pt else str(int(_lps))
                 _speed_w = int(font11.getlength(_speed_str)) + 2 * s
                 _speed_x = start_x + horizonta_len - _speed_w
                 draw.text((_speed_x,         _speed_y), _speed_str, font=font11, fill=0)
@@ -1006,10 +1001,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _pc_disp = f'{_pc}P'
                     _pc_w = int(font11.getlength(_pc_disp))
                     draw.text((_speed_x - _pc_w - 3 * s, _speed_y), _pc_disp, font=font11, fill=0)
-            elif _pc is not None:
-                _pc_disp = f'{_pc}P'
-                _pc_w = int(font11.getlength(_pc_disp)) + 2 * s
-                draw.text((start_x + horizonta_len - _pc_w, _speed_y), _pc_disp, font=font11, fill=0)
+            elif _pt or _pc is not None:
+                # No speed: show "FB 47P" or just "47P"
+                _no_speed_str = f'{_pt} {_pc}P' if _pt and _pc is not None else (_pt or f'{_pc}P')
+                _ns_w = int(font11.getlength(_no_speed_str)) + 2 * s
+                draw.text((start_x + horizonta_len - _ns_w, _speed_y), _no_speed_str, font=font11, fill=0)
 
             # Batter record for the night "2-4" right-anchored on hitter line
             _bh = game_data.get('batter_hits')

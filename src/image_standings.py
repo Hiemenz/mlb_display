@@ -138,6 +138,103 @@ def draw_wildcard_header(Himage, wildcard_data):
     return Himage
 
 
+def draw_playoff_bracket_header(Himage, bracket_data):
+    """Draw current postseason series in the 30px top header strip (y=0..30).
+
+    Shows every series as: ROUND  AWAY W-H HOME  (e.g. "WC  NYY 2-0 TEX")
+    Active (incomplete) series are listed first and rendered bold (double-drawn).
+    Complete series are shown dimmer by not double-drawing them.
+    Series slots are evenly distributed across the full 800px width.
+    """
+    if not bracket_data:
+        return Himage
+
+    series = bracket_data.get('series', [])
+    if not series:
+        return Himage
+
+    draw  = ImageDraw.Draw(Himage)
+    font  = _get_font(9)
+    font11 = _get_font(11)
+
+    # Active series first so they appear on the left
+    active   = [s for s in series if not s.get('complete')]
+    complete = [s for s in series if s.get('complete')]
+    to_show  = active + complete
+
+    n        = len(to_show)
+    entry_w  = 800 // n
+    text_y   = (_WC_STRIP_H - 9) // 2   # vertically centre 9px text in 30px strip
+
+    for i, s in enumerate(to_show):
+        x0 = i * entry_w
+
+        away_abbr  = s.get('away_abbr', '?')
+        home_abbr  = s.get('home_abbr', '?')
+        away_wins  = s.get('away_wins',  0)
+        home_wins  = s.get('home_wins',  0)
+        round_lbl  = s.get('round', '?')
+        is_active  = not s.get('complete', False)
+
+        # "WC  NYY 2-0 TEX" — when one team leads, its win count is rendered in
+        # font11 (slightly larger). Built as three segments (prefix / leader
+        # digit / suffix) with widths measured in their own fonts up front, so
+        # the larger digit gets its own reserved space instead of being
+        # overlaid on top of the font9 text and bleeding into its neighbors.
+        if away_wins != home_wins:
+            if away_wins > home_wins:
+                prefix = f'{round_lbl}  {away_abbr} '
+                ldr_str = str(away_wins)
+                suffix = f'-{home_wins} {home_abbr}'
+            else:
+                prefix = f'{round_lbl}  {away_abbr} {away_wins}-'
+                ldr_str = str(home_wins)
+                suffix = f' {home_abbr}'
+        else:
+            prefix = f'{round_lbl}  {away_abbr} {away_wins}-{home_wins} {home_abbr}'
+            ldr_str = ''
+            suffix = ''
+
+        # Font.ttc's glyphs have enough negative left-bearing at these odd
+        # pixel sizes that font11's digit visually overlaps whatever's measured
+        # as "before" it by getlength() alone — a small fixed gap on each side
+        # of the leader digit compensates (verified visually, not just by width
+        # math: font metrics said the spacing was already correct).
+        _GAP = 2 if ldr_str else 0
+
+        prefix_w = int(font.getlength(prefix))
+        ldr_w = int(font11.getlength(ldr_str)) if ldr_str else 0
+        suffix_w = int(font.getlength(suffix))
+        tw = prefix_w + (ldr_w + 2 * _GAP if ldr_str else 0) + suffix_w
+        tx = x0 + (entry_w - tw) // 2
+
+        # Vertical separator between entries
+        if i > 0:
+            draw.line((x0, 3, x0, _WC_STRIP_H - 4), fill=0, width=1)
+
+        # Bold (double-draw) for active series; single-draw for complete
+        draw.text((tx, text_y), prefix, font=font, fill=0)
+        if is_active:
+            draw.text((tx + 1, text_y), prefix, font=font, fill=0)
+
+        if ldr_str:
+            _ldr_x = tx + prefix_w + _GAP
+            draw.text((_ldr_x, text_y - 1), ldr_str, font=font11, fill=0)
+            if is_active:
+                draw.text((_ldr_x + 1, text_y - 1), ldr_str, font=font11, fill=0)
+
+            _sfx_x = _ldr_x + ldr_w + _GAP
+            draw.text((_sfx_x, text_y), suffix, font=font, fill=0)
+            if is_active:
+                draw.text((_sfx_x + 1, text_y), suffix, font=font, fill=0)
+
+    # Draw top/bottom borders for the strip
+    draw.line((0, 0, 799, 0), fill=0, width=1)
+    draw.line((0, _WC_STRIP_H - 1, 799, _WC_STRIP_H - 1), fill=0, width=1)
+
+    return Himage
+
+
 def _aaa_divisions(standings_data, side):
     """Return division names for each sidebar side in AAA mode.
 
