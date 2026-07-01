@@ -17,7 +17,7 @@ def load_json_file(file_name, file_path=None):
         with open(full, 'r') as file:
             data_dict = json.load(file)
             return data_dict
-    except:
+    except (OSError, ValueError):
         print('parsing error in util returned empty payload')
         return data_dict
 

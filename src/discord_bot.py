@@ -17,6 +17,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from typing import Optional
 
 # Resolve paths relative to this file
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -85,7 +86,7 @@ async def on_ready():
 
 
 @bot.command(name='team')
-async def cmd_team(ctx, abbr: str = None):
+async def cmd_team(ctx, abbr: Optional[str] = None):
     """Change the primary team. Usage: !display team NYY"""
     if not abbr:
         await ctx.send('Usage: `!display team <ABBR>` (e.g. `!display team NYY`)')
@@ -110,7 +111,7 @@ async def cmd_team(ctx, abbr: str = None):
 
 
 @bot.command(name='mode')
-async def cmd_mode(ctx, mode: str = None):
+async def cmd_mode(ctx, mode: Optional[str] = None):
     """Change display mode. Usage: !display mode field"""
     if not mode or mode.lower() not in VALID_MODES:
         await ctx.send(f'Usage: `!display mode <mode>` — valid modes: {", ".join(VALID_MODES)}')
@@ -182,7 +183,7 @@ async def cmd_help(ctx):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send(f'Unknown command. Try `!display help`.')
+        await ctx.send('Unknown command. Try `!display help`.')
     else:
         print(f'Command error: {error}')
 

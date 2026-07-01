@@ -30,5 +30,26 @@ jobs:
       - name: Syntax check
         run: poetry run python -m py_compile src/*.py
 
+      - name: Lint (ruff)
+        run: poetry run ruff check .
+
+      - name: Type check (mypy)
+        run: poetry run mypy
+
       - name: Tests
-        run: poetry run pytest -q --tb=short
+        run: >-
+          poetry run pytest -q --tb=short
+          --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+          poetry run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml

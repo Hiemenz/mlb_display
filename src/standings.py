@@ -240,7 +240,7 @@ def main():
             date_param = date_obj.strftime('%m/%d/%Y')  # MLB API uses MM/DD/YYYY format
             print(f'Fetching standings for date: {date_param} (season {season})')
         except ValueError:
-            print(f'Error: Invalid date format. Please use YYYY-MM-DD or MM/DD/YYYY')
+            print('Error: Invalid date format. Please use YYYY-MM-DD or MM/DD/YYYY')
             return
     else:
         season = args.season
@@ -248,7 +248,7 @@ def main():
 
     get_standings(league_ids, season=season, date=date_param)
     print(f'\nTeam abbreviations loaded: {len(team_abbreviation_list)} teams')
-    print(f'Standings data saved to data/standings.json')
+    print('Standings data saved to data/standings.json')
 
 if __name__ == '__main__':
     main()

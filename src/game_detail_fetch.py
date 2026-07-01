@@ -607,7 +607,7 @@ def fetch_between_inning_info(game_pk, inning_state):
         batting_half = 'bottom' if batting_side == 'home' else 'top'
 
         team_box = boxscore.get('teams', {}).get(batting_side, {})
-        players = team_box.get('players', {})
+        team_box.get('players', {})
 
         # Build all_players: both teams combined (needed for sub lookups)
         all_players = {}
@@ -875,7 +875,7 @@ def fetch_field_view_data(game_pk):
     on_deck_info = _get_player_info(boxscore, on_deck_id, 'batting')
 
     # Pitch locations and hit coordinates
-    pitches = _extract_pitches(plays)
+    pitches = _extract_pitches_detailed(plays)
     all_hits = _extract_all_hit_coordinates(plays)
     last_hit = all_hits[-1] if all_hits else None
     hit_coords = (last_hit['x'], last_hit['y']) if last_hit else None
@@ -1236,11 +1236,11 @@ def _build_lineup_at_bats(boxscore, plays, team_side):
     batting_order = team_box.get('battingOrder', [])
     players = team_box.get('players', {})
     team_info = team_box.get('team', {})
-    team_id = team_info.get('id')
+    team_info.get('id')
 
     # Build player lookup
     player_map = {}
-    for key, pdata in players.items():
+    for _key, pdata in players.items():
         pid = pdata.get('person', {}).get('id')
         if pid:
             player_map[pid] = pdata
@@ -1367,7 +1367,7 @@ def _build_lineup_at_bats(boxscore, plays, team_side):
             inning_totals[inning] = 0
         # Count runs scored on this play
         result = play.get('result', {})
-        rbi = result.get('rbi', 0)
+        result.get('rbi', 0)
         # Actually use the runs from the scoring plays
         runners = play.get('runners', [])
         for runner in runners:

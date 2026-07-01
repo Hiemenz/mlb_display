@@ -35,7 +35,7 @@ def _get_font(size: int):
     return _font_cache[size]
 
 
-_logo_cache = {}        # (abbr, team_id) -> grayscale PIL Image or None
+_logo_cache: dict = {}        # (abbr, team_id) -> grayscale PIL Image or None
 _logo_invert_config = None  # loaded once from pic/logo_render_config.json
 
 
@@ -225,7 +225,7 @@ def _logo_ghost(abbr, team_id, size=110, lightness=140):
     return gray.convert('1')
 
 
-_emoji_cache = {}       # abbr -> grayscale PIL Image or None
+_emoji_cache: dict = {}       # abbr -> grayscale PIL Image or None
 _team_emojis = None     # loaded once from config.yaml
 _char_emoji_cache: dict = {}
 

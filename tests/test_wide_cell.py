@@ -558,7 +558,7 @@ def test_changed_region_covers_full_wide_tile():
     game_list, slots = compute_grid_layout(games, {}, {})
     x_start = 32
     # Replicate the region math in generate_image.draw_score_board.
-    for game, (slot_type, gx, gy) in zip(game_list, slots):
+    for _game, (slot_type, gx, _gy) in zip(game_list, slots):
         if slot_type != 'wide':
             continue
         rx = (gx * 150 + x_start) // 8 * 8

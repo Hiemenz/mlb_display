@@ -4,7 +4,8 @@ Test emoji mapping functionality end-to-end.
 Run from project root: poetry run python src/test_emoji.py
 """
 
-import os, sys
+import os
+import sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from PIL import Image

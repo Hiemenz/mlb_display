@@ -27,3 +27,11 @@ data/*.json
 
 # Environment
 .env
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Claude Code session data
+.claude/
