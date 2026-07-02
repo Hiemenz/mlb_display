@@ -2494,30 +2494,57 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         _pitcher_ks = game_data.get('away_pitcher_ks') or []
     if not _pitcher_ks:
         return Himage
-    # Bold via a 1px horizontal double-strike. Shrink the font (from the WIN/LOSS
-    # size down) until ALL of this pitcher's Ks fit across the strip on one line.
+    # Every 10 Ks compress to a milestone badge ("10K", "20K", …); the leftover
+    # 0–9 Ks are shown individually after the badge, preserving K/L distinction.
+    _total_ks = len(_pitcher_ks)
+    _milestone = (_total_ks // 10) * 10
+    _milestone_label = f'{_milestone}K' if _milestone else ''
+    _rem_ks = _pitcher_ks[_milestone:]
+
+    # Bold via a 1px horizontal double-strike. Shrink the font until everything
+    # — badge + individual Ks — fits across the strip on one line.
     _k_gap = max(2 * s, 2)
     _k_avail = rp_w - 4 * s
+
+    def _strip_width(f):
+        bb = f.getbbox('K')
+        k_adv = (bb[2] - bb[0]) + 3
+        parts = ([int(f.getlength(_milestone_label)) + 3] if _milestone_label else []) + \
+                [k_adv] * len(_rem_ks)
+        if not parts:
+            return 0
+        return sum(parts) + _k_gap * (len(parts) - 1)
+
     _k_font = None
     _k_bbox = None
     for _px in range(18, 6, -1):
         _f = _get_font(_px * s)
-        _bb = _f.getbbox('K')
-        _adv = (_bb[2] - _bb[0]) + 3   # +1 for the bold strike, +2 tmp padding
-        if len(_pitcher_ks) * (_adv + _k_gap) - _k_gap <= _k_avail:
-            _k_font, _k_bbox = _f, _bb
+        if _strip_width(_f) <= _k_avail:
+            _k_font, _k_bbox = _f, _f.getbbox('K')
             break
-    if _k_font is None:                # still doesn't fit at 7px — use 7px anyway
+    if _k_font is None:
         _k_font = _get_font(7 * s)
         _k_bbox = _k_font.getbbox('K')
+
     _k_glyph_h = _k_bbox[3] - _k_bbox[1]
     _k_tmp_w = max(_k_bbox[2] - _k_bbox[0] + 3, 4)
     _k_tmp_h = max(_k_glyph_h + 2, 4)
     # Center the glyphs vertically in the 20px gap below the tile border.
     _k_strip_y = rp_y + rp_h + (20 * s - _k_glyph_h) // 2 - 1 * s
-    _k_spacing = _k_tmp_w + _k_gap
     _k_x = rp_x + 2 * s
-    for _k in _pitcher_ks:
+
+    # Draw milestone badge ("10K", "20K", …)
+    if _milestone_label:
+        _bl_y = _k_strip_y - _k_bbox[1]
+        draw.text((_k_x,         _bl_y), _milestone_label, font=_k_font, fill=0)
+        draw.text((_k_x + 1 * s, _bl_y), _milestone_label, font=_k_font, fill=0)
+        _k_x += int(_k_font.getlength(_milestone_label)) + 3
+        if _rem_ks:
+            _k_x += _k_gap
+
+    # Draw remaining individual Ks
+    _k_spacing = _k_tmp_w + _k_gap
+    for _k in _rem_ks:
         if _k_x + _k_tmp_w > rp_x + rp_w - 2:
             break
         _k_tmp = Image.new('1', (_k_tmp_w, _k_tmp_h), 1)
