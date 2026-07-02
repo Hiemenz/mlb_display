@@ -777,3 +777,112 @@ def test_unchanged_games_produce_no_region():
     # to the second grid column (150px stride + x_start=32, 8px-rounded).
     assert len(regions) == 1
     assert regions[0][2] == 152
+
+
+# ---------------------------------------------------------------------------
+# Edge-case branches in generate_image.py
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_linescore_window_skips_final_game_with_empty_game_pk():
+    """A Final game with an empty/missing game_pk is skipped in the linescore
+    window loop (line 136: continue when not _pk)."""
+    import generate_image
+    import image_box
+
+    # Game with empty game_pk — skipped in the per-game loops
+    game_no_pk = dict(_base_game(game_pk='', detailed_state='Final'))
+
+    def fake_load(filename, *a, **kw):
+        return {
+            'old_scoreboard_state.json': [_base_game(game_pk=1)],
+            'score_alerts.json': {},
+            'game_final_times.json': {},
+            'old_linescore_window_state.json': {},
+        }.get(filename, {})
+
+    stub_img = MagicMock()
+    stub_img.size = (800, 480)
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            generate_image.orchestrate_score_board(
+                [game_no_pk], TEAM_DATA, date_str='2026-06-20',
+                bypass_cache=False, config=FIXED_CONFIG,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+    # Test passes as long as no exception is raised
+
+
+@needs_pil
+def test_linescore_window_no_end_time_utc_uses_fallback():
+    """A Final game without game_end_time_utc falls through to the float(_ft)
+    fallback branch (generate_image.py line 148)."""
+    import generate_image
+    import image_box
+
+    game_no_end = dict(_base_game(game_pk=7001, detailed_state='Final'))
+    game_no_end.pop('game_end_time_utc', None)
+    game_no_end['game_end_time_utc'] = None
+
+    def fake_load(filename, *a, **kw):
+        return {
+            'old_scoreboard_state.json': [],
+            'score_alerts.json': {},
+            'game_final_times.json': {'7001': 1234567890.0},
+            'old_linescore_window_state.json': {},
+        }.get(filename, {})
+
+    stub_img = MagicMock()
+    stub_img.size = (800, 480)
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            generate_image.orchestrate_score_board(
+                [game_no_end], TEAM_DATA, date_str='2026-06-20',
+                bypass_cache=False, config=FIXED_CONFIG,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+    # No exception = the fallback path was exercised without crashing
+
+
+@needs_pil
+def test_playoff_bracket_header_drawn_when_bracket_data_present():
+    """show_playoff_bracket=True with non-empty 'series' data calls
+    draw_playoff_bracket_header (generate_image.py lines 261-264)."""
+    import generate_image
+
+    bracket_cfg = dict(FIXED_CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    stub_img = MagicMock()
+    stub_img.size = (800, 480)
+    bracket_data = {'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'LAD',
+                                'away_wins': 2, 'home_wins': 3, 'complete': False}]}
+
+    def fake_load(filename, *a, **kw):
+        return {
+            'playoff_bracket.json': bracket_data,
+        }.get(filename, {})
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket:
+        result = generate_image.orchestrate_score_board(
+            [], TEAM_DATA, date_str='2026-06-20',
+            bypass_cache=True, config=bracket_cfg,
+        )
+
+    mock_bracket.assert_called_once()
+    assert result is not None

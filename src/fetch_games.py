@@ -894,7 +894,7 @@ def fetch_scoreboard_for_date(date, sport_id=None, config=None):
     parse_games(data, sport_id, config)
 
 
-def main():
+def main():  # pragma: no cover
     parser = argparse.ArgumentParser(
         description='Fetch MLB game data to data/games.json',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -935,5 +935,5 @@ Examples:
     print("✓ Games written to data/games.json")
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()

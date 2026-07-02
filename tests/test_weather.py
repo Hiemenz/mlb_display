@@ -1,7 +1,7 @@
 """Tests for src/weather.py — Open-Meteo forecast client with on-disk TTL cache."""
 import json
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -342,6 +342,42 @@ class TestLoadCache:
         path.write_text('null')
         monkeypatch.setattr(weather, '_CACHE_PATH', str(path))
         assert weather._load_cache() == {}
+
+
+class TestFetchOpenMeteo:
+    """Cover the actual _fetch_open_meteo function body (lines 75-87)
+    by calling it directly with a mocked urlopen."""
+
+    def _mock_urlopen(self, payload):
+        import io
+        from unittest.mock import MagicMock
+        ctx = MagicMock()
+        ctx.__enter__ = lambda s: MagicMock(read=lambda: json.dumps(payload).encode())
+        ctx.__exit__ = MagicMock(return_value=False)
+        return ctx
+
+    def test_success_returns_parsed_json(self):
+        payload = {'hourly': {'time': [], 'temperature_2m': []}}
+        mock_ctx = MagicMock()
+        mock_ctx.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        mock_ctx.__exit__.return_value = False
+        with patch('urllib.request.urlopen', return_value=mock_ctx):
+            result = weather._fetch_open_meteo(41.83, -87.63)
+        assert result == payload
+
+    def test_url_contains_lat_lon(self):
+        payload = {}
+        mock_ctx = MagicMock()
+        mock_ctx.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        mock_ctx.__exit__.return_value = False
+        captured_url = []
+        def fake_urlopen(req, timeout=None):
+            captured_url.append(req.full_url)
+            return mock_ctx
+        with patch('urllib.request.urlopen', side_effect=fake_urlopen):
+            weather._fetch_open_meteo(41.8304, -87.6344)
+        assert '41.8304' in captured_url[0]
+        assert '-87.6344' in captured_url[0]
 
 
 class TestSaveCache:

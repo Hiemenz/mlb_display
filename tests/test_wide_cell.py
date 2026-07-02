@@ -287,6 +287,62 @@ def test_wide_box_events_with_inning_triangles(white_image, team_data):
 
 
 @needs_pil
+def test_wide_box_trailing_arrow_with_prior_events(white_image, team_data):
+    """Trailing '^' after plays hits the 'if items:' branch in _build_items
+    (lines 2206-2207) that inserts a space before the triangle."""
+    from image_box import draw_wide_box
+    game = _live_game(half_inning_plays=['1B', 'HR', '^'])
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_events_overflow_trims_oldest_plays(white_image, team_data):
+    """The trim loop (lines 2254-2257) fires when extracted events are too wide
+    for _hdr_max_w. Long event strings guarantee overflow; the '^' at position 1
+    (after the oldest event is popped) triggers the inner marker-skip loop (2256-2257)."""
+    from image_box import draw_wide_box
+    # Construct plays so _recent_plays = ['Home Run', '^', 'Walk-Off Home Run', '1B', '2B', '3B', 'BB', 'HR']
+    # 'Home Run' + triangle + 'Walk-Off Home Run' ≈ 203px > _hdr_max_w=231? Actually ~203px < 231
+    # Use even wider strings to guarantee overflow >231px:
+    plays = ['Old1', 'Old2', 'Home Run', '^', 'Walk-Off Home Run', '1B-2B-3B', '2B', '3B', 'BB', 'HR']
+    game = _live_game(half_inning_plays=plays)
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_very_long_batter_name_truncates(white_image, team_data):
+    """An extremely long batter name triggers the while-loop truncation in
+    the right panel's AB row (line 2481). The last name must be long since
+    _last_name() is used (not _format_player_name())."""
+    from image_box import draw_wide_box
+    # Single hyphenated last name with no spaces → treated as the full last name.
+    long_last = 'A Bartholomew-Alexander-McGillicuddy-Smithwick-Rodriguez'
+    game = _live_game(current_hitter=long_last, current_pitcher='Logan Webb',
+                      current_play_batter=long_last, current_at_bat_complete=False,
+                      batter_hits=5, batter_at_bats=20)
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_between_innings_shows_batter_list(white_image, team_data):
+    """Between innings (Middle) renders the due-up batter names via the
+    batter-names section. A long last-name triggers the truncation loop (line 2427).
+    _last_name() returns just the last word, so the last name itself must be long."""
+    from image_box import draw_wide_box
+    # Long last name (after the space) → _last_name returns it directly.
+    long_name = 'A Bartholomew-Alexander-McGillicuddy-Smithwick-Rodriguez-Fernandez'
+    game = _live_game(
+        inningState='Middle',
+        next_batter_1=long_name, next_batter_2=long_name, next_batter_3=long_name,
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
 def test_wide_box_seven_events_with_markers(white_image, team_data):
     """Half-inning markers ('^'/'v') must not count against the 7-event budget:
     9 events with 2 interspersed markers should still surface 7 real events."""

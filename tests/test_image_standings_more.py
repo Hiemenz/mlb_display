@@ -23,6 +23,7 @@ import pytest
 
 from image_standings import (
     _aaa_divisions,
+    draw_playoff_bracket_header,
     draw_wildcard_header,
     draw_standings_sidebar,
     draw_standings_sidebar_fullscreen,
@@ -509,3 +510,105 @@ class TestDrawStandingsSidebarFullscreen:
             'left', {'American League East': [_team(1, 1)]},
             movement_payload={'1': 'not-a-number'})
         assert result is canvas
+
+
+# ===========================================================================
+# draw_playoff_bracket_header
+# ===========================================================================
+
+def _series(round_lbl, away_abbr, home_abbr, away_wins=0, home_wins=0, complete=False, winner_abbr=None):
+    return {
+        'round': round_lbl,
+        'away_abbr': away_abbr,
+        'home_abbr': home_abbr,
+        'away_wins': away_wins,
+        'home_wins': home_wins,
+        'complete': complete,
+        'winner_abbr': winner_abbr,
+    }
+
+
+@needs_pil
+class TestDrawPlayoffBracketHeader:
+    def _white(self):
+        return Image.new('1', (800, 30), 255)
+
+    def test_none_bracket_returns_image_unchanged(self):
+        canvas = self._white()
+        result = draw_playoff_bracket_header(canvas, None)
+        assert result is canvas
+
+    def test_empty_bracket_dict_returns_unchanged(self):
+        canvas = self._white()
+        result = draw_playoff_bracket_header(canvas, {})
+        assert result is canvas
+
+    def test_empty_series_list_returns_unchanged(self):
+        canvas = self._white()
+        result = draw_playoff_bracket_header(canvas, {'series': []})
+        assert result is canvas
+
+    def test_single_active_series_renders(self):
+        canvas = self._white()
+        bracket = {'series': [_series('WC', 'NYY', 'BOS', away_wins=1, home_wins=0)]}
+        result = draw_playoff_bracket_header(canvas, bracket)
+        assert isinstance(result, Image.Image)
+        # Should have some black pixels (text drawn)
+        assert any(px == 0 for px in result.getdata())
+
+    def test_single_complete_series_renders(self):
+        canvas = self._white()
+        bracket = {'series': [
+            _series('WC', 'NYY', 'BOS', away_wins=2, home_wins=0,
+                    complete=True, winner_abbr='NYY'),
+        ]}
+        result = draw_playoff_bracket_header(canvas, bracket)
+        assert isinstance(result, Image.Image)
+
+    def test_tied_series_no_leader_renders(self):
+        """Tied scores take the non-leader branch (prefix only, no ldr_str)."""
+        canvas = self._white()
+        bracket = {'series': [_series('DS', 'LAD', 'SF', away_wins=1, home_wins=1)]}
+        result = draw_playoff_bracket_header(canvas, bracket)
+        assert isinstance(result, Image.Image)
+
+    def test_away_leader_renders(self):
+        """Away leading takes away-leader branch (away_wins > home_wins)."""
+        canvas = self._white()
+        bracket = {'series': [_series('DS', 'LAD', 'SF', away_wins=2, home_wins=1)]}
+        result = draw_playoff_bracket_header(canvas, bracket)
+        assert isinstance(result, Image.Image)
+
+    def test_home_leader_renders(self):
+        """Home leading takes home-leader branch (home_wins > away_wins)."""
+        canvas = self._white()
+        bracket = {'series': [_series('DS', 'LAD', 'SF', away_wins=1, home_wins=2)]}
+        result = draw_playoff_bracket_header(canvas, bracket)
+        assert isinstance(result, Image.Image)
+
+    def test_multiple_series_render_with_separators(self):
+        canvas = self._white()
+        bracket = {
+            'series': [
+                _series('WC', 'NYY', 'BOS'),
+                _series('DS', 'LAD', 'SF', away_wins=2, home_wins=1),
+                _series('CS', 'HOU', 'CLE', complete=True, winner_abbr='HOU',
+                        away_wins=4, home_wins=2),
+                _series('WS', 'NYY', 'HOU'),
+            ],
+        }
+        result = draw_playoff_bracket_header(canvas, bracket)
+        assert isinstance(result, Image.Image)
+
+    def test_active_before_complete_in_output(self):
+        """Active series should sort before complete ones in the header."""
+        canvas = self._white()
+        bracket = {
+            'series': [
+                _series('WC', 'NYY', 'BOS', complete=True, away_wins=2,
+                        winner_abbr='NYY'),
+                _series('DS', 'LAD', 'SF', away_wins=1),  # active
+            ],
+        }
+        result = draw_playoff_bracket_header(canvas, bracket)
+        assert isinstance(result, Image.Image)

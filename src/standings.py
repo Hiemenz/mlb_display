@@ -347,5 +347,5 @@ def main():
     print(f'\nTeam abbreviations loaded: {len(team_abbreviation_list)} teams')
     print('Standings data saved to data/standings.json')
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()

@@ -1431,6 +1431,52 @@ class TestDrawBoxSmokeTests:
         game = _base_game(saver_name='Wade Davis', saver_saves=15)
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
 
+    @needs_pil
+    def test_very_long_winner_name_triggers_paren_truncation(self, minimal_team_data):
+        """_truncate_keep_suffix falls through to the paren-suffix path (lines
+        888-896) when the winner name with initial is too long and dropping the
+        initial still doesn't fit."""
+        img = Image.new('1', (800, 480), 255)
+        game = _base_game(
+            winner_name='Bartholomew Sanchez-Martinez', winner_record='3-1',
+            loser_name='Bartholomew Sanchez-Martinez', loser_record='2-2',
+        )
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+    @needs_pil
+    def test_very_long_winner_name_no_record_triggers_char_truncation(self, minimal_team_data):
+        """_truncate_keep_suffix falls through to the char-by-char path (lines
+        897-899) when there is no ' (' in the text."""
+        img = Image.new('1', (800, 480), 255)
+        game = _base_game(
+            winner_name='Bartholomew Sanchez-Martinez', winner_record=None,
+            loser_name='Bartholomew Sanchez-Martinez', loser_record=None,
+        )
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+    @needs_pil
+    def test_very_long_saver_name_truncation(self, minimal_team_data):
+        """Long saver name with saves also triggers _truncate_keep_suffix via
+        the 'SV: ' prefix path (line 879 for-loop iteration)."""
+        img = Image.new('1', (800, 480), 255)
+        game = _base_game(
+            winner_name='Max Fried', winner_record='3-1',
+            loser_name='Chris Bassitt', loser_record='2-2',
+            saver_name='Bartholomew Sanchez-Martinez-Rodriguez', saver_saves=15,
+        )
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+    @needs_pil
+    def test_away_winner_ghost_logo(self, minimal_team_data):
+        """Away-team winner triggers line 797 (winner_abbr = away_team_name)
+        when use_logos=True. _logo_ghost is patched to avoid network/disk access."""
+        from unittest.mock import patch
+        img = Image.new('1', (800, 480), 255)
+        fake_ghost = Image.new('1', (110, 110), 255)
+        game = _base_game(away_team_is_winner=True, home_team_is_winner=False)
+        with patch('image_box._logo_ghost', return_value=fake_ghost):
+            draw_box(img, 32, 30, game, minimal_team_data, use_logos=True)
+
     def test_no_crash_with_unknown_team_id(self):
         """Teams not in team_data must fall back to 'T{id}' abbreviation gracefully."""
         img = Image.new('1', (800, 480), 255)
@@ -1525,6 +1571,55 @@ class TestWeatherFooterRules:
         draw_box(img2, 32, 30, game_with_weather, minimal_team_data, use_logos=False)
         assert list(img1.getdata()) == list(img2.getdata()), \
             "Weather fields should not affect in-progress rendering"
+
+    @needs_pil
+    def test_between_innings_long_due_up_batter_truncates(self, minimal_team_data):
+        """Between innings with a very long current_hitter name triggers the
+        truncation while-loop for the Due: label (image_box.py line 1487)."""
+        img = Image.new('1', (800, 480), 255)
+        game = _in_progress_game(
+            inningState='Middle',
+            num_of_outs=3,
+            current_hitter='Bartholomew Alexander McGillicuddy-Smithwick III',
+            # No matching last_play_inning → _lp_same_half=False → play_display=''
+        )
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+    @needs_pil
+    def test_rbi_kl_prefix_in_last_play_header(self, minimal_team_data):
+        """'RBI Kl' in the right-side header exercises the _draw_play_right
+        Kl-split branch (image_box.py lines 1458-1459) where the pre-Kl segment
+        is non-empty and draws text before the backwards K.
+        last_play_inning/last_play_is_top must match the current inning to avoid
+        _lp_same_half being False (which would suppress the last play)."""
+        img = Image.new('1', (800, 480), 255)
+        game = _in_progress_game(
+            current_inning=5,
+            inningState='Top',
+            last_play='strikeout looking',
+            last_play_rbi=1,
+            last_play_inning=5,
+            last_play_is_top=True,
+        )
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+    @needs_pil
+    def test_very_long_last_play_truncation(self, minimal_team_data):
+        """Many-RBI play string can get long enough to trigger the truncation
+        while-loop in _draw_play_right (image_box.py lines 1443-1444).
+        Use 4RBI with a long field-sequence abbreviation."""
+        img = Image.new('1', (800, 480), 255)
+        # '4RBI Grand Slam' abbreviation from a grand slam with 4 RBIs.
+        # Make the raw string something that results in a longer play_display.
+        game = _in_progress_game(
+            current_inning=10,
+            inningState='Top',
+            last_play='Home Run',
+            last_play_rbi=4,
+            last_play_inning=10,
+            last_play_is_top=True,
+        )
+        draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
 
 
 # ===========================================================================
@@ -2946,3 +3041,56 @@ class TestRunScoredGuard:
         img_with_rbi = self._render(game_rbi, minimal_team_data)
         assert list(img_no_rbi.getdata()) == list(img_with_rbi.getdata()), \
             "last_play_rbi must not affect suspended game rendering at all"
+
+
+# ---------------------------------------------------------------------------
+# _draw_next_game_preview: tomorrow-game preview strip (lines 638-643)
+# ---------------------------------------------------------------------------
+
+@needs_pil
+class TestDrawNextGamePreview:
+    """Direct tests for _draw_next_game_preview targeting the elif branches."""
+
+    def _fake_game(self, away_id, home_id, pk=9001):
+        return {
+            'game_pk': pk,
+            'away_team_id': away_id,
+            'home_team_id': home_id,
+            'game_start_utc': '2026-07-02T23:10:00Z',
+        }
+
+    def _call(self, tmrw_games, today_home_id, today_away_id):
+        from image_box import _draw_next_game_preview
+        img = Image.new('1', (800, 480), 255)
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(img)
+        team_data = {'team_abbreviation': {'119': 'LAD', '137': 'SF', '147': 'NYY', '143': 'PHI'}}
+        fake_cfg = {'timezone': 'America/Chicago'}
+        with patch('image_box.load_yaml_file', return_value=fake_cfg):
+            _draw_next_game_preview(
+                draw, img,
+                start_x=0, start_y=0,
+                tmrw_games=tmrw_games,
+                today_home_id=today_home_id,
+                today_away_id=today_away_id,
+                team_data=team_data,
+                use_logos=False,
+                horizonta_len=135,
+                vertical_len=110,
+                scale=1,
+            )
+        return img
+
+    def test_only_away_game_found(self):
+        """Only the away team has a tomorrow game (line 638-639: elif away_game branch)."""
+        # away_id=119 (LAD) matches; home_id=137 (SF) has no tomorrow game.
+        tmrw_games = [self._fake_game(away_id=119, home_id=147)]
+        img = self._call(tmrw_games, today_home_id=137, today_away_id=119)
+        assert isinstance(img, Image.Image)
+
+    def test_only_home_game_found(self):
+        """Only the home team has a tomorrow game (lines 640-643: elif home_game branch)."""
+        # home_id=137 (SF) matches; away_id=119 (LAD) has no tomorrow game.
+        tmrw_games = [self._fake_game(away_id=143, home_id=137)]
+        img = self._call(tmrw_games, today_home_id=137, today_away_id=119)
+        assert isinstance(img, Image.Image)
