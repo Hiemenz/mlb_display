@@ -158,6 +158,15 @@ class TestExportJson:
 # Module-level data sanity
 # ===========================================================================
 
+class TestLoadMlbamWalls:
+    def test_missing_file_returns_empty_dict(self):
+        """When mlbam_walls.json doesn't exist, _load_mlbam_walls returns {}."""
+        from unittest.mock import patch
+        with patch('os.path.exists', return_value=False):
+            result = sp._load_mlbam_walls()
+        assert result == {}
+
+
 class TestModuleData:
     def test_sutter_health_park_present(self):
         assert 'Sutter Health Park' in sp.STADIUM_POLYGONS

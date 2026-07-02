@@ -129,7 +129,7 @@ def save():
     return redirect(url_for('index', saved='1'))
 
 
-def main():
+def main():  # pragma: no cover
     parser = argparse.ArgumentParser(description='Mobile-first config editor for mlb_display.')
     parser.add_argument('--port', type=int, default=None, help='Override config_server_port from config.yaml')
     args = parser.parse_args()
@@ -139,5 +139,5 @@ def main():
     app.run(host='0.0.0.0', port=port)  # noqa: S104 -- deliberately LAN-reachable, no auth by design
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()

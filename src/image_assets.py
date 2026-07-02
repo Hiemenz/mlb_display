@@ -10,7 +10,7 @@ logodir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__
 logo_cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic', 'logos_cache')
 libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib')
 
-if os.path.exists(libdir):
+if os.path.exists(libdir):  # pragma: no cover
     sys.path.append(libdir)
 
 # ESPN CDN abbreviation overrides

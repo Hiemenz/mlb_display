@@ -97,9 +97,8 @@ show_missing = true
 skip_covered = false
 # Ratchet: keep this just below current coverage to block regressions;
 # raise it as coverage improves. CI fails if we drop under it.
-# (Actual coverage after the 2026-07 test-writing push is ~96-97%; 80 leaves
-# comfortable headroom for macOS/Linux CI variance without weakening the gate.)
-fail_under = 80
+# Ratcheted to 99 after the 2026-07 coverage-boost push (99.37% local).
+fail_under = 99
 
 
 [build-system]

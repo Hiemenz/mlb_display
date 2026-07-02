@@ -13,7 +13,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 import standings
-from standings import get_teams, get_standings, fetch_wildcard_standings
+import sys
+from standings import get_teams, get_standings, fetch_wildcard_standings, main
 
 
 def _resp(status_code=200, json_data=None):
@@ -366,3 +367,52 @@ class TestFetchWildcardStandings:
              patch('standings.save_off_results'):
             result = fetch_wildcard_standings(season=2025)
         assert result['AL'][0]['gb'] == '-'
+
+
+# ---------------------------------------------------------------------------
+# main()
+# ---------------------------------------------------------------------------
+
+class TestMain:
+    """Tests for the CLI entry-point main()."""
+
+    def _run(self, args):
+        """Invoke main() with sys.argv set to args; patch get_standings + print."""
+        with patch.object(sys, 'argv', ['standings'] + args), \
+             patch('standings.get_standings') as mock_gs, \
+             patch('builtins.print'):
+            main()
+        return mock_gs
+
+    def test_no_args_uses_default_mlb_leagues(self):
+        mock_gs = self._run([])
+        # Default is MLB: league_ids [103, 104]
+        call_args = mock_gs.call_args
+        assert call_args[0][0] == [103, 104]
+
+    def test_aaa_flag_uses_aaa_leagues(self):
+        mock_gs = self._run(['--aaa'])
+        assert mock_gs.call_args[0][0] == [117, 112]
+
+    def test_season_arg_passed_to_get_standings(self):
+        mock_gs = self._run(['--season', '2023'])
+        assert mock_gs.call_args[1]['season'] == 2023
+
+    def test_date_yyyy_mm_dd_parses_and_passes_formatted(self):
+        mock_gs = self._run(['--date', '2026-06-20'])
+        call_kw = mock_gs.call_args[1]
+        assert call_kw['date'] == '06/20/2026'
+        assert call_kw['season'] == 2026
+
+    def test_date_mm_dd_yyyy_format_also_accepted(self):
+        mock_gs = self._run(['--date', '06/20/2026'])
+        call_kw = mock_gs.call_args[1]
+        assert call_kw['date'] == '06/20/2026'
+        assert call_kw['season'] == 2026
+
+    def test_invalid_date_prints_error_and_returns_early(self):
+        with patch.object(sys, 'argv', ['standings', '--date', 'not-a-date']), \
+             patch('standings.get_standings') as mock_gs, \
+             patch('builtins.print'):
+            main()
+        mock_gs.assert_not_called()

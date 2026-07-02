@@ -617,3 +617,168 @@ def test_featured_fullscreen_config_none_loads_real_yaml_mocked():
         img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, None)
     assert isinstance(img, Image.Image)
     mock_load.assert_called_once_with('config.yaml')
+
+
+# ---------------------------------------------------------------------------
+# Additional branch coverage
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_live_fullscreen_bottom_half_draws_down_triangle():
+    """inningState='Bottom' selects the ▼ triangle branch (line 217)."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(inningState='Bottom', current_inning=3)
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_swinging_strike_circle_outline_branch():
+    """Strike call 'S' (swinging) draws an outline-only circle (lines 547-548)."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(strikes=2, strike_calls=['S', 'F'])
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_foul_strike_circle_outline_branch():
+    """Strike call 'F' (foul) also draws the outline-only circle."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(strikes=1, strike_calls=['F'])
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_replay_remaining_filled_rect():
+    """replay_remaining > 0 draws a filled rectangle (line 314)."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(away_replay_remaining=1, home_replay_remaining=1)
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_replay_remaining_outline_rect():
+    """replay_remaining == 0 draws an outline rectangle (line 316)."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(away_replay_remaining=0, home_replay_remaining=0)
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_with_logos_mocked():
+    """use_logos=True with a mocked logo exercises the logo-paste branch
+    inside _draw_team_row (lines 277-283)."""
+    from image_featured import draw_live_fullscreen_game
+    logo_cfg = dict(CONFIG, use_team_logos=True)
+    fake_logo = Image.new('1', (32, 32), 255)
+    with patch('image_featured._logo_small', return_value=fake_logo):
+        img = draw_live_fullscreen_game(_live_game(), TEAM_DATA, logo_cfg)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_win_prob_logos_same_side_separation():
+    """Win probabilities close together force the logo separation path
+    (lines 646-654): both logos pushed to avoid overlap."""
+    from image_featured import draw_live_fullscreen_game
+    logo_cfg = dict(CONFIG, use_team_logos=True, scoreboard_win_probability=True)
+    fake_logo = Image.new('1', (28, 28), 255)
+    # away=51%, home=49% → logos almost at center → overlap separation triggered
+    game = _live_game(away_win_probability=0.51, home_win_probability=0.49)
+    with patch('image_featured._logo_small', return_value=fake_logo):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, logo_cfg)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_win_prob_with_logos_different_sides():
+    """Win probabilities well apart exercises the logo paste path (lines 657-663)."""
+    from image_featured import draw_live_fullscreen_game
+    logo_cfg = dict(CONFIG, use_team_logos=True, scoreboard_win_probability=True)
+    fake_logo = Image.new('1', (28, 28), 255)
+    game = _live_game(away_win_probability=0.15, home_win_probability=0.85)
+    with patch('image_featured._logo_small', return_value=fake_logo):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, logo_cfg)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_winner_ghost_logo_on_final():
+    """Final game with home winner and use_logos=True exercises the
+    winner-ghost-logo branch in draw_featured_game_fullscreen (lines 737-753)."""
+    from image_featured import draw_featured_game_fullscreen
+    logo_cfg = dict(CONFIG, use_team_logos=True)
+    fake_logo = Image.new('1', (110, 110), 255)
+    with patch('image_featured.load_json_file', return_value={}), \
+         patch('image_featured._logo_ghost', return_value=fake_logo), \
+         patch('image_featured._logo_small', return_value=Image.new('1', (20, 20), 255)):
+        img = draw_featured_game_fullscreen(_final_game(), TEAM_DATA, logo_cfg)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_winner_ghost_logo_away_winner():
+    """Away winner also reaches the ghost-logo branch."""
+    from image_featured import draw_featured_game_fullscreen
+    logo_cfg = dict(CONFIG, use_team_logos=True)
+    fake_logo = Image.new('1', (110, 110), 255)
+    game = _final_game(away_team_is_winner=True, home_team_is_winner=False)
+    with patch('image_featured.load_json_file', return_value={}), \
+         patch('image_featured._logo_ghost', return_value=fake_logo), \
+         patch('image_featured._logo_small', return_value=Image.new('1', (20, 20), 255)):
+        img = draw_featured_game_fullscreen(game, TEAM_DATA, logo_cfg)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_playoff_bracket_header_branch():
+    """show_playoff_bracket=True exercises the playoff-bracket header path."""
+    from image_featured import draw_featured_game_fullscreen
+    bracket_cfg = dict(CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    bracket_data = {'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 2, 'home_wins': 1, 'complete': False}]}
+    with patch('image_featured.load_json_file', return_value=bracket_data), \
+         patch('image_featured.draw_playoff_bracket_header',
+               side_effect=lambda canvas, b: canvas) as mock_bracket:
+        img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
+    mock_bracket.assert_called_once()
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_kl_in_header_right_text():
+    """last_play resulting in 'Kl' in the right-side header text exercises the
+    Kl-rendering branch when the right text fits on screen."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(last_play='strikeout looking', last_play_description=None)
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_kl_with_rbi_prefix_non_empty_segment():
+    """'RBI Kl' splits into ['RBI ', ''] — the first segment is non-empty, so
+    draw.text fires for the pre-Kl text (image_featured.py lines 249-250)."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(last_play='strikeout looking', last_play_rbi=1,
+                      last_play_description=None)
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_win_prob_home_slightly_higher_overlap():
+    """home > away by a tiny margin puts home logo to the right of away logo
+    but close enough to trigger the MIN_SEP separation in the else branch
+    (image_featured.py lines 651-654)."""
+    from image_featured import draw_live_fullscreen_game
+    wp_cfg = dict(CONFIG, scoreboard_win_probability=True, use_team_logos=True)
+    fake_logo = Image.new('1', (20, 20), 255)
+    game = _live_game(away_win_probability=49.0, home_win_probability=51.0)
+    with patch('image_featured._logo_small', return_value=fake_logo):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, wp_cfg)
+    assert isinstance(img, Image.Image)
