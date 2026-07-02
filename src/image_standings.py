@@ -424,6 +424,17 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 tw = int(font.getlength(abbr[:3]))
                 draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - tw) // 2, logo_y + 8), abbr[:3], font=font, fill=0)
 
+            # Streak badge: "W3" / "L5" in tiny print at bottom-right of logo
+            _streak_str = (team.get('streak') or '').strip()
+            if _streak_str:
+                _sf = _get_font(7)
+                _sw = int(_sf.getlength(_streak_str))
+                _sx = logo_x + _SIDEBAR_LOGO_SIZE - _sw      # right-align within logo
+                _sy = logo_y + _SIDEBAR_LOGO_SIZE - 7         # bottom of logo area
+                # White patch so the text reads cleanly over the logo pixels
+                draw.rectangle([_sx - 1, _sy - 1, logo_x + _SIDEBAR_LOGO_SIZE, logo_y + _SIDEBAR_LOGO_SIZE], fill=255)
+                draw.text((_sx, _sy), _streak_str, font=_sf, fill=0)
+
             if team_id in display_movers:
                 draw.line(
                     (line_x, logo_y, line_x, logo_y + _SIDEBAR_LOGO_SIZE - 1),
@@ -607,6 +618,16 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 tw = int(font9.getlength(abbr[:3]))
                 draw.text((logo_x + (logo_sz - tw) // 2, logo_y + (logo_sz - 9) // 2),
                           abbr[:3], font=font9, fill=0)
+
+            # Streak badge: "W3" / "L5" in tiny print at bottom-right of logo
+            _fs_streak = (team.get('streak') or '').strip()
+            if _fs_streak:
+                _ssf = _get_font(7)
+                _ssw = int(_ssf.getlength(_fs_streak))
+                _ssx = logo_x + logo_sz - _ssw
+                _ssy = logo_y + logo_sz - 7
+                draw.rectangle([_ssx - 1, _ssy - 1, logo_x + logo_sz, logo_y + logo_sz], fill=255)
+                draw.text((_ssx, _ssy), _fs_streak, font=_ssf, fill=0)
 
             # Movement indicator: L-bracket around logo corner
             # AL (left): vertical on left + horizontal at bottom-left

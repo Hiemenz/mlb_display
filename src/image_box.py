@@ -2624,4 +2624,18 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
         draw = ImageDraw.Draw(Himage)
 
+    # No-hitter / perfect game: invert the spanning header (same as single-cell).
+    # Only fires when the run-scored inversion hasn't already fired (double-invert = no-op).
+    _wide_is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
+    _wide_active_no_no = (
+        game_data.get('detailed_state') == 'In Progress' and
+        (game_data.get('no_hitter') or game_data.get('perfect_game')) and
+        (game_data.get('current_inning') or 0) >= 6
+    )
+    if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
+       (_wide_is_final or _wide_active_no_no) and \
+       not (score_changed or _run_scored):
+        header_box = Himage.crop((start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
     return Himage

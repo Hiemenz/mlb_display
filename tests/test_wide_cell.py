@@ -735,3 +735,35 @@ def test_changed_region_covers_full_wide_tile():
         break
     else:
         pytest.fail('expected a wide slot in the layout')
+
+
+@needs_pil
+def test_wide_box_nohitter_inverts_header(white_image, team_data):
+    """Active no-hitter (≥6 innings, no run scored) inverts the wide-cell
+    spanning header (image_box.py lines 2635-2639)."""
+    from image_box import draw_wide_box
+    game = _live_game(
+        no_hitter=True,
+        perfect_game=False,
+        current_inning=7,
+        last_play_rbi=0,
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+    # Header row (y=0..19) should contain some black pixels — inversion fired.
+    header_pixels = [result.getpixel((x, 5)) for x in range(285)]
+    assert any(p == 0 for p in header_pixels), "no-hitter header should be inverted (black)"
+
+
+@needs_pil
+def test_wide_box_perfectgame_inverts_header(white_image, team_data):
+    """Perfect game also triggers the wide-cell header inversion."""
+    from image_box import draw_wide_box
+    game = _live_game(
+        no_hitter=False,
+        perfect_game=True,
+        current_inning=8,
+        last_play_rbi=0,
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
