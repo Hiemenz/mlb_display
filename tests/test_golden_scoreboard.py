@@ -222,8 +222,7 @@ def _render(games, date_str='2026-06-20'):
     import image_box
     white_image = Image.new('1', (800, 480), 255)
     with patch('image_grid.load_yaml_file', return_value=_FIXED_CONFIG), \
-         patch('image_box.load_yaml_file', return_value=_FIXED_CONFIG), \
-         patch('image_grid._get_lan_ip', return_value=_FIXED_LAN_IP):
+         patch('image_box.load_yaml_file', return_value=_FIXED_CONFIG):
         from image_grid import draw_out_of_town_score_board
         image_box.set_historical_mode(True)
         try:

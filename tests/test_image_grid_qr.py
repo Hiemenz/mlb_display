@@ -9,6 +9,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# QR code feature is disabled (qrcode package not supported on Pi build).
+# Skip this entire module so the commented-out functions don't cause ImportError.
+pytestmark = pytest.mark.skip(reason="QR code feature disabled")
+
 try:
     from PIL import Image
     PIL_AVAILABLE = True

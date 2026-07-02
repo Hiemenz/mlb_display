@@ -773,7 +773,7 @@ class TestFetchScoreboardLiveExtras:
         ])
         mock_fetch.return_value = _live_feed(liveData={'plays': {'allPlays': [play_with_review]}})
         result = fetch_scoreboard_live_extras(123)
-        assert 'CHAL' in result['half_inning_plays']
+        assert 'CHAL L' in result['half_inning_plays']
 
     @patch('game_detail_fetch.fetch_live_feed')
     def test_half_inning_plays_grand_slam_label(self, mock_fetch):

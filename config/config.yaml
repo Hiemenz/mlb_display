@@ -121,7 +121,7 @@ wide_cell_featured: false
 # Config QR code: when there are fewer than 15 games (so the grid has a spare
 # cell), show a QR code linking to the local config web server
 # (src/config_server.py) in the first free cell instead of leaving it blank.
-show_config_qr: true
+show_config_qr: false
 
 # Port the config web server (src/config_server.py) listens on. Reachable at
 # http://<this-machine's-LAN-IP>:<port>/ from any device on the same network.

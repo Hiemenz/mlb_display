@@ -1891,49 +1891,45 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                             _pit_name = _pit_name[:-1]
                 draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
         elif _pitching_change:
-            # Mid-inning PC: show in-hole/on-deck/current batter + new pitcher.
-            _right_x = start_x + horizonta_len - 2 * s
-            _left_x = start_x + 88 * s
-            _max_name_w = _right_x - _left_x
-            _pc_batter_names = [
-                _last_name(game_data.get('in_hole') or ''),
-                _last_name(game_data.get('due_up') or ''),
-                _last_name(game_data.get('current_hitter') or ''),
-            ]
-            _pc_name = (game_data.get('sub_event') or '')[3:].strip()
-            _name_y = start_y + 21 * s
-            for _nm in _pc_batter_names:
-                if _nm:
-                    _nm_disp = _nm
-                    while _nm_disp and int(font14.getlength(_nm_disp)) > _max_name_w:
-                        _nm_disp = _nm_disp[:-1]
-                    draw.text((_left_x, _name_y), _nm_disp, font=font14, fill=0)
-                _name_y += 12 * s
-            _sep_y = _name_y + 5 * s
-            draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
+            # Mid-inning PC: bases + outs at normal positions, new pitcher name below.
             _pc_outs = game_data.get('num_of_outs') or 0
-            # Three out circles (radius 4) right-aligned; 10px spacing between centers.
-            _pc_circ_r = 4 * s
-            _pc_circ_spacing = 10 * s
-            _pc_circ_y = _sep_y + _pc_circ_r + 3 * s
-            _pc_circ_total_w = 2 * _pc_circ_spacing + 2 * _pc_circ_r
-            _pc_name_max = max(0, _max_name_w - _pc_circ_total_w - 4 * s)
-            if _pc_name:
-                _pit_fnt = font14
-                if int(font14.getlength(_pc_name)) > _pc_name_max:
-                    _pit_fnt = font11
-                    if int(font11.getlength(_pc_name)) > _pc_name_max:
-                        _pit_fnt = font9
-                        while _pc_name and int(font9.getlength(_pc_name)) > _pc_name_max:
-                            _pc_name = _pc_name[:-1]
-                draw.text((_left_x, _sep_y + 2 * s), _pc_name, font=_pit_fnt, fill=0)
-            _pc_c3x = _right_x - _pc_circ_r
-            _pc_c2x = _pc_c3x - _pc_circ_spacing
-            _pc_c1x = _pc_c2x - _pc_circ_spacing
-            Himage = draw_circle(Himage, (_pc_c1x, _pc_circ_y), _pc_circ_r, _pc_outs >= 1, outline_width=2)
-            Himage = draw_circle(Himage, (_pc_c2x, _pc_circ_y), _pc_circ_r, _pc_outs >= 2, outline_width=2)
-            Himage = draw_circle(Himage, (_pc_c3x, _pc_circ_y), _pc_circ_r, _pc_outs >= 3, outline_width=2)
+            if _pc_outs < 3:
+                _hi_third  = isinstance(game_data['runner_on_third'],  str)
+                _hi_second = isinstance(game_data['runner_on_second'], str)
+                _hi_first  = isinstance(game_data['runner_on_first'],  str)
+                Himage = draw_diamond(Himage, (start_x + 97 * s,  start_y + 52 * s), 10 * s, _hi_third)
+                Himage = draw_diamond(Himage, (start_x + 109 * s, start_y + 40 * s), 10 * s, _hi_second)
+                Himage = draw_diamond(Himage, (start_x + 121 * s, start_y + 52 * s), 10 * s, _hi_first)
+                draw = ImageDraw.Draw(Himage)
+                for _bfill, _bcx, _bcy, _bkey in (
+                    (_hi_third,  start_x + 97 * s,  start_y + 52 * s, 'runner_third_number'),
+                    (_hi_second, start_x + 109 * s, start_y + 40 * s, 'runner_second_number'),
+                    (_hi_first,  start_x + 121 * s, start_y + 52 * s, 'runner_first_number'),
+                ):
+                    if _bfill:
+                        _raw = game_data.get(_bkey)
+                        _bnum = str(_raw) if _raw is not None else ''
+                        _bnw = int(font9.getlength(_bnum)) if _bnum else 0
+                        draw.text((_bcx - _bnw // 2, _bcy - 5 * s), _bnum, font=font9, fill=255)
+            _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
+            Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
+            Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
+            Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, _pc_outs_list[2], outline_width=2)
             draw = ImageDraw.Draw(Himage)
+            # New pitcher name from sub_event
+            _pc_name = (game_data.get('sub_event') or '')[3:].strip()
+            if _pc_name:
+                _right_x   = start_x + horizonta_len - 2 * s
+                _left_x    = start_x + 88 * s
+                _pc_name_w = _right_x - _left_x
+                _pit_fnt   = font14
+                if int(font14.getlength(_pc_name)) > _pc_name_w:
+                    _pit_fnt = font11
+                    if int(font11.getlength(_pc_name)) > _pc_name_w:
+                        _pit_fnt = font9
+                        while _pc_name and int(font9.getlength(_pc_name)) > _pc_name_w:
+                            _pc_name = _pc_name[:-1]
+                draw.text((_left_x, start_y + 83 * s), _pc_name, font=_pit_fnt, fill=0)
         else:
             # If 3 outs are recorded but inningState hasn't flipped to Middle/End yet
             # (API lag), show the linescore instead — prevents filled base diamonds
@@ -2173,7 +2169,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     def _draw_triangle(x, y, direction):
         """Draw a small filled up/down triangle, vertically aligned with the text."""
-        top = y + 2 * s
+        top = y + 2 * s + 2
         bot = top + _TRI_H
         cx = x + _TRI_W / 2
         if direction == 'up':
@@ -2187,6 +2183,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
         '^'/'v' tokens become triangle inning-break separators; consecutive
         events in the same half-inning are joined with ' | '.
+        A trailing '^'/'v' with no following event is emitted as a lone arrow
+        so the display shows which half-inning is now active.
         """
         items = []
         pending = None   # None | 'bar' | 'up' | 'dn'
@@ -2204,6 +2202,10 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                     items.append(('text', ' '))
                 items.append(('text', str(ev)))
                 pending = 'bar'
+        if pending in ('up', 'dn'):
+            if items:
+                items.append(('text', ' '))
+            items.append(('tri', pending))
         return items
 
     def _measure_items(items):
@@ -2351,9 +2353,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
         # ── Outs circles: left side, below bases ──────────────────────
         outs_list = [i + 1 <= _outs_count for i in range(3)]
-        Himage = draw_circle(Himage, (rp_x + 18 * s, rp_y + 71 * s), 5 * s, outs_list[0], outline_width=2)
-        Himage = draw_circle(Himage, (rp_x + 30 * s, rp_y + 71 * s), 5 * s, outs_list[1], outline_width=2)
-        Himage = draw_circle(Himage, (rp_x + 42 * s, rp_y + 71 * s), 5 * s, outs_list[2], outline_width=2)
+        Himage = draw_circle(Himage, (rp_x + 18 * s, rp_y + 71 * s), 6 * s, outs_list[0], outline_width=2)
+        Himage = draw_circle(Himage, (rp_x + 32 * s, rp_y + 71 * s), 6 * s, outs_list[1], outline_width=2)
+        Himage = draw_circle(Himage, (rp_x + 46 * s, rp_y + 71 * s), 6 * s, outs_list[2], outline_width=2)
         draw = ImageDraw.Draw(Himage)
 
         # ── Pitch list: vertical, right of bases/outs, left of zone ───
@@ -2374,22 +2376,22 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 _label = _label[:4]
             draw.text((int(_pt_x), int(_ey)), _label, font=font7, fill=0)
 
-        # ── Balls / Strikes indicators (pushed below pitch list) ───────
+        # ── Strikes / Balls indicators ─────────────────────────────────
         balls_list = [i + 1 <= balls for i in range(3)]
         _num_strikes = min(game_data.get('strikes') or 0, 2)
         strikes_list = [i + 1 <= _num_strikes for i in range(2)]
         _strike_calls = game_data.get('strike_calls') or []
 
-        draw.text((rp_x + 2 * s, rp_y + 93 * s), 'B', font=font11, fill=0)
-        Himage = draw_circle(Himage, (rp_x + 19 * s, rp_y + 102 * s), 4 * s, balls_list[0])
-        Himage = draw_circle(Himage, (rp_x + 31 * s, rp_y + 102 * s), 4 * s, balls_list[1])
-        Himage = draw_circle(Himage, (rp_x + 43 * s, rp_y + 102 * s), 4 * s, balls_list[2])
-        draw = ImageDraw.Draw(Himage)
+        # Centre each label glyph with its circle row
+        _bs_lbl_bbox = font11.getbbox('B')
+        _bs_lbl_cy   = (_bs_lbl_bbox[1] + _bs_lbl_bbox[3]) // 2
 
-        draw.text((rp_x + 54 * s, rp_y + 93 * s), 'S', font=font11, fill=0)
+        # Strikes row (above balls)
+        _s_circ_y = rp_y + 91 * s
+        draw.text((rp_x + 5 * s, _s_circ_y - _bs_lbl_cy), 'S', font=font11, fill=0)
         for _si, (_scx, _scy) in enumerate([
-            (rp_x + 70 * s, rp_y + 102 * s),
-            (rp_x + 82 * s, rp_y + 102 * s),
+            (rp_x + 22 * s, _s_circ_y),
+            (rp_x + 34 * s, _s_circ_y),
         ]):
             _call = _strike_calls[_si] if _si < len(_strike_calls) else None
             if strikes_list[_si] and _call in ('S', 'F'):
@@ -2400,6 +2402,14 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             else:
                 Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
                 draw = ImageDraw.Draw(Himage)
+
+        # Balls row (below strikes)
+        _b_circ_y = rp_y + 102 * s
+        draw.text((rp_x + 5 * s, _b_circ_y - _bs_lbl_cy), 'B', font=font11, fill=0)
+        Himage = draw_circle(Himage, (rp_x + 22 * s, _b_circ_y), 4 * s, balls_list[0])
+        Himage = draw_circle(Himage, (rp_x + 34 * s, _b_circ_y), 4 * s, balls_list[1])
+        Himage = draw_circle(Himage, (rp_x + 46 * s, _b_circ_y), 4 * s, balls_list[2])
+        draw = ImageDraw.Draw(Himage)
 
     else:
         # ── Between innings: next 3 batters, outs hidden ───────────────
@@ -2421,7 +2431,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     # ── Pitcher row (pushed below B/S indicators) ──────────────────────
     _py = rp_y + 107 * s
-    _max_w = rp_w - 4 * s
+    _max_w = rp_w - 7 * s
     _pc = game_data.get('pitch_count')
     _pt_last = game_data.get('last_pitch_type', '') or ''
     _lps = game_data.get('last_pitch_speed')
@@ -2441,7 +2451,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         _pf = font9
         while _pit_str and int(font9.getlength(_pit_str)) > _pit_avail:
             _pit_str = _pit_str[:-1]
-    draw.text((rp_x + 2 * s, _py), _pit_str, font=_pf, fill=0)
+    draw.text((rp_x + 5 * s, _py), _pit_str, font=_pf, fill=0)
     if _right_badge:
         draw.text((rp_x + rp_w - _rb_w, _py), _right_badge, font=font9, fill=0)
 
@@ -2469,7 +2479,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 _bf = font9
                 while _batter_label and int(font9.getlength(_batter_label)) > _hit_avail:
                     _batter_label = _batter_label[:-1]
-            draw.text((rp_x + 2 * s, _by), _batter_label, font=_bf, fill=0)
+            draw.text((rp_x + 5 * s, _by), _batter_label, font=_bf, fill=0)
         if _ba_str:
             draw.text((rp_x + rp_w - _ba_w, _by), _ba_str, font=font9, fill=0)
 
