@@ -480,7 +480,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                         _last_play_half = _this_half
                 _rd = _pe.get('reviewDetails')
                 if _rd and not _rd.get('inProgress') and not _review_added:
-                    game_plays.append('OVR' if _rd.get('isOverturned') else 'CHAL')
+                    game_plays.append('CHAL W' if _rd.get('isOverturned') else 'CHAL L')
                     _review_added = True
             # Final result of a completed at-bat.
             if _ap.get('about', {}).get('isComplete', False):
