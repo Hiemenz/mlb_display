@@ -260,6 +260,22 @@ def test_wide_box_many_ks(white_image, team_data):
 
 
 @needs_pil
+@pytest.mark.parametrize('total,label,rem', [
+    (9,  '',    9),   # under first milestone — no badge
+    (10, '10K', 0),   # exactly at milestone — badge only
+    (13, '10K', 3),   # badge + 3 individual Ks
+    (20, '20K', 0),   # second milestone — badge only
+    (23, '20K', 3),   # second milestone + 3 individual Ks
+])
+def test_wide_box_k_milestone_renders(white_image, team_data, total, label, rem):
+    """K-strip milestone badge logic renders without error for key counts."""
+    from image_box import draw_wide_box
+    game = _live_game(home_pitcher_ks=['K'] * total)
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
 def test_wide_box_events_with_inning_triangles(white_image, team_data):
     """Events strip with '^'/'v' half-inning markers renders up/down triangles."""
     from image_box import draw_wide_box
