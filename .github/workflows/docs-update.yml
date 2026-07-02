@@ -1,0 +1,67 @@
+name: Refresh docs screenshots
+
+on:
+  # Nightly at 08:00 UTC (3 AM Central) — during the off-season or pre-game, all tiles pre-game.
+  # Running while games are likely still pre-game gives the most representative scoreboard screenshot.
+  schedule:
+    - cron: '0 8 * * *'
+
+  # Also fires on any push that touches the rendering source files, so screenshots
+  # stay in sync whenever a visual feature lands on main.
+  push:
+    branches: [main]
+    paths:
+      - 'src/image_box.py'
+      - 'src/image_grid.py'
+      - 'src/image_standings.py'
+      - 'src/image_featured.py'
+      - 'src/image_assets.py'
+      - 'src/image_utils.py'
+      - 'src/generate_image.py'
+      - 'src/field_view.py'
+      - 'src/pitch_view.py'
+      - 'src/scorecard_view.py'
+      - 'scripts/generate_docs.py'
+      - 'pic/Font.ttc'
+
+  # Manual trigger — useful after merging a visual PR.
+  workflow_dispatch:
+
+concurrency:
+  group: docs-update
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push the updated screenshots back to main
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: poetry
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Generate screenshots + demo GIF
+        run: poetry run python scripts/generate_docs.py
+
+      - name: Commit updated docs if anything changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          if git diff --cached --quiet; then
+            echo "No screenshot changes — nothing to commit."
+          else
+            git commit -m "chore: refresh docs screenshots [skip ci]"
+            git push
+          fi

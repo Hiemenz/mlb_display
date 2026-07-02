@@ -2,7 +2,9 @@
 
 Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480) running on a Raspberry Pi. Fetches live MLB data and renders it in multiple display modes. Controllable via Discord bot.
 
-![Full scoreboard — May 31 2026, pre-game](docs/scoreboard_pregame.png)
+![Demo — cycling through all display states](docs/demo.gif)
+
+> Screenshots are auto-regenerated nightly and on every push to `main` that touches a rendering source file.
 
 ---
 
@@ -30,6 +32,36 @@ Each tile adapts to game state — see [Tile States](#scoreboard-tile-states) be
 **Finals** — shows R/H/E, winning/losing pitcher (with record), save, and the winning team's logo as a large ghost watermark behind the score.
 
 ![Scoreboard — all finals](docs/scoreboard_finals.png)
+
+**No-hitter / perfect game** — when a pitcher carries a no-hitter into the 6th inning, the game tile's header inverts (white-on-black banner) as a visual alert. The inversion applies to the regular tile, the wide featured cell, and the fullscreen view.
+
+![Scoreboard — active no-hitter header inversion](docs/scoreboard_nohitter.png)
+
+---
+
+### Wide Cell (Featured Game)
+
+When your primary team is playing, the scoreboard grid can slot their game into a **2-cell wide tile** (285×130 px) that adds a full right panel alongside the standard left panel.
+
+The right panel shows:
+- **Pitch zone** with the current at-bat's pitches plotted
+- **Ball/strike/out count** with visual indicators
+- **K strip** tracking each pitcher's strikeout sequence
+- **Pitcher / batter rows** with last pitch type and speed
+
+![Wide cell — live game with pitch zone](docs/wide_cell.png)
+
+---
+
+### Standings Sidebar
+
+Both outer edges of the scoreboard display division standings. AL divisions run down the left edge; NL divisions run down the right. Each team logo (or 3-letter abbreviation when no logo is cached) shows:
+
+- A **streak badge** (`W7`, `L3`, etc.) centered below the logo
+- A **movement indicator** — a short line on the outer edge when a team changed rank in the last 20 hours
+- A **clinch box** around the slot when a team has clinched a playoff spot or division
+
+![Standings sidebar — AL (left) and NL (right) with streak badges](docs/standings_sidebar.png)
 
 ---
 
@@ -102,6 +134,10 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 |---|---|
 | **Wildcard strip** | Top row of team logos, AL left → NL right, ordered by games back |
 | **Standings sidebar** | AL East/Central/West on left edge, NL on right — 1st through 5th |
+| **Streak badge** | `W7` / `L3` displayed below each team's logo in the standings sidebar |
+| **Movement indicator** | Line on sidebar outer edge when a team changed rank in the last 20 hours |
+| **Wide cell** | Primary team gets a 2-slot tile with pitch zone, K strip, and BSO count |
+| **No-hitter alert** | Header inverts (white-on-black) when a no-hitter or perfect game is active ≥ 6th inning |
 | **Win probability** | Live bar with logos at their real-time win % position |
 | **Live details** | Pitcher, current batter, fastball %, pitch count, last pitch speed |
 | **Team logos** | Auto-fetched from ESPN CDN; per-team invert/darken config |
