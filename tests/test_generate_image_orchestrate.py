@@ -811,7 +811,7 @@ def test_linescore_window_skips_final_game_with_empty_game_pk():
          patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
         image_box.set_historical_mode(True)
         try:
-            result = generate_image.orchestrate_score_board(
+            generate_image.orchestrate_score_board(
                 [game_no_pk], TEAM_DATA, date_str='2026-06-20',
                 bypass_cache=False, config=FIXED_CONFIG,
             )
@@ -849,7 +849,7 @@ def test_linescore_window_no_end_time_utc_uses_fallback():
          patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
         image_box.set_historical_mode(True)
         try:
-            result = generate_image.orchestrate_score_board(
+            generate_image.orchestrate_score_board(
                 [game_no_end], TEAM_DATA, date_str='2026-06-20',
                 bypass_cache=False, config=FIXED_CONFIG,
             )
