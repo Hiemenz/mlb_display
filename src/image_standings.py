@@ -419,19 +419,21 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 paste_x = logo_x + (_SIDEBAR_LOGO_SIZE - lw) // 2
                 paste_y = logo_y + (_SIDEBAR_LOGO_SIZE - lh) // 2
                 Himage.paste(logo_img, (paste_x, paste_y))
+                _logo_img_bottom = paste_y + lh
             else:
                 font = _get_font(9)
                 tw = int(font.getlength(abbr[:3]))
                 draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - tw) // 2, logo_y + 8), abbr[:3], font=font, fill=0)
+                _logo_img_bottom = logo_y + _SIDEBAR_LOGO_SIZE
 
-            # Streak badge: in the gap below the logo, flush with the inner sidebar wall.
+            # Streak badge: tucked just below the actual logo image, flush with the inner sidebar wall.
             _streak_str = (team.get('streak') or '').strip()
             if len(_streak_str) > 1 and _streak_str[0] == 'L' and _streak_str[1:].isdigit():
                 _streak_str = 'L ' + _streak_str[1:]
             if _streak_str:
                 _sf8 = _get_font(7)
                 _sw8 = int(_sf8.getlength(_streak_str))
-                _by = logo_y + _SIDEBAR_LOGO_SIZE      # just below logo bottom, no overlap
+                _by = _logo_img_bottom - 1
                 if side == 'left':
                     # Right-align to inner (right) wall of left sidebar
                     _bx = 32 - _sw8
@@ -619,20 +621,22 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 lw2, lh = logo_img.size
                 canvas.paste(logo_img, (logo_x + (logo_sz - lw2) // 2,
                                         logo_y + (logo_sz - lh) // 2))
+                _fs_logo_bottom = logo_y + (logo_sz - lh) // 2 + lh
             else:
                 font9 = _get_font(9)
                 tw = int(font9.getlength(abbr[:3]))
                 draw.text((logo_x + (logo_sz - tw) // 2, logo_y + (logo_sz - 9) // 2),
                           abbr[:3], font=font9, fill=0)
+                _fs_logo_bottom = logo_y + logo_sz
 
-            # Streak badge: gap below logo, aligned to inner edge of column, no overlap.
+            # Streak badge: tucked just below the actual logo image, aligned to inner edge of column.
             _fs_streak = (team.get('streak') or '').strip()
             if len(_fs_streak) > 1 and _fs_streak[0] == 'L' and _fs_streak[1:].isdigit():
                 _fs_streak = 'L ' + _fs_streak[1:]
             if _fs_streak:
                 _ssf8 = _get_font(7)
                 _ssw8 = int(_ssf8.getlength(_fs_streak))
-                _fs_by = logo_y + logo_sz      # just below logo, no overlap
+                _fs_by = _fs_logo_bottom - 1
                 if side == 'left':
                     _fs_bx = col_x + col_w - _ssw8   # right-align to column's inner edge
                 else:
