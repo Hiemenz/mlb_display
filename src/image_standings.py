@@ -470,7 +470,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                     # Push toward the outer screen edge so the dashes don't overlap
                     # the streak badge on the inner wall.  Leave a 5px gap from the
                     # absolute edge to stay clear of the movement-indicator line.
-                    dash_start = 4 if side == 'left' else 800 - total_dash_w - 4
+                    dash_start = 0 if side == 'left' else 800 - total_dash_w
                     for d in range(3):
                         x0 = dash_start + d * (dash_w + gap_w)
                         draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)

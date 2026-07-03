@@ -532,14 +532,15 @@ class TestStandingsSidebarMovers:
 
     def test_api_tiebreak_no_indicator_when_only_rank_changed(self):
         """Rank changed but record identical (API tiebreak reorder) must not produce an indicator."""
-        # Both teams have the same W-L record in both prev and current — pure rank swap
+        # Use unequal records so no tied-team --- dashes land in the indicator region.
+        # Each team's own record is unchanged; only their relative ranking swapped.
         cur_teams = [
             _make_team(1, 1, 1, wins=12, losses=8),
-            _make_team(2, 2, 3, wins=12, losses=8),
+            _make_team(2, 2, 3, wins=11, losses=9),
         ]
         prev_teams = [
             _make_team(1, 2, 2, wins=12, losses=8),
-            _make_team(2, 1, 1, wins=12, losses=8),
+            _make_team(2, 1, 1, wins=11, losses=9),
         ]
         img = self._render(cur_teams, prev_teams=prev_teams,
                            abbr_map={'1': 'NYY', '2': 'BOS'})
@@ -565,7 +566,12 @@ class TestStandingsSidebarMovers:
 
     def test_unchanged_teams_produce_no_indicator(self):
         """Teams with identical rank and record produce no indicator."""
-        teams = [_make_team(i, i, i, wins=10, losses=10) for i in range(1, 4)]
+        # Use distinct records to avoid tied-team --- dashes appearing in the indicator region.
+        teams = [
+            _make_team(1, 1, 1, wins=12, losses=8),
+            _make_team(2, 2, 2, wins=10, losses=10),
+            _make_team(3, 3, 3, wins=8, losses=12),
+        ]
         img = self._render(teams, prev_teams=teams[:])
         assert not _has_dark_pixels(img, *self._INDICATOR_REGION)
 
