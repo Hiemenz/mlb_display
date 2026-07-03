@@ -426,17 +426,19 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
 
             # Streak badge: in the gap below the logo, flush with the inner sidebar wall.
             _streak_str = (team.get('streak') or '').strip()
+            if len(_streak_str) > 1 and _streak_str[0] == 'L' and _streak_str[1:].isdigit():
+                _streak_str = 'L ' + _streak_str[1:]
             if _streak_str:
-                _sf7 = _get_font(7)
-                _sw7 = int(_sf7.getlength(_streak_str))
+                _sf8 = _get_font(7)
+                _sw8 = int(_sf8.getlength(_streak_str))
                 _by = logo_y + _SIDEBAR_LOGO_SIZE      # just below logo bottom, no overlap
                 if side == 'left':
                     # Right-align to inner (right) wall of left sidebar
-                    _bx = 32 - _sw7
+                    _bx = 32 - _sw8
                 else:
                     # Left-align to inner (left) wall of right sidebar
                     _bx = 800 - 32
-                draw.text((_bx, _by), _streak_str, font=_sf7, fill=0)
+                draw.text((_bx, _by), _streak_str, font=_sf8, fill=0)
 
             if team_id in display_movers:
                 draw.line(
@@ -464,7 +466,11 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                     # (slot_h - logo_size - 2) // 2 leaves equal empty rows above and below.
                     gap_y = logo_y + _SIDEBAR_LOGO_SIZE + (slot_h - _SIDEBAR_LOGO_SIZE - 2) // 2
                     dash_w, gap_w = 4, 2
-                    dash_start = logo_x + (_SIDEBAR_LOGO_SIZE - (3 * dash_w + 2 * gap_w)) // 2
+                    total_dash_w = 3 * dash_w + 2 * gap_w
+                    # Push toward the outer screen edge so the dashes don't overlap
+                    # the streak badge on the inner wall.  Leave a 5px gap from the
+                    # absolute edge to stay clear of the movement-indicator line.
+                    dash_start = 0 if side == 'left' else 800 - total_dash_w
                     for d in range(3):
                         x0 = dash_start + d * (dash_w + gap_w)
                         draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)
@@ -624,15 +630,17 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
 
             # Streak badge: gap below logo, aligned to inner edge of column, no overlap.
             _fs_streak = (team.get('streak') or '').strip()
+            if len(_fs_streak) > 1 and _fs_streak[0] == 'L' and _fs_streak[1:].isdigit():
+                _fs_streak = 'L ' + _fs_streak[1:]
             if _fs_streak:
-                _ssf7 = _get_font(7)
-                _ssw7 = int(_ssf7.getlength(_fs_streak))
+                _ssf8 = _get_font(7)
+                _ssw8 = int(_ssf8.getlength(_fs_streak))
                 _fs_by = logo_y + logo_sz      # just below logo, no overlap
                 if side == 'left':
-                    _fs_bx = col_x + col_w - _ssw7   # right-align to column's inner edge
+                    _fs_bx = col_x + col_w - _ssw8   # right-align to column's inner edge
                 else:
                     _fs_bx = col_x                    # left-align to column's inner edge
-                draw.text((_fs_bx, _fs_by), _fs_streak, font=_ssf7, fill=0)
+                draw.text((_fs_bx, _fs_by), _fs_streak, font=_ssf8, fill=0)
 
             # Movement indicator: L-bracket around logo corner
             # AL (left): vertical on left + horizontal at bottom-left

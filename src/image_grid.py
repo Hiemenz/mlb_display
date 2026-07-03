@@ -135,6 +135,70 @@ def _reorder_for_wide(game_list, wide_set):
     return game_list, wide_set
 
 
+def _move_non_live_to_fillers(game_list, wide_set):
+    """Swap live games out of filler slots in wide rows.
+
+    Every row that contains a wide (2-cell) tile must also have at least one
+    single-cell slot to fill the 5-column width (e.g. 2+2+1=5).  That slot
+    should show a finished or not-yet-started game, not a live game — a live
+    game wasted in a narrow filler cell is better placed as a normal single
+    cell in a non-wide row.
+
+    Scans the visible 15-slot boundary for live games sitting in filler slots
+    (normal cells whose row contains at least one wide tile) and swaps each
+    with the last non-live normal game from a non-wide row, perturbing the
+    ordering as little as possible.  Returns the updated game_list.
+    """
+    game_list = list(game_list)
+
+    # Simulate slot positions for every game within the 15-unit boundary.
+    positions = []
+    slot_idx = 0
+    for gi in range(len(game_list)):
+        if slot_idx >= 15:
+            break
+        col = slot_idx % 5
+        row = slot_idx // 5
+        if gi in wide_set and col < 4:
+            positions.append(('wide', col, row))
+            slot_idx += 2
+        else:
+            positions.append(('normal', col, row))
+            slot_idx += 1
+
+    wide_rows = {pos[2] for pos in positions if pos[0] == 'wide'}
+    if not wide_rows:
+        return game_list
+
+    # Filler slots: normal cells that share a row with at least one wide tile.
+    filler_idxs = [
+        i for i, pos in enumerate(positions)
+        if pos[0] == 'normal' and pos[2] in wide_rows
+    ]
+
+    # Swap candidates: non-live games in normal slots in non-wide rows,
+    # iterated from the end to minimise disruption to the earlier ordering.
+    # Index 0 is always protected — it holds the featured team's game when
+    # favorite_team_first is enabled, and should never be displaced to a filler.
+    non_wide_non_live = [
+        i for i in range(len(positions) - 1, 0, -1)
+        if positions[i][0] == 'normal'
+        and positions[i][2] not in wide_rows
+        and game_list[i].get('detailed_state') not in _LIVE_WIDE_STATES
+    ]
+    cand_iter = iter(non_wide_non_live)
+
+    for fi in filler_idxs:
+        if game_list[fi].get('detailed_state') in _LIVE_WIDE_STATES:
+            try:
+                ti = next(cand_iter)
+                game_list[fi], game_list[ti] = game_list[ti], game_list[fi]
+            except StopIteration:
+                break  # no more non-live games available to swap in
+
+    return game_list
+
+
 def compute_grid_layout(game_state_data, team_data, config):
     """Return (ordered_game_list, slots) for the 5×3 scoreboard grid.
 
@@ -171,9 +235,13 @@ def compute_grid_layout(game_state_data, team_data, config):
 
     # Determine which games show as wide (2-cell) tiles, then reorder so any
     # wide game that would land at col=4 swaps with the normal game after it.
+    # Finally, move non-live games into the filler single-cell slots that exist
+    # in every wide row (e.g. 2-wide + 1-filler = 5 cols) so a live game never
+    # sits in a filler slot when a finished or not-yet-started game can take it.
     _wide_set = _find_wide_games(game_list, config, team_data)
     if _wide_set:
         game_list, _wide_set = _reorder_for_wide(game_list, _wide_set)
+        game_list = _move_non_live_to_fillers(game_list, _wide_set)
 
     # Build an ordered list of (slot_type, grid_col, grid_row).
     # Each wide game consumes 2 horizontal slot units; normal games consume 1.
