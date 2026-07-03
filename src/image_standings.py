@@ -429,7 +429,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
             if len(_streak_str) > 1 and _streak_str[0].isalpha() and _streak_str[1:].isdigit():
                 _streak_str = _streak_str[0] + ' ' + _streak_str[1:]
             if _streak_str:
-                _sf8 = _get_font(8)
+                _sf8 = _get_font(7)
                 _sw8 = int(_sf8.getlength(_streak_str))
                 _by = logo_y + _SIDEBAR_LOGO_SIZE      # just below logo bottom, no overlap
                 if side == 'left':
@@ -633,7 +633,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             if len(_fs_streak) > 1 and _fs_streak[0].isalpha() and _fs_streak[1:].isdigit():
                 _fs_streak = _fs_streak[0] + ' ' + _fs_streak[1:]
             if _fs_streak:
-                _ssf8 = _get_font(8)
+                _ssf8 = _get_font(7)
                 _ssw8 = int(_ssf8.getlength(_fs_streak))
                 _fs_by = logo_y + logo_sz      # just below logo, no overlap
                 if side == 'left':
