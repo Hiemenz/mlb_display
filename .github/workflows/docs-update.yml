@@ -63,5 +63,5 @@ jobs:
             echo "No screenshot changes — nothing to commit."
           else
             git commit -m "chore: refresh docs screenshots [skip ci]"
-            git push
+            git push || echo "Push blocked by branch protection — grant github-actions[bot] bypass in Settings → Branches to enable auto-commit."
           fi
