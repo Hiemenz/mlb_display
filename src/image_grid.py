@@ -178,8 +178,10 @@ def _move_non_live_to_fillers(game_list, wide_set):
 
     # Swap candidates: non-live games in normal slots in non-wide rows,
     # iterated from the end to minimise disruption to the earlier ordering.
+    # Index 0 is always protected — it holds the featured team's game when
+    # favorite_team_first is enabled, and should never be displaced to a filler.
     non_wide_non_live = [
-        i for i in range(len(positions) - 1, -1, -1)
+        i for i in range(len(positions) - 1, 0, -1)
         if positions[i][0] == 'normal'
         and positions[i][2] not in wide_rows
         and game_list[i].get('detailed_state') not in _LIVE_WIDE_STATES

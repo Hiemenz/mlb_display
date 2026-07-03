@@ -276,3 +276,16 @@ class TestMoveNonLiveToFillers:
         ]
         result = _move_non_live_to_fillers(games, {0, 1})
         assert {g['game_pk'] for g in result} == {0, 1, 2, 3, 4}
+
+    def test_index_zero_never_displaced_to_filler(self):
+        # Game at index 0 (featured team position) must never be swapped into
+        # a filler slot, even if it is the only non-live candidate available.
+        games = [
+            self._g(0, self._SCHED),  # featured team at position 0 — must stay
+            self._g(1, self._LIVE),   # wide
+            self._g(2, self._LIVE),   # wide
+            self._g(3, self._LIVE),   # filler at col=4 — needs a non-live swap
+            # No other non-live games available except index 0
+        ]
+        result = _move_non_live_to_fillers(games, {1, 2})
+        assert result[0]['game_pk'] == 0  # featured game stays first
