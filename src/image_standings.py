@@ -426,8 +426,8 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
 
             # Streak badge: in the gap below the logo, flush with the inner sidebar wall.
             _streak_str = (team.get('streak') or '').strip()
-            if len(_streak_str) > 1 and _streak_str[0].isalpha() and _streak_str[1:].isdigit():
-                _streak_str = _streak_str[0] + ' ' + _streak_str[1:]
+            if len(_streak_str) > 1 and _streak_str[0] == 'L' and _streak_str[1:].isdigit():
+                _streak_str = 'L ' + _streak_str[1:]
             if _streak_str:
                 _sf8 = _get_font(7)
                 _sw8 = int(_sf8.getlength(_streak_str))
@@ -630,8 +630,8 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
 
             # Streak badge: gap below logo, aligned to inner edge of column, no overlap.
             _fs_streak = (team.get('streak') or '').strip()
-            if len(_fs_streak) > 1 and _fs_streak[0].isalpha() and _fs_streak[1:].isdigit():
-                _fs_streak = _fs_streak[0] + ' ' + _fs_streak[1:]
+            if len(_fs_streak) > 1 and _fs_streak[0] == 'L' and _fs_streak[1:].isdigit():
+                _fs_streak = 'L ' + _fs_streak[1:]
             if _fs_streak:
                 _ssf8 = _get_font(7)
                 _ssw8 = int(_ssf8.getlength(_fs_streak))
