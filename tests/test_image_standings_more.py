@@ -306,6 +306,16 @@ class TestDrawStandingsSidebarClinch:
         img_plain = self._render([_team(1, 1, wins=100, losses=50)])
         assert img_unknown.tobytes() == img_plain.tobytes()
 
+    def test_streak_badge_adds_pixels_to_logo_corner(self):
+        """A team with a streak draws a tiny badge in the bottom-right of the
+        logo slot (image_standings.py lines 425-430). Pixels differ from no-streak."""
+        team_with_streak = dict(_team(1, 1, wins=90, losses=60))
+        team_with_streak['streak'] = 'W5'
+        img_streak = self._render([team_with_streak])
+        img_plain = self._render([_team(1, 1, wins=90, losses=60)])
+        assert img_streak.tobytes() != img_plain.tobytes(), \
+            "Streak badge must add visible pixels not present without it"
+
 
 # ===========================================================================
 # 6. draw_standings_sidebar_fullscreen() — previously ~0% covered
@@ -510,6 +520,16 @@ class TestDrawStandingsSidebarFullscreen:
             'left', {'American League East': [_team(1, 1)]},
             movement_payload={'1': 'not-a-number'})
         assert result is canvas
+
+    def test_streak_badge_adds_pixels_to_logo_corner(self):
+        """A team with a streak renders a tiny badge in the bottom-right of the
+        logo area (image_standings.py lines 625-630). Pixels differ from no-streak."""
+        team_with_streak = dict(_team(1, 1, wins=90, losses=60))
+        team_with_streak['streak'] = 'L3'
+        canvas_streak, _ = self._render('left', {'American League East': [team_with_streak]})
+        canvas_plain, _ = self._render('left', {'American League East': [_team(1, 1, wins=90, losses=60)]})
+        assert canvas_streak.tobytes() != canvas_plain.tobytes(), \
+            "Streak badge must add visible pixels not present without it"
 
 
 # ===========================================================================

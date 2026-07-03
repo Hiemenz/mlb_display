@@ -259,6 +259,17 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         canvas.paste(ImageOps.invert(_hdr_crop.convert('L')).convert('1'), (0, 0))
         draw = ImageDraw.Draw(canvas)
 
+    # No-hitter / perfect game: invert header when active (≥ 6 innings).
+    # Skip when run-scored already inverted it (double-invert = no-op).
+    _fs_active_no_no = (
+        (game_data.get('no_hitter') or game_data.get('perfect_game')) and
+        (game_data.get('current_inning') or 0) >= 6
+    )
+    if _fs_active_no_no and not _run_scored:
+        _hdr_crop = canvas.crop((0, 0, 800, HEADER_H))
+        canvas.paste(ImageOps.invert(_hdr_crop.convert('L')).convert('1'), (0, 0))
+        draw = ImageDraw.Draw(canvas)
+
     # ---- SCORE DATA ---------------------------------------------------------
     away_runs = str(game_data.get('away_runs') or 0)
     home_runs = str(game_data.get('home_runs') or 0)

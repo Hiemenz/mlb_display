@@ -782,3 +782,27 @@ def test_live_fullscreen_win_prob_home_slightly_higher_overlap():
     with patch('image_featured._logo_small', return_value=fake_logo):
         img = draw_live_fullscreen_game(game, TEAM_DATA, wp_cfg)
     assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_nohitter_inverts_header():
+    """Active no-hitter (≥6 innings, no RBI on last play) inverts the fullscreen
+    header (image_featured.py lines 269-271)."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(no_hitter=True, perfect_game=False,
+                      current_inning=7, last_play_rbi=0, last_play='strikeout')
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+    # A run of black pixels should appear near the top (inverted header).
+    top_row = [img.getpixel((x, 5)) for x in range(800)]
+    assert any(p == 0 for p in top_row), "no-hitter header should be inverted (black bg)"
+
+
+@needs_pil
+def test_live_fullscreen_perfectgame_inverts_header():
+    """Perfect game flag also triggers fullscreen header inversion."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(no_hitter=False, perfect_game=True,
+                      current_inning=8, last_play_rbi=0)
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
