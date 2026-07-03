@@ -169,6 +169,28 @@ def compute_grid_layout(game_state_data, team_data, config):
             game_list.remove(_ppd_g)
             game_list.append(_ppd_g)
 
+    # When more live games exist than the wide-slot budget allows (15 - total),
+    # pop enough finished or not-yet-started games off the visible list so every
+    # live game can get a wide (2-cell) tile. The removed games are collected in
+    # _overflow and re-appended after layout so they fall past the 15-slot cut.
+    _overflow = []
+    _live_count = sum(1 for g in game_list if g.get('detailed_state') in _LIVE_WIDE_STATES)
+    _wide_budget = max(0, 15 - len(game_list))
+    _deficit = _live_count - _wide_budget
+    if _deficit > 0 and len(game_list) < 15:
+        _bumped = 0
+        # Prefer bumping Final games first (already decided), then anything else
+        for _group in ({'Final', 'Game Over'}, None):
+            for _bi in range(len(game_list) - 1, -1, -1):
+                if _bumped >= _deficit:
+                    break
+                _ds = game_list[_bi].get('detailed_state', '')
+                if _ds not in _LIVE_WIDE_STATES and (_group is None or _ds in _group):
+                    _overflow.append(game_list.pop(_bi))
+                    _bumped += 1
+            if _bumped >= _deficit:
+                break
+
     # Determine which games show as wide (2-cell) tiles, then reorder so any
     # wide game that would land at col=4 swaps with the normal game after it.
     _wide_set = _find_wide_games(game_list, config, team_data)
@@ -195,6 +217,11 @@ def compute_grid_layout(game_state_data, team_data, config):
                 _slot_idx += 1
     else:
         _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
+
+    # Restore overflow games at the tail — they have no slot entries so zip()
+    # in the renderer naturally excludes them from drawing.
+    if _overflow:
+        game_list.extend(reversed(_overflow))
 
     return game_list, _slots
 

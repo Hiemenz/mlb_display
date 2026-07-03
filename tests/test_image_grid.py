@@ -157,3 +157,96 @@ class TestComputeGridLayout:
         games = [_game(0, state='In Progress')] + [_game(i + 1) for i in range(19)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
         assert len(slots) <= 15
+
+    # ------------------------------------------------------------------
+    # bump-for-wide: non-live games displaced so all live games fit wide
+    # ------------------------------------------------------------------
+
+    def test_three_live_games_all_get_wide_when_13_total(self):
+        # 13 games → budget=2 normally; bumping 1 Final expands budget to 3.
+        # Use 5 normals + live + 2 normals + live + 2 normals + live + Final = 13.
+        games = (
+            [_game(i) for i in range(5)]
+            + [_game(10, state='In Progress')]
+            + [_game(i + 20) for i in range(2)]
+            + [_game(11, state='In Progress')]
+            + [_game(i + 30) for i in range(2)]
+            + [_game(12, state='In Progress', inning=5)]
+            + [_game(99, state='Final')]
+        )
+        assert len(games) == 13
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        wide_count = sum(1 for s in slots if s[0] == 'wide')
+        assert wide_count == 3
+
+    def test_bumped_game_not_rendered(self):
+        # With 13 games and 3 live, the displaced Final must not appear in rendered slots.
+        games = (
+            [_game(i) for i in range(5)]
+            + [_game(10, state='In Progress')]
+            + [_game(i + 20) for i in range(2)]
+            + [_game(11, state='In Progress')]
+            + [_game(i + 30) for i in range(2)]
+            + [_game(12, state='In Progress')]
+            + [_game(99, state='Final')]
+        )
+        assert len(games) == 13
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        assert len(slots) < len(ordered)
+        final_pos = next(i for i, g in enumerate(ordered) if g['game_pk'] == 99)
+        assert final_pos >= len(slots)
+
+    def test_two_live_games_with_exact_budget_no_bump(self):
+        # 13 games, budget=2, exactly 2 live → no bump needed.
+        games = (
+            [_game(10, state='In Progress')]
+            + [_game(i) for i in range(6)]
+            + [_game(11, state='In Progress')]
+            + [_game(i + 20) for i in range(5)]
+        )
+        assert len(games) == 13
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        assert len(ordered) == len(slots)  # no overflow
+
+    def test_final_bumped_before_scheduled(self):
+        # When bumping is needed, Final game preferred over Scheduled.
+        live = [_game(i, state='In Progress') for i in range(3)]
+        final_game = _game(99, state='Final')
+        scheduled_games = [_game(i + 10) for i in range(9)]
+        games = live + [final_game] + scheduled_games
+        assert len(games) == 13
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        final_pos = next(i for i, g in enumerate(ordered) if g['game_pk'] == 99)
+        assert final_pos >= len(slots)
+        # All Scheduled games still rendered
+        scheduled_pks = {g['game_pk'] for g in scheduled_games}
+        rendered_pks = {ordered[i]['game_pk'] for i in range(len(slots))}
+        assert scheduled_pks <= rendered_pks
+
+    def test_four_live_games_all_wide_when_spaced_with_normal(self):
+        # 11 games, 4 live spaced with a normal between pairs so no col=4 conflict.
+        # Order: live, live, normal, live, live, normal*6 → 11 games, budget=4, all 4 wide.
+        games = (
+            [_game(0, state='In Progress'), _game(1, state='In Progress')]
+            + [_game(2)]
+            + [_game(3, state='In Progress'), _game(4, state='In Progress')]
+            + [_game(i + 10) for i in range(6)]
+        )
+        assert len(games) == 11
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        wide_count = sum(1 for s in slots if s[0] == 'wide')
+        assert wide_count == 4
+
+    def test_four_live_games_bump_when_budget_short(self):
+        # 12 games → budget=3; 4 live (spaced) → deficit=1 → bump 1 Final → all 4 wide.
+        games = (
+            [_game(0, state='In Progress'), _game(1, state='In Progress')]
+            + [_game(2)]
+            + [_game(3, state='In Progress'), _game(4, state='In Progress')]
+            + [_game(i + 10) for i in range(6)]
+            + [_game(99, state='Final')]
+        )
+        assert len(games) == 12
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        wide_count = sum(1 for s in slots if s[0] == 'wide')
+        assert wide_count == 4
