@@ -6,7 +6,7 @@ This file covers the still-active helpers.
 """
 import pytest
 
-from image_grid import _free_grid_slot, compute_grid_layout, _find_wide_games, _reorder_for_wide
+from image_grid import _free_grid_slot, compute_grid_layout, _find_wide_games, _reorder_for_wide, _move_non_live_to_fillers
 
 
 # ---------------------------------------------------------------------------
@@ -159,28 +159,11 @@ class TestComputeGridLayout:
         assert len(slots) <= 15
 
     # ------------------------------------------------------------------
-    # bump-for-wide: non-live games displaced so all live games fit wide
+    # _move_non_live_to_fillers: filler slots in wide rows must be non-live
     # ------------------------------------------------------------------
 
-    def test_three_live_games_all_get_wide_when_13_total(self):
-        # 13 games → budget=2 normally; bumping 1 Final expands budget to 3.
-        # Use 5 normals + live + 2 normals + live + 2 normals + live + Final = 13.
-        games = (
-            [_game(i) for i in range(5)]
-            + [_game(10, state='In Progress')]
-            + [_game(i + 20) for i in range(2)]
-            + [_game(11, state='In Progress')]
-            + [_game(i + 30) for i in range(2)]
-            + [_game(12, state='In Progress', inning=5)]
-            + [_game(99, state='Final')]
-        )
-        assert len(games) == 13
-        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 3
-
-    def test_bumped_game_not_rendered(self):
-        # With 13 games and 3 live, the displaced Final must not appear in rendered slots.
+    def test_all_games_always_rendered(self):
+        # No game should be hidden; len(ordered) == len(slots) always.
         games = (
             [_game(i) for i in range(5)]
             + [_game(10, state='In Progress')]
@@ -192,40 +175,31 @@ class TestComputeGridLayout:
         )
         assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        assert len(slots) < len(ordered)
-        final_pos = next(i for i, g in enumerate(ordered) if g['game_pk'] == 99)
-        assert final_pos >= len(slots)
+        assert len(ordered) == len(slots)
 
-    def test_two_live_games_with_exact_budget_no_bump(self):
-        # 13 games, budget=2, exactly 2 live → no bump needed.
+    def test_filler_slot_in_wide_row_is_non_live(self):
+        # 13 games, 3 live → budget=2, 2 wide per row leaves 1 filler each.
+        # The filler must not be a live game.
         games = (
-            [_game(10, state='In Progress')]
-            + [_game(i) for i in range(6)]
+            [_game(i) for i in range(5)]
+            + [_game(10, state='In Progress')]
+            + [_game(i + 20) for i in range(2)]
             + [_game(11, state='In Progress')]
-            + [_game(i + 20) for i in range(5)]
+            + [_game(i + 30) for i in range(2)]
+            + [_game(12, state='In Progress')]
+            + [_game(99, state='Final')]
         )
         assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        assert len(ordered) == len(slots)  # no overflow
-
-    def test_final_bumped_before_scheduled(self):
-        # When bumping is needed, Final game preferred over Scheduled.
-        live = [_game(i, state='In Progress') for i in range(3)]
-        final_game = _game(99, state='Final')
-        scheduled_games = [_game(i + 10) for i in range(9)]
-        games = live + [final_game] + scheduled_games
-        assert len(games) == 13
-        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        final_pos = next(i for i, g in enumerate(ordered) if g['game_pk'] == 99)
-        assert final_pos >= len(slots)
-        # All Scheduled games still rendered
-        scheduled_pks = {g['game_pk'] for g in scheduled_games}
-        rendered_pks = {ordered[i]['game_pk'] for i in range(len(slots))}
-        assert scheduled_pks <= rendered_pks
+        wide_rows = {row for (stype, col, row) in slots if stype == 'wide'}
+        for i, (stype, col, row) in enumerate(slots):
+            if stype == 'normal' and row in wide_rows:
+                assert ordered[i].get('detailed_state') not in ('In Progress', 'Player challenge', 'Manager challenge'), \
+                    f"Live game found in filler slot at row {row}, col {col}"
 
     def test_four_live_games_all_wide_when_spaced_with_normal(self):
         # 11 games, 4 live spaced with a normal between pairs so no col=4 conflict.
-        # Order: live, live, normal, live, live, normal*6 → 11 games, budget=4, all 4 wide.
+        # budget=4, all 4 live can be wide, no filler-swap needed.
         games = (
             [_game(0, state='In Progress'), _game(1, state='In Progress')]
             + [_game(2)]
@@ -237,16 +211,68 @@ class TestComputeGridLayout:
         wide_count = sum(1 for s in slots if s[0] == 'wide')
         assert wide_count == 4
 
-    def test_four_live_games_bump_when_budget_short(self):
-        # 12 games → budget=3; 4 live (spaced) → deficit=1 → bump 1 Final → all 4 wide.
-        games = (
-            [_game(0, state='In Progress'), _game(1, state='In Progress')]
-            + [_game(2)]
-            + [_game(3, state='In Progress'), _game(4, state='In Progress')]
-            + [_game(i + 10) for i in range(6)]
-            + [_game(99, state='Final')]
-        )
-        assert len(games) == 12
+    def test_filler_swap_leaves_all_games_rendered(self):
+        # Even after filler swaps, total rendered count must equal total games.
+        live = [_game(i, state='In Progress') for i in range(3)]
+        normals = [_game(i + 10) for i in range(10)]
+        games = live + normals
+        assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 4
+        assert len(ordered) == len(slots)
+
+
+# ---------------------------------------------------------------------------
+# _move_non_live_to_fillers (unit tests for the helper directly)
+# ---------------------------------------------------------------------------
+
+class TestMoveNonLiveToFillers:
+    _LIVE = 'In Progress'
+    _DONE = 'Final'
+    _SCHED = 'Scheduled'
+
+    def _g(self, pk, state='Scheduled'):
+        return {'game_pk': pk, 'detailed_state': state}
+
+    def test_live_in_only_filler_slot_gets_swapped(self):
+        # Two wide games at indices 0,1 leave a filler at index 2 (col=4, row=0).
+        # If index 2 is live it should be swapped with a non-live game from row 1+.
+        games = [
+            self._g(0, self._LIVE),   # wide → col 0-1
+            self._g(1, self._LIVE),   # wide → col 2-3
+            self._g(2, self._LIVE),   # filler at col 4, row 0 — should be moved out
+            self._g(3, self._SCHED),  # row 1, col 0 — candidate for swap
+            self._g(4, self._SCHED),
+        ]
+        result = _move_non_live_to_fillers(games, {0, 1})
+        filler_game = result[2]
+        assert filler_game['detailed_state'] != self._LIVE
+
+    def test_non_live_in_filler_unchanged(self):
+        # Filler already holds a non-live game — no swap needed.
+        games = [
+            self._g(0, self._LIVE),
+            self._g(1, self._LIVE),
+            self._g(2, self._DONE),  # filler already non-live
+            self._g(3, self._SCHED),
+            self._g(4, self._SCHED),
+        ]
+        original = [g['game_pk'] for g in games]
+        result = _move_non_live_to_fillers(games, {0, 1})
+        assert [g['game_pk'] for g in result] == original
+
+    def test_no_wide_games_no_change(self):
+        games = [self._g(i, self._SCHED) for i in range(5)]
+        result = _move_non_live_to_fillers(games, set())
+        assert [g['game_pk'] for g in result] == list(range(5))
+
+    def test_all_games_preserved(self):
+        # Swaps may reorder but must not drop any game.
+        games = [
+            self._g(0, self._LIVE),
+            self._g(1, self._LIVE),
+            self._g(2, self._LIVE),  # filler
+            self._g(3, self._SCHED),
+            self._g(4, self._DONE),
+        ]
+        result = _move_non_live_to_fillers(games, {0, 1})
+        assert {g['game_pk'] for g in result} == {0, 1, 2, 3, 4}
