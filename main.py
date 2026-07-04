@@ -59,10 +59,6 @@ def _data_path(filename):
     return os.path.join(_REPO_ROOT, 'data', filename)
 
 
-def _config_path():
-    return os.path.join(_REPO_ROOT, 'config', 'config.yaml')
-
-
 def _in_night_window(config):
     """Return True if we are currently inside the configured night mode window."""
     night_start = config.get('night_start', 0)
@@ -73,86 +69,6 @@ def _in_night_window(config):
     if night_start >= night_end:
         return current_hour >= night_start or current_hour < night_end
     return night_start <= current_hour < night_end
-
-
-def _load_discord_state():
-    path = _data_path('discord_state.json')
-    try:
-        with open(path) as f:
-            state = json.load(f)
-        if not state.get('applied', True):
-            return state
-    except (FileNotFoundError, Exception):
-        pass
-    return None
-
-
-def _mark_discord_applied():
-    path = _data_path('discord_state.json')
-    try:
-        with open(path) as f:
-            state = json.load(f)
-        state['applied'] = True
-        with open(path, 'w') as f:
-            json.dump(state, f, indent=2)
-    except (FileNotFoundError, Exception):
-        pass
-
-
-def _apply_discord_change(state, config):
-    """Apply pending Discord changes to in-memory config and persist config.yaml."""
-    import yaml
-    changed = False
-    if state.get('pending_mode') and state['pending_mode'] in ('scoreboard', 'linescore', 'field', 'scorecard', 'pitch'):
-        config['display_mode'] = state['pending_mode']
-        changed = True
-    if state.get('pending_team'):
-        config['primary'] = state['pending_team'].upper()
-        changed = True
-    if changed:
-        try:
-            with open(_config_path(), 'w') as f:
-                yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
-        except Exception as e:
-            print(f"Warning: could not save config.yaml after Discord change: {e}")
-    return changed
-
-
-def _render_discord_overlay(state, dark_mode=False):
-    from PIL import Image, ImageDraw, ImageFont
-    picdir = os.path.join(_REPO_ROOT, 'pic')
-    img = Image.new('1', (800, 480), 255)
-    draw = ImageDraw.Draw(img)
-    try:
-        font_lg = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 48)
-        font_md = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 28)
-        font_sm = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 22)
-    except Exception:
-        font_lg = font_md = font_sm = ImageFont.load_default()
-
-    mode = state.get('pending_mode', '').upper()
-    team = state.get('pending_team', '').upper()
-    user = state.get('requested_by', '')
-
-    lines = [
-        ('Display Changing', font_md, 120),
-        (mode or team, font_lg, 185),
-    ]
-    if mode and team:
-        lines.append((f'Team: {team}', font_md, 265))
-    lines.append((f'Requested by @{user}', font_sm, 340))
-
-    for text, font, y in lines:
-        try:
-            w = font.getlength(text)
-        except AttributeError:
-            w = len(text) * 12
-        draw.text(((800 - w) // 2, y), text, font=font, fill=0)
-
-    draw.rectangle([10, 10, 789, 469], outline=0, width=3)
-    if dark_mode:
-        img = img.point(lambda p: 0 if p == 255 else 255)
-    return img
 
 
 def _load_schedule_state():
@@ -200,7 +116,7 @@ def _maybe_generate_video(date_str, config):
 
     print(f"All games final — generating day timelapse for {date_str}...")
     try:
-        from scoreboard_generate import _generate_gif
+        from timelapse import generate_gif
 
         output_dir = os.path.join(_REPO_ROOT, 'output')
         os.makedirs(output_dir, exist_ok=True)
@@ -209,7 +125,7 @@ def _maybe_generate_video(date_str, config):
         sport_priority = config.get('sport_id_priority', [1])
         sport_id = sport_priority[0] if isinstance(sport_priority, list) else sport_priority
 
-        _generate_gif(
+        generate_gif(
             date_str,
             gif_start=None,
             gif_end=None,
@@ -435,21 +351,6 @@ Examples:
             now_str = datetime.now(pytz.timezone(tz)).strftime('%H:%M')
             print(f"Night mode: skipping refresh ({now_str})")
             return
-
-    dark_mode = config.get('dark_mode', False)
-
-    # 4. Discord state gate
-    discord_state = _load_discord_state()
-    if discord_state:
-        user = discord_state.get('requested_by', 'unknown')
-        mode_req = discord_state.get('pending_mode', '')
-        team_req = discord_state.get('pending_team', '')
-        print(f"Discord change requested by @{user}: mode={mode_req or '(unchanged)'} team={team_req or '(unchanged)'}")
-        _apply_discord_change(discord_state, config)
-        overlay = _render_discord_overlay(discord_state, dark_mode=dark_mode)
-        from display_eink import display_image
-        display_image(overlay)
-        _mark_discord_applied()
 
     league_mode = (os.environ.get('LEAGUE_MODE', '').lower().strip()
                    or config.get('league_mode', 'mlb'))

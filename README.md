@@ -216,11 +216,6 @@ weather:
 auto_generate_video: false
 video_interval_min: 5
 video_frame_delay_ms: 300
-
-# ── Discord bot ───────────────────────────────────────────────
-discord_token: ""
-discord_guild_id: 0
-discord_channel_id: 0
 ```
 
 ---
@@ -332,38 +327,6 @@ WantedBy=multi-user.target
 
 ---
 
-## Discord Bot
-
-Control the display from a Discord channel using `!display` prefix commands.
-
-```
-!display mode scoreboard    — switch to 15-game scoreboard grid
-!display mode field         — switch to single-game field view
-!display mode scorecard     — switch to at-bat scorecard grid
-!display mode pitch         — switch to pitch location view
-
-!display team NYY           — change the primary team
-!display status             — show current mode, team, and uptime
-!display help               — show all commands
-```
-
-After each command the bot posts the current display image to the channel.
-
-### Setup
-
-1. Create a bot at [discord.com/developers](https://discord.com/developers/applications)
-2. Enable **Message Content Intent** under Bot → Privileged Gateway Intents
-3. Add the token and IDs to `config/config.yaml`
-4. Run alongside the display:
-
-```bash
-poetry run python src/discord_bot.py &
-```
-
-Changes are written to `data/discord_state.json`. On the next refresh cycle the display shows a brief announcement screen then switches mode.
-
----
-
 ## Project Structure
 
 ```
@@ -383,7 +346,6 @@ mlb_display/
 │   ├── pitch_view.py             # Pitch location renderer
 │   ├── game_detail_fetch.py      # MLB live feed API (pitch-by-pitch)
 │   ├── standings.py              # Standings fetcher + cache
-│   ├── discord_bot.py            # Discord control bot
 │   ├── config_server.py          # Mobile-first config web server
 │   ├── download_logos.py         # Bulk logo downloader (MLB + WBC)
 │   ├── display_eink.py           # Waveshare driver wrapper (macOS-safe)
@@ -397,7 +359,6 @@ mlb_display/
 │   ├── games.json                # Cached game state from last fetch
 │   ├── teams.json                # Team abbreviation cache
 │   ├── standings.json            # Standings cache (refreshed on Final)
-│   ├── discord_state.json        # Pending Discord mode changes
 │   └── schedule_state.json       # Next game date (smart polling)
 ├── docs/                         # README screenshots
 ├── pic/

@@ -141,13 +141,6 @@ auto_generate_video: false
 video_interval_min: 5
 video_frame_delay_ms: 300
 
-# Discord bot configuration
-# Get token from https://discord.com/developers/applications
-# Set channel_id to restrict commands to one channel (0 = any channel)
-discord_token: ""
-discord_guild_id: 0
-discord_channel_id: 0
-
 # team_emojis:
   # BOS: "💩"
   # LAD: "💰"
