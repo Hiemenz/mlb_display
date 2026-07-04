@@ -80,16 +80,8 @@ omit = [
     "src/display.py",
     "src/display_eink.py",
     "src/epd_7in5_V2_test.py",
-    "src/scoreboard_generate.py",
-    "src/generate_standings_image.py",   # unreferenced dead script, same category as scoreboard_generate.py
     "src/download_logos.py",
-    "src/extract_mlbam_walls.py",
-    "src/fetch_stadium_polygons.py",
-    "src/generate_stadium_svgs.py",
-    "src/generate_wall_polygons.py",
-    "src/discord_bot.py",                # not importable: `discord` isn't a project dependency
     "src/waveshare_epd/*",
-    "src/test_*.py",
 ]
 
 [tool.coverage.report]

@@ -6,8 +6,8 @@ Coordinate system (feet, home plate = origin):
   y positive → center field direction
 
 Wall polygons are loaded from data/mlbam_walls.json (detailed ~50-point shapes
-extracted from MLBAM's canonical stadium data via extract_mlbam_walls.py).
-Points are ordered left (LF foul pole) to right (RF foul pole).
+extracted from MLBAM's canonical stadium data). Points are ordered left
+(LF foul pole) to right (RF foul pole).
 
 Sutter Health Park (A's temporary Sacramento stadium) is not in the MLBAM
 dataset and uses a simple 5-point polygon from the MLB Stats API.
@@ -92,10 +92,9 @@ TEAM_NAMES = {
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatibility shim for callers that expect (dist, angle) pairs.
-# generate_stadium_svgs.py uses BALLPARK_DIMENSIONS in _warning_track() and
-# _distance_labels(). These callers derive angles from Cartesian — the angles
-# will be geometrically correct (not the old fixed 9-slot scheme).
+# Backward-compatibility shim for callers that expect (dist, angle) pairs,
+# derived from the Cartesian polygon data above — angles are geometrically
+# correct (not the old fixed 9-slot scheme).
 # ---------------------------------------------------------------------------
 def _cartesian_to_polar(pts):
     """Convert [(x_ft, y_ft)] to [(dist_ft, angle_deg)] for compat callers."""
