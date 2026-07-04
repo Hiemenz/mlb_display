@@ -553,7 +553,13 @@ Examples:
     image, changed_regions = result
 
     # 9. Send to display
-    refresh_mode = send_to_display(output_path, changed_regions)
+    # Morning alternating mode swaps the entire screen between last night's
+    # results and today's schedule every 5 minutes — a partial refresh can't
+    # fully clear the previous frame's residual charge across a change that
+    # large, causing visible ghosting/bleeding. Force a full (flashing)
+    # refresh on every render during this window instead.
+    _force_full = _morning_block is not None
+    refresh_mode = send_to_display(output_path, changed_regions, force_full=_force_full)
     print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
 
     print("\n✓ Display updated successfully!")
