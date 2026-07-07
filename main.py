@@ -558,7 +558,15 @@ Examples:
     # fully clear the previous frame's residual charge across a change that
     # large, causing visible ghosting/bleeding. Force a full (flashing)
     # refresh on every render during this window instead.
-    _force_full = _morning_block is not None
+    #
+    # Also force a full refresh whenever the scoreboard grid packing shifted
+    # a game to a different cell (e.g. another game going live repacked the
+    # wide-cell layout) — orchestrate_score_board flags this in
+    # force_full_refresh.json since a game whose own data is unchanged never
+    # gets a partial-refresh region, leaving its old cell showing a stale
+    # game behind.
+    _layout_changed = load_json_file('force_full_refresh.json').get('needed', False)
+    _force_full = _morning_block is not None or _layout_changed
     refresh_mode = send_to_display(output_path, changed_regions, force_full=_force_full)
     print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
 
