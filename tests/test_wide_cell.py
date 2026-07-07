@@ -602,10 +602,11 @@ def test_grid_15_games_wide_cell_always(white_image, team_data):
 
 @needs_pil
 def test_compute_grid_layout_two_wide_at_col0():
-    """Two in-progress games on a 13-game slate both land at col 0 (reordered)."""
+    """Two in-progress games on a 13-game slate both get wide tiles at col 0.
+    The first is pinned to row 0 (index 0, no favorite_team_first reorder
+    needed since it's already first); the second is pushed down to the
+    lowest row the zero-gap constraint allows rather than sharing row 0."""
     from image_grid import compute_grid_layout
-    # In-progress games at indices 0 and 3; reorder pushes the second to col 0
-    # of row 1 instead of leaving it stranded at col 4.
     games = _make_game_list(
         [('In Progress', 7, 'Top'),                       # 0
          ('Final', 9, 'End'), ('Final', 9, 'End'),         # 1, 2
@@ -616,21 +617,10 @@ def test_compute_grid_layout_two_wide_at_col0():
     wide_slots = [(gl.get('game_pk'), s) for gl, s in zip(game_list, slots)
                   if s[0] == 'wide']
     assert len(wide_slots) == 2
-    # Both wide tiles begin at column 0 so each can span rightward.
-    assert all(s[1] == 0 for _, s in wide_slots)
-
-
-def test_reorder_for_wide_stops_scanning_at_slot_cap():
-    """_reorder_for_wide's inner scan must stop once slot >= 15 even if more
-    games remain — the grid only has 15 slot units, so scanning further is
-    pointless. A single wide game at col 0 needs no swap; with 20 games the
-    scan should hit the slot>=15 guard before exhausting the list."""
-    from image_grid import _reorder_for_wide
-    game_list = [{'game_pk': i} for i in range(20)]
-    new_list, new_wide = _reorder_for_wide(game_list, {0})
-    # No conflict ever found (wide game already at col 0) so nothing changes.
-    assert new_wide == {0}
-    assert new_list == game_list
+    # Both wide tiles begin at col 0 (each leads its own row); the second one
+    # is pushed to the lowest row (row 2) rather than sharing row 0.
+    assert {s[1] for _, s in wide_slots} == {0}
+    assert {s[2] for _, s in wide_slots} == {0, 2}
 
 
 def test_compute_grid_layout_favorite_team_first_moves_game_to_front():
@@ -663,8 +653,9 @@ def test_compute_grid_layout_pushes_rainout_past_doubleheader():
 
 def test_compute_grid_layout_slot_building_stops_at_capacity():
     """With 16 games and one forced wide cell, the wide tile consumes 2 slot
-    units, so total slot demand (17) exceeds the 15-unit grid — the slot-
-    building loop must stop early instead of indexing past the grid."""
+    units, so total slot demand (17) exceeds the 15-unit grid — the packer
+    must stop placing games once 15 slot units are used rather than indexing
+    past the grid. The excluded game(s) simply aren't rendered."""
     from image_grid import compute_grid_layout
     games = _make_game_list(
         [('In Progress', 5, 'Top')] + [('Final', 9, 'End')] * 15
@@ -672,7 +663,7 @@ def test_compute_grid_layout_slot_building_stops_at_capacity():
     assert len(games) == 16
     config = {'wide_cell_always': True}
     game_list, slots = compute_grid_layout(games, {}, config)
-    assert len(slots) < len(game_list)
+    assert len(slots) == len(game_list) < 16
     assert any(s[0] == 'wide' for s in slots)
 
 

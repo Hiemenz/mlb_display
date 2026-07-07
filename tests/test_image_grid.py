@@ -6,7 +6,7 @@ This file covers the still-active helpers.
 """
 import pytest
 
-from image_grid import _free_grid_slot, compute_grid_layout, _find_wide_games, _reorder_for_wide, _move_non_live_to_fillers
+from image_grid import _free_grid_slot, compute_grid_layout, _find_wide_games, _move_non_live_to_fillers
 
 
 # ---------------------------------------------------------------------------
@@ -38,47 +38,6 @@ class TestFreeGridSlot:
         slots = [('normal', 0, 0), ('normal', 1, 0), ('normal', 2, 0),
                  ('wide', 3, 0)]   # occupies col 3 and 4
         assert _free_grid_slot(slots) == (0, 1)
-
-
-# ---------------------------------------------------------------------------
-# _reorder_for_wide
-# ---------------------------------------------------------------------------
-
-class TestReorderForWide:
-    def _games(self, n):
-        return [{'game_pk': i} for i in range(n)]
-
-    def test_no_wide_games_returns_unchanged(self):
-        games = self._games(5)
-        new_games, new_wide = _reorder_for_wide(games, set())
-        assert [g['game_pk'] for g in new_games] == list(range(5))
-        assert new_wide == set()
-
-    def test_wide_game_at_col4_swaps_with_next(self):
-        # 5 games → slots 0-4; game at index 4 would be col=4; swap with next
-        games = self._games(6)  # 6 games; game[4] lands at col=4, swap with game[5]
-        wide_set = {4}
-        new_games, new_wide = _reorder_for_wide(games, wide_set)
-        # game[4] and game[5] should have been swapped
-        assert new_games[4]['game_pk'] == 5
-        assert new_games[5]['game_pk'] == 4
-        assert 5 in new_wide
-
-    def test_wide_game_not_at_col4_unchanged(self):
-        games = self._games(5)
-        wide_set = {0}  # col=0 — no conflict
-        new_games, new_wide = _reorder_for_wide(games, wide_set)
-        assert [g['game_pk'] for g in new_games] == list(range(5))
-        assert new_wide == {0}
-
-    def test_conflict_with_another_wide_drops_the_conflicting_game(self):
-        # Two consecutive wide games starting at col=3 (wide at 3, wide at 5?)
-        # Actually: index 4 is col=4. If the next game is also wide, can't swap → drop.
-        games = self._games(6)
-        wide_set = {4, 5}
-        new_games, new_wide = _reorder_for_wide(games, wide_set)
-        # The one at col=4 should have been dropped from wide_set
-        assert len(new_wide) <= 1
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +192,12 @@ class TestMoveNonLiveToFillers:
     def _g(self, pk, state='Scheduled'):
         return {'game_pk': pk, 'detailed_state': state}
 
+    # positions parallel to a 5-game row0 wide/wide/filler + row1 layout
+    _ROW0_WIDE_WIDE_FILLER = [
+        ('wide', 0, 0), ('wide', 2, 0), ('normal', 4, 0),
+        ('normal', 0, 1), ('normal', 1, 1),
+    ]
+
     def test_live_in_only_filler_slot_gets_swapped(self):
         # Two wide games at indices 0,1 leave a filler at index 2 (col=4, row=0).
         # If index 2 is live it should be swapped with a non-live game from row 1+.
@@ -243,7 +208,7 @@ class TestMoveNonLiveToFillers:
             self._g(3, self._SCHED),  # row 1, col 0 — candidate for swap
             self._g(4, self._SCHED),
         ]
-        result = _move_non_live_to_fillers(games, {0, 1})
+        result = _move_non_live_to_fillers(games, self._ROW0_WIDE_WIDE_FILLER)
         filler_game = result[2]
         assert filler_game['detailed_state'] != self._LIVE
 
@@ -257,12 +222,13 @@ class TestMoveNonLiveToFillers:
             self._g(4, self._SCHED),
         ]
         original = [g['game_pk'] for g in games]
-        result = _move_non_live_to_fillers(games, {0, 1})
+        result = _move_non_live_to_fillers(games, self._ROW0_WIDE_WIDE_FILLER)
         assert [g['game_pk'] for g in result] == original
 
     def test_no_wide_games_no_change(self):
         games = [self._g(i, self._SCHED) for i in range(5)]
-        result = _move_non_live_to_fillers(games, set())
+        positions = [('normal', i, 0) for i in range(5)]
+        result = _move_non_live_to_fillers(games, positions)
         assert [g['game_pk'] for g in result] == list(range(5))
 
     def test_all_games_preserved(self):
@@ -274,7 +240,7 @@ class TestMoveNonLiveToFillers:
             self._g(3, self._SCHED),
             self._g(4, self._DONE),
         ]
-        result = _move_non_live_to_fillers(games, {0, 1})
+        result = _move_non_live_to_fillers(games, self._ROW0_WIDE_WIDE_FILLER)
         assert {g['game_pk'] for g in result} == {0, 1, 2, 3, 4}
 
     def test_index_zero_never_displaced_to_filler(self):
@@ -287,5 +253,9 @@ class TestMoveNonLiveToFillers:
             self._g(3, self._LIVE),   # filler at col=4 — needs a non-live swap
             # No other non-live games available except index 0
         ]
-        result = _move_non_live_to_fillers(games, {1, 2})
+        # index 0 sits outside the wide row (row 1); row 0 is wide/wide/filler.
+        positions = [
+            ('normal', 0, 1), ('wide', 0, 0), ('wide', 2, 0), ('normal', 4, 0),
+        ]
+        result = _move_non_live_to_fillers(games, positions)
         assert result[0]['game_pk'] == 0  # featured game stays first

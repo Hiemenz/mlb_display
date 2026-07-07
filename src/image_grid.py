@@ -1,4 +1,5 @@
 import os
+from collections import deque
 # import socket  # disabled with QR code feature
 
 # import qrcode  # disabled — not supported on this Pi build
@@ -32,9 +33,9 @@ def _find_wide_games(game_list, config, team_data):
     farthest along. Like wide_cell_always, this shows a wide cell even with 15+
     games — but the choice prefers the featured team over raw game progress.
 
-    Geometry fix-up (col=4 conflicts) is handled separately by _reorder_for_wide,
-    which swaps in-progress games with adjacent normal games so they land at a
-    valid column. This function selects purely by priority.
+    Geometry fix-up (col=4 conflicts) is handled separately in
+    compute_grid_layout's slot builder, which skips a wide game to the next
+    row rather than dropping it. This function selects purely by priority.
 
     A game under review ('Player challenge'/'Manager challenge') is still live —
     it is treated as in-progress so it keeps its wide tile instead of collapsing
@@ -92,50 +93,125 @@ def _find_wide_games(game_list, config, team_data):
     return set()
 
 
-def _reorder_for_wide(game_list, wide_set):
-    """Reorder game_list so every game in wide_set can actually render wide.
+def _pack_grid(game_list, wide_set):
+    """Pack games into 5-unit-wide rows, filling every row completely (no
+    blank gap columns) while pushing wide (2-cell) tiles into the lowest
+    rows the zero-gap constraint allows.
 
-    A wide cell must start at col 0-3 (can't span from col 4 into col 5).
-    When a wide game lands at col 4, swap it with the normal game immediately
-    after it; the wide game shifts to col 0 of the next row and can span right.
-    If the next game is also wide (can't swap), drop the conflicting wide game.
+    Index 0 (the favorite team's game when favorite_team_first is set) is
+    always placed first, in row 0 col 0 — it must stay the most prominent
+    tile regardless of wide-cell placement.
 
-    Returns (new_game_list, new_wide_set).
+    Everything else is allocated row-by-row from the BOTTOM of the grid
+    upward: the last row is filled first (as many wide tiles as fit, 2 units
+    each, then normal games as filler), then the row above it, and so on,
+    ending with whatever capacity is left in row 0 after the pinned game.
+    Filling bottom-up like this means a row only takes fewer wide tiles than
+    it could when there simply aren't enough left — the densest wide rows
+    always end up lowest. Within each row, later-queued wide/normal games
+    are preferred for lower rows so original relative order still reads
+    top-to-bottom.
+
+    Only the very last row may end up short (fewer than 5 units) since
+    there's nothing left to place there — that's a normal grid edge, not a
+    gap. If there are more games than the 15-slot grid can hold, this falls
+    back to simple front-to-back packing for the overflow, since some games
+    won't be shown regardless of arrangement.
+
+    Returns (new_game_list, positions) where positions is a list of
+    (slot_type, grid_col, grid_row) parallel to new_game_list.
     """
-    game_list = list(game_list)
-    wide_set = set(wide_set)
+    if not game_list:
+        return [], []
 
-    for _ in range(len(wide_set) + 1):  # converges in at most one pass per wide game
-        slot = 0
-        conflict = None
-        for gi in range(len(game_list)):
-            if slot >= 15:
-                break
-            col = slot % 5
-            if gi in wide_set:
-                if col >= 4:
-                    conflict = gi
-                    break
-                slot += 2
+    pinned_wide = 0 in wide_set
+    pinned_cost = 2 if pinned_wide else 1
+
+    rest = range(1, len(game_list))
+    wide_queue = [i for i in rest if i in wide_set]
+    normal_queue = [i for i in rest if i not in wide_set]
+
+    remaining_capacity = 15 - pinned_cost
+    total_wanted = 2 * len(wide_queue) + len(normal_queue)
+
+    new_order = [0]
+    positions = [('wide', 0, 0) if pinned_wide else ('normal', 0, 0)]
+
+    if total_wanted > remaining_capacity:
+        # More games than the grid can hold — no reordering can fit them
+        # all, so just pack front-to-back (wide-first) up to the cap.
+        slot_idx = pinned_cost
+        wi = ni = 0
+        while slot_idx < 15 and (wi < len(wide_queue) or ni < len(normal_queue)):
+            col = slot_idx % 5
+            row = slot_idx // 5
+            cap_left = 5 - col
+            if wi < len(wide_queue) and cap_left >= 2:
+                new_order.append(wide_queue[wi])
+                positions.append(('wide', col, row))
+                wi += 1
+                slot_idx += 2
+            elif ni < len(normal_queue):
+                new_order.append(normal_queue[ni])
+                positions.append(('normal', col, row))
+                ni += 1
+                slot_idx += 1
+            elif wi < len(wide_queue) and cap_left == 1:
+                slot_idx += cap_left
             else:
-                slot += 1
+                break
+        return [game_list[i] for i in new_order], positions
 
-        if conflict is None:
-            break
+    # No overflow: split the remaining capacity into row-sized buckets —
+    # row 0's leftover space after the pin, then full 5-unit rows, ending
+    # with whatever's left over (the trailing row, possibly short).
+    row_caps = [5 - pinned_cost]
+    left = total_wanted - row_caps[0]
+    while left > 5:
+        row_caps.append(5)
+        left -= 5
+    if left > 0 or len(row_caps) == 1:
+        row_caps.append(left)
 
-        b = conflict
-        next_b = b + 1
-        if next_b < len(game_list) and next_b not in wide_set:
-            game_list[b], game_list[next_b] = game_list[next_b], game_list[b]
-            wide_set.discard(b)
-            wide_set.add(next_b)
-        else:
-            wide_set.discard(b)
+    # Fill buckets from the last (bottom) to the first (row 0's leftover),
+    # taking wide games first (2 units each) then normal as filler. Pop from
+    # the end of each queue so later-queued games land in lower rows,
+    # keeping original relative order reading top-to-bottom overall.
+    wide_dq = deque(wide_queue)
+    normal_dq = deque(normal_queue)
+    bucket_tokens = [None] * len(row_caps)
+    for bi in range(len(row_caps) - 1, -1, -1):
+        cap = row_caps[bi]
+        wide_tokens = []
+        normal_tokens = []
+        while cap >= 2 and wide_dq:
+            wide_tokens.append(('wide', wide_dq.pop()))
+            cap -= 2
+        while cap >= 1 and normal_dq:
+            normal_tokens.append(('normal', normal_dq.pop()))
+            cap -= 1
+        # Each pop() took the highest-index (latest) remaining game for this
+        # row; reverse each group back to ascending order, wide tiles first
+        # (leading columns) so they read left-to-right like a normal row.
+        wide_tokens.reverse()
+        normal_tokens.reverse()
+        bucket_tokens[bi] = wide_tokens + normal_tokens
 
-    return game_list, wide_set
+    slot_idx = pinned_cost
+    for tokens in bucket_tokens:
+        row = slot_idx // 5
+        col = slot_idx % 5
+        for slot_type, gi in tokens:
+            new_order.append(gi)
+            positions.append((slot_type, col, row))
+            step = 2 if slot_type == 'wide' else 1
+            col += step
+            slot_idx += step
+
+    return [game_list[i] for i in new_order], positions
 
 
-def _move_non_live_to_fillers(game_list, wide_set):
+def _move_non_live_to_fillers(game_list, positions):
     """Swap live games out of filler slots in wide rows.
 
     Every row that contains a wide (2-cell) tile must also have at least one
@@ -144,27 +220,17 @@ def _move_non_live_to_fillers(game_list, wide_set):
     game wasted in a narrow filler cell is better placed as a normal single
     cell in a non-wide row.
 
+    ``positions`` is the (slot_type, col, row) list already computed for
+    ``game_list`` (by _pack_grid) — swapping two games that both sit in
+    'normal' slots never changes the geometry, so this can reshuffle
+    game_list in place without needing to recompute positions afterward.
+
     Scans the visible 15-slot boundary for live games sitting in filler slots
     (normal cells whose row contains at least one wide tile) and swaps each
     with the last non-live normal game from a non-wide row, perturbing the
     ordering as little as possible.  Returns the updated game_list.
     """
     game_list = list(game_list)
-
-    # Simulate slot positions for every game within the 15-unit boundary.
-    positions = []
-    slot_idx = 0
-    for gi in range(len(game_list)):
-        if slot_idx >= 15:
-            break
-        col = slot_idx % 5
-        row = slot_idx // 5
-        if gi in wide_set and col < 4:
-            positions.append(('wide', col, row))
-            slot_idx += 2
-        else:
-            positions.append(('normal', col, row))
-            slot_idx += 1
 
     wide_rows = {pos[2] for pos in positions if pos[0] == 'wide'}
     if not wide_rows:
@@ -233,34 +299,16 @@ def compute_grid_layout(game_state_data, team_data, config):
             game_list.remove(_ppd_g)
             game_list.append(_ppd_g)
 
-    # Determine which games show as wide (2-cell) tiles, then reorder so any
-    # wide game that would land at col=4 swaps with the normal game after it.
-    # Finally, move non-live games into the filler single-cell slots that exist
-    # in every wide row (e.g. 2-wide + 1-filler = 5 cols) so a live game never
-    # sits in a filler slot when a finished or not-yet-started game can take it.
+    # Determine which games show as wide (2-cell) tiles, then pack the grid
+    # row by row so normal games fill in around them with zero gaps (see
+    # _pack_grid). Finally, move non-live games into the filler single-cell
+    # slots that exist in every wide row (e.g. 2-wide + 1-filler = 5 cols) so
+    # a live game never sits in a filler slot when a finished or
+    # not-yet-started game can take it instead.
     _wide_set = _find_wide_games(game_list, config, team_data)
     if _wide_set:
-        game_list, _wide_set = _reorder_for_wide(game_list, _wide_set)
-        game_list = _move_non_live_to_fillers(game_list, _wide_set)
-
-    # Build an ordered list of (slot_type, grid_col, grid_row).
-    # Each wide game consumes 2 horizontal slot units; normal games consume 1.
-    # Wide games on the last column (col 4) fall back to normal (can't span right).
-    # Stop adding slots once the 5×3 grid is full (15 slot units).
-    if _wide_set:
-        _slots = []
-        _slot_idx = 0
-        for _gi in range(len(game_list)):
-            if _slot_idx >= 15:
-                break
-            _row = _slot_idx // 5
-            _col = _slot_idx % 5
-            if _gi in _wide_set and _col < 4:
-                _slots.append(('wide', _col, _row))
-                _slot_idx += 2
-            else:
-                _slots.append(('normal', _col, _row))
-                _slot_idx += 1
+        game_list, _slots = _pack_grid(game_list, _wide_set)
+        game_list = _move_non_live_to_fillers(game_list, _slots)
     else:
         _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
 
