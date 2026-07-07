@@ -465,8 +465,9 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 nxt_wl = (int(nxt.get('league_record_wins') or 0),  int(nxt.get('league_record_losses') or 0))
                 if cur_wl == nxt_wl:
                     # Center the 2px-tall dash strip in the gap between logos.
-                    # (slot_h - logo_size - 2) // 2 leaves equal empty rows above and below.
-                    gap_y = logo_y + _SIDEBAR_LOGO_SIZE + (slot_h - _SIDEBAR_LOGO_SIZE - 2) // 2
+                    # (slot_h - logo_size - 2) // 2 leaves equal empty rows above and below;
+                    # shifted up 1px from center.
+                    gap_y = logo_y + _SIDEBAR_LOGO_SIZE + (slot_h - _SIDEBAR_LOGO_SIZE - 2) // 2 - 1
                     dash_w, gap_w = 4, 2
                     total_dash_w = 3 * dash_w + 2 * gap_w
                     dash_start = 3 if side == 'left' else 800 - total_dash_w - 3
