@@ -470,7 +470,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                     gap_y = logo_y + _SIDEBAR_LOGO_SIZE + (slot_h - _SIDEBAR_LOGO_SIZE - 2) // 2 - 1
                     dash_w, gap_w = 4, 2
                     total_dash_w = 3 * dash_w + 2 * gap_w
-                    dash_start = 3 if side == 'left' else 800 - total_dash_w - 3
+                    dash_start = 4 if side == 'left' else 800 - total_dash_w - 4
                     for d in range(3):
                         x0 = dash_start + d * (dash_w + gap_w)
                         draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)
