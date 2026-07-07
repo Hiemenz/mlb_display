@@ -886,3 +886,141 @@ def test_playoff_bracket_header_drawn_when_bracket_data_present():
 
     mock_bracket.assert_called_once()
     assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# force_full_refresh.json — a game shifting cells due to a repack (even with
+# its own data unchanged) must be flagged so main.py forces a true full
+# refresh instead of a partial one, since partial refresh never touches a
+# cell whose occupant's own data didn't change.
+# ---------------------------------------------------------------------------
+
+def _force_full_flag(mock_save):
+    """Pull the {'needed': bool} dict saved under 'force_full_refresh' out of
+    a mocked generate_image.save_off_results call list."""
+    for call in mock_save.call_args_list:
+        args = call.args
+        if len(args) >= 2 and args[1] == 'force_full_refresh':
+            return args[0]['needed']
+    raise AssertionError("save_off_results was never called with 'force_full_refresh'")
+
+
+@needs_pil
+def test_layout_reshuffle_forces_full_refresh_flag():
+    """game3's own data is identical between old and new, but game2 going
+    live repacks the grid (adds a wide tile) and pushes game3 from col 2 to
+    col 3. Partial refresh would never touch game3's old cell (col 2, not in
+    refreshed_game_ids), leaving the previous occupant's pixels stranded
+    there — so this must flag force_full_refresh.json as needed."""
+    import generate_image
+    import image_box
+
+    old_games = [
+        _base_game(game_pk=1),
+        _base_game(game_pk=2),
+        _base_game(game_pk=3),
+    ]
+    # Previously persisted layout for the 3-normal-game arrangement above:
+    # simple left-to-right, no wide games, no reordering.
+    old_positions = {
+        '1': ['normal', 0, 0],
+        '2': ['normal', 1, 0],
+        '3': ['normal', 2, 0],
+    }
+    new_games = [
+        _base_game(game_pk=1),
+        _live_game(game_pk=2),
+        _base_game(game_pk=3),
+    ]
+
+    mock_save = MagicMock()
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({
+                   'old_scoreboard_state.json': old_games,
+                   'old_grid_positions.json': old_positions,
+               })), \
+         patch('generate_image.save_off_results', mock_save), \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            result = generate_image.orchestrate_score_board(
+                new_games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=FIXED_CONFIG,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    assert result is not None
+    assert _force_full_flag(mock_save) is True
+
+
+@needs_pil
+def test_unchanged_layout_does_not_force_full_refresh_flag():
+    """A score change alone (no live-state shift, no repack) must not flag
+    force_full_refresh.json — the grid arrangement is identical to last
+    render, so ordinary partial refresh is safe."""
+    import generate_image
+    import image_box
+
+    old_games = [
+        _base_game(game_pk=1, away_runs=1),
+        _base_game(game_pk=2),
+        _base_game(game_pk=3),
+    ]
+    old_positions = {
+        '1': ['normal', 0, 0],
+        '2': ['normal', 1, 0],
+        '3': ['normal', 2, 0],
+    }
+    new_games = [
+        _base_game(game_pk=1, away_runs=9),
+        _base_game(game_pk=2),
+        _base_game(game_pk=3),
+    ]
+
+    mock_save = MagicMock()
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({
+                   'old_scoreboard_state.json': old_games,
+                   'old_grid_positions.json': old_positions,
+               })), \
+         patch('generate_image.save_off_results', mock_save), \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            result = generate_image.orchestrate_score_board(
+                new_games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=FIXED_CONFIG,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    assert result is not None
+    assert _force_full_flag(mock_save) is False
+
+
+@needs_pil
+def test_bypass_cache_skips_force_full_refresh_bookkeeping():
+    """bypass_cache=True (timelapse/GIF generation) must never write
+    force_full_refresh.json or old_grid_positions.json — those files drive
+    the live display pipeline only."""
+    import generate_image
+    import image_box
+
+    mock_save = MagicMock()
+    with patch('generate_image.load_json_file', return_value={}), \
+         patch('generate_image.save_off_results', mock_save), \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            generate_image.orchestrate_score_board(
+                [_base_game(game_pk=1)], TEAM_DATA, date_str='2026-06-20',
+                bypass_cache=True, config=FIXED_CONFIG,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    saved_files = {call.args[1] for call in mock_save.call_args_list if len(call.args) >= 2}
+    assert 'force_full_refresh' not in saved_files
+    assert 'old_grid_positions' not in saved_files

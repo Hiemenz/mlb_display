@@ -300,4 +300,24 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     if len(changed_regions) >= 10:
         changed_regions = [(0, 0, 800, 480)]
 
+    # A game can shift to a different cell purely because another game's live
+    # state changed the grid packing (see _pack_grid in image_grid.py) — its
+    # own data is identical, so it's never in refreshed_game_ids and its old
+    # cell never gets marked for partial refresh. Partial refresh only
+    # touches the regions we hand it, so that old cell keeps showing the
+    # stale game underneath (ghosting) until something else happens to touch
+    # it. Detect any such reshuffle and signal main.py to force a true full
+    # (flashing) refresh instead, which repaints the entire screen.
+    layout_changed = False
+    if not bypass_cache:
+        new_positions = {
+            str(game.get('game_pk', '')): list(slot_info)
+            for game, slot_info in zip(_ordered, _slots)
+            if game.get('game_pk', '')
+        }
+        old_positions = load_json_file('old_grid_positions.json') or {}
+        layout_changed = new_positions != old_positions
+        save_off_results(new_positions, 'old_grid_positions')
+        save_off_results({'needed': layout_changed}, 'force_full_refresh')
+
     return (Himage, changed_regions)
