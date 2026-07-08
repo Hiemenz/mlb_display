@@ -356,7 +356,7 @@ def _free_grid_slot(slots):
 #     return Himage
 
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False):
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None):
 
     draw = ImageDraw.Draw(Himage)
     config = load_yaml_file('config.yaml')
@@ -400,7 +400,17 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     x_start = 32
     y_start = 30
 
-    game_list, _slots = compute_grid_layout(game_state_data, team_data, config)
+    # Accept a precomputed (game_list, slots) so callers that also need the
+    # layout for partial-refresh region math (generate_image.py) can compute
+    # it once and share it — two independent calls to compute_grid_layout
+    # (even with "the same" inputs) can silently diverge if config.yaml is
+    # edited mid-render (e.g. via the phone config server), since this
+    # function reloads config from disk itself while a caller-supplied
+    # layout was computed from whatever config snapshot it already had.
+    if layout is not None:
+        game_list, _slots = layout
+    else:
+        game_list, _slots = compute_grid_layout(game_state_data, team_data, config)
 
     # Build per-team stats lookup {str(team_id): {'streak', 'l10_wins', 'l10_losses', 'wins', 'losses'}}
     _standings = load_json_file('standings.json')
