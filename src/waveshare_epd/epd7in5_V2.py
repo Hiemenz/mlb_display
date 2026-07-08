@@ -263,7 +263,7 @@ class EPD:
         self.send_data ((Yend-1)%256)  #y-end
         self.send_data (0x01)
 
-        image1 = [0xFF] * int(self.width * self.height / 8)
+        image1 = [0xFF] * (Width * Height)
         for j in range(Height):
                 for i in range(Width):
                     image1[i + j * Width] = ~Image[i + j * Width]
