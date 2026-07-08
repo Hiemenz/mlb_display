@@ -252,7 +252,14 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     # --- Normal scoreboard grid ---
     Himage = Image.new('1', (800, 480), 255)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
+    # Compute the grid layout once and share it with both the renderer and the
+    # partial-refresh region/reshuffle-detection math below — two independent
+    # compute_grid_layout() calls can silently diverge (e.g. config.yaml
+    # edited mid-render by the phone config server), leaving stale/blank
+    # cells behind since the refresh regions would no longer match what was
+    # actually drawn.
+    _ordered, _slots = compute_grid_layout(game_state_data, team_data, config)
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots))
 
     standings_data = None
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
@@ -276,12 +283,12 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 
     # --- Compute changed regions from changed_game_ids ---
-    # Use the exact same layout draw_out_of_town_score_board used, so wide
-    # (2-cell) games — which consume two slot units and may be reordered —
-    # get a region that covers the whole tile rather than only its left half.
+    # Reuses the exact _ordered/_slots draw_out_of_town_score_board was given
+    # above, so wide (2-cell) games — which consume two slot units and may be
+    # reordered — get a region that covers the whole tile rather than only
+    # its left half.
     x_start = 32
     y_start = 30
-    _ordered, _slots = compute_grid_layout(game_state_data, team_data, config)
     changed_regions = []
     for game, slot_info in zip(_ordered, _slots):
         slot_type, gx, gy = slot_info

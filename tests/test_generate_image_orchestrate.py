@@ -506,6 +506,55 @@ def test_changed_region_for_normal_game_is_single_cell_width():
 
 
 @needs_pil
+def test_compute_grid_layout_called_once_per_render():
+    """orchestrate_score_board must compute the grid layout exactly once and
+    share it with draw_out_of_town_score_board, not call compute_grid_layout
+    independently in each place.
+
+    Previously each call recomputed its own layout. Both calls take the same
+    game_state_data/team_data, but draw_out_of_town_score_board reloads
+    config.yaml from disk itself rather than using the config
+    orchestrate_score_board was given — so if config.yaml is edited mid-render
+    (e.g. by the phone config server) between the two calls, they can use
+    different config snapshots and silently disagree on layout (e.g. whether
+    a live game is a wide tile), desyncing the drawn image from the
+    partial-refresh regions/reshuffle-detection math and leaving a stale or
+    blank cell on the physical display. Sharing one computed layout closes
+    that gap structurally instead of relying on both calls happening to
+    agree."""
+    import generate_image
+    import image_box
+    import image_grid
+
+    games = [_base_game(game_pk=1)]
+
+    real_compute = image_grid.compute_grid_layout
+    calls = []
+
+    def _spy(*args, **kwargs):
+        calls.append(1)
+        return real_compute(*args, **kwargs)
+
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({'old_scoreboard_state.json': []})), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.compute_grid_layout', side_effect=_spy), \
+         patch('image_grid.compute_grid_layout', side_effect=_spy), \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            result = generate_image.orchestrate_score_board(
+                games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=FIXED_CONFIG,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    assert result is not None
+    assert len(calls) == 1
+
+
+@needs_pil
 def test_config_none_loads_real_yaml_mocked():
     """config=None triggers load_yaml_file('config.yaml') — mocked so the
     real config/config.yaml (use_team_logos: True) never leaks in."""
