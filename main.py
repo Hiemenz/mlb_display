@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
+from fetch_leaders import fetch_leaders
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
@@ -542,7 +543,30 @@ Examples:
         except Exception as e:
             print(f"Warning: playoff bracket fetch failed: {e}")
 
-    # 8. Render
+    # 7d. Season leaders refresh (HR/AVG/ERA — cached 20h, only when panel is enabled)
+    if config.get('show_leaders_panel', False) and league_mode != 'aaa':
+        try:
+            _leaders_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
+            fetch_leaders(sport_id=_leaders_sport)
+        except Exception as e:
+            print(f"Warning: leaders fetch failed: {e}")
+
+    # 8. Auto dark/light mode: derive from time-of-day (night window = dark).
+    # Detect day↔night transitions and force a full e-ink refresh to prevent
+    # ghosting from residual charge when the polarity of the entire image flips.
+    # If night_mode is disabled entirely, always use light mode.
+    _is_dark = _in_night_window(config) if config.get('night_mode', True) else False
+    config['dark_mode'] = _is_dark
+    _dark_transitioned = False
+    if not _no_throttle and not args.date:
+        _last_dark = sched.get('last_dark_mode')
+        if _last_dark is not None and _last_dark != _is_dark:
+            print(f"Dark mode transition: {'light→dark' if _is_dark else 'dark→light'} — forcing full refresh")
+            _dark_transitioned = True
+        sched['last_dark_mode'] = _is_dark
+        _save_schedule_state(sched)
+
+    # 9. Render
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
     result = render(config, date_str=date_str, output_path=output_path, bypass_cache=_no_throttle)
 
@@ -566,7 +590,7 @@ Examples:
     # gets a partial-refresh region, leaving its old cell showing a stale
     # game behind.
     _layout_changed = load_json_file('force_full_refresh.json').get('needed', False)
-    _force_full = _morning_block is not None or _layout_changed
+    _force_full = _morning_block is not None or _layout_changed or _dark_transitioned
     refresh_mode = send_to_display(output_path, changed_regions, force_full=_force_full)
     print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
 

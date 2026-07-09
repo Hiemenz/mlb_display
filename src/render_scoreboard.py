@@ -49,6 +49,7 @@ def _render_single_game_mode(mode, game_state_data, team_data, config, output_pa
         print("No game_pk found")
         return None
 
+    # dark_mode is injected by main.py (auto day/night); fall back to False for standalone CLI use.
     dark_mode = config.get('dark_mode', False)
 
     away_id = str(game.get('away_team_id', ''))

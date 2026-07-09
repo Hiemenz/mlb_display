@@ -2,7 +2,7 @@ import os
 import json
 import random
 import time as _time_mod
-from datetime import datetime
+from datetime import datetime, timezone
 import pytz
 from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
@@ -50,6 +50,135 @@ def compare_json_dicts_sorted(dict1, dict2):
 def load_and_sort_json(json_string):
     """Load JSON data from a string and sort it."""
     return json.loads(json_string, object_pairs_hook=OrderedDict)
+
+
+def _get_system_uptime():
+    """Return system uptime string ('Xh Ym') or '' if unavailable."""
+    try:
+        with open('/proc/uptime') as f:
+            secs = float(f.read().split()[0])
+        h = int(secs // 3600)
+        m = int((secs % 3600) // 60)
+        return f"{h}h {m}m"
+    except Exception:
+        return ''
+
+
+_DEBUG_STALE_HOURS = 2  # fetch age threshold before overlay turns inverted/alarmed
+
+
+def _fetch_skip_is_expected(config, sched):
+    """Return True when a long gap since the last fetch is normal and expected.
+
+    Two cases suppress the stale alarm:
+    - Night mode is enabled and we are currently inside the night window, so
+      fetching is intentionally paused.
+    - Smart polling determined there are no games until a future date, so
+      the display is legitimately sitting out until then.
+    """
+    # Night window check
+    if config.get('night_mode', False):
+        try:
+            night_start = config.get('night_start', 0)
+            night_end = config.get('night_end', 7)
+            tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
+            hour = datetime.now(tz).hour
+            in_night = (
+                hour >= night_start or hour < night_end
+                if night_start >= night_end
+                else night_start <= hour < night_end
+            )
+            if in_night:
+                return True
+        except Exception:
+            pass
+
+    # Off-day / between-season skip
+    next_game_date = sched.get('next_game_date')
+    if next_game_date:
+        try:
+            today = datetime.now(timezone.utc).date().isoformat()
+            if next_game_date > today:
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
+def _draw_debug_overlay(Himage, config):
+    """Draw uptime + last-fetch timestamp in the bottom-right corner.
+
+    Normal: white box, black text — "up 4h 12m  fetch 9:47pm"
+    Stale (>2h since last fetch, and a fetch was actually expected):
+      inverted black box, white text with elapsed age instead of clock time —
+      "up 4h 12m  stale 3h 5m" — so it's impossible to miss.
+
+    The alarm is suppressed during the night-mode window and on off-days
+    (when smart polling has determined there are no games) to avoid false
+    positives when long fetch gaps are intentional.
+    """
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9)
+
+    uptime = _get_system_uptime()
+    sched = load_json_file('schedule_state.json')
+    last_fetch_iso = sched.get('last_game_fetch', '')
+
+    fetch_age_hours = None
+    last_fetch_str = ''
+    if last_fetch_iso:
+        try:
+            dt = datetime.fromisoformat(last_fetch_iso)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            fetch_age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+        except Exception:
+            pass
+
+        if fetch_age_hours is not None and fetch_age_hours >= _DEBUG_STALE_HOURS:
+            h = int(fetch_age_hours)
+            m = int((fetch_age_hours % 1) * 60)
+            last_fetch_str = f"stale {h}h {m}m"
+        else:
+            try:
+                tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
+                dt = datetime.fromisoformat(last_fetch_iso)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc).astimezone(tz)
+                last_fetch_str = dt.strftime('%-I:%M%p').lower()
+            except Exception:
+                last_fetch_str = last_fetch_iso[11:16]
+
+    stale = (
+        fetch_age_hours is not None
+        and fetch_age_hours >= _DEBUG_STALE_HOURS
+        and not _fetch_skip_is_expected(config, sched)
+    )
+
+    parts = []
+    if uptime:
+        parts.append(f"up {uptime}")
+    if last_fetch_str:
+        parts.append(last_fetch_str)
+    text = '  '.join(parts)
+    if not text:
+        return Himage
+
+    W, H = Himage.size
+    tw = int(font.getlength(text))
+    x = W - tw - 4
+    y = H - 12
+
+    if stale:
+        # Inverted box: black background, white text — hard to miss
+        draw.rectangle([x - 2, y - 2, x + tw + 2, y + 11], fill=0)
+        draw.text((x, y), text, font=font, fill=255)
+    else:
+        draw.rectangle([x - 1, y - 1, x + tw + 1, y + 11], fill=255)
+        draw.text((x, y), text, font=font, fill=0)
+
+    return Himage
 
 
 def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_cache=False, config=None):
@@ -278,6 +407,9 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         if standings_data and 'standings' in standings_data:
             Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode)
             Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode)
+
+    if config.get('show_debug_overlay', False):
+        Himage = _draw_debug_overlay(Himage, config)
 
     if config.get('dark_mode', False):
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')

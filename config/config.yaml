@@ -62,9 +62,9 @@ morning_end: 9          # weekday cutoff (Mon–Fri)
 morning_end_weekend: 11 # weekend cutoff (Sat–Sun)
 
 
-# Team emoji overrides: display emoji instead of logo for these teams
-# Dark mode: invert display (white on black instead of black on white)
-dark_mode: true
+# Auto dark/light mode: display is dark (inverted) during the night window
+# (night_start → night_end) and light during the day. No manual dark_mode toggle needed.
+# A full e-ink refresh is forced on the day↔night transition to prevent ghosting.
 
 # Team logos: display PNG logos instead of 3-letter abbreviations
 # Requires logo files in pic/logos/{ABBR}.png — run src/download_logos.py to fetch them
@@ -117,6 +117,16 @@ wide_cell_always: false
 # not live, the tile falls back to the in-progress game farthest along. Like
 # wide_cell_always, this shows a wide cell even with 15+ games on the slate.
 wide_cell_featured: false
+
+# Season leaders panel: show HR / AVG / ERA leaders in an empty grid cell when
+# fewer than 15 games are on the slate. Rotates categories every 5 minutes.
+# Refreshed once per day from the MLB Stats API.
+show_leaders_panel: true
+leaders_rotation_minutes: 5
+
+# Debug overlay: show system uptime and last successful game-data fetch time
+# in the bottom-right corner. Useful when the Pi loses network connectivity.
+show_debug_overlay: true
 
 # Config QR code: when there are fewer than 15 games (so the grid has a spare
 # cell), show a QR code linking to the local config web server
