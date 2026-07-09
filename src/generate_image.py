@@ -67,12 +67,56 @@ def _get_system_uptime():
 _DEBUG_STALE_HOURS = 2  # fetch age threshold before overlay turns inverted/alarmed
 
 
+def _fetch_skip_is_expected(config, sched):
+    """Return True when a long gap since the last fetch is normal and expected.
+
+    Two cases suppress the stale alarm:
+    - Night mode is enabled and we are currently inside the night window, so
+      fetching is intentionally paused.
+    - Smart polling determined there are no games until a future date, so
+      the display is legitimately sitting out until then.
+    """
+    # Night window check
+    if config.get('night_mode', False):
+        try:
+            night_start = config.get('night_start', 0)
+            night_end = config.get('night_end', 7)
+            tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
+            hour = datetime.now(tz).hour
+            in_night = (
+                hour >= night_start or hour < night_end
+                if night_start >= night_end
+                else night_start <= hour < night_end
+            )
+            if in_night:
+                return True
+        except Exception:
+            pass
+
+    # Off-day / between-season skip
+    next_game_date = sched.get('next_game_date')
+    if next_game_date:
+        try:
+            today = datetime.now(timezone.utc).date().isoformat()
+            if next_game_date > today:
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
 def _draw_debug_overlay(Himage, config):
     """Draw uptime + last-fetch timestamp in the bottom-right corner.
 
     Normal: white box, black text — "up 4h 12m  fetch 9:47pm"
-    Stale (>2h since last fetch): inverted black box, white text with elapsed age
-    instead of clock time — "up 4h 12m  stale 3h 5m" — so it's impossible to miss.
+    Stale (>2h since last fetch, and a fetch was actually expected):
+      inverted black box, white text with elapsed age instead of clock time —
+      "up 4h 12m  stale 3h 5m" — so it's impossible to miss.
+
+    The alarm is suppressed during the night-mode window and on off-days
+    (when smart polling has determined there are no games) to avoid false
+    positives when long fetch gaps are intentional.
     """
     draw = ImageDraw.Draw(Himage)
     font = _get_font(9)
@@ -96,7 +140,7 @@ def _draw_debug_overlay(Himage, config):
             h = int(fetch_age_hours)
             m = int((fetch_age_hours % 1) * 60)
             last_fetch_str = f"stale {h}h {m}m"
-        elif last_fetch_iso:
+        else:
             try:
                 tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
                 dt = datetime.fromisoformat(last_fetch_iso)
@@ -106,7 +150,11 @@ def _draw_debug_overlay(Himage, config):
             except Exception:
                 last_fetch_str = last_fetch_iso[11:16]
 
-    stale = fetch_age_hours is not None and fetch_age_hours >= _DEBUG_STALE_HOURS
+    stale = (
+        fetch_age_hours is not None
+        and fetch_age_hours >= _DEBUG_STALE_HOURS
+        and not _fetch_skip_is_expected(config, sched)
+    )
 
     parts = []
     if uptime:
