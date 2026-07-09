@@ -1,0 +1,19 @@
+# Glob patterns — worktrees, vendor e-ink driver, and runtime-generated dirs.
+# Must be top-level (before any [section] headers) for TOML to parse correctly.
+exclude = [
+    ".claude/**",
+    "src/waveshare_epd/**",
+    "output/**",
+    "data/**",
+    "pic/**",
+]
+
+[thresholds]
+fail_under = 85
+
+[limits]
+max_line_length    = 120   # matches ruff line-length
+max_function_lines = 100   # drawing functions are intentionally longer
+max_file_lines     = 1000  # render/fetch files exceed 600-line default
+max_complexity     = 20    # game-state machines are inherently branchy
+max_nesting        = 5
