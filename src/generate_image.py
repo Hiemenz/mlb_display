@@ -64,30 +64,55 @@ def _get_system_uptime():
         return ''
 
 
+_DEBUG_STALE_HOURS = 2  # fetch age threshold before overlay turns inverted/alarmed
+
+
 def _draw_debug_overlay(Himage, config):
-    """Draw uptime + last-fetch timestamp in the bottom-right corner."""
+    """Draw uptime + last-fetch timestamp in the bottom-right corner.
+
+    Normal: white box, black text — "up 4h 12m  fetch 9:47pm"
+    Stale (>2h since last fetch): inverted black box, white text with elapsed age
+    instead of clock time — "up 4h 12m  stale 3h 5m" — so it's impossible to miss.
+    """
     draw = ImageDraw.Draw(Himage)
     font = _get_font(9)
 
     uptime = _get_system_uptime()
     sched = load_json_file('schedule_state.json')
     last_fetch_iso = sched.get('last_game_fetch', '')
+
+    fetch_age_hours = None
     last_fetch_str = ''
     if last_fetch_iso:
         try:
-            tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
             dt = datetime.fromisoformat(last_fetch_iso)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc).astimezone(tz)
-            last_fetch_str = dt.strftime('%-I:%M%p').lower()
+                dt = dt.replace(tzinfo=timezone.utc)
+            fetch_age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
         except Exception:
-            last_fetch_str = last_fetch_iso[11:16]
+            pass
+
+        if fetch_age_hours is not None and fetch_age_hours >= _DEBUG_STALE_HOURS:
+            h = int(fetch_age_hours)
+            m = int((fetch_age_hours % 1) * 60)
+            last_fetch_str = f"stale {h}h {m}m"
+        elif last_fetch_iso:
+            try:
+                tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
+                dt = datetime.fromisoformat(last_fetch_iso)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc).astimezone(tz)
+                last_fetch_str = dt.strftime('%-I:%M%p').lower()
+            except Exception:
+                last_fetch_str = last_fetch_iso[11:16]
+
+    stale = fetch_age_hours is not None and fetch_age_hours >= _DEBUG_STALE_HOURS
 
     parts = []
     if uptime:
         parts.append(f"up {uptime}")
     if last_fetch_str:
-        parts.append(f"fetch {last_fetch_str}")
+        parts.append(last_fetch_str)
     text = '  '.join(parts)
     if not text:
         return Himage
@@ -96,9 +121,15 @@ def _draw_debug_overlay(Himage, config):
     tw = int(font.getlength(text))
     x = W - tw - 4
     y = H - 12
-    # White knockout behind text so it's readable over a dark game cell
-    draw.rectangle([x - 1, y - 1, x + tw + 1, y + 11], fill=255)
-    draw.text((x, y), text, font=font, fill=0)
+
+    if stale:
+        # Inverted box: black background, white text — hard to miss
+        draw.rectangle([x - 2, y - 2, x + tw + 2, y + 11], fill=0)
+        draw.text((x, y), text, font=font, fill=255)
+    else:
+        draw.rectangle([x - 1, y - 1, x + tw + 1, y + 11], fill=255)
+        draw.text((x, y), text, font=font, fill=0)
+
     return Himage
 
 
