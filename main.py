@@ -554,7 +554,8 @@ Examples:
     # 8. Auto dark/light mode: derive from time-of-day (night window = dark).
     # Detect day↔night transitions and force a full e-ink refresh to prevent
     # ghosting from residual charge when the polarity of the entire image flips.
-    _is_dark = _in_night_window(config)
+    # If night_mode is disabled entirely, always use light mode.
+    _is_dark = _in_night_window(config) if config.get('night_mode', True) else False
     config['dark_mode'] = _is_dark
     _dark_transitioned = False
     if not _no_throttle and not args.date:

@@ -42,7 +42,7 @@ def fetch_leaders(season=None, sport_id=1):
         url = (
             f"{_BASE_URL}/stats/leaders"
             f"?leaderCategories={cats}&season={season}&sportId={sport_id}"
-            f"&limit={_TOP_N}&statGroup=hitting,pitching"
+            f"&limit={_TOP_N}"
         )
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()

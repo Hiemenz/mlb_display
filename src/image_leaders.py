@@ -15,7 +15,8 @@ _LABELS = {
 }
 _FORMAT = {
     'homeRuns':         lambda v: v,
-    'battingAverage':   lambda v: f'.{v.lstrip("0.")}' if v and '.' in v else v,
+    # Strip only the leading zero, not any dots — "0.345" → ".345", "0.000" → ".000"
+    'battingAverage':   lambda v: v.lstrip('0') if v and '.' in v else v,
     'earnedRunAverage': lambda v: v,
 }
 
@@ -29,6 +30,7 @@ def _last_name(full_name):
 
 
 def _current_category(rotation_minutes=5):
+    rotation_minutes = max(rotation_minutes, 1)
     minute_block = datetime.now().hour * 60 + datetime.now().minute
     idx = (minute_block // rotation_minutes) % len(_CATEGORIES)
     return _CATEGORIES[idx]
