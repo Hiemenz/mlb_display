@@ -14,32 +14,40 @@ from image_leaders import _current_category, _FORMAT, draw_leaders_cell
 # ---------------------------------------------------------------------------
 
 def _avg(v):
+    """Avg."""
     return _FORMAT['battingAverage'](v)
 
 
 class TestBattingAverageFormat:
     def test_strips_leading_zero(self):
+        """Strips leading zero."""
         assert _avg('0.345') == '.345'
 
     def test_zero_average(self):
+        """Zero average."""
         # Must not collapse to bare '.' — lstrip('0') leaves '.000'
         assert _avg('0.000') == '.000'
 
     def test_already_no_leading_zero(self):
+        """Already no leading zero."""
         assert _avg('.298') == '.298'
 
     def test_no_decimal(self):
+        """No decimal."""
         assert _avg('345') == '345'
 
     def test_empty_string(self):
+        """Empty string."""
         assert _avg('') == ''
 
 
 class TestOtherFormats:
     def test_home_runs_passthrough(self):
+        """Home runs passthrough."""
         assert _FORMAT['homeRuns']('27') == '27'
 
     def test_era_passthrough(self):
+        """Era passthrough."""
         assert _FORMAT['earnedRunAverage']('2.85') == '2.85'
 
 
@@ -49,9 +57,11 @@ class TestOtherFormats:
 
 class TestCurrentCategory:
     def test_returns_a_known_category(self):
+        """Returns a known category."""
         assert _current_category() in _CATEGORIES
 
     def test_rotation_cycles_all_categories(self):
+        """Rotation cycles all categories."""
         # minute_block = 0 → idx 0; 5 → idx 1; 10 → idx 2; 15 → idx 0 again
         with patch('image_leaders.datetime') as mock_dt:
             seen = set()
@@ -62,11 +72,13 @@ class TestCurrentCategory:
             assert seen == set(_CATEGORIES)
 
     def test_zero_rotation_minutes_does_not_crash(self):
+        """Zero rotation minutes does not crash."""
         # rotation_minutes=0 was a ZeroDivisionError before the fix
         cat = _current_category(rotation_minutes=0)
         assert cat in _CATEGORIES
 
     def test_negative_rotation_minutes_does_not_crash(self):
+        """Negative rotation minutes does not crash."""
         cat = _current_category(rotation_minutes=-3)
         assert cat in _CATEGORIES
 
@@ -99,10 +111,12 @@ SAMPLE_TEAM_DATA = {
 
 
 def _make_image():
+    """Make image."""
     return Image.new('1', (800, 480), 255)
 
 
 def test_draw_leaders_cell_renders_without_error():
+    """Draw leaders cell renders without error."""
     img = _make_image()
     with patch('image_leaders._current_category', return_value='homeRuns'):
         result = draw_leaders_cell(img, 32, 30, SAMPLE_LEADERS, SAMPLE_TEAM_DATA)
@@ -110,6 +124,7 @@ def test_draw_leaders_cell_renders_without_error():
 
 
 def test_draw_leaders_cell_no_data_for_category():
+    """Draw leaders cell no data for category."""
     img = _make_image()
     # Empty leaders dict — should show 'No data' fallback without crashing
     result = draw_leaders_cell(img, 32, 30, {}, SAMPLE_TEAM_DATA)
@@ -117,12 +132,14 @@ def test_draw_leaders_cell_no_data_for_category():
 
 
 def test_draw_leaders_cell_none_leaders_data():
+    """Draw leaders cell none leaders data."""
     img = _make_image()
     result = draw_leaders_cell(img, 32, 30, None, SAMPLE_TEAM_DATA)
     assert result is not None
 
 
 def test_draw_leaders_cell_none_team_data():
+    """Draw leaders cell none team data."""
     img = _make_image()
     with patch('image_leaders._current_category', return_value='homeRuns'):
         result = draw_leaders_cell(img, 32, 30, SAMPLE_LEADERS, None)
@@ -130,6 +147,7 @@ def test_draw_leaders_cell_none_team_data():
 
 
 def test_draw_leaders_cell_batting_avg_category():
+    """Draw leaders cell batting avg category."""
     img = _make_image()
     with patch('image_leaders._current_category', return_value='battingAverage'):
         result = draw_leaders_cell(img, 32, 30, SAMPLE_LEADERS, SAMPLE_TEAM_DATA)
@@ -137,6 +155,7 @@ def test_draw_leaders_cell_batting_avg_category():
 
 
 def test_draw_leaders_cell_very_long_name_truncated():
+    """Draw leaders cell very long name truncated."""
     img = _make_image()
     long_name_leaders = {
         'homeRuns': [
@@ -153,6 +172,7 @@ def test_draw_leaders_cell_very_long_name_truncated():
 # ---------------------------------------------------------------------------
 
 def test_fetch_leaders_uses_cache_when_fresh(tmp_path, monkeypatch):
+    """Fetch leaders uses cache when fresh."""
     import util
     fresh_cache = {
         'season': 2026,
@@ -170,6 +190,7 @@ def test_fetch_leaders_uses_cache_when_fresh(tmp_path, monkeypatch):
 
 
 def test_fetch_leaders_refetches_when_stale(tmp_path, monkeypatch):
+    """Fetch leaders refetches when stale."""
     import util
     stale_cache = {
         'season': 2026,
@@ -202,6 +223,7 @@ def test_fetch_leaders_refetches_when_stale(tmp_path, monkeypatch):
 
 
 def test_fetch_leaders_refetches_when_season_changed(tmp_path, monkeypatch):
+    """Fetch leaders refetches when season changed."""
     import util
     old_season_cache = {
         'season': 2025,
@@ -221,6 +243,7 @@ def test_fetch_leaders_refetches_when_season_changed(tmp_path, monkeypatch):
 
 
 def test_fetch_leaders_returns_stale_cache_on_network_error(tmp_path, monkeypatch):
+    """Fetch leaders returns stale cache on network error."""
     import util
     stale_cache = {
         'season': 2026,
@@ -238,6 +261,7 @@ def test_fetch_leaders_returns_stale_cache_on_network_error(tmp_path, monkeypatc
 
 
 def test_fetch_leaders_returns_empty_on_total_failure(tmp_path, monkeypatch):
+    """Fetch leaders returns empty on total failure."""
     import util
     monkeypatch.setattr(util, '_DATA_DIR', str(tmp_path))
     # No cache file at all

@@ -37,6 +37,7 @@ _DEFAULT_WALL_POLY = [
 
 
 def _load_fonts():
+    """Load fonts."""
     font_path = os.path.join(picdir, 'Font.ttc')
     return {
         'f24': ImageFont.truetype(font_path, 24),
@@ -123,6 +124,7 @@ def _draw_field(draw, data, fonts=None):
     font_tiny = fonts.get('f9') if fonts else None
     if font_tiny:
         def _dist(xy):
+            """Dist."""
             return round(math.sqrt(xy[0] ** 2 + xy[1] ** 2))
 
         def _angle(xy):
@@ -436,6 +438,7 @@ def _draw_pitch_zone(draw, fonts, data):
     ZONE_PZ_LO, ZONE_PZ_HI = 1.5, 3.5
 
     def to_px(px_c, pz_c):
+        """To px."""
         tx = zl + int((px_c + ZONE_PX) / (2 * ZONE_PX) * zone_w)
         ty = zb - int((pz_c - ZONE_PZ_LO) / (ZONE_PZ_HI - ZONE_PZ_LO) * zone_h)
         # Clamp so markers don't fall off the right panel

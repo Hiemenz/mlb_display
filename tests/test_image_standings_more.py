@@ -67,6 +67,7 @@ def _standings(teams_by_division, abbr_map=None):
 
 
 def _blank():
+    """Blank."""
     return Image.new('1', (800, 480), 255)
 
 
@@ -83,6 +84,7 @@ def _has_dark_pixels(image, x1, y1, x2, y2):
 class TestAaaDivisions:
 
     def test_left_side_returns_il_and_pcl_east_when_present(self):
+        """Left side returns il and pcl east when present."""
         data = _standings({
             'International League East': [_team(1, 1)],
             'Pacific Coast League East': [_team(2, 1)],
@@ -91,6 +93,7 @@ class TestAaaDivisions:
         assert result == ['International League East', 'Pacific Coast League East']
 
     def test_right_side_returns_il_and_pcl_west_when_present(self):
+        """Right side returns il and pcl west when present."""
         data = _standings({
             'International League West': [_team(1, 1)],
             'Pacific Coast League West': [_team(2, 1)],
@@ -104,6 +107,7 @@ class TestAaaDivisions:
         assert _aaa_divisions(data, 'left') == ['International League East']
 
     def test_no_matching_divisions_returns_empty_list(self):
+        """No matching divisions returns empty list."""
         data = {'standings': {'American League East': []}, 'team_abbreviation': {}}
         assert _aaa_divisions(data, 'left') == []
         assert _aaa_divisions(data, 'right') == []
@@ -115,6 +119,7 @@ class TestAaaDivisions:
         assert _aaa_divisions(data, 'left') == ['International League East']
 
     def test_missing_standings_key_entirely_no_crash(self):
+        """Missing standings key entirely no crash."""
         assert _aaa_divisions({}, 'left') == []
 
 
@@ -128,6 +133,7 @@ class TestDrawWildcardHeaderFallback:
     ImageDraw.rounded_rectangle (older Pillow versions)."""
 
     def test_rounded_rectangle_unavailable_falls_back_to_plain_rectangle(self):
+        """Rounded rectangle unavailable falls back to plain rectangle."""
         al = [{'abbr': f'A{i}', 'team_id': str(i), 'gb': '-'} for i in range(3)]
         nl = [{'abbr': f'N{i}', 'team_id': str(100 + i), 'gb': '-'} for i in range(3)]
         img = _blank()
@@ -151,6 +157,7 @@ class TestDrawStandingsSidebarAaaMode:
     """AAA-mode branch: _aaa_divisions() lookup + variable-height section stacking."""
 
     def _render_aaa(self, side, teams_by_division):
+        """Render aaa."""
         data = _standings(teams_by_division)
         img = _blank()
         with patch('image_standings.load_json_file', return_value={}), \
@@ -160,6 +167,7 @@ class TestDrawStandingsSidebarAaaMode:
         return img, result
 
     def test_aaa_left_no_crash_and_returns_image(self):
+        """Aaa left no crash and returns image."""
         img, result = self._render_aaa('left', {
             'International League East': [_team(1, 1), _team(2, 2)],
             'Pacific Coast League East': [_team(3, 1)],
@@ -198,10 +206,12 @@ class TestDrawStandingsSidebarExceptions:
 
     def _render(self, cur_teams, prev_payload=None, movement_payload=None,
                 prev_side_effect=None, div_name='American League East', abbr_map=None):
+        """Render."""
         data = _standings({div_name: cur_teams}, abbr_map=abbr_map)
         img = _blank()
 
         def fake_load(fname):
+            """Fake load."""
             if fname == 'standings_prev.json':
                 if prev_side_effect is not None:
                     raise prev_side_effect
@@ -281,6 +291,7 @@ class TestDrawStandingsSidebarExceptions:
 class TestDrawStandingsSidebarClinch:
 
     def _render(self, teams):
+        """Render."""
         data = _standings({'American League East': teams}, abbr_map={'1': 'NYY'})
         img = _blank()
         with patch('image_standings.load_json_file', return_value={}), \
@@ -290,18 +301,21 @@ class TestDrawStandingsSidebarClinch:
         return img
 
     def test_clinch_z_draws_box_around_logo_slot(self):
+        """Clinch z draws box around logo slot."""
         img_clinch = self._render([_team(1, 1, wins=100, losses=50, clinch='z')])
         img_plain = self._render([_team(1, 1, wins=100, losses=50)])
         assert img_clinch.tobytes() != img_plain.tobytes(), \
             "Clinch indicator box must add visible pixels not present without it"
 
     def test_clinch_y_draws_box_at_expected_location(self):
+        """Clinch y draws box at expected location."""
         img = self._render([_team(1, 1, wins=100, losses=50, clinch='y')])
         # logo_x=(32-20)//2=6, y_section=_SIDEBAR_ROW_Y[0]=25 + padding(5)=30 ->
         # box border sits directly on the 20x20 logo slot edges.
         assert _has_dark_pixels(img, 6, 30, 26, 50)
 
     def test_unrecognized_clinch_value_draws_no_box(self):
+        """Unrecognized clinch value draws no box."""
         img_unknown = self._render([_team(1, 1, wins=100, losses=50, clinch='x')])
         img_plain = self._render([_team(1, 1, wins=100, losses=50)])
         assert img_unknown.tobytes() == img_plain.tobytes()
@@ -329,14 +343,17 @@ class TestDrawStandingsSidebarFullscreen:
     own malformed-data exception branches (same shape as draw_standings_sidebar)."""
 
     def _canvas(self):
+        """Canvas."""
         return Image.new('1', (800, 480), 255)
 
     def _render(self, side, teams_by_division, prev_payload=None, movement_payload=None,
                 prev_side_effect=None, logo_side_effect=None, league_mode='mlb', **kwargs):
+        """Render."""
         data = _standings(teams_by_division)
         canvas = self._canvas()
 
         def fake_load(fname):
+            """Fake load."""
             if fname == 'standings_prev.json':
                 if prev_side_effect is not None:
                     raise prev_side_effect
@@ -358,18 +375,21 @@ class TestDrawStandingsSidebarFullscreen:
         return canvas, result
 
     def test_basic_left_render_no_crash_returns_canvas(self):
+        """Basic left render no crash returns canvas."""
         canvas, result = self._render('left', {
             'American League East': [_team(1, 1, wins=90, losses=60)],
         })
         assert result is canvas
 
     def test_basic_right_render_no_crash_returns_canvas(self):
+        """Basic right render no crash returns canvas."""
         canvas, result = self._render('right', {
             'National League East': [_team(1, 1, wins=90, losses=60)],
         })
         assert result is canvas
 
     def test_mover_gets_bracket_indicator_left(self):
+        """Mover gets bracket indicator left."""
         cur = [
             _team(1, 1, wins=15, losses=5),
             _team(2, 2, wins=12, losses=8),
@@ -389,6 +409,7 @@ class TestDrawStandingsSidebarFullscreen:
             "Mover bracket indicator must add pixels not present without prior standings"
 
     def test_mover_gets_bracket_indicator_right(self):
+        """Mover gets bracket indicator right."""
         cur = [
             _team(1, 1, wins=15, losses=5),
             _team(2, 2, wins=12, losses=8),
@@ -448,6 +469,7 @@ class TestDrawStandingsSidebarFullscreen:
         assert canvas_tie.tobytes() != canvas_plain.tobytes()
 
     def test_tied_current_records_draw_dash_separator(self):
+        """Tied current records draw dash separator."""
         cur_tied = [
             _team(1, 1, wins=10, losses=10),
             _team(2, 2, wins=10, losses=10),
@@ -461,6 +483,7 @@ class TestDrawStandingsSidebarFullscreen:
         assert canvas_tied.tobytes() != canvas_untied.tobytes()
 
     def test_clinch_indicator_draws_box(self):
+        """Clinch indicator draws box."""
         cur_clinch = [_team(1, 1, wins=100, losses=50, clinch='z')]
         cur_plain = [_team(1, 1, wins=100, losses=50)]
         canvas_clinch, _ = self._render('left', {'American League East': cur_clinch})
@@ -468,6 +491,7 @@ class TestDrawStandingsSidebarFullscreen:
         assert canvas_clinch.tobytes() != canvas_plain.tobytes()
 
     def test_aaa_mode_uses_up_to_three_divisions_no_crash(self):
+        """Aaa mode uses up to three divisions no crash."""
         canvas, result = self._render('left', {
             'International League East': [_team(1, 1)],
             'Pacific Coast League East': [_team(2, 1)],
@@ -480,6 +504,7 @@ class TestDrawStandingsSidebarFullscreen:
         fake_logo = Image.new('1', (44, 44), 0)
 
         def fake_logo_small(abbr, team_id, size=28):
+            """Fake logo small."""
             return fake_logo
 
         canvas, _ = self._render(
@@ -497,12 +522,14 @@ class TestDrawStandingsSidebarFullscreen:
         assert result is canvas
 
     def test_prev_json_load_raises_is_swallowed(self):
+        """Prev json load raises is swallowed."""
         canvas, result = self._render(
             'left', {'American League East': [_team(1, 1)]},
             prev_side_effect=RuntimeError("disk error"))
         assert result is canvas
 
     def test_malformed_prev_division_rank_is_swallowed(self):
+        """Malformed prev division rank is swallowed."""
         prev_payload = {
             'standings': {
                 'American League East': [
@@ -516,6 +543,7 @@ class TestDrawStandingsSidebarFullscreen:
         assert result is canvas
 
     def test_malformed_movement_timestamp_is_swallowed(self):
+        """Malformed movement timestamp is swallowed."""
         canvas, result = self._render(
             'left', {'American League East': [_team(1, 1)]},
             movement_payload={'1': 'not-a-number'})
@@ -537,6 +565,7 @@ class TestDrawStandingsSidebarFullscreen:
 # ===========================================================================
 
 def _series(round_lbl, away_abbr, home_abbr, away_wins=0, home_wins=0, complete=False, winner_abbr=None):
+    """Series."""
     return {
         'round': round_lbl,
         'away_abbr': away_abbr,
@@ -551,24 +580,29 @@ def _series(round_lbl, away_abbr, home_abbr, away_wins=0, home_wins=0, complete=
 @needs_pil
 class TestDrawPlayoffBracketHeader:
     def _white(self):
+        """White."""
         return Image.new('1', (800, 30), 255)
 
     def test_none_bracket_returns_image_unchanged(self):
+        """None bracket returns image unchanged."""
         canvas = self._white()
         result = draw_playoff_bracket_header(canvas, None)
         assert result is canvas
 
     def test_empty_bracket_dict_returns_unchanged(self):
+        """Empty bracket dict returns unchanged."""
         canvas = self._white()
         result = draw_playoff_bracket_header(canvas, {})
         assert result is canvas
 
     def test_empty_series_list_returns_unchanged(self):
+        """Empty series list returns unchanged."""
         canvas = self._white()
         result = draw_playoff_bracket_header(canvas, {'series': []})
         assert result is canvas
 
     def test_single_active_series_renders(self):
+        """Single active series renders."""
         canvas = self._white()
         bracket = {'series': [_series('WC', 'NYY', 'BOS', away_wins=1, home_wins=0)]}
         result = draw_playoff_bracket_header(canvas, bracket)
@@ -577,6 +611,7 @@ class TestDrawPlayoffBracketHeader:
         assert any(px == 0 for px in result.getdata())
 
     def test_single_complete_series_renders(self):
+        """Single complete series renders."""
         canvas = self._white()
         bracket = {'series': [
             _series('WC', 'NYY', 'BOS', away_wins=2, home_wins=0,
@@ -607,6 +642,7 @@ class TestDrawPlayoffBracketHeader:
         assert isinstance(result, Image.Image)
 
     def test_multiple_series_render_with_separators(self):
+        """Multiple series render with separators."""
         canvas = self._white()
         bracket = {
             'series': [

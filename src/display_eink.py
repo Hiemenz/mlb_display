@@ -138,6 +138,7 @@ def display_partial_regions(full_image, regions, output_filename='resulting_imag
 
 
 def main():
+    """CLI entry point: render and send the current scoreboard image to the e-ink display."""
     system_platform = platform.system()
     print(f"Running on platform: {system_platform}")
 

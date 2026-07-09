@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 class EPD:
     def __init__(self):
+        """Init  ."""
         self.reset_pin = epdconfig.RST_PIN
         self.dc_pin = epdconfig.DC_PIN
         self.busy_pin = epdconfig.BUSY_PIN
@@ -48,6 +49,7 @@ class EPD:
     
     # Hardware reset
     def reset(self):
+        """Reset."""
         epdconfig.digital_write(self.reset_pin, 1)
         epdconfig.delay_ms(20) 
         epdconfig.digital_write(self.reset_pin, 0)
@@ -56,24 +58,28 @@ class EPD:
         epdconfig.delay_ms(20)   
 
     def send_command(self, command):
+        """Send command."""
         epdconfig.digital_write(self.dc_pin, 0)
         epdconfig.digital_write(self.cs_pin, 0)
         epdconfig.spi_writebyte([command])
         epdconfig.digital_write(self.cs_pin, 1)
 
     def send_data(self, data):
+        """Send data."""
         epdconfig.digital_write(self.dc_pin, 1)
         epdconfig.digital_write(self.cs_pin, 0)
         epdconfig.spi_writebyte([data])
         epdconfig.digital_write(self.cs_pin, 1)
 
     def send_data2(self, data):
+        """Send data2."""
         epdconfig.digital_write(self.dc_pin, 1)
         epdconfig.digital_write(self.cs_pin, 0)
         epdconfig.SPI.writebytes2(data)
         epdconfig.digital_write(self.cs_pin, 1)
 
     def ReadBusy(self):
+        """ReadBusy."""
         logger.debug("e-Paper busy")
         self.send_command(0x71)
         busy = epdconfig.digital_read(self.busy_pin)
@@ -84,6 +90,7 @@ class EPD:
         logger.debug("e-Paper busy release")
         
     def init(self):
+        """Init."""
         if (epdconfig.module_init() != 0):
             return -1
         # EPD hardware init start
@@ -128,6 +135,7 @@ class EPD:
         return 0
     
     def init_fast(self):
+        """Init fast."""
         if (epdconfig.module_init() != 0):
             return -1
         # EPD hardware init start
@@ -160,6 +168,7 @@ class EPD:
         return 0
     
     def init_part(self):
+        """Init part."""
         if (epdconfig.module_init() != 0):
             return -1
         # EPD hardware init start
@@ -181,6 +190,7 @@ class EPD:
         return 0
 
     def getbuffer(self, image):
+        """Getbuffer."""
         img = image
         imwidth, imheight = img.size
         if(imwidth == self.width and imheight == self.height):
@@ -201,6 +211,7 @@ class EPD:
         return buf
 
     def display(self, image):
+        """Display."""
         if(self.width % 8 == 0):
             Width = self.width // 8
         else:
@@ -221,6 +232,7 @@ class EPD:
         self.ReadBusy()
 
     def Clear(self):
+        """Clear."""
         self.send_command(0x10)
         self.send_data2([0xFF] * int(self.width * self.height / 8))
         self.send_command(0x13)
@@ -231,6 +243,7 @@ class EPD:
         self.ReadBusy()
 
     def display_Partial(self, Image, Xstart, Ystart, Xend, Yend):
+        """Display Partial."""
         if((Xstart % 8 + Xend % 8 == 8 & Xstart % 8 > Xend % 8) | Xstart % 8 + Xend % 8 == 0 | (Xend - Xstart)%8 == 0):
             Xstart = Xstart // 8 * 8
             Xend = Xend // 8 * 8
@@ -276,6 +289,7 @@ class EPD:
         self.ReadBusy()
 
     def sleep(self):
+        """Sleep."""
         self.send_command(0x02) # POWER_OFF
         self.ReadBusy()
         

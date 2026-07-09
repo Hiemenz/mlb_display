@@ -31,6 +31,7 @@ _WBC_ABBR_OVERRIDES = {
 
 
 def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
+    """Convert time z to."""
     utc_time = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%SZ")
     utc_time = pytz.utc.localize(utc_time)
     local_tz = pytz.timezone(time_zone)
@@ -54,6 +55,7 @@ def _pick_tv_channel(broadcasts, favorite_abbr, away_abbr, home_abbr):
         return None
 
     def _label(b):
+        """Label."""
         return b.get('callSign') or b.get('name') or ''
 
     # Favorite team override
@@ -80,6 +82,7 @@ _STADIUM_WEATHER_CACHE = None
 
 
 def _load_stadium_weather():
+    """Load stadium weather."""
     global _STADIUM_WEATHER_CACHE
     if _STADIUM_WEATHER_CACHE is None:
         _STADIUM_WEATHER_CACHE = load_json_file('stadium_weather.json') or {}
@@ -87,6 +90,7 @@ def _load_stadium_weather():
 
 
 def _lookup_stadium(venue_id, venue_name):
+    """Lookup stadium."""
     stadiums = _load_stadium_weather()
     if venue_id is not None:
         entry = stadiums.get(str(venue_id))
@@ -254,18 +258,22 @@ _PITCHER_CACHE_TTL_MINUTES = 30
 
 
 def _pitcher_cache_key(pitcher_ids):
+    """Pitcher cache key."""
     return ','.join(str(p) for p in sorted(pitcher_ids))
 
 
 def _load_pitcher_cache():
+    """Load pitcher cache."""
     return load_json_file('pitcher_cache.json')
 
 
 def _save_pitcher_cache(cache):
+    """Save pitcher cache."""
     save_off_results(cache, 'pitcher_cache')
 
 
 def _cache_get(cache, bucket, key, season):
+    """Cache get."""
     entry = cache.get(bucket, {}).get(key)
     if not entry or entry.get('season') != season:
         return None
@@ -279,6 +287,7 @@ def _cache_get(cache, bucket, key, season):
 
 
 def _cache_set(cache, bucket, key, season, data):
+    """Cache set."""
     if bucket not in cache:
         cache[bucket] = {}
     cache[bucket][key] = {
@@ -895,6 +904,7 @@ def fetch_scoreboard_for_date(date, sport_id=None, config=None):
 
 
 def main():  # pragma: no cover
+    """CLI entry point: fetch MLB game data for a given date and write to data/games.json."""
     parser = argparse.ArgumentParser(
         description='Fetch MLB game data to data/games.json',
         formatter_class=argparse.RawDescriptionHelpFormatter,

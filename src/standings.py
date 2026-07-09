@@ -26,6 +26,7 @@ leauge_dict = {
 team_abbreviation_list = {}
 
 def get_teams(team_id):
+    """Fetch and cache the abbreviation for team_id from the MLB Stats API."""
     tid = str(team_id)
     if tid in team_abbreviation_list:
         return
@@ -51,6 +52,7 @@ def get_teams(team_id):
 
 
 def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
+    """Fetch division standings for the given league IDs and write them to data/<save_as>.json."""
     # Pre-populate from teams.json so we avoid per-team API calls for known teams
     cached_teams = load_json_file('teams.json').get('team_abbreviation', {})
     team_abbreviation_list.update(cached_teams)
@@ -311,6 +313,7 @@ def fetch_playoff_bracket(season=None):
 
 
 def main():
+    """CLI entry point: fetch and save standings for a given season or date."""
     parser = argparse.ArgumentParser(description='Fetch standings for a specific season or date')
     parser.add_argument('--season', '-s', type=int, default=datetime.now().year,
                         help='Season year (e.g., 2024, 2023). Default is current year.')

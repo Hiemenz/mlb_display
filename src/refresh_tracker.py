@@ -7,6 +7,7 @@ FULL_REFRESH_INTERVAL = 3600  # 1 hour in seconds
 
 
 def _load_state():
+    """Load state."""
     try:
         with open(STATE_FILE) as f:
             return json.load(f)

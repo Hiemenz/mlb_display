@@ -211,6 +211,7 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
 
 
 def main():
+    """CLI entry point: render the scoreboard image from cached data/games.json."""
     parser = argparse.ArgumentParser(
         description='Render scoreboard image from cached data/games.json',
         formatter_class=argparse.RawDescriptionHelpFormatter,

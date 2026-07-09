@@ -78,6 +78,7 @@ TEAM_DATA = {
 
 
 def _base_game(**overrides):
+    """Base game."""
     g = {
         'game_pk': 1001,
         'away_team_id': 119,
@@ -144,6 +145,7 @@ def _base_game(**overrides):
 
 
 def _live_game(**overrides):
+    """Live game."""
     g = _base_game(
         detailed_state='In Progress',
         current_inning=5,
@@ -184,6 +186,7 @@ def _live_game(**overrides):
 
 
 def _final_game(**overrides):
+    """Final game."""
     g = _base_game(
         detailed_state='Final',
         current_inning=9,
@@ -270,6 +273,7 @@ def _assert_matches_golden(actual, name, update, tolerance=0.001):
 
 @pytest.fixture
 def golden_update(request):
+    """Golden update."""
     return request.config.getoption('--update-golden')
 
 

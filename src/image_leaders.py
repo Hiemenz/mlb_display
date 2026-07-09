@@ -26,10 +26,12 @@ _PAD = 4
 
 
 def _last_name(full_name):
+    """Last name."""
     return full_name.split()[-1] if full_name else ''
 
 
 def _current_category(rotation_minutes=5):
+    """Current category."""
     rotation_minutes = max(rotation_minutes, 1)
     minute_block = datetime.now().hour * 60 + datetime.now().minute
     idx = (minute_block // rotation_minutes) % len(_CATEGORIES)

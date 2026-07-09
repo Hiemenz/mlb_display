@@ -143,6 +143,7 @@ def _draw_backwards_k(img, x, y, fnt):
 
 
 def set_historical_mode(enabled=True):
+    """Set historical mode."""
     global _historical_mode
     _historical_mode = enabled
 
@@ -258,6 +259,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     home_abbr = abbr_map.get(home_id, home_id)
 
     def _place(abbr, tid, row_y):
+        """Place."""
         nonlocal draw
         lsz = 10 * s  # slightly smaller than column width so logo has a 1px margin
         logo = _logo_small(abbr, tid, size=lsz) if use_logos else None
@@ -276,6 +278,7 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
 
     # --- per-inning scores ---
     def _draw_row(inn_runs, row_y):
+        """Draw row."""
         for k in range(N_COLS):
             idx = first_inn - 1 + k
             if idx < len(inn_runs) and inn_runs[idx] is not None:
@@ -508,6 +511,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
             return ''
 
     def _find_game(team_id):
+        """Find game."""
         for g in tmrw_games:
             if g.get('home_team_id') == team_id or g.get('away_team_id') == team_id:
                 return g
@@ -525,6 +529,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         return int(font14.getlength((str(abbr) or '')[:3]))
 
     def _place_logo(abbr, team_id, x):
+        """Place logo."""
         nonlocal draw
         if use_logos and team_id:
             lg = _logo_small(str(abbr), str(team_id), size=LOGO_SZ)
@@ -538,6 +543,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         return x + int(font14.getlength(t))
 
     def _draw_vs(x):
+        """Draw vs."""
         draw.text((x + VS_PAD, _vs_y), at_str, font=font14, fill=0)
         return x + VS_PAD + at_w + VS_PAD
 
@@ -603,6 +609,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     # Both teams have different games.
     # Away entry is left-anchored; home entry is right-anchored.
     def _draw_half(g, start_cx, right_limit):
+        """Draw half."""
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
         cx = start_cx
@@ -644,6 +651,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
 
 
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
+    """Render a single game score box onto Himage at (start_x, start_y)."""
     s = scale
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
@@ -746,6 +754,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _in_linescore_window = False  # set True inside Final block when within the linescore window
 
     def fit_text(text, max_w):
+        """Fit text."""
         try:
             if font14.getlength(text) <= max_w:
                 return text, font14
@@ -873,6 +882,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _wpname_max_w = horizonta_len - 2 * s
 
             def _truncate_keep_suffix(s):
+                """Truncate keep suffix."""
                 if int(font14.getlength(s)) <= _wpname_max_w:
                     return s
                 # Try dropping first initial: "WP: W. Warren (2-2)" → "WP: Warren (2-2)"
@@ -1433,6 +1443,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _header_right = _ser_content_left_x - 2 * s
 
         def _draw_play_right(text, fnt=None, y_off=4):
+            """Draw play right."""
             if not text:  # pragma: no cover
                 return
             _fnt = fnt or _get_font(12 * s)
@@ -1552,11 +1563,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     elif game_data['detailed_state'] in ['Scheduled', 'Pre-Game', 'Warmup', 'Postponed']:
         # Game hasn't started — show record stacked above L10/streak, both right-anchored
         def _team_stats(team_id):
+            """Team stats."""
             if streak_map:
                 return streak_map.get(str(team_id)) or {}
             return {}
 
         def _draw_record(wins, losses, team_id, y_pos):
+            """Draw record."""
             # Primary: W-L in font14, bold via double-draw, aligned to top of logo row
             main_txt = f'{wins}-{losses}'
             main_w = int(font14.getlength(main_txt))
@@ -1596,6 +1609,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _odds_right = min(_away_rec_left, _home_rec_left) - 4 * s
 
             def _ml_str(v):
+                """Ml str."""
                 return f'+{v}' if v > 0 else str(v)
 
             _aml_s = _ml_str(_away_ml)
@@ -2209,6 +2223,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         return items
 
     def _measure_items(items):
+        """Measure items."""
         total = 0
         for kind, val in items:
             if kind == 'tri':
@@ -2236,6 +2251,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         return x + int(font12.getlength(seg.replace('Kl', 'K')))
 
     def _draw_items(x, y, items):
+        """Draw items."""
         cx = x
         for kind, val in items:
             if kind == 'tri':
@@ -2297,6 +2313,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         _BALL_CODES = frozenset({'B', 'I', 'P', 'V'})
 
         def _to_pixel(px_c, pz_c):
+            """To pixel."""
             tx = zone_lx + (px_c + _SZ_HALF_W) / (2 * _SZ_HALF_W) * ZONE_W
             ty = zone_by  - (pz_c - _zone_bot)  / (_zone_top - _zone_bot)  * ZONE_H
             return int(tx), int(ty)
@@ -2507,6 +2524,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _k_avail = rp_w - 4 * s
 
     def _strip_width(f):
+        """Strip width."""
         bb = f.getbbox('K')
         k_adv = (bb[2] - bb[0]) + 3
         parts = ([int(f.getlength(_milestone_label)) + 3] if _milestone_label else []) + \

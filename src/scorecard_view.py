@@ -25,6 +25,7 @@ TEAM_HEIGHT = 238
 
 
 def _load_fonts():
+    """Load fonts."""
     font_path = os.path.join(picdir, 'Font.ttc')
     return {
         'f14': ImageFont.truetype(font_path, 14),
@@ -217,6 +218,7 @@ def _draw_pitcher_panel(draw, fonts, away_pitchers, home_pitchers):
     draw.line([(SCORECARD_WIDTH, 0), (SCORECARD_WIDTH, EPD_HEIGHT)], fill=0)
 
     def _draw_side(pitchers, y_start, y_end, label):
+        """Draw side."""
         y = y_start
         draw.text((px, y), label, font=fonts['f11'], fill=0)
         y += 12

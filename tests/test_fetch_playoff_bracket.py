@@ -12,6 +12,7 @@ from standings import fetch_playoff_bracket
 
 
 def _resp(status_code=200, json_data=None):
+    """Resp."""
     m = MagicMock()
     m.status_code = status_code
     m.json.return_value = json_data if json_data is not None else {}
@@ -20,6 +21,7 @@ def _resp(status_code=200, json_data=None):
 
 def _game(gtype, away_id, home_id, away_abbr, home_abbr,
           state='Scheduled', away_winner=False, home_winner=False):
+    """Game."""
     return {
         'gameType': gtype,
         'status': {'detailedState': state},
@@ -38,6 +40,7 @@ def _game(gtype, away_id, home_id, away_abbr, home_abbr,
 
 @pytest.fixture(autouse=True)
 def _reset_team_abbr_list():
+    """Reset team abbr list."""
     standings.team_abbreviation_list.clear()
     yield
     standings.team_abbreviation_list.clear()
@@ -45,6 +48,7 @@ def _reset_team_abbr_list():
 
 class TestFetchPlayoffBracket:
     def test_non_200_response_returns_none(self):
+        """Non 200 response returns none."""
         with patch('standings.requests.get', return_value=_resp(status_code=503)), \
              patch('standings.save_off_results') as mock_save:
             result = fetch_playoff_bracket(season=2025)
@@ -52,6 +56,7 @@ class TestFetchPlayoffBracket:
         mock_save.assert_not_called()
 
     def test_network_exception_returns_none(self):
+        """Network exception returns none."""
         with patch('standings.requests.get', side_effect=OSError('timeout')), \
              patch('standings.save_off_results') as mock_save:
             result = fetch_playoff_bracket(season=2025)
@@ -59,6 +64,7 @@ class TestFetchPlayoffBracket:
         mock_save.assert_not_called()
 
     def test_empty_dates_returns_empty_series(self):
+        """Empty dates returns empty series."""
         payload = {'dates': []}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
              patch('standings.save_off_results') as mock_save:
@@ -69,6 +75,7 @@ class TestFetchPlayoffBracket:
         mock_save.assert_called_once()
 
     def test_unknown_game_type_skipped(self):
+        """Unknown game type skipped."""
         payload = {
             'dates': [{'games': [
                 _game('R', 147, 111, 'NYY', 'BOS'),   # regular season — should skip
@@ -80,6 +87,7 @@ class TestFetchPlayoffBracket:
         assert result['series'] == []
 
     def test_single_wc_series_created(self):
+        """Single wc series created."""
         payload = {
             'dates': [{'games': [
                 _game('F', 147, 111, 'NYY', 'BOS'),
@@ -99,6 +107,7 @@ class TestFetchPlayoffBracket:
         assert s['winner_abbr'] is None
 
     def test_away_win_increments_away_wins(self):
+        """Away win increments away wins."""
         payload = {
             'dates': [{'games': [
                 _game('F', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True),
@@ -112,6 +121,7 @@ class TestFetchPlayoffBracket:
         assert s['home_wins'] == 0
 
     def test_home_win_increments_home_wins(self):
+        """Home win increments home wins."""
         payload = {
             'dates': [{'games': [
                 _game('F', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True),
@@ -125,6 +135,7 @@ class TestFetchPlayoffBracket:
         assert s['away_wins'] == 0
 
     def test_game_over_state_counts_as_win(self):
+        """Game over state counts as win."""
         payload = {
             'dates': [{'games': [
                 _game('D', 147, 111, 'NYY', 'BOS', state='Game Over', away_winner=True),
@@ -184,6 +195,7 @@ class TestFetchPlayoffBracket:
         assert len(result['series']) == 1
 
     def test_multiple_series_all_game_types(self):
+        """Multiple series all game types."""
         games = [
             _game('F', 147, 111, 'NYY', 'BOS'),   # WC
             _game('D', 119, 137, 'LAD', 'SF'),    # DS
@@ -202,6 +214,7 @@ class TestFetchPlayoffBracket:
         assert 'WS' in rounds
 
     def test_series_sorted_wc_before_ds_before_cs_before_ws(self):
+        """Series sorted wc before ds before cs before ws."""
         games = [
             _game('W', 147, 111, 'NYY', 'BOS'),
             _game('F', 119, 137, 'LAD', 'SF'),
@@ -218,6 +231,7 @@ class TestFetchPlayoffBracket:
         assert rounds.index('CS') < rounds.index('WS')
 
     def test_result_includes_season_and_fetched_at(self):
+        """Result includes season and fetched at."""
         payload = {'dates': []}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
              patch('standings.save_off_results'):
@@ -227,6 +241,7 @@ class TestFetchPlayoffBracket:
         assert isinstance(result['fetched_at'], float)
 
     def test_save_off_results_called_with_playoff_bracket_name(self):
+        """Save off results called with playoff bracket name."""
         payload = {'dates': []}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
              patch('standings.save_off_results') as mock_save:
@@ -236,6 +251,7 @@ class TestFetchPlayoffBracket:
         assert call_args[0][1] == 'playoff_bracket'
 
     def test_defaults_season_to_current_year_when_none(self):
+        """Defaults season to current year when none."""
         from datetime import datetime
         payload = {'dates': []}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)) as mock_get, \
@@ -246,6 +262,7 @@ class TestFetchPlayoffBracket:
         assert current_year in url
 
     def test_season_embedded_in_request_url(self):
+        """Season embedded in request url."""
         payload = {'dates': []}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)) as mock_get, \
              patch('standings.save_off_results'):
@@ -255,6 +272,7 @@ class TestFetchPlayoffBracket:
         assert 'gameType=F,D,L,W' in url
 
     def test_in_progress_game_does_not_count_as_win(self):
+        """In progress game does not count as win."""
         payload = {
             'dates': [{'games': [
                 _game('F', 147, 111, 'NYY', 'BOS', state='In Progress'),
@@ -280,6 +298,7 @@ class TestFetchPlayoffBracket:
         assert s['winner_abbr'] == 'BOS'
 
     def test_incomplete_series_not_marked_complete(self):
+        """Incomplete series not marked complete."""
         games = [
             _game('D', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True),
             _game('D', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True),

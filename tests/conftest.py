@@ -16,6 +16,7 @@ os.chdir(PROJECT_ROOT)
 
 
 def pytest_addoption(parser):
+    """Pytest addoption."""
     parser.addoption(
         '--update-golden', action='store_true', default=False,
         help='Write golden-image regression renders to tests/golden/ instead of asserting.',

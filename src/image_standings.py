@@ -91,6 +91,7 @@ def draw_wildcard_header(Himage, wildcard_data):
     font = _get_font(9)
 
     def _draw_slot(slot_x, team):
+        """Draw slot."""
         abbr    = (team.get('abbr') or '???')[:4]
         team_id = str(team.get('team_id', ''))
 

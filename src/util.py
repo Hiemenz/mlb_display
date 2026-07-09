@@ -8,6 +8,7 @@ _CONFIG_DIR = os.path.join(_REPO_ROOT, 'config')
 
 
 def load_json_file(file_name, file_path=None):
+    """Load a JSON file from the data directory (or file_path if given), returning {} on missing/error."""
     base = file_path if file_path is not None else _DATA_DIR
     full = os.path.join(base, file_name)
     data_dict = {}
@@ -23,6 +24,7 @@ def load_json_file(file_name, file_path=None):
 
 
 def load_yaml_file(file_name, file_path=None):
+    """Load a YAML file from the config directory (or file_path if given), returning {} on missing/error."""
     base = file_path if file_path is not None else _CONFIG_DIR
     full = os.path.join(base, file_name)
     data_dict = {}
@@ -38,6 +40,7 @@ def load_yaml_file(file_name, file_path=None):
 
 
 def save_off_results(data, output, file_path=None):
+    """Save off results."""
     base = file_path if file_path is not None else _DATA_DIR
     os.makedirs(base, exist_ok=True)
     with open(os.path.join(base, output + '.json'), 'w') as f:

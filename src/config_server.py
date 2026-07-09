@@ -87,6 +87,7 @@ def _set_env_var(path, key, value):
 
 
 def _current_values():
+    """Current values."""
     config = config_loader.load_config()
     env = config_loader.read_env_file()
     values = {}
@@ -100,6 +101,7 @@ def _current_values():
 
 @app.route('/', methods=['GET'])
 def index():
+    """Index."""
     return render_template(
         'config_server.html',
         fields=FIELD_SPECS,
@@ -110,6 +112,7 @@ def index():
 
 @app.route('/save', methods=['POST'])
 def save():
+    """Handle POST /save: write updated config.yaml and .env values from the submitted form."""
     for spec in FIELD_SPECS:
         key = spec['key']
         path = config_loader._DEFAULT_CONFIG if spec['source'] == 'yaml' else config_loader._ENV_FILE
@@ -131,6 +134,7 @@ def save():
 
 
 def main():  # pragma: no cover
+    """Main."""
     parser = argparse.ArgumentParser(description='Mobile-first config editor for mlb_display.')
     parser.add_argument('--port', type=int, default=None, help='Override config_server_port from config.yaml')
     args = parser.parse_args()

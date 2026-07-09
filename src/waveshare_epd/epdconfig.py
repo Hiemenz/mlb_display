@@ -45,6 +45,7 @@ class RaspberryPi:
     PWR_PIN  = 18
 
     def __init__(self):
+        """Init  ."""
         import spidev
         import gpiozero
 
@@ -56,6 +57,7 @@ class RaspberryPi:
         self.GPIO_BUSY_PIN   = gpiozero.Button(self.BUSY_PIN, pull_up = False)
 
     def digital_write(self, pin, value):
+        """Digital write."""
         if pin == self.RST_PIN:
             if value:
                 self.GPIO_RST_PIN.on()
@@ -78,6 +80,7 @@ class RaspberryPi:
                 self.GPIO_PWR_PIN.off()
 
     def digital_read(self, pin):
+        """Digital read."""
         if pin == self.BUSY_PIN:
             return self.GPIO_BUSY_PIN.value
         elif pin == self.RST_PIN:
@@ -90,15 +93,19 @@ class RaspberryPi:
             return self.PWR_PIN.value
 
     def delay_ms(self, delaytime):
+        """Delay ms."""
         time.sleep(delaytime / 1000.0)
 
     def spi_writebyte(self, data):
+        """Spi writebyte."""
         self.SPI.writebytes(data)
 
     def spi_writebyte2(self, data):
+        """Spi writebyte2."""
         self.SPI.writebytes2(data)
 
     def module_init(self):
+        """Module init."""
         self.GPIO_PWR_PIN.on()
 
         # SPI device, bus = 0, device = 0
@@ -108,6 +115,7 @@ class RaspberryPi:
         return 0
 
     def module_exit(self, cleanup=False):
+        """Module exit."""
         logger.debug("spi end")
         self.SPI.close()
 
@@ -137,6 +145,7 @@ class JetsonNano:
     PWR_PIN  = 18
 
     def __init__(self):
+        """Init  ."""
         import ctypes
         find_dirs = [
             os.path.dirname(os.path.realpath(__file__)),
@@ -156,22 +165,28 @@ class JetsonNano:
         self.GPIO = Jetson.GPIO
 
     def digital_write(self, pin, value):
+        """Digital write."""
         self.GPIO.output(pin, value)
 
     def digital_read(self, pin):
+        """Digital read."""
         return self.GPIO.input(self.BUSY_PIN)
 
     def delay_ms(self, delaytime):
+        """Delay ms."""
         time.sleep(delaytime / 1000.0)
 
     def spi_writebyte(self, data):
+        """Spi writebyte."""
         self.SPI.SYSFS_software_spi_transfer(data[0])
 
     def spi_writebyte2(self, data):
+        """Spi writebyte2."""
         for i in range(len(data)):
             self.SPI.SYSFS_software_spi_transfer(data[i])
 
     def module_init(self):
+        """Module init."""
         self.GPIO.setmode(self.GPIO.BCM)
         self.GPIO.setwarnings(False)
         self.GPIO.setup(self.RST_PIN, self.GPIO.OUT)
@@ -186,6 +201,7 @@ class JetsonNano:
         return 0
 
     def module_exit(self):
+        """Module exit."""
         logger.debug("spi end")
         self.SPI.SYSFS_software_spi_end()
 
@@ -207,6 +223,7 @@ class SunriseX3:
     Flag     = 0
 
     def __init__(self):
+        """Init  ."""
         import spidev
         import Hobot.GPIO
 
@@ -214,23 +231,29 @@ class SunriseX3:
         self.SPI = spidev.SpiDev()
 
     def digital_write(self, pin, value):
+        """Digital write."""
         self.GPIO.output(pin, value)
 
     def digital_read(self, pin):
+        """Digital read."""
         return self.GPIO.input(pin)
 
     def delay_ms(self, delaytime):
+        """Delay ms."""
         time.sleep(delaytime / 1000.0)
 
     def spi_writebyte(self, data):
+        """Spi writebyte."""
         self.SPI.writebytes(data)
 
     def spi_writebyte2(self, data):
+        """Spi writebyte2."""
         # for i in range(len(data)):
         #     self.SPI.writebytes([data[i]])
         self.SPI.xfer3(data)
 
     def module_init(self):
+        """Module init."""
         if self.Flag == 0:
             self.Flag = 1
             self.GPIO.setmode(self.GPIO.BCM)
@@ -252,6 +275,7 @@ class SunriseX3:
             return 0
 
     def module_exit(self):
+        """Module exit."""
         logger.debug("spi end")
         self.SPI.close()
 

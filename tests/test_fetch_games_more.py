@@ -74,6 +74,7 @@ def _parse_isolated(api_games, sport_id=1, config=None):
     captured = {}
 
     def fake_save(data, name):
+        """Fake save."""
         captured[name] = data
 
     if config is None:
@@ -96,25 +97,31 @@ def _parse_isolated(api_games, sport_id=1, config=None):
 
 class TestConvertTimeZTo:
     def test_chicago_summer_offset(self):
+        """Chicago summer offset."""
         # 23:05 UTC in July -> CDT (UTC-5) -> 6:05 PM
         assert convert_time_z_to('2024-07-04T23:05:00Z', 'America/Chicago') == '6:05 PM'
 
     def test_new_york_summer_offset(self):
+        """New york summer offset."""
         # 23:05 UTC in July -> EDT (UTC-4) -> 7:05 PM
         assert convert_time_z_to('2024-07-04T23:05:00Z', 'America/New_York') == '7:05 PM'
 
     def test_los_angeles_offset(self):
+        """Los angeles offset."""
         # 23:05 UTC in July -> PDT (UTC-7) -> 4:05 PM
         assert convert_time_z_to('2024-07-04T23:05:00Z', 'America/Los_Angeles') == '4:05 PM'
 
     def test_default_timezone_is_chicago(self):
+        """Default timezone is chicago."""
         assert convert_time_z_to('2024-07-04T23:05:00Z') == '6:05 PM'
 
     def test_midnight_becomes_12_am(self):
+        """Midnight becomes 12 am."""
         # 06:00 UTC in Jan -> CST (UTC-6) -> 12:00 AM
         assert convert_time_z_to('2024-01-01T06:00:00Z', 'America/Chicago') == '12:00 AM'
 
     def test_noon_becomes_12_pm(self):
+        """Noon becomes 12 pm."""
         # 18:00 UTC in Jan -> CST (UTC-6) -> 12:00 PM
         assert convert_time_z_to('2024-01-01T18:00:00Z', 'America/Chicago') == '12:00 PM'
 
@@ -125,6 +132,7 @@ class TestConvertTimeZTo:
 
 class TestPickTvChannelExtra:
     def test_favorite_is_home_team(self):
+        """Favorite is home team."""
         broadcasts = [
             {'type': 'TV', 'callSign': 'NESN', 'homeAway': 'away'},
             {'type': 'TV', 'callSign': 'MASN', 'homeAway': 'home'},
@@ -133,6 +141,7 @@ class TestPickTvChannelExtra:
         assert result == 'MASN'
 
     def test_no_home_no_favorite_falls_back_to_first_tv(self):
+        """No home no favorite falls back to first tv."""
         broadcasts = [
             {'type': 'TV', 'callSign': 'ESPN', 'homeAway': 'away'},
         ]
@@ -140,16 +149,19 @@ class TestPickTvChannelExtra:
         assert result == 'ESPN'
 
     def test_uses_name_when_no_callsign(self):
+        """Uses name when no callsign."""
         broadcasts = [{'type': 'TV', 'name': 'Peacock', 'homeAway': 'away'}]
         assert _pick_tv_channel(broadcasts, None, 'BOS', 'BAL') == 'Peacock'
 
     def test_favorite_side_with_no_matching_broadcast_falls_through(self):
+        """Favorite side with no matching broadcast falls through."""
         # Favorite is away, but away has no TV entries -> falls to home local.
         broadcasts = [{'type': 'TV', 'callSign': 'MASN', 'homeAway': 'home'}]
         result = _pick_tv_channel(broadcasts, 'BOS', 'BOS', 'BAL')
         assert result == 'MASN'
 
     def test_no_broadcasts_returns_none(self):
+        """No broadcasts returns none."""
         assert _pick_tv_channel([], 'BOS', 'BOS', 'BAL') is None
         assert _pick_tv_channel(None, 'BOS', 'BOS', 'BAL') is None
 
@@ -160,16 +172,19 @@ class TestPickTvChannelExtra:
 
 class TestLookupStadium:
     def test_found_by_venue_id(self):
+        """Found by venue id."""
         with patch('fetch_games.load_json_file',
                    return_value={'2392': {'roof': 'fixed', 'lat': 1, 'lon': 2}}):
             result = _lookup_stadium(2392, 'Daikin Park')
         assert result == {'roof': 'fixed', 'lat': 1, 'lon': 2}
 
     def test_not_found_returns_none(self):
+        """Not found returns none."""
         with patch('fetch_games.load_json_file', return_value={}):
             assert _lookup_stadium(999, 'Nowhere Field') is None
 
     def test_fallback_by_venue_name(self):
+        """Fallback by venue name."""
         stadiums = {
             '5': {'roof': 'open', 'lat': 3, 'lon': 4},
             '_name_fallback': {'Some Park': 5},
@@ -179,6 +194,7 @@ class TestLookupStadium:
         assert result == {'roof': 'open', 'lat': 3, 'lon': 4}
 
     def test_venue_name_not_in_fallback_returns_none(self):
+        """Venue name not in fallback returns none."""
         stadiums = {'_name_fallback': {}}
         with patch('fetch_games.load_json_file', return_value=stadiums):
             assert _lookup_stadium(None, 'Unknown Park') is None
@@ -186,12 +202,15 @@ class TestLookupStadium:
 
 class TestAttachPregameWeather:
     def _game_dict(self):
+        """Game dict."""
         return {'game_date': '2026-07-04T23:05:00Z'}
 
     def _schedule_game(self, venue_id=10, venue_name='Test Park'):
+        """Schedule game."""
         return {'venue': {'id': venue_id, 'name': venue_name}}
 
     def test_weather_disabled_short_circuits(self):
+        """Weather disabled short circuits."""
         gd = self._game_dict()
         with patch('fetch_games.load_json_file', return_value={}):
             _attach_pregame_weather(gd, self._schedule_game(), {'weather': {'enabled': False}})
@@ -199,12 +218,14 @@ class TestAttachPregameWeather:
         assert 'roof_state' not in gd
 
     def test_no_stadium_match_leaves_game_dict_unchanged(self):
+        """No stadium match leaves game dict unchanged."""
         gd = self._game_dict()
         with patch('fetch_games.load_json_file', return_value={}):
             _attach_pregame_weather(gd, self._schedule_game(), {})
         assert gd == self._game_dict()
 
     def test_fixed_roof_sets_roof_state(self):
+        """Fixed roof sets roof state."""
         gd = self._game_dict()
         stadiums = {'10': {'roof': 'fixed', 'lat': 1, 'lon': 2}}
         with patch('fetch_games.load_json_file', return_value=stadiums), \
@@ -213,6 +234,7 @@ class TestAttachPregameWeather:
         assert gd['roof_state'] == 'fixed'
 
     def test_always_closed_venue_id_sets_roof_state_even_if_not_fixed(self):
+        """Always closed venue id sets roof state even if not fixed."""
         gd = self._game_dict()
         stadiums = {'2392': {'roof': 'retractable', 'lat': 1, 'lon': 2}}
         with patch('fetch_games.load_json_file', return_value=stadiums), \
@@ -221,6 +243,7 @@ class TestAttachPregameWeather:
         assert gd['roof_state'] == 'fixed'
 
     def test_forecast_none_leaves_weather_fields_unset(self):
+        """Forecast none leaves weather fields unset."""
         gd = self._game_dict()
         stadiums = {'10': {'roof': 'open', 'lat': 1, 'lon': 2}}
         with patch('fetch_games.load_json_file', return_value=stadiums), \
@@ -229,6 +252,7 @@ class TestAttachPregameWeather:
         assert 'weather_temp_f' not in gd
 
     def test_forecast_success_populates_weather_fields(self):
+        """Forecast success populates weather fields."""
         gd = self._game_dict()
         stadiums = {'10': {'roof': 'open', 'lat': 1, 'lon': 2}}
         forecast = {'temp_f': 75, 'wind_mph': 5, 'wind_dir': 'NW', 'precip_pct': 10}
@@ -242,6 +266,7 @@ class TestAttachPregameWeather:
         mock_fc.assert_called_once()
 
     def test_import_error_on_weather_module_short_circuits(self):
+        """Import error on weather module short circuits."""
         gd = self._game_dict()
         stadiums = {'10': {'roof': 'open', 'lat': 1, 'lon': 2}}
         with patch('fetch_games.load_json_file', return_value=stadiums), \
@@ -256,6 +281,7 @@ class TestAttachPregameWeather:
 
 class TestFetchWinProbability:
     def test_success_returns_scaled_percentages(self):
+        """Success returns scaled percentages."""
         data = [
             {
                 'awayTeamWinProbability': 0.55,
@@ -276,6 +302,7 @@ class TestFetchWinProbability:
         assert desc == 'a single'
 
     def test_already_percent_scale_not_doubled(self):
+        """Already percent scale not doubled."""
         data = [
             {
                 'awayTeamWinProbability': 55.0,
@@ -290,6 +317,7 @@ class TestFetchWinProbability:
         assert home_wp == 45.0
 
     def test_skips_substitution_events_for_last_play(self):
+        """Skips substitution events for last play."""
         data = [
             {'result': {'event': 'Single', 'eventType': 'single'}, 'about': {'inning': 3, 'isTopInning': False}},
             {'result': {'event': 'Sub', 'eventType': 'substitution'}, 'about': {'inning': 4, 'isTopInning': True}},
@@ -301,21 +329,25 @@ class TestFetchWinProbability:
         assert is_top is False
 
     def test_empty_list_returns_safe_defaults(self):
+        """Empty list returns safe defaults."""
         with patch('fetch_games.requests.get', return_value=_resp(json_data=[])):
             result = fetch_win_probability(1)
         assert result == (None, None, None, None, None, 0, '')
 
     def test_non_list_payload_returns_safe_defaults(self):
+        """Non list payload returns safe defaults."""
         with patch('fetch_games.requests.get', return_value=_resp(json_data={'foo': 'bar'})):
             result = fetch_win_probability(1)
         assert result == (None, None, None, None, None, 0, '')
 
     def test_network_exception_returns_safe_defaults(self):
+        """Network exception returns safe defaults."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
             result = fetch_win_probability(1)
         assert result == (None, None, None, None, None, 0, '')
 
     def test_missing_win_probability_fields_returns_none_none(self):
+        """Missing win probability fields returns none none."""
         data = [{'result': {'event': 'Single', 'eventType': 'single'}, 'about': {}}]
         with patch('fetch_games.requests.get', return_value=_resp(json_data=data)):
             away_wp, home_wp, *_ = fetch_win_probability(1)
@@ -329,6 +361,7 @@ class TestFetchWinProbability:
 
 class TestFetchChallengeTeamAbbr:
     def _live_payload(self, challenge_team_id, in_progress=True):
+        """Live payload."""
         return {
             'liveData': {
                 'plays': {
@@ -342,24 +375,28 @@ class TestFetchChallengeTeamAbbr:
         }
 
     def test_away_team_challenge(self):
+        """Away team challenge."""
         resp = _resp(json_data=self._live_payload(111))
         with patch('fetch_games.requests.get', return_value=resp):
             result = _fetch_challenge_team_abbr(1, 111, 110, 'BOS', 'BAL')
         assert result == 'BOS'
 
     def test_home_team_challenge(self):
+        """Home team challenge."""
         resp = _resp(json_data=self._live_payload(110))
         with patch('fetch_games.requests.get', return_value=resp):
             result = _fetch_challenge_team_abbr(1, 111, 110, 'BOS', 'BAL')
         assert result == 'BAL'
 
     def test_no_active_review_returns_empty_string(self):
+        """No active review returns empty string."""
         resp = _resp(json_data=self._live_payload(111, in_progress=False))
         with patch('fetch_games.requests.get', return_value=resp):
             result = _fetch_challenge_team_abbr(1, 111, 110, 'BOS', 'BAL')
         assert result == ''
 
     def test_exception_returns_empty_string(self):
+        """Exception returns empty string."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
             result = _fetch_challenge_team_abbr(1, 111, 110, 'BOS', 'BAL')
         assert result == ''
@@ -371,6 +408,7 @@ class TestFetchChallengeTeamAbbr:
 
 class TestFetchMlbOdds:
     def test_success_extracts_h2h_prices(self):
+        """Success extracts h2h prices."""
         payload = [
             {
                 'home_team': 'Baltimore Orioles',
@@ -391,6 +429,7 @@ class TestFetchMlbOdds:
         assert result == {('baltimore orioles', 'boston red sox'): (-150, 130)}
 
     def test_non_h2h_market_ignored(self):
+        """Non h2h market ignored."""
         payload = [
             {
                 'home_team': 'A', 'away_team': 'B',
@@ -402,12 +441,14 @@ class TestFetchMlbOdds:
         assert result == {}
 
     def test_raise_for_status_error_returns_empty_dict(self):
+        """Raise for status error returns empty dict."""
         resp = _resp()
         resp.raise_for_status.side_effect = Exception('HTTP 401')
         with patch('fetch_games.requests.get', return_value=resp):
             assert _fetch_mlb_odds('bad-key') == {}
 
     def test_network_exception_returns_empty_dict(self):
+        """Network exception returns empty dict."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
             assert _fetch_mlb_odds('fake-key') == {}
 
@@ -418,6 +459,7 @@ class TestFetchMlbOdds:
 
 class TestGetOddsCached:
     def test_fresh_cache_hit_skips_fetch(self):
+        """Fresh cache hit skips fetch."""
         from datetime import date
         today = str(date.today())
         cache = {'date': today, 'odds': {'baltimore orioles|boston red sox': [-150, 130]}}
@@ -428,6 +470,7 @@ class TestGetOddsCached:
         assert result == {('baltimore orioles', 'boston red sox'): (-150, 130)}
 
     def test_stale_cache_triggers_refetch_and_save(self):
+        """Stale cache triggers refetch and save."""
         stale_cache = {'date': '2000-01-01', 'odds': {}}
         fresh_odds = {('a', 'b'): (100, -120)}
         with patch('fetch_games.load_json_file', return_value=stale_cache), \
@@ -441,6 +484,7 @@ class TestGetOddsCached:
         assert saved_data['odds'] == {'a|b': [100, -120]}
 
     def test_missing_cache_triggers_fetch(self):
+        """Missing cache triggers fetch."""
         with patch('fetch_games.load_json_file', return_value=None), \
              patch('fetch_games._fetch_mlb_odds', return_value={}) as mock_fetch, \
              patch('fetch_games.save_off_results') as mock_save:
@@ -456,30 +500,37 @@ class TestGetOddsCached:
 
 class TestPitcherCacheHelpers:
     def test_pitcher_cache_key_sorted_and_joined(self):
+        """Pitcher cache key sorted and joined."""
         assert _pitcher_cache_key([3, 1, 2]) == '1,2,3'
 
     def test_cache_get_returns_none_for_missing_bucket(self):
+        """Cache get returns none for missing bucket."""
         assert _cache_get({}, 'era', 'k', '2025') is None
 
     def test_cache_get_returns_none_for_season_mismatch(self):
+        """Cache get returns none for season mismatch."""
         cache = {'era': {'k': {'season': '2024', 'data': {}, 'fetched_at': datetime.now().isoformat()}}}
         assert _cache_get(cache, 'era', 'k', '2025') is None
 
     def test_cache_get_returns_none_when_stale(self):
+        """Cache get returns none when stale."""
         old_time = (datetime.now() - timedelta(hours=2)).isoformat(timespec='seconds')
         cache = {'era': {'k': {'season': '2025', 'data': {'1': 'x'}, 'fetched_at': old_time}}}
         assert _cache_get(cache, 'era', 'k', '2025') is None
 
     def test_cache_get_returns_data_when_fresh(self):
+        """Cache get returns data when fresh."""
         fresh_time = datetime.now().isoformat(timespec='seconds')
         cache = {'era': {'k': {'season': '2025', 'data': {'1': 'x'}, 'fetched_at': fresh_time}}}
         assert _cache_get(cache, 'era', 'k', '2025') == {'1': 'x'}
 
     def test_cache_get_handles_malformed_fetched_at(self):
+        """Cache get handles malformed fetched at."""
         cache = {'era': {'k': {'season': '2025', 'data': {}, 'fetched_at': 'not-a-date'}}}
         assert _cache_get(cache, 'era', 'k', '2025') is None
 
     def test_cache_set_creates_bucket_if_missing(self):
+        """Cache set creates bucket if missing."""
         cache = {}
         _cache_set(cache, 'era', 'k', '2025', {'1': 'x'})
         assert cache['era']['k']['season'] == '2025'
@@ -489,11 +540,13 @@ class TestPitcherCacheHelpers:
 
 class TestFetchPitcherEras:
     def test_empty_ids_returns_empty_without_request(self):
+        """Empty ids returns empty without request."""
         with patch('fetch_games.requests.get') as mock_get:
             assert _fetch_pitcher_eras([], '2025') == {}
         mock_get.assert_not_called()
 
     def test_cache_hit_skips_request(self):
+        """Cache hit skips request."""
         fresh_time = datetime.now().isoformat(timespec='seconds')
         key = _pitcher_cache_key([1])
         cache = {'era': {key: {'season': '2025', 'data': {'1': '10-5, 3.50 ERA'}, 'fetched_at': fresh_time}}}
@@ -504,6 +557,7 @@ class TestFetchPitcherEras:
         assert result == {1: '10-5, 3.50 ERA'}
 
     def test_cache_miss_fetches_and_saves(self):
+        """Cache miss fetches and saves."""
         payload = {
             'people': [
                 {'id': 1, 'stats': [{'splits': [{'stat': {'era': '3.50', 'wins': 10, 'losses': 5}}]}]},
@@ -517,6 +571,7 @@ class TestFetchPitcherEras:
         mock_save.assert_called_once()
 
     def test_negative_era_is_ignored(self):
+        """Negative era is ignored."""
         payload = {
             'people': [
                 {'id': 1, 'stats': [{'splits': [{'stat': {'era': '-.--', 'wins': 0, 'losses': 0}}]}]},
@@ -531,11 +586,13 @@ class TestFetchPitcherEras:
         assert result[2] == '8-3, 2.75 ERA'
 
     def test_network_exception_returns_empty_dict(self):
+        """Network exception returns empty dict."""
         with patch('fetch_games.load_json_file', return_value={}), \
              patch('fetch_games.requests.get', side_effect=Exception('boom')):
             assert _fetch_pitcher_eras([1], '2025') == {}
 
     def test_season_mismatch_forces_refetch(self):
+        """Season mismatch forces refetch."""
         stale_time = datetime.now().isoformat(timespec='seconds')
         key = _pitcher_cache_key([1])
         cache = {'era': {key: {'season': '2024', 'data': {'1': 'old'}, 'fetched_at': stale_time}}}
@@ -549,10 +606,12 @@ class TestFetchPitcherEras:
 
 class TestFetchDecisionPitcherStats:
     def test_empty_ids_returns_empty(self):
+        """Empty ids returns empty."""
         assert _fetch_decision_pitcher_stats([], '2025') == {}
         assert _fetch_decision_pitcher_stats([None, None], '2025') == {}
 
     def test_cache_hit_skips_request(self):
+        """Cache hit skips request."""
         fresh_time = datetime.now().isoformat(timespec='seconds')
         key = _pitcher_cache_key([1])
         cache = {'decision': {key: {'season': '2025', 'data': {'1': {'record': '10-5', 'saves': 2}},
@@ -564,6 +623,7 @@ class TestFetchDecisionPitcherStats:
         assert result == {1: {'record': '10-5', 'saves': 2}}
 
     def test_cache_miss_fetches_wins_losses_saves(self):
+        """Cache miss fetches wins losses saves."""
         payload = {
             'people': [
                 {'id': 42, 'stats': [{'splits': [{'stat': {'wins': 3, 'losses': 1, 'saves': 12}}]}]},
@@ -577,6 +637,7 @@ class TestFetchDecisionPitcherStats:
         mock_save.assert_called_once()
 
     def test_missing_saves_defaults_to_zero(self):
+        """Missing saves defaults to zero."""
         payload = {'people': [{'id': 1, 'stats': [{'splits': [{'stat': {'wins': 1, 'losses': 0}}]}]}]}
         with patch('fetch_games.load_json_file', return_value={}), \
              patch('fetch_games.requests.get', return_value=_resp(json_data=payload)), \
@@ -585,6 +646,7 @@ class TestFetchDecisionPitcherStats:
         assert result[1]['saves'] == 0
 
     def test_network_exception_returns_empty_dict(self):
+        """Network exception returns empty dict."""
         with patch('fetch_games.load_json_file', return_value={}), \
              patch('fetch_games.requests.get', side_effect=Exception('boom')):
             assert _fetch_decision_pitcher_stats([1], '2025') == {}
@@ -596,6 +658,7 @@ class TestFetchDecisionPitcherStats:
 
 class TestFetchAllTeamAbbreviations:
     def test_success_saves_and_returns_mapping(self):
+        """Success saves and returns mapping."""
         payload = {'teams': [{'id': 147, 'abbreviation': 'NYY', 'name': 'New York Yankees'}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)), \
              patch('fetch_games.save_off_results') as mock_save:
@@ -604,6 +667,7 @@ class TestFetchAllTeamAbbreviations:
         mock_save.assert_called_once_with({'team_abbreviation': {'147': 'NYY'}}, 'teams')
 
     def test_wbc_override_applied(self):
+        """Wbc override applied."""
         payload = {'teams': [{'id': 9999, 'abbreviation': 'COL', 'name': 'Colombia'}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)), \
              patch('fetch_games.save_off_results'):
@@ -611,6 +675,7 @@ class TestFetchAllTeamAbbreviations:
         assert result == {'9999': 'CLM'}
 
     def test_non_200_status_returns_empty(self):
+        """Non 200 status returns empty."""
         with patch('fetch_games.requests.get', return_value=_resp(status_code=500)), \
              patch('fetch_games.save_off_results') as mock_save:
             result = fetch_all_team_abbreviations(sport_id=1)
@@ -618,26 +683,31 @@ class TestFetchAllTeamAbbreviations:
         mock_save.assert_not_called()
 
     def test_exception_returns_empty(self):
+        """Exception returns empty."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
             assert fetch_all_team_abbreviations(sport_id=1) == {}
 
 
 class TestGetTeamAbbreviation:
     def test_success_returns_abbreviation(self):
+        """Success returns abbreviation."""
         payload = {'teams': [{'abbreviation': 'NYY'}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             assert get_team_abbreviation(147) == 'NYY'
 
     def test_missing_abbreviation_returns_fallback(self):
+        """Missing abbreviation returns fallback."""
         payload = {'teams': [{}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             assert get_team_abbreviation(147) == 'T147'
 
     def test_non_200_returns_fallback(self):
+        """Non 200 returns fallback."""
         with patch('fetch_games.requests.get', return_value=_resp(status_code=404)):
             assert get_team_abbreviation(147) == 'T147'
 
     def test_exception_returns_fallback(self):
+        """Exception returns fallback."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
             assert get_team_abbreviation(147) == 'T147'
 
@@ -648,15 +718,18 @@ class TestGetTeamAbbreviation:
 
 class TestCheckGamesForSport:
     def test_no_dates_returns_zero(self):
+        """No dates returns zero."""
         with patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})):
             assert check_games_for_sport('2026-07-01', 1) == 0
 
     def test_games_present_returns_count(self):
+        """Games present returns count."""
         payload = {'dates': [{'games': [{'gameType': 'R'}, {'gameType': 'R'}]}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             assert check_games_for_sport('2026-07-01', 8) == 2
 
     def test_sport_1_filters_out_spring_training_when_regular_present(self):
+        """Sport 1 filters out spring training when regular present."""
         payload = {'dates': [{'games': [
             {'gameType': 'R'}, {'gameType': 'S'}, {'gameType': 'E'},
         ]}]}
@@ -664,20 +737,24 @@ class TestCheckGamesForSport:
             assert check_games_for_sport('2026-03-15', 1) == 1
 
     def test_sport_1_keeps_spring_training_when_no_regular_games(self):
+        """Sport 1 keeps spring training when no regular games."""
         payload = {'dates': [{'games': [{'gameType': 'S'}, {'gameType': 'S'}]}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             assert check_games_for_sport('2026-03-15', 1) == 2
 
     def test_non_sport_1_not_filtered(self):
+        """Non sport 1 not filtered."""
         payload = {'dates': [{'games': [{'gameType': 'S'}]}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             assert check_games_for_sport('2026-03-15', 16) == 1
 
     def test_non_200_returns_zero(self):
+        """Non 200 returns zero."""
         with patch('fetch_games.requests.get', return_value=_resp(status_code=500)):
             assert check_games_for_sport('2026-07-01', 1) == 0
 
     def test_exception_returns_zero(self):
+        """Exception returns zero."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
             assert check_games_for_sport('2026-07-01', 1) == 0
 
@@ -688,6 +765,7 @@ class TestCheckGamesForSport:
 
 class TestFindNextGameDate:
     def test_found_on_later_date_entry(self):
+        """Found on later date entry."""
         payload = {'dates': [
             {'date': '2026-07-01', 'games': []},
             {'date': '2026-07-02', 'games': []},
@@ -699,6 +777,7 @@ class TestFindNextGameDate:
         assert mock_get.call_count == 1
 
     def test_games_on_from_date_itself_are_skipped(self):
+        """Games on from date itself are skipped."""
         payload = {'dates': [
             {'date': '2026-07-01', 'games': [{'gameType': 'R'}]},
             {'date': '2026-07-02', 'games': []},
@@ -708,7 +787,9 @@ class TestFindNextGameDate:
         assert result is None
 
     def test_falls_through_sport_priority_list(self):
+        """Falls through sport priority list."""
         def fake_get(url, *args, **kwargs):
+            """Fake get."""
             if 'sportId=1' in url:
                 return _resp(json_data={'dates': [{'date': '2026-07-02', 'games': []}]})
             return _resp(json_data={'dates': [{'date': '2026-07-02', 'games': [{'gameType': 'R'}]}]})
@@ -719,22 +800,26 @@ class TestFindNextGameDate:
         assert mock_get.call_count == 2
 
     def test_never_found_returns_none(self):
+        """Never found returns none."""
         payload = {'dates': [{'date': '2026-07-02', 'games': []}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             result = find_next_game_date([1, 8], '2026-07-01')
         assert result is None
 
     def test_sport_1_spring_training_only_still_counts(self):
+        """Sport 1 spring training only still counts."""
         payload = {'dates': [{'date': '2026-03-02', 'games': [{'gameType': 'S'}]}]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             result = find_next_game_date([1], '2026-03-01')
         assert result == '2026-03-02'
 
     def test_non_200_response_treated_as_not_found(self):
+        """Non 200 response treated as not found."""
         with patch('fetch_games.requests.get', return_value=_resp(status_code=500)):
             assert find_next_game_date([1], '2026-07-01') is None
 
     def test_exception_is_caught_and_continues(self):
+        """Exception is caught and continues."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
             assert find_next_game_date([1, 8], '2026-07-01') is None
 
@@ -746,6 +831,7 @@ class TestFindNextGameDate:
 
 class TestParseGamesLiveDetails:
     def test_win_probability_attached_when_configured(self):
+        """Win probability attached when configured."""
         api_game = _minimal_game_api(state='In Progress', current_inning=5, inning_state='Top')
         config = {'timezone': 'America/Chicago', 'scoreboard_win_probability': True}
         with patch('fetch_games.save_off_results'), \
@@ -755,6 +841,7 @@ class TestParseGamesLiveDetails:
             captured = {}
 
             def fake_save(data, name):
+                """Fake save."""
                 captured[name] = data
             with patch('fetch_games.save_off_results', side_effect=fake_save):
                 parse_games({'dates': [{'games': [api_game]}]}, sport_id=1, config=config)
@@ -763,6 +850,7 @@ class TestParseGamesLiveDetails:
         assert game['home_win_probability'] == 40.0
 
     def test_max_live_calls_limits_fetch_win_probability(self):
+        """Max live calls limits fetch win probability."""
         games_api = [
             _minimal_game_api(game_pk=1, state='In Progress', current_inning=1, inning_state='Top'),
             _minimal_game_api(game_pk=2, away_id=200, home_id=201, state='In Progress',
@@ -777,6 +865,7 @@ class TestParseGamesLiveDetails:
         assert mock_wp.call_count == 1
 
     def test_featured_abbr_filters_live_calls(self):
+        """Featured abbr filters live calls."""
         api_game = _minimal_game_api(away_abbr='BOS', away_id=111, home_abbr='BAL', home_id=110,
                                       state='In Progress', current_inning=1, inning_state='Top')
         config = {'timezone': 'America/Chicago', '_featured_abbr': 'NYY'}
@@ -788,11 +877,13 @@ class TestParseGamesLiveDetails:
         mock_wp.assert_not_called()
 
     def test_challenge_state_fetches_challenge_team_abbr(self):
+        """Challenge state fetches challenge team abbr."""
         api_game = _minimal_game_api(state='Player challenge', current_inning=5, inning_state='Top')
         config = {'timezone': 'America/Chicago'}
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -804,11 +895,13 @@ class TestParseGamesLiveDetails:
         assert captured['games']['games'][0]['challenge_team_abbr'] == 'BOS'
 
     def test_scoreboard_live_details_merges_extras(self):
+        """Scoreboard live details merges extras."""
         api_game = _minimal_game_api(state='In Progress', current_inning=5, inning_state='Top')
         config = {'timezone': 'America/Chicago', 'scoreboard_live_details': True}
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
         extras = {'pitch_count': 42, 'last_play': None}
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
@@ -823,11 +916,13 @@ class TestParseGamesLiveDetails:
         assert game['last_play'] == 'Double'
 
     def test_between_innings_pc_restores_inning_state(self):
+        """Between innings pc restores inning state."""
         api_game = _minimal_game_api(state='In Progress', current_inning=5, inning_state='Bottom')
         config = {'timezone': 'America/Chicago', 'scoreboard_live_details': True}
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
         extras = {'sub_event': 'PC: 1-2', 'at_bat_pitch_count': 0}
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
@@ -849,6 +944,7 @@ class TestParseGamesLiveDetails:
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
         extras = {'sub_event': 'PC: 1-2', 'at_bat_pitch_count': 0}
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
@@ -865,11 +961,13 @@ class TestParseGamesLiveDetails:
         assert game['currentInningOrdinal'] == '4th'
 
     def test_inning_state_middle_triggers_between_inning_fetch(self):
+        """Inning state middle triggers between inning fetch."""
         api_game = _minimal_game_api(state='In Progress', current_inning=5, inning_state='Middle')
         config = {'timezone': 'America/Chicago'}
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -885,11 +983,13 @@ class TestParseGamesLiveDetails:
         assert game['next_batter_1'] == 'Player A'
 
     def test_delayed_state_with_current_inning_fetches_between_inning_info(self):
+        """Delayed state with current inning fetches between inning info."""
         api_game = _minimal_game_api(state='Delayed', current_inning=3, inning_state='Bottom')
         config = {'timezone': 'America/Chicago'}
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -903,6 +1003,7 @@ class TestParseGamesLiveDetails:
 
 class TestParseGamesWalkOff:
     def _final_game(self, home_wins, away_innings, home_innings):
+        """Final game."""
         api_game = _minimal_game_api(state='Final', away_runs=sum(r or 0 for r in away_innings),
                                       home_runs=sum(r or 0 for r in home_innings))
         api_game['teams']['home']['isWinner'] = home_wins
@@ -913,21 +1014,25 @@ class TestParseGamesWalkOff:
         return api_game
 
     def test_home_walk_off_detected(self):
+        """Home walk off detected."""
         api_game = self._final_game(True, [1, 0, 0], [0, 0, 2])
         games = _parse_isolated([api_game])
         assert games[0]['walk_off'] is True
 
     def test_away_winner_never_walk_off(self):
+        """Away winner never walk off."""
         api_game = self._final_game(False, [2, 0, 0], [0, 0, 0])
         games = _parse_isolated([api_game])
         assert games[0]['walk_off'] is False
 
     def test_home_winner_but_no_runs_in_final_inning_not_walk_off(self):
+        """Home winner but no runs in final inning not walk off."""
         api_game = self._final_game(True, [0, 0, 1], [1, 1, 0])
         games = _parse_isolated([api_game])
         assert games[0]['walk_off'] is False
 
     def test_unequal_inning_lengths_not_walk_off(self):
+        """Unequal inning lengths not walk off."""
         api_game = self._final_game(True, [1, 0], [0, 0, 2])
         games = _parse_isolated([api_game])
         assert games[0]['walk_off'] is False
@@ -935,6 +1040,7 @@ class TestParseGamesWalkOff:
 
 class TestParseGamesPitcherAndDecisionBatching:
     def test_probable_pitcher_era_attached_when_no_note(self):
+        """Probable pitcher era attached when no note."""
         api_game = _minimal_game_api()
         api_game['teams']['away']['probablePitcher'] = {'id': 501, 'fullName': 'A Pitcher'}
         api_game['teams']['home']['probablePitcher'] = {'id': 502, 'fullName': 'H Pitcher'}
@@ -951,6 +1057,7 @@ class TestParseGamesPitcherAndDecisionBatching:
         assert saved_games[0]['home_probable_note'] == '8-6, 4.20 ERA'
 
     def test_existing_probable_note_not_overwritten(self):
+        """Existing probable note not overwritten."""
         api_game = _minimal_game_api()
         api_game['teams']['away']['probablePitcher'] = {
             'id': 501, 'fullName': 'A Pitcher', 'note': 'Existing note',
@@ -965,6 +1072,7 @@ class TestParseGamesPitcherAndDecisionBatching:
         assert saved_games[0]['away_probable_note'] == 'Existing note'
 
     def test_no_probable_pitchers_skips_era_fetch(self):
+        """No probable pitchers skips era fetch."""
         api_game = _minimal_game_api()
         with patch('fetch_games.save_off_results'), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -975,6 +1083,7 @@ class TestParseGamesPitcherAndDecisionBatching:
         mock_eras.assert_not_called()
 
     def test_decision_pitcher_stats_attached(self):
+        """Decision pitcher stats attached."""
         api_game = _minimal_game_api(state='Final', away_runs=5, home_runs=3)
         api_game['decisions'] = {
             'winner': {'id': 1, 'fullName': 'Winner Pitcher'},
@@ -1000,6 +1109,7 @@ class TestParseGamesPitcherAndDecisionBatching:
         assert g['saver_saves'] == 20
 
     def test_no_decisions_skips_decision_fetch(self):
+        """No decisions skips decision fetch."""
         api_game = _minimal_game_api()
         with patch('fetch_games.save_off_results'), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -1012,6 +1122,7 @@ class TestParseGamesPitcherAndDecisionBatching:
 
 class TestParseGamesEndTimeCache:
     def test_cache_hit_skips_live_feed_request(self):
+        """Cache hit skips live feed request."""
         api_game = _minimal_game_api(game_pk=555, state='Final', away_runs=5, home_runs=3)
         end_cache = {'555': '2026-07-01T02:00:00Z'}
         with patch('fetch_games.save_off_results') as mock_save, \
@@ -1026,10 +1137,12 @@ class TestParseGamesEndTimeCache:
         assert saved_games[0]['game_end_time_utc'] == '2026-07-01T02:00:00Z'
 
     def test_cache_miss_fetches_and_persists(self):
+        """Cache miss fetches and persists."""
         api_game = _minimal_game_api(game_pk=556, state='Final', away_runs=5, home_runs=3)
         live_payload = {'liveData': {'plays': {'currentPlay': {'about': {'endTime': '2026-07-01T03:00:00Z'}}}}}
 
         def fake_load(name):
+            """Fake load."""
             if name == 'game_end_time_cache.json':
                 return {}
             return {'team_abbreviation': {}}
@@ -1045,9 +1158,11 @@ class TestParseGamesEndTimeCache:
         assert saved_games[0]['game_end_time_utc'] == '2026-07-01T03:00:00Z'
 
     def test_end_time_fetch_exception_is_swallowed(self):
+        """End time fetch exception is swallowed."""
         api_game = _minimal_game_api(game_pk=557, state='Final', away_runs=5, home_runs=3)
 
         def fake_load(name):
+            """Fake load."""
             if name == 'game_end_time_cache.json':
                 return {}
             return {'team_abbreviation': {}}
@@ -1061,6 +1176,7 @@ class TestParseGamesEndTimeCache:
         assert 'game_end_time_utc' not in saved_games[0]
 
     def test_non_final_game_never_hits_end_time_cache(self):
+        """Non final game never hits end time cache."""
         api_game = _minimal_game_api(state='Scheduled')
         with patch('fetch_games.save_off_results'), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -1073,6 +1189,7 @@ class TestParseGamesEndTimeCache:
 
 class TestParseGamesOddsAttachment:
     def test_odds_attached_to_pregame_games_when_matched(self):
+        """Odds attached to pregame games when matched."""
         api_game = _minimal_game_api(state='Scheduled')
         odds_map = {('baltimore orioles', 'boston red sox'): (-150, 130)}
         with patch('fetch_games.save_off_results') as mock_save, \
@@ -1107,6 +1224,7 @@ class TestParseGamesOddsAttachment:
         assert 'home_ml' not in saved_games[1]
 
     def test_no_odds_api_key_skips_odds_lookup(self):
+        """No odds api key skips odds lookup."""
         api_game = _minimal_game_api(state='Scheduled')
         with patch('fetch_games.save_off_results'), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -1119,6 +1237,7 @@ class TestParseGamesOddsAttachment:
         mock_odds.assert_not_called()
 
     def test_no_pregame_games_skips_odds_lookup(self):
+        """No pregame games skips odds lookup."""
         api_game = _minimal_game_api(state='Final', away_runs=1, home_runs=0)
         with patch('fetch_games.save_off_results'), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -1130,6 +1249,7 @@ class TestParseGamesOddsAttachment:
         mock_odds.assert_not_called()
 
     def test_config_defaults_when_none_passed(self):
+        """Config defaults when none passed."""
         api_game = _minimal_game_api(state='Scheduled')
         with patch('fetch_games.save_off_results'), \
              patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
@@ -1145,6 +1265,7 @@ class TestParseGamesOddsAttachment:
 
 class TestFetchTomorrowGames:
     def test_successful_fetch_saves_minimal_games(self):
+        """Successful fetch saves minimal games."""
         schedule_payload = {'dates': [{'games': [
             {'teams': {'away': {'team': {'id': 111}}, 'home': {'team': {'id': 110}}},
              'gameDate': '2026-07-02T23:05:00Z', 'gamePk': 777, 'gameType': 'R'},
@@ -1159,6 +1280,7 @@ class TestFetchTomorrowGames:
         assert saved_data['date'] == '2026-07-02'
 
     def test_no_games_for_date_saves_empty_list(self):
+        """No games for date saves empty list."""
         with patch('fetch_games.check_games_for_sport', return_value=0), \
              patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.save_off_results') as mock_save:
@@ -1167,6 +1289,7 @@ class TestFetchTomorrowGames:
         assert saved_data['games'] == []
 
     def test_non_200_response_does_not_save(self):
+        """Non 200 response does not save."""
         with patch('fetch_games.check_games_for_sport', return_value=0), \
              patch('fetch_games.requests.get', return_value=_resp(status_code=500)), \
              patch('fetch_games.save_off_results') as mock_save:
@@ -1174,6 +1297,7 @@ class TestFetchTomorrowGames:
         mock_save.assert_not_called()
 
     def test_request_exception_is_swallowed(self):
+        """Request exception is swallowed."""
         with patch('fetch_games.check_games_for_sport', return_value=0), \
              patch('fetch_games.requests.get', side_effect=Exception('boom')), \
              patch('fetch_games.save_off_results') as mock_save:
@@ -1181,6 +1305,7 @@ class TestFetchTomorrowGames:
         mock_save.assert_not_called()
 
     def test_defaults_to_tomorrow_when_no_for_date(self):
+        """Defaults to tomorrow when no for date."""
         with patch('fetch_games.check_games_for_sport', return_value=0), \
              patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.save_off_results') as mock_save, \
@@ -1192,6 +1317,7 @@ class TestFetchTomorrowGames:
         assert saved_data['date'] == expected
 
     def test_empty_sport_priority_defaults_to_sport_1(self):
+        """Empty sport priority defaults to sport 1."""
         with patch('fetch_games.check_games_for_sport') as mock_check, \
              patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.save_off_results'):
@@ -1199,6 +1325,7 @@ class TestFetchTomorrowGames:
         mock_check.assert_not_called()
 
     def test_spring_training_filtered_when_regular_games_present(self):
+        """Spring training filtered when regular games present."""
         schedule_payload = {'dates': [{'games': [
             {'teams': {'away': {'team': {'id': 1}}, 'home': {'team': {'id': 2}}},
              'gameDate': 'x', 'gamePk': 1, 'gameType': 'R'},
@@ -1220,6 +1347,7 @@ class TestFetchTomorrowGames:
 
 class TestFetchScoreboardForDate:
     def test_explicit_sport_id_skips_priority_logic(self):
+        """Explicit sport id skips priority logic."""
         with patch('fetch_games.check_games_for_sport') as mock_check, \
              patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.parse_games') as mock_parse:
@@ -1229,6 +1357,7 @@ class TestFetchScoreboardForDate:
         assert mock_parse.call_args[0][1] == 8
 
     def test_priority_list_picks_first_sport_with_games(self):
+        """Priority list picks first sport with games."""
         with patch('fetch_games.check_games_for_sport', side_effect=[0, 3]), \
              patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.parse_games') as mock_parse:
@@ -1237,6 +1366,7 @@ class TestFetchScoreboardForDate:
         assert mock_parse.call_args[0][1] == 8
 
     def test_no_games_found_defaults_to_first_priority_sport(self):
+        """No games found defaults to first priority sport."""
         with patch('fetch_games.check_games_for_sport', return_value=0), \
              patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.parse_games') as mock_parse:
@@ -1245,12 +1375,14 @@ class TestFetchScoreboardForDate:
         assert mock_parse.call_args[0][1] == 1
 
     def test_no_priority_list_uses_config_sport_id(self):
+        """No priority list uses config sport id."""
         with patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.parse_games') as mock_parse:
             fetch_scoreboard_for_date('2026-07-01', sport_id=None, config={'sport_id': 16})
         assert mock_parse.call_args[0][1] == 16
 
     def test_config_none_loads_config(self):
+        """Config none loads config."""
         with patch('fetch_games.load_config', return_value={'sport_id': 1}) as mock_cfg, \
              patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
              patch('fetch_games.parse_games'):

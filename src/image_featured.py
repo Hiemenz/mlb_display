@@ -162,6 +162,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     ]
 
     def _build_last_event():
+        """Build last event."""
         _sub_ev = (game_data.get('sub_event') or '').strip()
         # PC notices display in the bottom panel; show the last real play in the header.
         if _sub_ev.startswith('PC:'):
@@ -283,6 +284,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
 
     def _draw_team_row(abbr, tid, row_y, runs, hits, errs, bold_score=False,
                        batting=False, abs_remaining=None, replay_remaining=None):
+        """Draw team row."""
         nonlocal draw, canvas
         if use_logos:
             _lg = _logo_small(abbr, tid, size=LOGO_SZ)

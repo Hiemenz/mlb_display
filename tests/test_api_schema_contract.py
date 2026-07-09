@@ -76,6 +76,7 @@ REQUIRED_FINAL_GAME_FIELDS = [
 
 
 def _load_fixture(name):
+    """Load fixture."""
     path = os.path.join(FIXTURE_DIR, name)
     if not os.path.exists(path):
         pytest.skip(f'fixture {name} not present')
@@ -84,6 +85,7 @@ def _load_fixture(name):
 
 
 def _schedule_games(data):
+    """Schedule games."""
     dates = data.get('dates', [])
     assert dates, 'schedule response has no dates[]'
     games = dates[0].get('games', [])
@@ -93,11 +95,13 @@ def _schedule_games(data):
 
 @pytest.fixture(scope='module')
 def games():
+    """Games."""
     return _schedule_games(_load_fixture('schedule_mlb_2025-07-18.json'))
 
 
 @pytest.fixture(scope='module')
 def stat():
+    """Stat."""
     data = _load_fixture('people_era_2025.json')
     people = data.get('people', [])
     assert people, 'people[] missing'
@@ -113,11 +117,13 @@ class TestScheduleContractFixture:
 
     @pytest.mark.parametrize('path', REQUIRED_GAME_FIELDS)
     def test_every_game_has_field(self, games, path):
+        """Every game has field."""
         missing = [g.get('gamePk') for g in games if not _get(g, path)[0]]
         assert not missing, f'{path} missing from games {missing}'
 
     @pytest.mark.parametrize('path', REQUIRED_FINAL_GAME_FIELDS)
     def test_every_final_game_has_field(self, games, path):
+        """Every final game has field."""
         finals = [g for g in games
                   if g.get('status', {}).get('abstractGameState') == 'Final']
         assert finals, 'fixture has no Final games to check'
@@ -125,6 +131,7 @@ class TestScheduleContractFixture:
         assert not missing, f'{path} missing from final games {missing}'
 
     def test_game_duration_is_numeric(self, games):
+        """Game duration is numeric."""
         for g in games:
             found, val = _get(g, 'gameInfo.gameDurationMinutes')
             if found:
@@ -139,6 +146,7 @@ class TestEraEndpointContractFixture:
 
     @pytest.mark.parametrize('key', ['era', 'wins', 'losses'])
     def test_stat_field_present(self, stat, key):
+        """Stat field present."""
         assert key in stat, f'season pitching stat dropped {key!r}'
 
 
@@ -152,6 +160,7 @@ LIVE = os.environ.get('MLB_LIVE_CONTRACT') == '1'
 @pytest.mark.skipif(not LIVE, reason='set MLB_LIVE_CONTRACT=1 to run live API checks')
 class TestScheduleContractLive:
     def test_recent_final_day_matches_contract(self):
+        """Recent final day matches contract."""
         # A fixed past date guarantees a completed slate regardless of when this runs.
         params = {
             'startDate': '2025-07-18', 'endDate': '2025-07-18',
