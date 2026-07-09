@@ -30,6 +30,7 @@ _WBC_ABBRS = {
 _font_cache: dict = {}
 
 def _get_font(size: int):
+    """Get font."""
     if size not in _font_cache:
         _font_cache[size] = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), size)
     return _font_cache[size]
@@ -40,6 +41,7 @@ _logo_invert_config = None  # loaded once from pic/logo_render_config.json
 
 
 def _get_logo_invert_config():
+    """Get logo invert config."""
     global _logo_invert_config
     if _logo_invert_config is None:
         config_path = os.path.join(picdir, 'logo_render_config.json')

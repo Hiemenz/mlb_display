@@ -43,6 +43,7 @@ def send_to_display(image_path, changed_regions=None, force_full=False):
 
 
 def main():
+    """CLI entry point: send a rendered image file to the e-ink display."""
     parser = argparse.ArgumentParser(
         description='Send an image file to the e-ink display',
         formatter_class=argparse.RawDescriptionHelpFormatter,

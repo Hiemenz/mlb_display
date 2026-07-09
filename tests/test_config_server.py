@@ -53,6 +53,7 @@ def isolated_files(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client():
+    """Client."""
     config_server.app.testing = True
     return config_server.app.test_client()
 
@@ -62,6 +63,7 @@ def client():
 # ---------------------------------------------------------------------------
 
 def test_read_env_file_parses_key_value_pairs(isolated_files):
+    """Read env file parses key value pairs."""
     _, env_path = isolated_files
     result = config_loader.read_env_file(str(env_path))
     assert result == {
@@ -72,10 +74,12 @@ def test_read_env_file_parses_key_value_pairs(isolated_files):
 
 
 def test_read_env_file_missing_file_returns_empty_dict(tmp_path):
+    """Read env file missing file returns empty dict."""
     assert config_loader.read_env_file(str(tmp_path / 'nope.env')) == {}
 
 
 def test_load_dotenv_does_not_overwrite_existing_env(isolated_files, monkeypatch):
+    """Load dotenv does not overwrite existing env."""
     monkeypatch.setenv('LEAGUE_MODE', 'aaa')
     config_loader._load_dotenv()
     assert os.environ['LEAGUE_MODE'] == 'aaa'
@@ -86,6 +90,7 @@ def test_load_dotenv_does_not_overwrite_existing_env(isolated_files, monkeypatch
 # ---------------------------------------------------------------------------
 
 def test_set_yaml_scalar_preserves_comments_and_other_keys(isolated_files):
+    """Set yaml scalar preserves comments and other keys."""
     yaml_path, _ = isolated_files
     before = yaml_path.read_text()
     config_server._set_yaml_scalar(str(yaml_path), 'primary', '"BOS"')
@@ -102,6 +107,7 @@ def test_set_yaml_scalar_preserves_comments_and_other_keys(isolated_files):
 
 
 def test_set_yaml_scalar_appends_when_key_absent(isolated_files):
+    """Set yaml scalar appends when key absent."""
     yaml_path, _ = isolated_files
     config_server._set_yaml_scalar(str(yaml_path), 'show_config_qr', 'true')
     after = yaml_path.read_text()
@@ -109,6 +115,7 @@ def test_set_yaml_scalar_appends_when_key_absent(isolated_files):
 
 
 def test_set_env_var_replaces_existing_key(isolated_files):
+    """Set env var replaces existing key."""
     _, env_path = isolated_files
     config_server._set_env_var(str(env_path), 'LEAGUE_MODE', 'aaa')
     after = env_path.read_text()
@@ -117,6 +124,7 @@ def test_set_env_var_replaces_existing_key(isolated_files):
 
 
 def test_set_env_var_appends_when_key_absent(isolated_files):
+    """Set env var appends when key absent."""
     _, env_path = isolated_files
     config_server._set_env_var(str(env_path), 'NEW_KEY', 'value')
     after = env_path.read_text()
@@ -124,6 +132,7 @@ def test_set_env_var_appends_when_key_absent(isolated_files):
 
 
 def test_set_env_var_creates_file_if_missing(tmp_path):
+    """Set env var creates file if missing."""
     env_path = tmp_path / '.env'
     assert not env_path.exists()
     config_server._set_env_var(str(env_path), 'FOO', 'bar')
@@ -135,6 +144,7 @@ def test_set_env_var_creates_file_if_missing(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_index_renders_current_values(client, isolated_files):
+    """Index renders current values."""
     resp = client.get('/')
     assert resp.status_code == 200
     assert b'NYY' in resp.data
@@ -142,6 +152,7 @@ def test_index_renders_current_values(client, isolated_files):
 
 
 def test_index_shows_saved_banner_when_query_param_set(client, isolated_files):
+    """Index shows saved banner when query param set."""
     resp = client.get('/?saved=1')
     assert b'Saved' in resp.data
     resp2 = client.get('/')
@@ -149,6 +160,7 @@ def test_index_shows_saved_banner_when_query_param_set(client, isolated_files):
 
 
 def test_save_updates_yaml_bool_field(client, isolated_files):
+    """Save updates yaml bool field."""
     yaml_path, env_path = isolated_files
     resp = client.post('/save', data={
         'primary': 'BOS', 'display_mode': 'scoreboard', 'league_mode': 'mlb',
@@ -165,6 +177,7 @@ def test_save_updates_yaml_bool_field(client, isolated_files):
 
 
 def test_save_unchecked_checkbox_writes_false(client, isolated_files):
+    """Save unchecked checkbox writes false."""
     yaml_path, _ = isolated_files
     client.post('/save', data={
         'primary': 'NYY', 'display_mode': 'scoreboard', 'league_mode': 'mlb',
@@ -179,6 +192,7 @@ def test_save_unchecked_checkbox_writes_false(client, isolated_files):
 
 
 def test_save_env_field(client, isolated_files):
+    """Save env field."""
     _, env_path = isolated_files
     client.post('/save', data={
         'primary': 'NYY', 'display_mode': 'scoreboard', 'league_mode': 'mlb',

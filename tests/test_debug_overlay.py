@@ -19,18 +19,21 @@ from generate_image import (
 # ---------------------------------------------------------------------------
 
 def test_get_system_uptime_parses_proc_uptime():
+    """Get system uptime parses proc uptime."""
     # 3661 seconds = 1h 1m
     with patch('builtins.open', mock_open(read_data='3661.0 1234.5\n')):
         assert _get_system_uptime() == '1h 1m'
 
 
 def test_get_system_uptime_large_value():
+    """Get system uptime large value."""
     # 90000 seconds = 25h 0m
     with patch('builtins.open', mock_open(read_data='90000.0 45000.0\n')):
         assert _get_system_uptime() == '25h 0m'
 
 
 def test_get_system_uptime_returns_empty_when_unavailable():
+    """Get system uptime returns empty when unavailable."""
     with patch('builtins.open', side_effect=FileNotFoundError):
         assert _get_system_uptime() == ''
 
@@ -48,6 +51,7 @@ BASE_CONFIG = {
 
 
 def _make_sched(last_fetch_hours_ago=0.5, next_game_date=None):
+    """Make sched."""
     dt = datetime.now(timezone.utc) - timedelta(hours=last_fetch_hours_ago)
     sched = {'last_game_fetch': dt.isoformat()}
     if next_game_date:
@@ -56,6 +60,7 @@ def _make_sched(last_fetch_hours_ago=0.5, next_game_date=None):
 
 
 def test_skip_expected_during_night_window():
+    """Skip expected during night window."""
     sched = _make_sched()
     # Mock current hour to 3am (inside 2–7 night window)
     with patch('generate_image.datetime') as mock_dt:
@@ -81,6 +86,7 @@ def test_skip_expected_during_night_window():
 
 
 def test_skip_not_expected_during_day():
+    """Skip not expected during day."""
     sched = _make_sched()
     cfg = dict(BASE_CONFIG, night_start=2, night_end=7)
     import pytz
@@ -94,6 +100,7 @@ def test_skip_not_expected_during_day():
 
 
 def test_skip_expected_on_off_day():
+    """Skip expected on off day."""
     sched = _make_sched(next_game_date='2026-07-15')
     cfg = dict(BASE_CONFIG)
     import pytz
@@ -111,6 +118,7 @@ def test_skip_expected_on_off_day():
 
 
 def test_skip_not_expected_when_next_game_date_is_today():
+    """Skip not expected when next game date is today."""
     sched = _make_sched(next_game_date='2026-07-08')
     cfg = dict(BASE_CONFIG)
     import pytz
@@ -127,6 +135,7 @@ def test_skip_not_expected_when_next_game_date_is_today():
 
 
 def test_skip_not_expected_when_night_mode_disabled():
+    """Skip not expected when night mode disabled."""
     cfg = dict(BASE_CONFIG, night_mode=False)
     sched = _make_sched()
     import pytz
@@ -146,10 +155,12 @@ def test_skip_not_expected_when_night_mode_disabled():
 # ---------------------------------------------------------------------------
 
 def _blank_image():
+    """Blank image."""
     return Image.new('1', (800, 480), 255)
 
 
 def test_draw_debug_overlay_renders_without_error():
+    """Draw debug overlay renders without error."""
     img = _blank_image()
     config = {'timezone': 'America/Chicago', 'night_mode': True, 'night_start': 2, 'night_end': 7}
     with patch('generate_image.load_json_file', return_value={}):
@@ -159,6 +170,7 @@ def test_draw_debug_overlay_renders_without_error():
 
 
 def test_draw_debug_overlay_no_uptime_no_fetch_returns_image():
+    """Draw debug overlay no uptime no fetch returns image."""
     img = _blank_image()
     config = {'timezone': 'America/Chicago'}
     with patch('generate_image.load_json_file', return_value={}):
@@ -237,6 +249,7 @@ def test_in_night_window_respects_night_mode_false():
 
 
 def test_in_night_window_enabled_returns_true_at_night():
+    """In night window enabled returns true at night."""
     from main import _in_night_window
     import pytz
     config = {
@@ -256,6 +269,7 @@ def test_in_night_window_enabled_returns_true_at_night():
 
 
 def test_in_night_window_enabled_returns_false_during_day():
+    """In night window enabled returns false during day."""
     from main import _in_night_window
     import pytz
     config = {

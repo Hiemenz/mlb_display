@@ -15,26 +15,32 @@ from image_grid import _free_grid_slot, compute_grid_layout, _find_wide_games, _
 
 class TestFreeGridSlot:
     def test_empty_grid_returns_first_slot(self):
+        """Empty grid returns first slot."""
         assert _free_grid_slot([]) == (0, 0)
 
     def test_skips_occupied_normal_cells(self):
+        """Skips occupied normal cells."""
         slots = [('normal', 0, 0), ('normal', 1, 0), ('normal', 2, 0)]
         assert _free_grid_slot(slots) == (3, 0)
 
     def test_accounts_for_wide_cell_consuming_two_columns(self):
+        """Accounts for wide cell consuming two columns."""
         # A wide cell at col=0 occupies both col=0 and col=1 of row 0.
         slots = [('wide', 0, 0)]
         assert _free_grid_slot(slots) == (2, 0)
 
     def test_returns_none_when_full_grid(self):
+        """Returns none when full grid."""
         slots = [('normal', i % 5, i // 5) for i in range(15)]
         assert _free_grid_slot(slots) is None
 
     def test_wraps_to_second_row(self):
+        """Wraps to second row."""
         slots = [('normal', c, 0) for c in range(5)]
         assert _free_grid_slot(slots) == (0, 1)
 
     def test_wide_cell_at_col3_blocks_col4_too(self):
+        """Wide cell at col3 blocks col4 too."""
         slots = [('normal', 0, 0), ('normal', 1, 0), ('normal', 2, 0),
                  ('wide', 3, 0)]   # occupies col 3 and 4
         assert _free_grid_slot(slots) == (0, 1)
@@ -45,6 +51,7 @@ class TestFreeGridSlot:
 # ---------------------------------------------------------------------------
 
 def _game(pk, state='Scheduled', inning=1, inning_state='Top', outs=0, dh='N'):
+    """Game."""
     return {
         'game_pk': pk,
         'away_team_id': 147,
@@ -69,22 +76,26 @@ BASE_CONFIG = {
 
 class TestComputeGridLayout:
     def test_all_scheduled_games_are_normal_slots(self):
+        """All scheduled games are normal slots."""
         games = [_game(i) for i in range(5)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert all(s[0] == 'normal' for s in slots)
 
     def test_live_game_gets_wide_slot_when_room(self):
+        """Live game gets wide slot when room."""
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 5)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         wide_count = sum(1 for s in slots if s[0] == 'wide')
         assert wide_count == 1
 
     def test_no_wide_slot_at_15_games_without_always_flag(self):
+        """No wide slot at 15 games without always flag."""
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 15)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert all(s[0] == 'normal' for s in slots)
 
     def test_wide_cell_always_forces_wide_at_15_games(self):
+        """Wide cell always forces wide at 15 games."""
         cfg = dict(BASE_CONFIG, wide_cell_always=True)
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 15)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
@@ -92,6 +103,7 @@ class TestComputeGridLayout:
         assert wide_count == 1
 
     def test_postponed_pushed_to_back_with_dh_and_16_games(self):
+        """Postponed pushed to back with dh and 16 games."""
         games_dh = [_game(i, dh='Y') for i in range(2)]
         games_normal = [_game(i + 10) for i in range(14)]
         ppd = _game(99, state='Postponed')
@@ -103,6 +115,7 @@ class TestComputeGridLayout:
             assert ordered[-1]['game_pk'] == 99
 
     def test_favorite_team_first_moves_primary_game_to_front(self):
+        """Favorite team first moves primary game to front."""
         cfg = dict(BASE_CONFIG, favorite_team_first=True, primary='NYY')
         games = [_game(0), _game(1), _game(2, state='In Progress')]
         # Move team 147 (NYY) game to position 2 to verify it gets moved to front
@@ -111,6 +124,7 @@ class TestComputeGridLayout:
         assert ordered[0]['away_team_id'] == 147
 
     def test_wide_slot_count_capped_at_15_in_wide_path(self):
+        """Wide slot count capped at 15 in wide path."""
         # With a live game the wide-cell loop stops at 15 slot units.
         cfg = dict(BASE_CONFIG, wide_cell_always=True)
         games = [_game(0, state='In Progress')] + [_game(i + 1) for i in range(19)]
@@ -122,6 +136,7 @@ class TestComputeGridLayout:
     # ------------------------------------------------------------------
 
     def test_all_games_always_rendered(self):
+        """All games always rendered."""
         # No game should be hidden; len(ordered) == len(slots) always.
         games = (
             [_game(i) for i in range(5)]
@@ -137,6 +152,7 @@ class TestComputeGridLayout:
         assert len(ordered) == len(slots)
 
     def test_filler_slot_in_wide_row_is_non_live(self):
+        """Filler slot in wide row is non live."""
         # 13 games, 3 live → budget=2, 2 wide per row leaves 1 filler each.
         # The filler must not be a live game.
         games = (
@@ -157,6 +173,7 @@ class TestComputeGridLayout:
                     f"Live game found in filler slot at row {row}, col {col}"
 
     def test_four_live_games_all_wide_when_spaced_with_normal(self):
+        """Four live games all wide when spaced with normal."""
         # 11 games, 4 live spaced with a normal between pairs so no col=4 conflict.
         # budget=4, all 4 live can be wide, no filler-swap needed.
         games = (
@@ -171,6 +188,7 @@ class TestComputeGridLayout:
         assert wide_count == 4
 
     def test_filler_swap_leaves_all_games_rendered(self):
+        """Filler swap leaves all games rendered."""
         # Even after filler swaps, total rendered count must equal total games.
         live = [_game(i, state='In Progress') for i in range(3)]
         normals = [_game(i + 10) for i in range(10)]
@@ -190,6 +208,7 @@ class TestMoveNonLiveToFillers:
     _SCHED = 'Scheduled'
 
     def _g(self, pk, state='Scheduled'):
+        """G."""
         return {'game_pk': pk, 'detailed_state': state}
 
     # positions parallel to a 5-game row0 wide/wide/filler + row1 layout
@@ -199,6 +218,7 @@ class TestMoveNonLiveToFillers:
     ]
 
     def test_live_in_only_filler_slot_gets_swapped(self):
+        """Live in only filler slot gets swapped."""
         # Two wide games at indices 0,1 leave a filler at index 2 (col=4, row=0).
         # If index 2 is live it should be swapped with a non-live game from row 1+.
         games = [
@@ -213,6 +233,7 @@ class TestMoveNonLiveToFillers:
         assert filler_game['detailed_state'] != self._LIVE
 
     def test_non_live_in_filler_unchanged(self):
+        """Non live in filler unchanged."""
         # Filler already holds a non-live game — no swap needed.
         games = [
             self._g(0, self._LIVE),
@@ -226,12 +247,14 @@ class TestMoveNonLiveToFillers:
         assert [g['game_pk'] for g in result] == original
 
     def test_no_wide_games_no_change(self):
+        """No wide games no change."""
         games = [self._g(i, self._SCHED) for i in range(5)]
         positions = [('normal', i, 0) for i in range(5)]
         result = _move_non_live_to_fillers(games, positions)
         assert [g['game_pk'] for g in result] == list(range(5))
 
     def test_all_games_preserved(self):
+        """All games preserved."""
         # Swaps may reorder but must not drop any game.
         games = [
             self._g(0, self._LIVE),
@@ -244,6 +267,7 @@ class TestMoveNonLiveToFillers:
         assert {g['game_pk'] for g in result} == {0, 1, 2, 3, 4}
 
     def test_index_zero_never_displaced_to_filler(self):
+        """Index zero never displaced to filler."""
         # Game at index 0 (featured team position) must never be swapped into
         # a filler slot, even if it is the only non-live candidate available.
         games = [

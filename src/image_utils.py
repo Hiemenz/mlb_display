@@ -14,6 +14,7 @@ standings_dict = {
 
 
 def normalize_dict(d):
+    """Recursively replace None values with '' in a dict (including nested dicts and lists)."""
     for key, value in d.items():
         if value is None:
             d[key] = ''  # Convert None to ''
@@ -25,6 +26,7 @@ def normalize_dict(d):
 
 
 def draw_diamond(Himage, center, size, fill=False, outline_width=1):
+    """Draw a diamond (rotated square) on Himage at center with the given size."""
     draw = ImageDraw.Draw(Himage)
     x, y = center
     diamond = [(x, y - size), (x + size, y), (x, y + size), (x - size, y)]
@@ -38,6 +40,7 @@ def draw_diamond(Himage, center, size, fill=False, outline_width=1):
 
 # Function to draw a circle at a specific location with an option to fill
 def draw_circle(Himage, center, radius, fill, outline_width=1):
+    """Draw a circle on Himage at center with the given radius, filled or outlined."""
     draw = ImageDraw.Draw(Himage)
 
     x, y = center
@@ -50,6 +53,7 @@ def draw_circle(Himage, center, radius, fill, outline_width=1):
 
 
 def check_if_two_chars(num):
+    """Check if two chars."""
     if len(str(num)) == 2:
         return -6
     return 0

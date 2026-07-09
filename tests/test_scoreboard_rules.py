@@ -205,87 +205,106 @@ def _has_dark_pixels(image, x1, y1, x2, y2):
 
 class TestCheckIfTwoChars:
     def test_single_digit_returns_zero(self):
+        """Single digit returns zero."""
         assert check_if_two_chars("0") == 0
         assert check_if_two_chars("9") == 0
         assert check_if_two_chars(5) == 0
 
     def test_two_digit_returns_minus_six(self):
+        """Two digit returns minus six."""
         assert check_if_two_chars("10") == -6
         assert check_if_two_chars("99") == -6
         assert check_if_two_chars(42) == -6
 
     def test_three_digit_returns_zero(self):
+        """Three digit returns zero."""
         # Only 2-digit triggers the offset; anything else is 0
         assert check_if_two_chars("100") == 0
 
 
 class TestPitcherLine:
     def test_none_name_returns_tbd(self):
+        """None name returns tbd."""
         name, stat = _pitcher_line(None, None)
         assert name == 'TBD'
         assert stat == ''
 
     def test_empty_name_returns_tbd(self):
+        """Empty name returns tbd."""
         name, stat = _pitcher_line('', None)
         assert name == 'TBD'
         assert stat == ''
 
     def test_single_name_no_initial(self):
+        """Single name no initial."""
         name, stat = _pitcher_line('Verlander', None)
         assert name == 'Verlander'
 
     def test_full_name_formatted(self):
+        """Full name formatted."""
         name, stat = _pitcher_line('Justin Verlander', None)
         assert name == 'J. Verlander'
 
     def test_three_part_name(self):
+        """Three part name."""
         name, stat = _pitcher_line('Sandy A Koufax', None)
         # Middle initial not a suffix → last part is last name
         assert name == 'S. Koufax'
 
     def test_name_with_jr_suffix_skipped(self):
+        """Name with jr suffix skipped."""
         name, stat = _pitcher_line('Cal Ripken Jr.', None)
         assert name == 'C. Ripken'
 
     def test_name_with_sr_suffix_skipped(self):
+        """Name with sr suffix skipped."""
         name, stat = _pitcher_line('Ken Griffey Sr.', None)
         assert name == 'K. Griffey'
 
     def test_name_with_ii_suffix_skipped(self):
+        """Name with ii suffix skipped."""
         name, stat = _pitcher_line('Cecil Fielder II', None)
         assert name == 'C. Fielder'
 
     def test_name_with_iii_suffix_skipped(self):
+        """Name with iii suffix skipped."""
         name, stat = _pitcher_line('Felipe Lopez III', None)
         assert name == 'F. Lopez'
 
     def test_note_parses_wl_and_era(self):
+        """Note parses wl and era."""
         name, stat = _pitcher_line('Justin Verlander', '3-1, 2.75 ERA')
         assert '3-1' in stat
         assert '2.75' in stat
 
     def test_note_wl_only(self):
+        """Note wl only."""
         name, stat = _pitcher_line('Justin Verlander', '3-1')
         assert stat == '3-1'
 
     def test_note_era_only(self):
+        """Note era only."""
         name, stat = _pitcher_line('Justin Verlander', ', 2.75 ERA')
         assert '2.75' in stat
 
     def test_note_none_gives_empty_stat(self):
+        """Note none gives empty stat."""
         name, stat = _pitcher_line('Justin Verlander', None)
         assert stat == ''
 
     def test_note_invalid_era_ignored(self):
+        """Note invalid era ignored."""
         # ERA that cannot be converted to float should be ignored
         name, stat = _pitcher_line('Justin Verlander', '3-1, ABC ERA')
         assert stat == '3-1'
 
     def test_note_negative_era_ignored(self):
+        """Note negative era ignored."""
         name, stat = _pitcher_line('Justin Verlander', '3-1, -1.00 ERA')
         assert stat == '3-1'
 
     def test_note_zero_zero_wl(self):
+        """Note zero zero wl."""
         name, stat = _pitcher_line('Rookie Pitcher', '0-0, 0.00 ERA')
         assert '0-0' in stat
         assert '0.00' in stat
@@ -293,93 +312,121 @@ class TestPitcherLine:
 
 class TestFormatPlayerName:
     def test_none_returns_empty(self):
+        """None returns empty."""
         assert _format_player_name(None) == ''
 
     def test_empty_returns_empty(self):
+        """Empty returns empty."""
         assert _format_player_name('') == ''
 
     def test_single_name_unchanged(self):
+        """Single name unchanged."""
         assert _format_player_name('Verlander') == 'Verlander'
 
     def test_two_part_name(self):
+        """Two part name."""
         assert _format_player_name('Mike Trout') == 'M. Trout'
 
     def test_three_part_name(self):
+        """Three part name."""
         # Middle name counts as last name unless it's a suffix
         assert _format_player_name('Juan Pierre Leblanc') == 'J. Leblanc'
 
     def test_jr_suffix_skipped(self):
+        """Jr suffix skipped."""
         assert _format_player_name('Cal Ripken Jr.') == 'C. Ripken'
 
     def test_sr_suffix_skipped(self):
+        """Sr suffix skipped."""
         assert _format_player_name('Ken Griffey Sr.') == 'K. Griffey'
 
     def test_ii_suffix_skipped(self):
+        """Ii suffix skipped."""
         assert _format_player_name('Roberto Alomar II') == 'R. Alomar'
 
     def test_iii_suffix_skipped(self):
+        """Iii suffix skipped."""
         assert _format_player_name('Barry Bonds III') == 'B. Bonds'
 
     def test_iv_suffix_skipped(self):
+        """Iv suffix skipped."""
         assert _format_player_name('John Smith IV') == 'J. Smith'
 
     def test_v_suffix_skipped(self):
+        """V suffix skipped."""
         assert _format_player_name('John Smith V') == 'J. Smith'
 
 
 class TestLastName:
     def test_none_returns_empty(self):
+        """None returns empty."""
         assert _last_name(None) == ''
 
     def test_empty_returns_empty(self):
+        """Empty returns empty."""
         assert _last_name('') == ''
 
     def test_single_name(self):
+        """Single name."""
         assert _last_name('Verlander') == 'Verlander'
 
     def test_two_part_name(self):
+        """Two part name."""
         assert _last_name('Mike Trout') == 'Trout'
 
     def test_three_part_name(self):
+        """Three part name."""
         assert _last_name('Juan Pierre Leblanc') == 'Leblanc'
 
     def test_jr_suffix_skipped(self):
+        """Jr suffix skipped."""
         assert _last_name('Cal Ripken Jr.') == 'Ripken'
 
     def test_sr_suffix_skipped(self):
+        """Sr suffix skipped."""
         assert _last_name('Ken Griffey Sr.') == 'Griffey'
 
     def test_ii_suffix_skipped(self):
+        """Ii suffix skipped."""
         assert _last_name('Roberto Alomar II') == 'Alomar'
 
 
 class TestCleanVenueName:
     def test_none_returns_none(self):
+        """None returns none."""
         assert _clean_venue_name(None) is None
 
     def test_empty_returns_empty(self):
+        """Empty returns empty."""
         assert _clean_venue_name('') == ''
 
     def test_at_notation_strips_left_side(self):
+        """At notation strips left side."""
         assert _clean_venue_name('Oriole Park at Camden Yards') == 'Camden Yards'
 
     def test_at_notation_only_first_split(self):
+        """At notation only first split."""
         # Only first ' at ' is split
         assert _clean_venue_name('A at B at C') == 'B at C'
 
     def test_known_override_daikin(self):
+        """Known override daikin."""
         assert _clean_venue_name('Daikin Park') == 'Minute Maid Park'
 
     def test_known_override_american_family(self):
+        """Known override american family."""
         assert _clean_venue_name('American Family Field') == 'Am. Family Field'
 
     def test_known_override_guaranteed_rate(self):
+        """Known override guaranteed rate."""
         assert _clean_venue_name('Guaranteed Rate Field') == 'Guaranteed Rate'
 
     def test_known_override_loandepot(self):
+        """Known override loandepot."""
         assert _clean_venue_name('loanDepot park') == 'LoanDepot Park'
 
     def test_plain_venue_unchanged(self):
+        """Plain venue unchanged."""
         assert _clean_venue_name('Dodger Stadium') == 'Dodger Stadium'
         assert _clean_venue_name('Wrigley Field') == 'Wrigley Field'
 
@@ -390,18 +437,23 @@ class TestCleanVenueName:
 
 class TestIsGameEffectivelyOver:
     def test_final_is_over(self):
+        """Final is over."""
         assert _is_game_effectively_over({'detailed_state': 'Final'})
 
     def test_game_over_is_over(self):
+        """Game over is over."""
         assert _is_game_effectively_over({'detailed_state': 'Game Over'})
 
     def test_final_tied_is_over(self):
+        """Final tied is over."""
         assert _is_game_effectively_over({'detailed_state': 'Final: Tied'})
 
     def test_completed_early_is_over(self):
+        """Completed early is over."""
         assert _is_game_effectively_over({'detailed_state': 'Completed Early'})
 
     def test_in_progress_mid_game_not_over(self):
+        """In progress mid game not over."""
         assert not _is_game_effectively_over({
             'detailed_state': 'In Progress',
             'current_inning': 5,
@@ -411,6 +463,7 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_inning_9_middle_home_leads_is_over(self):
+        """Inning 9 middle home leads is over."""
         # After top of 9th, home team is ahead → home doesn't bat
         assert _is_game_effectively_over({
             'detailed_state': 'In Progress',
@@ -421,6 +474,7 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_inning_9_middle_home_trails_not_over(self):
+        """Inning 9 middle home trails not over."""
         assert not _is_game_effectively_over({
             'detailed_state': 'In Progress',
             'current_inning': 9,
@@ -430,6 +484,7 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_inning_9_middle_tied_not_over(self):
+        """Inning 9 middle tied not over."""
         assert not _is_game_effectively_over({
             'detailed_state': 'In Progress',
             'current_inning': 9,
@@ -439,6 +494,7 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_inning_9_end_different_scores_is_over(self):
+        """Inning 9 end different scores is over."""
         # After bottom of 9th with a winner
         assert _is_game_effectively_over({
             'detailed_state': 'In Progress',
@@ -449,6 +505,7 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_inning_9_end_tied_not_over(self):
+        """Inning 9 end tied not over."""
         # Tied after bottom of 9th → extra innings
         assert not _is_game_effectively_over({
             'detailed_state': 'In Progress',
@@ -459,6 +516,7 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_inning_10_end_different_scores_is_over(self):
+        """Inning 10 end different scores is over."""
         # Same logic applies in extra innings
         assert _is_game_effectively_over({
             'detailed_state': 'In Progress',
@@ -469,6 +527,7 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_inning_8_middle_home_leads_not_over(self):
+        """Inning 8 middle home leads not over."""
         # Rule only triggers at inning >= 9
         assert not _is_game_effectively_over({
             'detailed_state': 'In Progress',
@@ -479,12 +538,14 @@ class TestIsGameEffectivelyOver:
         })
 
     def test_scheduled_not_over(self):
+        """Scheduled not over."""
         assert not _is_game_effectively_over({
             'detailed_state': 'Scheduled',
             'current_inning': None,
         })
 
     def test_none_inning_not_over(self):
+        """None inning not over."""
         assert not _is_game_effectively_over({
             'detailed_state': 'In Progress',
             'current_inning': None,
@@ -515,6 +576,7 @@ class TestScoreSuppression:
     _SCORE_REGION = (92, 52, 118, 77)   # absolute coords for sx=32, sy=30
 
     def _render(self, game, team_data):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
@@ -567,6 +629,7 @@ class TestScoreSuppression:
 
     @needs_pil
     def test_outs_shows_score(self, minimal_team_data):
+        """Outs shows score."""
         game = _base_game(
             detailed_state='In Progress',
             away_runs=0,
@@ -587,6 +650,7 @@ class TestScoreSuppression:
 
     @needs_pil
     def test_runs_shows_score(self, minimal_team_data):
+        """Runs shows score."""
         game = _base_game(
             detailed_state='In Progress',
             away_runs=3,
@@ -606,6 +670,7 @@ class TestScoreSuppression:
 
     @needs_pil
     def test_runner_on_first_shows_score(self, minimal_team_data):
+        """Runner on first shows score."""
         game = _base_game(
             detailed_state='In Progress',
             away_runs=0,
@@ -665,6 +730,7 @@ class TestScoreSuppression:
 
     @needs_pil
     def test_last_play_shows_score(self, minimal_team_data):
+        """Last play shows score."""
         game = _base_game(
             detailed_state='In Progress',
             away_runs=0,
@@ -731,6 +797,7 @@ class TestStateNormalization:
     _SCORE_REGION = (92, 52, 118, 77)
 
     def _render(self, game, team_data):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
@@ -830,12 +897,14 @@ class TestScoreDisplayRules:
     _SCORE_REGION = (92, 52, 118, 77)
 
     def _render(self, game, team_data, sx=32, sy=30):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, sx, sy, game, team_data, use_logos=False)
         return img
 
     @needs_pil
     def test_final_shows_score(self, minimal_team_data):
+        """Final shows score."""
         img = self._render(_base_game(detailed_state='Final'), minimal_team_data)
         assert _has_dark_pixels(img, *self._SCORE_REGION)
 
@@ -893,6 +962,7 @@ class TestScoreDisplayRules:
 
     @needs_pil
     def test_pregame_shows_no_score(self, minimal_team_data):
+        """Pregame shows no score."""
         img = self._render(_pregame_game(), minimal_team_data)
         assert not _has_dark_pixels(img, *self._SCORE_REGION)
 
@@ -1001,6 +1071,7 @@ class TestSaveSituation:
     _SV_REGION = (135, 49, 167, 63)   # abs coords: just below the border, right side
 
     def _render(self, game, team_data):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
@@ -1033,36 +1104,43 @@ class TestSaveSituation:
 
 class TestCompareJsonDictsSorted:
     def test_equal_simple_dicts(self):
+        """Equal simple dicts."""
         a = {'x': 1, 'y': 2}
         b = {'x': 1, 'y': 2}
         assert compare_json_dicts_sorted(a, b)
 
     def test_different_values(self):
+        """Different values."""
         a = {'score': 3}
         b = {'score': 4}
         assert not compare_json_dicts_sorted(a, b)
 
     def test_key_order_irrelevant(self):
+        """Key order irrelevant."""
         a = {'y': 2, 'x': 1}
         b = {'x': 1, 'y': 2}
         assert compare_json_dicts_sorted(a, b)
 
     def test_nested_equal(self):
+        """Nested equal."""
         a = {'game': {'score': 3, 'state': 'Final'}}
         b = {'game': {'state': 'Final', 'score': 3}}
         assert compare_json_dicts_sorted(a, b)
 
     def test_nested_different(self):
+        """Nested different."""
         a = {'game': {'score': 3}}
         b = {'game': {'score': 4}}
         assert not compare_json_dicts_sorted(a, b)
 
     def test_extra_key_not_equal(self):
+        """Extra key not equal."""
         a = {'x': 1}
         b = {'x': 1, 'y': 2}
         assert not compare_json_dicts_sorted(a, b)
 
     def test_none_values(self):
+        """None values."""
         a = {'x': None}
         b = {'x': None}
         assert compare_json_dicts_sorted(a, b)
@@ -1090,16 +1168,19 @@ class TestScoreChangeDetection:
         return changed
 
     def test_no_change_returns_empty(self):
+        """No change returns empty."""
         old = {'1001': {'away_runs': 3, 'home_runs': 5}}
         games = [{'game_pk': 1001, 'away_runs': 3, 'home_runs': 5}]
         assert self._detect_score_changes(old, games) == set()
 
     def test_away_score_change_detected(self):
+        """Away score change detected."""
         old = {'1001': {'away_runs': 2, 'home_runs': 5}}
         games = [{'game_pk': 1001, 'away_runs': 3, 'home_runs': 5}]
         assert '1001' in self._detect_score_changes(old, games)
 
     def test_home_score_change_detected(self):
+        """Home score change detected."""
         old = {'1001': {'away_runs': 3, 'home_runs': 4}}
         games = [{'game_pk': 1001, 'away_runs': 3, 'home_runs': 5}]
         assert '1001' in self._detect_score_changes(old, games)
@@ -1117,11 +1198,13 @@ class TestScoreChangeDetection:
         assert '1001' in self._detect_score_changes(old, games)
 
     def test_value_to_null_runs_detected(self):
+        """Value to null runs detected."""
         old = {'1001': {'away_runs': 3, 'home_runs': 2}}
         games = [{'game_pk': 1001, 'away_runs': None, 'home_runs': 2}]
         assert '1001' in self._detect_score_changes(old, games)
 
     def test_multiple_games_only_changed_flagged(self):
+        """Multiple games only changed flagged."""
         old = {
             '1001': {'away_runs': 3, 'home_runs': 5},
             '1002': {'away_runs': 1, 'home_runs': 1},
@@ -1147,30 +1230,36 @@ class TestPayloadDiff:
         return not compare_json_dicts_sorted(new_dict, old_dict)
 
     def test_identical_payloads_not_changed(self):
+        """Identical payloads not changed."""
         games = [{'game_pk': 1, 'away_runs': 3, 'home_runs': 5}]
         assert not self._payload_changed(games, games)
 
     def test_score_change_triggers_rerender(self):
+        """Score change triggers rerender."""
         old = [{'game_pk': 1, 'away_runs': 3, 'home_runs': 5}]
         new = [{'game_pk': 1, 'away_runs': 4, 'home_runs': 5}]
         assert self._payload_changed(old, new)
 
     def test_state_change_triggers_rerender(self):
+        """State change triggers rerender."""
         old = [{'game_pk': 1, 'detailed_state': 'In Progress', 'current_inning': 7}]
         new = [{'game_pk': 1, 'detailed_state': 'Final', 'current_inning': 9}]
         assert self._payload_changed(old, new)
 
     def test_new_game_added_triggers_rerender(self):
+        """New game added triggers rerender."""
         old = [{'game_pk': 1, 'away_runs': 3}]
         new = [{'game_pk': 1, 'away_runs': 3}, {'game_pk': 2, 'away_runs': 0}]
         assert self._payload_changed(old, new)
 
     def test_pitcher_change_triggers_rerender(self):
+        """Pitcher change triggers rerender."""
         old = [{'game_pk': 1, 'current_pitcher': 'Sandy Koufax'}]
         new = [{'game_pk': 1, 'current_pitcher': 'Don Drysdale'}]
         assert self._payload_changed(old, new)
 
     def test_inning_change_triggers_rerender(self):
+        """Inning change triggers rerender."""
         old = [{'game_pk': 1, 'current_inning': 5, 'inningState': 'Top'}]
         new = [{'game_pk': 1, 'current_inning': 5, 'inningState': 'Middle'}]
         assert self._payload_changed(old, new)
@@ -1182,21 +1271,25 @@ class TestPayloadDiff:
         assert not self._payload_changed(old, new)
 
     def test_null_to_runner_triggers_rerender(self):
+        """Null to runner triggers rerender."""
         old = [{'game_pk': 1, 'runner_on_first': None}]
         new = [{'game_pk': 1, 'runner_on_first': 'Mike Trout'}]
         assert self._payload_changed(old, new)
 
     def test_win_probability_change_triggers_rerender(self):
+        """Win probability change triggers rerender."""
         old = [{'game_pk': 1, 'home_win_probability': 55.0}]
         new = [{'game_pk': 1, 'home_win_probability': 62.5}]
         assert self._payload_changed(old, new)
 
     def test_empty_old_always_triggers_rerender(self):
+        """Empty old always triggers rerender."""
         old = []
         new = [{'game_pk': 1, 'away_runs': 3}]
         assert self._payload_changed(old, new)
 
     def test_both_empty_not_changed(self):
+        """Both empty not changed."""
         assert not self._payload_changed([], [])
 
 
@@ -1206,19 +1299,24 @@ class TestPayloadDiff:
 
 class TestPickTvChannel:
     def _make_broadcast(self, call_sign, home_away, btype='TV'):
+        """Make broadcast."""
         return {'callSign': call_sign, 'homeAway': home_away, 'type': btype}
 
     def test_no_broadcasts_returns_none(self):
+        """No broadcasts returns none."""
         assert _pick_tv_channel(None, 'NYY', 'NYY', 'BOS') is None
 
     def test_empty_broadcasts_returns_none(self):
+        """Empty broadcasts returns none."""
         assert _pick_tv_channel([], 'NYY', 'NYY', 'BOS') is None
 
     def test_no_tv_type_returns_none(self):
+        """No tv type returns none."""
         radio = [{'callSign': 'WFAN', 'homeAway': 'home', 'type': 'Radio'}]
         assert _pick_tv_channel(radio, 'NYY', 'NYY', 'BOS') is None
 
     def test_favorite_home_team_prioritized(self):
+        """Favorite home team prioritized."""
         broadcasts = [
             self._make_broadcast('ESPN', 'away'),
             self._make_broadcast('YES', 'home'),
@@ -1228,6 +1326,7 @@ class TestPickTvChannel:
         assert result == 'YES'
 
     def test_favorite_away_team_prioritized(self):
+        """Favorite away team prioritized."""
         broadcasts = [
             self._make_broadcast('YES', 'away'),
             self._make_broadcast('NESN', 'home'),
@@ -1237,6 +1336,7 @@ class TestPickTvChannel:
         assert result == 'YES'
 
     def test_home_local_over_away_local_when_no_favorite(self):
+        """Home local over away local when no favorite."""
         broadcasts = [
             self._make_broadcast('MASN', 'away'),
             self._make_broadcast('MLBN', 'home'),
@@ -1245,6 +1345,7 @@ class TestPickTvChannel:
         assert result == 'MLBN'
 
     def test_first_available_fallback(self):
+        """First available fallback."""
         broadcasts = [
             self._make_broadcast('ESPN', 'away'),
         ]
@@ -1270,11 +1371,13 @@ class TestPickTvChannel:
         assert result == 'NESN'
 
     def test_call_sign_preferred_over_name(self):
+        """Call sign preferred over name."""
         broadcasts = [{'callSign': 'YES', 'name': 'YES Network', 'homeAway': 'home', 'type': 'TV'}]
         result = _pick_tv_channel(broadcasts, None, 'NYY', 'BOS')
         assert result == 'YES'
 
     def test_name_fallback_when_no_call_sign(self):
+        """Name fallback when no call sign."""
         broadcasts = [{'name': 'Peacock', 'homeAway': 'home', 'type': 'TV'}]
         result = _pick_tv_channel(broadcasts, None, 'NYY', 'BOS')
         assert result == 'Peacock'
@@ -1298,6 +1401,7 @@ class TestDeriveWildcardFromStandings:
         }
 
     def _make_team(self, team_id, division_rank, league_rank, wins=80, losses=60):
+        """Make team."""
         return {
             'team_id': team_id,
             'divisionRank': str(division_rank),
@@ -1400,6 +1504,7 @@ class TestDrawBoxSmokeTests:
         'Player challenge', 'Manager challenge',
     ])
     def test_no_crash_on_state(self, state, minimal_team_data):
+        """No crash on state."""
         img = Image.new('1', (800, 480), 255)
         game = _base_game(detailed_state=state)
         # In Progress needs enough data to not crash
@@ -1416,6 +1521,7 @@ class TestDrawBoxSmokeTests:
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
 
     def test_no_crash_with_none_inning_runs(self, minimal_team_data):
+        """No crash with none inning runs."""
         img = Image.new('1', (800, 480), 255)
         game = _base_game(away_inning_runs=None, home_inning_runs=None)
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
@@ -1427,6 +1533,7 @@ class TestDrawBoxSmokeTests:
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
 
     def test_no_crash_with_postgame_saver(self, minimal_team_data):
+        """No crash with postgame saver."""
         img = Image.new('1', (800, 480), 255)
         game = _base_game(saver_name='Wade Davis', saver_saves=15)
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
@@ -1485,6 +1592,7 @@ class TestDrawBoxSmokeTests:
         draw_box(img, 32, 30, game, team_data, use_logos=False)
 
     def test_no_crash_postponed(self, minimal_team_data):
+        """No crash postponed."""
         img = Image.new('1', (800, 480), 255)
         game = _base_game(
             detailed_state='Postponed',
@@ -1497,12 +1605,14 @@ class TestDrawBoxSmokeTests:
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
 
     def test_no_crash_with_two_digit_scores(self, minimal_team_data):
+        """No crash with two digit scores."""
         img = Image.new('1', (800, 480), 255)
         game = _base_game(away_runs=12, home_runs=10, away_hits=20, home_hits=18)
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
 
     @pytest.mark.parametrize("inning", [9, 10, 13, 19])
     def test_no_crash_extra_innings(self, inning, minimal_team_data):
+        """No crash extra innings."""
         img = Image.new('1', (800, 480), 255)
         game = _base_game(current_inning=inning)
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
@@ -1520,6 +1630,7 @@ class TestWeatherFooterRules:
     """
 
     def _render_pregame(self, team_data, **overrides):
+        """Render pregame."""
         game = _pregame_game(**overrides)
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
@@ -1745,11 +1856,13 @@ class TestChangedRegionDetection:
         return [] if len(regions) > 5 else regions
 
     def test_no_change_returns_no_regions(self):
+        """No change returns no regions."""
         games = [{'game_pk': 1, 'away_runs': 3}]
         old = {'1': {'game_pk': 1, 'away_runs': 3}}
         assert self._changed_regions(games, old) == []
 
     def test_one_change_returns_one_region(self):
+        """One change returns one region."""
         games = [{'game_pk': 1, 'away_runs': 4}]
         old = {'1': {'game_pk': 1, 'away_runs': 3}}
         regions = self._changed_regions(games, old)
@@ -1863,11 +1976,13 @@ class TestHeaderInversion:
     _HEADER_REGION = (32, 30, 167, 51)  # full header box at (32, 30)
 
     def _render(self, game, team_data):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
 
     def _header_has_dark(self, img):
+        """Header has dark."""
         return _has_dark_pixels(img, *self._HEADER_REGION)
 
     def _is_inverted(self, img):
@@ -2015,18 +2130,23 @@ class TestAbbrPlay:
     """_abbr_play() maps verbose MLB play-event strings to short abbreviations."""
 
     def test_none_returns_none(self):
+        """None returns none."""
         assert _abbr_play(None) is None
 
     def test_empty_string_returns_empty(self):
+        """Empty string returns empty."""
         assert _abbr_play('') == ''
 
     def test_strikeout(self):
+        """Strikeout."""
         assert _abbr_play('Strikeout') == 'K'
 
     def test_strikeout_case_insensitive(self):
+        """Strikeout case insensitive."""
         assert _abbr_play('STRIKEOUT') == 'K'
 
     def test_strikeout_looking(self):
+        """Strikeout looking."""
         assert _abbr_play('Strikeout Looking') == 'Kl'
 
     def test_strikeout_looking_before_strikeout(self):
@@ -2038,18 +2158,23 @@ class TestAbbrPlay:
         assert _abbr_play('Kl') == 'Kl'
 
     def test_home_run(self):
+        """Home run."""
         assert _abbr_play('Home Run') == 'HR'
 
     def test_single(self):
+        """Single."""
         assert _abbr_play('Single to center field') == '1B'
 
     def test_double(self):
+        """Double."""
         assert _abbr_play('Double to left field') == '2B'
 
     def test_triple(self):
+        """Triple."""
         assert _abbr_play('Triple to right field') == '3B'
 
     def test_walk(self):
+        """Walk."""
         assert _abbr_play('Walk') == 'BB'
 
     def test_intentional_walk_before_walk(self):
@@ -2057,54 +2182,71 @@ class TestAbbrPlay:
         assert _abbr_play('Intentional Walk') == 'IBB'
 
     def test_hit_by_pitch(self):
+        """Hit by pitch."""
         assert _abbr_play('Hit By Pitch') == 'HBP'
 
     def test_sac_fly(self):
+        """Sac fly."""
         assert _abbr_play('Sac Fly to left fielder') == 'SAC F'
 
     def test_sacrifice_fly(self):
+        """Sacrifice fly."""
         assert _abbr_play('Sacrifice Fly to center fielder') == 'SAC F'
 
     def test_sac_bunt(self):
+        """Sac bunt."""
         assert _abbr_play('Sac Bunt') == 'SAC B'
 
     def test_stolen_base(self):
+        """Stolen base."""
         assert _abbr_play('Stolen Base 2B') == 'SB'
 
     def test_caught_stealing(self):
+        """Caught stealing."""
         assert _abbr_play('Caught Stealing 3B') == 'CS'
 
     def test_wild_pitch(self):
+        """Wild pitch."""
         assert _abbr_play('Wild Pitch') == 'WP'
 
     def test_passed_ball(self):
+        """Passed ball."""
         assert _abbr_play('Passed Ball') == 'PB'
 
     def test_fielders_choice(self):
+        """Fielders choice."""
         assert _abbr_play("Fielder's Choice to Second Baseman") == 'FC'
 
     def test_fielders_choice_no_apostrophe(self):
+        """Fielders choice no apostrophe."""
         assert _abbr_play('Fielders Choice to Shortstop') == 'FC'
 
     def test_field_error(self):
+        """Field error."""
         assert _abbr_play('Field Error') == 'E'
 
     def test_flyout(self):
+        """Flyout."""
         assert _abbr_play('Flyout to center fielder') == 'FO'
 
     def test_fly_out_space(self):
+        """Fly out space."""
         assert _abbr_play('Fly Out to right fielder') == 'FO'
 
     def test_groundout(self):
+        """Groundout."""
         assert _abbr_play('Groundout to third baseman') == 'GO'
 
     def test_ground_out_space(self):
+        """Ground out space."""
         assert _abbr_play('Ground Out to shortstop') == 'GO'
 
     def test_lineout(self):
+        """Lineout."""
         assert _abbr_play('Lineout to left fielder') == 'LO'
 
     def test_pop_out(self):
+        """Pop out."""
         assert _abbr_play('Pop Out to catcher') == 'PO'
 
     def test_grounded_into_dp_before_double_play(self):
@@ -2116,21 +2258,27 @@ class TestAbbrPlay:
         assert _abbr_play('Grounded Into Double Play') == 'DP'
 
     def test_double_play(self):
+        """Double play."""
         assert _abbr_play('Double Play, Pitcher to First Baseman') == 'DP'
 
     def test_triple_play(self):
+        """Triple play."""
         assert _abbr_play('Triple Play') == 'TP'
 
     def test_pickoff(self):
+        """Pickoff."""
         assert _abbr_play('Pickoff 1B') == 'PK'
 
     def test_balk(self):
+        """Balk."""
         assert _abbr_play('Balk') == 'BLK'
 
     def test_force_out(self):
+        """Force out."""
         assert _abbr_play('Force Out') == 'FOUT'
 
     def test_runner_out(self):
+        """Runner out."""
         assert _abbr_play('Runner Out') == 'RO'
 
     def test_unknown_event_returned_unchanged(self):
@@ -2150,36 +2298,47 @@ class TestFielderFromDesc:
     """_fielder_from_desc() returns the putout fielder's position code."""
 
     def test_none_returns_empty(self):
+        """None returns empty."""
         assert _fielder_from_desc(None) == ''
 
     def test_empty_returns_empty(self):
+        """Empty returns empty."""
         assert _fielder_from_desc('') == ''
 
     def test_center_fielder(self):
+        """Center fielder."""
         assert _fielder_from_desc('Flyout to center fielder') == '8'
 
     def test_right_fielder(self):
+        """Right fielder."""
         assert _fielder_from_desc('Flyout to right fielder') == '9'
 
     def test_left_fielder(self):
+        """Left fielder."""
         assert _fielder_from_desc('Flyout to left fielder') == '7'
 
     def test_first_baseman(self):
+        """First baseman."""
         assert _fielder_from_desc('Groundout to first baseman') == '3'
 
     def test_second_baseman(self):
+        """Second baseman."""
         assert _fielder_from_desc('Groundout to second baseman') == '4'
 
     def test_third_baseman(self):
+        """Third baseman."""
         assert _fielder_from_desc('Groundout to third baseman') == '5'
 
     def test_shortstop(self):
+        """Shortstop."""
         assert _fielder_from_desc('Lineout to shortstop') == '6'
 
     def test_catcher(self):
+        """Catcher."""
         assert _fielder_from_desc('Pop out to catcher') == '2'
 
     def test_pitcher(self):
+        """Pitcher."""
         assert _fielder_from_desc('Groundout to pitcher') == '1'
 
     def test_no_position_returns_empty(self):
@@ -2187,6 +2346,7 @@ class TestFielderFromDesc:
         assert _fielder_from_desc('Strikeout swinging') == ''
 
     def test_case_insensitive(self):
+        """Case insensitive."""
         assert _fielder_from_desc('FLYOUT TO CENTER FIELDER') == '8'
 
     def test_center_fielder_beats_right_fielder_in_ambiguous(self):
@@ -2210,12 +2370,15 @@ class TestFielderSeqFromDesc:
     """_fielder_seq_from_desc() returns dash-joined fielder sequence."""
 
     def test_none_returns_empty(self):
+        """None returns empty."""
         assert _fielder_seq_from_desc(None) == ''
 
     def test_empty_returns_empty(self):
+        """Empty returns empty."""
         assert _fielder_seq_from_desc('') == ''
 
     def test_single_fielder(self):
+        """Single fielder."""
         assert _fielder_seq_from_desc('Flyout to center fielder') == '8'
 
     def test_two_fielder_groundout(self):
@@ -2252,9 +2415,11 @@ class TestFielderSeqFromDesc:
         assert result.count('-') == 4, "Default max_pos=5 means 4 dashes"
 
     def test_no_position_keyword_returns_empty(self):
+        """No position keyword returns empty."""
         assert _fielder_seq_from_desc('Strikeout swinging') == ''
 
     def test_case_insensitive(self):
+        """Case insensitive."""
         assert _fielder_seq_from_desc('SHORTSTOP TO FIRST BASEMAN') == '6-3'
 
     def test_repeated_position_captured(self):
@@ -2298,9 +2463,11 @@ class TestAbbrPlayNewTypes:
         assert _abbr_play('Forceout') == 'FOUT'
 
     def test_force_out_with_space(self):
+        """Force out with space."""
         assert _abbr_play('Force Out') == 'FOUT'
 
     def test_force_out_in_sentence(self):
+        """Force out in sentence."""
         assert _abbr_play('Forceout, shortstop to first baseman') == 'FOUT'
 
     def test_forceout_distinct_from_flyout(self):
@@ -2308,15 +2475,19 @@ class TestAbbrPlayNewTypes:
         assert _abbr_play('Forceout') != _abbr_play('Flyout to left fielder')
 
     def test_infield_fly(self):
+        """Infield fly."""
         assert _abbr_play('Infield Fly') == 'IF'
 
     def test_infield_fly_in_sentence(self):
+        """Infield fly in sentence."""
         assert _abbr_play('Infield fly rule applied') == 'IF'
 
     def test_interference(self):
+        """Interference."""
         assert _abbr_play('Interference') == 'INT'
 
     def test_interference_in_sentence(self):
+        """Interference in sentence."""
         assert _abbr_play('Batter interference called') == 'INT'
 
 
@@ -2337,6 +2508,7 @@ def _make_play(event, event_type='', credits=None, description=''):
 
 
 def _credit(position_code, credit_type):
+    """Credit."""
     return {'position': {'code': position_code}, 'credit': credit_type}
 
 
@@ -2345,6 +2517,7 @@ class TestBuildScorecardNotation:
     # --- Ground outs (no suffix) ---
 
     def test_groundout_6_3(self):
+        """Groundout 6 3."""
         play = _make_play('Groundout', credits=[
             _credit('6', 'f_assist'),
             _credit('3', 'f_putout'),
@@ -2352,6 +2525,7 @@ class TestBuildScorecardNotation:
         assert _build_scorecard_notation(play) == '6-3'
 
     def test_groundout_5_3(self):
+        """Groundout 5 3."""
         play = _make_play('Groundout', credits=[
             _credit('5', 'f_assist'),
             _credit('3', 'f_putout'),
@@ -2359,12 +2533,14 @@ class TestBuildScorecardNotation:
         assert _build_scorecard_notation(play) == '5-3'
 
     def test_unassisted_out_first_baseman(self):
+        """Unassisted out first baseman."""
         play = _make_play('Groundout', credits=[_credit('3', 'f_putout')])
         assert _build_scorecard_notation(play) == '3'
 
     # --- Force out (same notation as ground out, no suffix) ---
 
     def test_force_out_6_3(self):
+        """Force out 6 3."""
         play = _make_play('Force Out', credits=[
             _credit('6', 'f_assist'),
             _credit('3', 'f_putout'),
@@ -2385,14 +2561,17 @@ class TestBuildScorecardNotation:
     # --- Flyout (F + fielder number, never confused with force out) ---
 
     def test_flyout_left_field(self):
+        """Flyout left field."""
         play = _make_play('Flyout', credits=[_credit('7', 'f_putout')])
         assert _build_scorecard_notation(play) == 'F7'
 
     def test_flyout_center_field(self):
+        """Flyout center field."""
         play = _make_play('Flyout', credits=[_credit('8', 'f_putout')])
         assert _build_scorecard_notation(play) == 'F8'
 
     def test_flyout_distinct_from_force_out(self):
+        """Flyout distinct from force out."""
         flyout = _make_play('Flyout', credits=[_credit('7', 'f_putout')])
         force  = _make_play('Force Out', credits=[
             _credit('6', 'f_assist'), _credit('3', 'f_putout'),
@@ -2402,6 +2581,7 @@ class TestBuildScorecardNotation:
     # --- Double play ---
 
     def test_gdp_6_4_3(self):
+        """Gdp 6 4 3."""
         play = _make_play('Grounded Into DP', 'double_play', credits=[
             _credit('6', 'f_assist'),
             _credit('4', 'f_putout'),
@@ -2411,6 +2591,7 @@ class TestBuildScorecardNotation:
         assert _build_scorecard_notation(play) == '6-4-3 DP'
 
     def test_dp_5_4_3(self):
+        """Dp 5 4 3."""
         play = _make_play('Double Play', 'double_play', credits=[
             _credit('5', 'f_assist'),
             _credit('4', 'f_putout'),
@@ -2422,6 +2603,7 @@ class TestBuildScorecardNotation:
     # --- Triple play ---
 
     def test_triple_play_5_4_3(self):
+        """Triple play 5 4 3."""
         play = _make_play('Triple Play', 'triple_play', credits=[
             _credit('5', 'f_assist'),
             _credit('4', 'f_putout'),
@@ -2446,12 +2628,14 @@ class TestBuildScorecardNotation:
         assert _build_scorecard_notation(play) == '6 E3'
 
     def test_field_error_no_credits_returns_E(self):
+        """Field error no credits returns E."""
         play = _make_play('Field Error')
         assert _build_scorecard_notation(play) == 'E'
 
     # --- Caught stealing ---
 
     def test_caught_stealing_2_6(self):
+        """Caught stealing 2 6."""
         play = _make_play('Caught Stealing 2B', credits=[
             _credit('2', 'f_assist'),
             _credit('6', 'f_putout'),
@@ -2459,6 +2643,7 @@ class TestBuildScorecardNotation:
         assert _build_scorecard_notation(play) == 'CS 2-6'
 
     def test_caught_stealing_prefix_always_present(self):
+        """Caught stealing prefix always present."""
         play = _make_play('Caught Stealing 3B', credits=[
             _credit('2', 'f_assist'),
             _credit('5', 'f_putout'),
@@ -2467,12 +2652,14 @@ class TestBuildScorecardNotation:
         assert result.startswith('CS ')
 
     def test_caught_stealing_no_credits_returns_CS(self):
+        """Caught stealing no credits returns CS."""
         play = _make_play('Caught Stealing 2B')
         assert _build_scorecard_notation(play) == 'CS'
 
     # --- Pickoff ---
 
     def test_pickoff_1_3(self):
+        """Pickoff 1 3."""
         play = _make_play('Pickoff 1B', credits=[
             _credit('1', 'f_assist'),
             _credit('3', 'f_putout'),
@@ -2480,6 +2667,7 @@ class TestBuildScorecardNotation:
         assert _build_scorecard_notation(play) == 'PO 1-3'
 
     def test_pickoff_prefix_always_PO(self):
+        """Pickoff prefix always PO."""
         play = _make_play('Pickoff 2B', credits=[
             _credit('1', 'f_assist'),
             _credit('4', 'f_putout'),
@@ -2488,10 +2676,12 @@ class TestBuildScorecardNotation:
         assert result.startswith('PO ')
 
     def test_pickoff_no_credits_returns_PO(self):
+        """Pickoff no credits returns PO."""
         play = _make_play('Pickoff 1B')
         assert _build_scorecard_notation(play) == 'PO'
 
     def test_pickoff_never_returns_PK(self):
+        """Pickoff never returns PK."""
         play = _make_play('Pickoff 1B', credits=[
             _credit('1', 'f_assist'),
             _credit('3', 'f_putout'),
@@ -2510,16 +2700,19 @@ class TestBuildScorecardNotation:
         assert result == 'K 2-3'
 
     def test_strikeout_double_play_no_credits(self):
+        """Strikeout double play no credits."""
         play = _make_play('Strikeout Double Play')
         assert _build_scorecard_notation(play) == 'K'
 
     # --- Simple events unchanged ---
 
     def test_strikeout_swinging(self):
+        """Strikeout swinging."""
         play = _make_play('Strikeout')
         assert _build_scorecard_notation(play) == 'K'
 
     def test_strikeout_looking(self):
+        """Strikeout looking."""
         play = _make_play('Strikeout Looking')
         assert _build_scorecard_notation(play) == 'Kl'
 
@@ -2573,10 +2766,12 @@ class TestBuildScorecardNotation:
         assert _build_scorecard_notation(play) == 'K'
 
     def test_home_run(self):
+        """Home run."""
         play = _make_play('Home Run')
         assert _build_scorecard_notation(play) == 'HR'
 
     def test_walk(self):
+        """Walk."""
         play = _make_play('Walk')
         assert _build_scorecard_notation(play) == 'BB'
 
@@ -2594,12 +2789,14 @@ class TestArrowSuppression:
     _HOME_ARROW = (22, 93, 35, 106)  # ▼ region for Bottom-half (home batting)
 
     def _render(self, game, team_data):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
 
     @needs_pil
     def test_no_arrow_top_half(self, minimal_team_data):
+        """No arrow top half."""
         for outs in (0, 1, 2, 3):
             game = _in_progress_game(inningState='Top', num_of_outs=outs)
             img = self._render(game, minimal_team_data)
@@ -2608,6 +2805,7 @@ class TestArrowSuppression:
 
     @needs_pil
     def test_no_arrow_bottom_half(self, minimal_team_data):
+        """No arrow bottom half."""
         for outs in (0, 1, 2, 3):
             game = _in_progress_game(inningState='Bottom', num_of_outs=outs)
             img = self._render(game, minimal_team_data)
@@ -2644,6 +2842,7 @@ class TestMidInningPC:
     (≥1 out recorded OR ≥1 pitch thrown in the current AB).  Otherwise 'P.CHG'."""
 
     def _render(self, game, team_data):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
@@ -2721,6 +2920,7 @@ class TestSuspendedGame:
     _HEADER_REGION = (32, 30, 167, 51)
 
     def _render(self, game, team_data):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
@@ -2807,24 +3007,29 @@ class TestReviewContextParsing:
     descriptions. No PIL required — pure string logic."""
 
     def test_out_at_first_base(self):
+        """Out at first base."""
         # 'first base' → '1B'; 'at' stays lowercase (in skip set) → 'Out at 1B'
         desc = 'Manager challenge (out at first base): Play stands, batter is out.'
         assert _parse_review_context(desc) == 'Out at 1B'
 
     def test_safe_at_second_base(self):
+        """Safe at second base."""
         desc = 'Manager challenge (safe at second base): Call overturned, runner safe.'
         assert _parse_review_context(desc) == 'Safe at 2B'
 
     def test_safe_at_third_base(self):
+        """Safe at third base."""
         desc = 'Manager challenge (safe at third base): Call confirmed.'
         assert _parse_review_context(desc) == 'Safe at 3B'
 
     def test_safe_at_home_plate(self):
+        """Safe at home plate."""
         # 'home plate' → 'Home'; 'at' stays lowercase → 'Safe at Home'
         desc = 'Manager challenge (safe at home plate): Call confirmed, runner safe.'
         assert _parse_review_context(desc) == 'Safe at Home'
 
     def test_strike_call(self):
+        """Strike call."""
         desc = 'Player challenge (strike): Call stands.'
         assert _parse_review_context(desc) == 'Strike'
 
@@ -2843,12 +3048,15 @@ class TestReviewContextParsing:
         assert result == 'Out at 1B'
 
     def test_empty_string_returns_empty(self):
+        """Empty string returns empty."""
         assert _parse_review_context('') == ''
 
     def test_none_returns_empty(self):
+        """None returns empty."""
         assert _parse_review_context(None) == ''
 
     def test_no_parens_returns_empty(self):
+        """No parens returns empty."""
         assert _parse_review_context('No parentheses in this description') == ''
 
     def test_tag_play(self):
@@ -2858,6 +3066,7 @@ class TestReviewContextParsing:
         assert result == 'Tag Play'
 
     def test_hit_by_pitch(self):
+        """Hit by pitch."""
         # 'by' is NOT in _REVIEW_CTX_SKIP → it gets capitalized to 'By'
         desc = 'Player challenge (hit by pitch): Call overturned.'
         result = _parse_review_context(desc)
@@ -2892,6 +3101,7 @@ class TestReviewResultFormat:
     """_find_recent_review_result returns formatted OVR/CFM labels or None."""
 
     def test_overturned_with_context(self):
+        """Overturned with context."""
         plays = _make_plays_with_review(
             is_overturned=True,
             description='Manager challenge (out at first base): Call overturned.',
@@ -2900,6 +3110,7 @@ class TestReviewResultFormat:
         assert result == 'OVR: Out at 1B'
 
     def test_confirmed_with_context(self):
+        """Confirmed with context."""
         plays = _make_plays_with_review(
             is_overturned=False,
             description='Manager challenge (safe at second base): Call confirmed.',
@@ -2908,6 +3119,7 @@ class TestReviewResultFormat:
         assert result == 'CFM: Safe at 2B'
 
     def test_overturned_at_home(self):
+        """Overturned at home."""
         plays = _make_plays_with_review(
             is_overturned=True,
             description='Manager challenge (safe at home plate): Call overturned.',
@@ -2916,6 +3128,7 @@ class TestReviewResultFormat:
         assert result == 'OVR: Safe at Home'
 
     def test_confirmed_strike(self):
+        """Confirmed strike."""
         plays = _make_plays_with_review(
             is_overturned=False,
             description='Player challenge (strike): Call confirmed.',
@@ -2950,6 +3163,7 @@ class TestReviewResultFormat:
         assert _find_recent_review_result(plays) is None
 
     def test_overturned_fair_foul(self):
+        """Overturned fair foul."""
         plays = _make_plays_with_review(
             is_overturned=True,
             description='Player challenge (fair/foul): Call overturned.',
@@ -2983,12 +3197,14 @@ class TestRunScoredGuard:
     _HEADER_REGION = (32, 30, 167, 51)
 
     def _render(self, game, team_data, score_changed=False):
+        """Render."""
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, team_data, use_logos=False,
                  score_changed=score_changed)
         return img
 
     def _is_inverted(self, img):
+        """Is inverted."""
         region = img.crop(self._HEADER_REGION).convert('L')
         pixels = list(region.getdata())
         dark = sum(1 for p in pixels if p < 128)
@@ -3052,6 +3268,7 @@ class TestDrawNextGamePreview:
     """Direct tests for _draw_next_game_preview targeting the elif branches."""
 
     def _fake_game(self, away_id, home_id, pk=9001):
+        """Fake game."""
         return {
             'game_pk': pk,
             'away_team_id': away_id,
@@ -3060,6 +3277,7 @@ class TestDrawNextGamePreview:
         }
 
     def _call(self, tmrw_games, today_home_id, today_away_id):
+        """Call."""
         from image_box import _draw_next_game_preview
         img = Image.new('1', (800, 480), 255)
         from PIL import ImageDraw

@@ -19,6 +19,7 @@ SZ_Z_TOP = 3.5
 
 
 def _load_fonts():
+    """Load fonts."""
     font_path = os.path.join(picdir, 'Font.ttc')
     return {
         'f18': ImageFont.truetype(font_path, 18),

@@ -27,6 +27,7 @@ import image_assets
 # ---------------------------------------------------------------------------
 
 def test_get_logo_invert_config_malformed_json_falls_back_to_empty_dict(monkeypatch):
+    """Get logo invert config malformed json falls back to empty dict."""
     monkeypatch.setattr(image_assets, '_logo_invert_config', None)
     with patch('builtins.open', side_effect=OSError('boom')):
         result = image_assets._get_logo_invert_config()
@@ -38,6 +39,7 @@ def test_get_logo_invert_config_malformed_json_falls_back_to_empty_dict(monkeypa
 # ---------------------------------------------------------------------------
 
 def _fake_ctx_response(data=b'FAKEPNGDATA'):
+    """Fake ctx response."""
     m = MagicMock()
     m.__enter__.return_value = m
     m.read.return_value = data
@@ -45,15 +47,18 @@ def _fake_ctx_response(data=b'FAKEPNGDATA'):
 
 
 def test_try_download_logo_digit_abbr_skips_download():
+    """Try download logo digit abbr skips download."""
     assert image_assets._try_download_logo('123') is False
 
 
 def test_try_download_logo_t_prefixed_abbr_skips_download():
+    """Try download logo t prefixed abbr skips download."""
     assert image_assets._try_download_logo('T461') is False
 
 
 @needs_pil
 def test_try_download_logo_espn_mlb_success(monkeypatch, tmp_path):
+    """Try download logo espn mlb success."""
     monkeypatch.setattr(image_assets, 'logodir', str(tmp_path))
     with patch('urllib.request.urlopen', return_value=_fake_ctx_response()):
         result = image_assets._try_download_logo('ZZFAKEMLB')
@@ -69,6 +74,7 @@ def test_try_download_logo_svg_fallback_success(monkeypatch, tmp_path):
     monkeypatch.setattr(image_assets, 'logodir', str(tmp_path))
 
     def fake_urlopen(url, timeout=5):
+        """Fake urlopen."""
         if 'mlbstatic' in url:
             m = MagicMock()
             m.read.return_value = b'<svg></svg>'
@@ -90,6 +96,7 @@ def test_try_download_logo_wbc_countries_fallback_success(monkeypatch, tmp_path)
     monkeypatch.setattr(image_assets, 'logodir', str(tmp_path))
 
     def fake_urlopen(url, timeout=5):
+        """Fake urlopen."""
         if 'countries' in url:
             return _fake_ctx_response()
         raise OSError('espn mlb down')
@@ -162,6 +169,7 @@ def test_load_logo_gray_darken_white_branch(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_logo_gray_corrupt_file_returns_none(monkeypatch, tmp_path):
+    """Load logo gray corrupt file returns none."""
     monkeypatch.setattr(image_assets, 'logodir', str(tmp_path))
     monkeypatch.setattr(image_assets, '_load_emoji_gray', lambda abbr: None)
     (tmp_path / 'ZZCORRUPT.png').write_bytes(b'not a real png')
@@ -224,12 +232,14 @@ def test_load_logo_gray_brightness_fallback_inverts_bright_logo(monkeypatch, tmp
 
 @needs_pil
 def test_logo_small_returns_none_when_no_logo(monkeypatch):
+    """Logo small returns none when no logo."""
     monkeypatch.setattr(image_assets, '_load_logo_gray', lambda abbr, team_id: None)
     assert image_assets._logo_small('ZZ', 1) is None
 
 
 @needs_pil
 def test_logo_small_returns_1bit_image(monkeypatch):
+    """Logo small returns 1bit image."""
     fake = Image.new('L', (60, 60), 90)
     monkeypatch.setattr(image_assets, '_load_logo_gray', lambda abbr, team_id: fake)
     result = image_assets._logo_small('ZZ', 1, size=28)
@@ -243,6 +253,7 @@ def test_logo_small_returns_1bit_image(monkeypatch):
 
 @needs_pil
 def test_paste_logo_pastes_dark_pixels_only():
+    """Paste logo pastes dark pixels only."""
     canvas = Image.new('1', (10, 10), 255)  # all white
     logo = Image.new('L', (4, 4), 0).convert('1')  # all black
 
@@ -260,12 +271,14 @@ def test_paste_logo_pastes_dark_pixels_only():
 
 @needs_pil
 def test_logo_ghost_returns_none_when_no_logo(monkeypatch):
+    """Logo ghost returns none when no logo."""
     monkeypatch.setattr(image_assets, '_load_logo_gray', lambda abbr, team_id: None)
     assert image_assets._logo_ghost('ZZ', 1) is None
 
 
 @needs_pil
 def test_logo_ghost_returns_1bit_watermark(monkeypatch):
+    """Logo ghost returns 1bit watermark."""
     fake = Image.new('L', (200, 200), 100)
     monkeypatch.setattr(image_assets, '_load_logo_gray', lambda abbr, team_id: fake)
     result = image_assets._logo_ghost('ZZ', 1, size=50)
@@ -278,15 +291,18 @@ def test_logo_ghost_returns_1bit_watermark(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_emoji_codepoint_simple_char():
+    """Emoji codepoint simple char."""
     assert image_assets._emoji_codepoint('⚡') == '26a1'
 
 
 def test_emoji_codepoint_strips_variation_selector():
+    """Emoji codepoint strips variation selector."""
     result = image_assets._emoji_codepoint('❤️')
     assert result == format(ord('❤'), 'x')
 
 
 def test_emoji_codepoint_compound_emoji_joins_with_dash():
+    """Emoji codepoint compound emoji joins with dash."""
     # man + ZWJ + woman: multiple non-fe0f codepoints joined by '-'
     s = '\U0001F468‍\U0001F469'
     result = image_assets._emoji_codepoint(s)
@@ -300,6 +316,7 @@ def test_emoji_codepoint_compound_emoji_joins_with_dash():
 
 @needs_pil
 def test_try_download_emoji_success(monkeypatch, tmp_path):
+    """Try download emoji success."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     with patch('urllib.request.urlopen', return_value=_fake_ctx_response()):
         result = image_assets._try_download_emoji('⚡')
@@ -309,6 +326,7 @@ def test_try_download_emoji_success(monkeypatch, tmp_path):
 
 @needs_pil
 def test_try_download_emoji_failure_returns_false(monkeypatch, tmp_path):
+    """Try download emoji failure returns false."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     with patch('urllib.request.urlopen', side_effect=OSError('no network')):
         result = image_assets._try_download_emoji('⚡')
@@ -320,6 +338,7 @@ def test_try_download_emoji_failure_returns_false(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_get_team_emojis_loads_from_config(monkeypatch):
+    """Get team emojis loads from config."""
     monkeypatch.setattr(image_assets, '_team_emojis', None)
     with patch('util.load_yaml_file', return_value={'team_emojis': {'ZZCFG': '⚡'}}):
         result = image_assets._get_team_emojis()
@@ -332,6 +351,7 @@ def test_get_team_emojis_loads_from_config(monkeypatch):
 
 @needs_pil
 def test_load_emoji_gray_no_mapping_returns_none(monkeypatch):
+    """Load emoji gray no mapping returns none."""
     monkeypatch.setattr(image_assets, '_team_emojis', {})
     result = image_assets._load_emoji_gray('ZZNOEMOJIMAP')
     assert result is None
@@ -339,6 +359,7 @@ def test_load_emoji_gray_no_mapping_returns_none(monkeypatch):
 
 @needs_pil
 def test_load_emoji_gray_result_is_cached(monkeypatch, tmp_path):
+    """Load emoji gray result is cached."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     monkeypatch.setattr(image_assets, '_team_emojis', {'ZZCACHEEMOJI': '\U0001F386'})
     codepoint = image_assets._emoji_codepoint('\U0001F386')
@@ -360,6 +381,7 @@ def test_load_emoji_gray_downloads_when_file_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(image_assets, '_team_emojis', {'ZZDOWNLOADEMOJI': '\U0001F387'})
 
     def fake_urlopen(url, timeout=5):
+        """Fake urlopen."""
         buf = io.BytesIO()
         Image.new('RGBA', (72, 72), (60, 60, 60, 255)).save(buf, format='PNG')
         m = MagicMock()
@@ -377,6 +399,7 @@ def test_load_emoji_gray_downloads_when_file_missing(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_emoji_gray_dark_image_no_invert(monkeypatch, tmp_path):
+    """Load emoji gray dark image no invert."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     monkeypatch.setattr(image_assets, '_team_emojis', {'ZZDARKEMOJI': '⚡'})
     codepoint = image_assets._emoji_codepoint('⚡')
@@ -390,6 +413,7 @@ def test_load_emoji_gray_dark_image_no_invert(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_emoji_gray_bright_image_gets_inverted(monkeypatch, tmp_path):
+    """Load emoji gray bright image gets inverted."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     monkeypatch.setattr(image_assets, '_team_emojis', {'ZZBRIGHTEMOJI': '\U0001F320'})
     codepoint = image_assets._emoji_codepoint('\U0001F320')
@@ -403,6 +427,7 @@ def test_load_emoji_gray_bright_image_gets_inverted(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_emoji_gray_corrupt_file_returns_none(monkeypatch, tmp_path):
+    """Load emoji gray corrupt file returns none."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     monkeypatch.setattr(image_assets, '_team_emojis', {'ZZCORRUPTEMOJI': '\U0001F3AF'})
     codepoint = image_assets._emoji_codepoint('\U0001F3AF')
@@ -419,6 +444,7 @@ def test_load_emoji_gray_corrupt_file_returns_none(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_char_emoji_success_resizes(monkeypatch, tmp_path):
+    """Load char emoji success resizes."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     codepoint = image_assets._emoji_codepoint('\U0001F525')
     Image.new('RGBA', (72, 72), (10, 10, 10, 255)).save(tmp_path / f'{codepoint}.png')
@@ -431,6 +457,7 @@ def test_load_char_emoji_success_resizes(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_char_emoji_bright_image_gets_inverted(monkeypatch, tmp_path):
+    """Load char emoji bright image gets inverted."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     codepoint = image_assets._emoji_codepoint('\U0001F31F')
     Image.new('RGBA', (72, 72), (250, 250, 250, 255)).save(tmp_path / f'{codepoint}.png')
@@ -443,6 +470,7 @@ def test_load_char_emoji_bright_image_gets_inverted(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_char_emoji_result_is_cached(monkeypatch, tmp_path):
+    """Load char emoji result is cached."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     codepoint = image_assets._emoji_codepoint('\U0001F3B0')
     Image.new('RGBA', (72, 72), (5, 5, 5, 255)).save(tmp_path / f'{codepoint}.png')
@@ -462,6 +490,7 @@ def test_load_char_emoji_downloads_when_file_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
 
     def fake_urlopen(url, timeout=5):
+        """Fake urlopen."""
         buf = io.BytesIO()
         Image.new('RGBA', (72, 72), (70, 70, 70, 255)).save(buf, format='PNG')
         m = MagicMock()
@@ -478,6 +507,7 @@ def test_load_char_emoji_downloads_when_file_missing(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_char_emoji_download_fails_returns_none(monkeypatch, tmp_path):
+    """Load char emoji download fails returns none."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     with patch('urllib.request.urlopen', side_effect=OSError('no network')):
         result = image_assets._load_char_emoji('\U0001F3B2', size=16)
@@ -486,6 +516,7 @@ def test_load_char_emoji_download_fails_returns_none(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_char_emoji_corrupt_file_returns_none(monkeypatch, tmp_path):
+    """Load char emoji corrupt file returns none."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     codepoint = image_assets._emoji_codepoint('\U0001F3B3')
     (tmp_path / f'{codepoint}.png').write_bytes(b'garbage')
@@ -501,10 +532,12 @@ def test_load_char_emoji_corrupt_file_returns_none(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_codepoint_ghost_downloads_and_renders(monkeypatch, tmp_path):
+    """Load codepoint ghost downloads and renders."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     codepoint = 'deadbeef1'
 
     def fake_urlopen(url, timeout=5):
+        """Fake urlopen."""
         import io
         buf = io.BytesIO()
         Image.new('RGBA', (72, 72), (30, 30, 30, 255)).save(buf, format='PNG')
@@ -522,6 +555,7 @@ def test_load_codepoint_ghost_downloads_and_renders(monkeypatch, tmp_path):
 
 @needs_pil
 def test_load_codepoint_ghost_download_fails_returns_none(monkeypatch, tmp_path):
+    """Load codepoint ghost download fails returns none."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     with patch('urllib.request.urlopen', side_effect=OSError('no network')):
         result = image_assets._load_codepoint_ghost('nonexistentcp', size=32)
@@ -531,6 +565,7 @@ def test_load_codepoint_ghost_download_fails_returns_none(monkeypatch, tmp_path)
 
 @needs_pil
 def test_load_codepoint_ghost_corrupt_file_returns_none(monkeypatch, tmp_path):
+    """Load codepoint ghost corrupt file returns none."""
     monkeypatch.setattr(image_assets, 'emojidir', str(tmp_path))
     codepoint = 'corruptcp'
     (tmp_path / f'{codepoint}.png').write_bytes(b'not valid png data')

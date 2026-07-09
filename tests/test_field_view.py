@@ -32,6 +32,7 @@ needs_pil = pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
 # abbreviation without a locally-cached logo PNG.
 @pytest.fixture(autouse=True)
 def _no_network(request):
+    """No network."""
     if not PIL_AVAILABLE:
         yield
         return
@@ -40,6 +41,7 @@ def _no_network(request):
 
 
 def _base_game(**overrides):
+    """Base game."""
     g = {
         'venue': 'Oracle Park',
         'detailed_state': 'In Progress',
@@ -99,6 +101,7 @@ def _base_game(**overrides):
 
 @needs_pil
 def test_happy_path_in_progress():
+    """Happy path in progress."""
     from field_view import render_field_view
     result = render_field_view(_base_game())
     assert isinstance(result, Image.Image)
@@ -113,6 +116,7 @@ def test_happy_path_in_progress():
 
 @needs_pil
 def test_no_pitches():
+    """No pitches."""
     from field_view import render_field_view
     result = render_field_view(_base_game(pitches=[]))
     assert isinstance(result, Image.Image)
@@ -121,6 +125,7 @@ def test_no_pitches():
 
 @needs_pil
 def test_all_pitch_codes():
+    """All pitch codes."""
     from field_view import render_field_view
     pitches = [
         {'px': -0.5, 'pz': 2.0, 'code': 'S'},   # swinging strike
@@ -138,6 +143,7 @@ def test_all_pitch_codes():
 
 @needs_pil
 def test_final_state_hides_count():
+    """Final state hides count."""
     from field_view import render_field_view
     result = render_field_view(_base_game(detailed_state='Final'))
     assert isinstance(result, Image.Image)
@@ -149,6 +155,7 @@ def test_final_state_hides_count():
 
 @needs_pil
 def test_no_hits():
+    """No hits."""
     from field_view import render_field_view
     result = render_field_view(_base_game(all_hits=[]))
     assert isinstance(result, Image.Image)
@@ -157,6 +164,7 @@ def test_no_hits():
 
 @needs_pil
 def test_multiple_hits_hr_and_out_current_half():
+    """Multiple hits hr and out current half."""
     from field_view import render_field_view
     game = _base_game(all_hits=[
         {'x': 200, 'y': 100, 'is_hr': True, 'is_hit': True,
@@ -213,6 +221,7 @@ def test_legacy_tuple_list_in_all_hits():
 
 @needs_pil
 def test_bases_all_empty():
+    """Bases all empty."""
     from field_view import render_field_view
     game = _base_game(runner_first=None, runner_second=None, runner_third=None)
     result = render_field_view(game)
@@ -221,6 +230,7 @@ def test_bases_all_empty():
 
 @needs_pil
 def test_bases_all_occupied():
+    """Bases all occupied."""
     from field_view import render_field_view
     game = _base_game(
         runner_first='Mookie Betts',
@@ -237,6 +247,7 @@ def test_bases_all_occupied():
 
 @needs_pil
 def test_missing_batter_pitcher_on_deck():
+    """Missing batter pitcher on deck."""
     from field_view import render_field_view
     game = _base_game()
     for key in ('batter', 'pitcher', 'on_deck', 'last_play', 'innings'):
@@ -248,6 +259,7 @@ def test_missing_batter_pitcher_on_deck():
 
 @needs_pil
 def test_none_batter_pitcher_on_deck():
+    """None batter pitcher on deck."""
     from field_view import render_field_view
     game = _base_game(batter=None, pitcher=None, on_deck=None)
     result = render_field_view(game)
@@ -271,6 +283,7 @@ def test_empty_data_dict():
 @needs_pil
 @pytest.mark.parametrize('state', ['Scheduled', 'Pre-Game', 'Warmup', 'In Progress', 'Final', 'Game Over'])
 def test_detailed_state_variants(state):
+    """Detailed state variants."""
     from field_view import render_field_view
     game = _base_game(detailed_state=state)
     if state in ('Scheduled', 'Pre-Game', 'Warmup'):
@@ -291,6 +304,7 @@ def test_detailed_state_variants(state):
 
 @needs_pil
 def test_dark_mode_true():
+    """Dark mode true."""
     from field_view import render_field_view
     result = render_field_view(_base_game(), dark_mode=True)
     assert isinstance(result, Image.Image)
@@ -300,6 +314,7 @@ def test_dark_mode_true():
 
 @needs_pil
 def test_dark_mode_false():
+    """Dark mode false."""
     from field_view import render_field_view
     result = render_field_view(_base_game(), dark_mode=False)
     assert isinstance(result, Image.Image)
@@ -311,6 +326,7 @@ def test_dark_mode_false():
 
 @needs_pil
 def test_unknown_venue_fallback_polygon():
+    """Unknown venue fallback polygon."""
     from field_view import render_field_view
     result = render_field_view(_base_game(venue='Some Made Up Stadium XYZ'))
     assert isinstance(result, Image.Image)
@@ -319,6 +335,7 @@ def test_unknown_venue_fallback_polygon():
 
 @needs_pil
 def test_missing_venue():
+    """Missing venue."""
     from field_view import render_field_view
     game = _base_game()
     game.pop('venue', None)
@@ -344,10 +361,12 @@ def test_long_last_play_wraps_lines():
 
 @needs_pil
 def test_word_wrap_wraps_on_overflow():
+    """Word wrap wraps on overflow."""
     from field_view import _word_wrap
 
     class _RealFont:
         def getlength(self, text):
+            """Getlength."""
             return len(text) * 10
 
     lines = _word_wrap('one two three four five six seven eight', _RealFont(), 40)
@@ -356,6 +375,7 @@ def test_word_wrap_wraps_on_overflow():
 
 @needs_pil
 def test_word_wrap_font_without_getlength_falls_back():
+    """Word wrap font without getlength falls back."""
     from field_view import _word_wrap
 
     class _NoGetLengthFont:

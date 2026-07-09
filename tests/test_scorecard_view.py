@@ -24,11 +24,13 @@ needs_pil = pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
 # ---------------------------------------------------------------------------
 
 def _at_bat(code='1B', bases=1, balls=0, strikes=0):
+    """At bat."""
     return {'code': code, 'bases': bases, 'balls': balls, 'strikes': strikes}
 
 
 def _batter(order, name='John Smith', position='CF', sub=False,
             sub_original=None, at_bats=None, totals=None):
+    """Batter."""
     return {
         'name': name,
         'position': position,
@@ -65,6 +67,7 @@ def _make_lineup(n=9):
 
 
 def _make_lineup_no_subs(n=9):
+    """Make lineup no subs."""
     lineup = []
     for i in range(n):
         order = i + 1
@@ -75,10 +78,12 @@ def _make_lineup_no_subs(n=9):
 
 
 def _pitcher(name='Ace Reliever', ip='1.0', hits=1, er=0, k=2):
+    """Pitcher."""
     return {'name': name, 'ip': ip, 'hits': hits, 'er': er, 'k': k}
 
 
 def _base_data(**overrides):
+    """Base data."""
     data = {
         'num_innings': 9,
         'away_abbr': 'LAD',
@@ -110,6 +115,7 @@ def _base_data(**overrides):
 @needs_pil
 @patch('scorecard_view._logo_small', return_value=None)
 def test_render_basic(_mock_logo):
+    """Render basic."""
     from scorecard_view import render_scorecard_view
     result = render_scorecard_view(_base_data())
     assert isinstance(result, Image.Image)
@@ -120,6 +126,7 @@ def test_render_basic(_mock_logo):
 @needs_pil
 @patch('scorecard_view._logo_small', return_value=None)
 def test_render_dark_mode(_mock_logo):
+    """Render dark mode."""
     from scorecard_view import render_scorecard_view
     result = render_scorecard_view(_base_data(), dark_mode=True)
     assert isinstance(result, Image.Image)
@@ -159,6 +166,7 @@ def test_render_extra_innings(_mock_logo):
 @needs_pil
 @patch('scorecard_view._logo_small', return_value=None)
 def test_render_no_substitutions(_mock_logo):
+    """Render no substitutions."""
     from scorecard_view import render_scorecard_view
     data = _base_data(away_lineup=_make_lineup_no_subs(), home_lineup=_make_lineup_no_subs())
     result = render_scorecard_view(data)

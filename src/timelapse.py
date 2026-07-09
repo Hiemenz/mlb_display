@@ -36,6 +36,7 @@ _TERMINAL_GAME_STATES = {'Postponed', 'Cancelled', 'Suspended'}
 
 
 def _ordinal(n):
+    """Ordinal."""
     try:
         return _INNING_ORDINALS.get(int(n), f'{n}th')
     except (TypeError, ValueError):
@@ -95,6 +96,7 @@ def _fetch_game_timeline(game_pk):
     bscore_teams = data.get('liveData', {}).get('boxscore', {}).get('teams', {})
 
     def _build_order(team_box):
+        """Build order."""
         batting_order_ids = team_box.get('battingOrder', [])
         players = team_box.get('players', {})
         slot_map = {}
@@ -869,6 +871,7 @@ def generate_gif(date_str, gif_start, gif_end, output_path, interval_min, frame_
 
 
 def main():
+    """CLI entry point: generate a GIF/MP4 timelapse of scoreboard frames for a past game day."""
     parser = argparse.ArgumentParser(
         description='Generate a GIF/MP4 timelapse of the scoreboard for a past game day.',
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -195,6 +195,7 @@ def _parse_review_context(description):
         ctx = ctx.replace(old, new)
     # Capitalize content words; keep abbreviations and prepositions as-is
     def _cap(word):
+        """Cap."""
         if word.isupper() or word in _REVIEW_CTX_SKIP:
             return word
         return '/'.join(s.capitalize() for s in word.split('/'))
@@ -210,6 +211,7 @@ def _find_recent_review_result(plays, away_id=None, home_id=None, away_abbr='', 
     A review is considered fresh if no pitch has been thrown since it completed.
     """
     def _fmt(rd, desc=''):
+        """Fmt."""
         label = 'OVR' if rd.get('isOverturned') else 'CFM'
         ctx = _parse_review_context(desc)
         if ctx:
@@ -328,6 +330,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         in_hole_name = offense.get('inHole', {}).get('fullName') or None
 
         def _runner_jersey(base_key):
+            """Runner jersey."""
             rid = offense.get(base_key, {}).get('id')
             if not rid:
                 return None
@@ -451,6 +454,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         }
 
         def _action_code(et):
+            """Action code."""
             for _k, _v in _ACTION_CODES.items():
                 if et.startswith(_k):
                     return _v
@@ -615,6 +619,7 @@ def fetch_between_inning_info(game_pk, inning_state):
             all_players.update(boxscore.get('teams', {}).get(_side, {}).get('players', {}))
 
         def _full_name(pid):
+            """Full name."""
             pdata = all_players.get(f'ID{pid}', {})
             return pdata.get('person', {}).get('fullName', '')
 
@@ -695,6 +700,7 @@ def fetch_between_inning_info(game_pk, inning_state):
         next_3_pids = [ordered_pids[(start + i) % n] for i in range(min(3, n))]
 
         def _name(pid):
+            """Name."""
             return _full_name(pid)
 
         names = [_name(pid) for pid in next_3_pids]

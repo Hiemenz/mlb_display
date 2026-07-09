@@ -56,6 +56,7 @@ def _save(img: Image.Image, name: str, scale: int = 2):
 
 
 def _canvas():
+    """Canvas."""
     return Image.new('1', (800, 480), 255)
 
 
@@ -83,6 +84,7 @@ def _pregame(away_id, home_id, away_abbr, home_abbr,
              away_pitcher='Shane McClanahan', away_pitcher_era='3.12', away_pitcher_wl='7-3',
              home_pitcher='Kevin Gausman', home_pitcher_era='2.87', home_pitcher_wl='8-2',
              away_streak='W3', home_streak='L2'):
+    """Pregame."""
     return {
         'game_pk': hash((away_id, home_id)) & 0xFFFF,
         'away_team_id': away_id, 'home_team_id': home_id,
@@ -131,6 +133,7 @@ def _live(away_id, home_id, away_abbr, home_abbr,
           pitch_count=87, last_pitch_speed=94.1, last_pitch_type='FB',
           win_prob_away=42.0,
           no_hitter=False, perfect_game=False):
+    """Live."""
     return {
         'game_pk': hash((away_id, home_id, inning)) & 0xFFFF,
         'away_team_id': away_id, 'home_team_id': home_id,
@@ -187,6 +190,7 @@ def _live(away_id, home_id, away_abbr, home_abbr,
 
 def _between_innings(away_id, home_id, away_abbr, home_abbr,
                      inning=7, away_runs=2, home_runs=3):
+    """Between innings."""
     base = _live(away_id, home_id, away_abbr, home_abbr,
                  away_runs=away_runs, home_runs=home_runs,
                  inning=inning, inning_state='Middle', outs=3)
@@ -206,6 +210,7 @@ def _final(away_id, home_id, away_abbr, home_abbr,
            away_runs=2, home_runs=5,
            winner='Logan Webb', loser='Clayton Kershaw',
            winner_record='9-2', loser_record='5-6', saver=None):
+    """Final."""
     return {
         'game_pk': hash((away_id, home_id)) & 0xFFFF,
         'away_team_id': away_id, 'home_team_id': home_id,
@@ -405,6 +410,7 @@ STANDINGS_DATA = {
 
 
 def _wildcard_teams():
+    """Wildcard teams."""
     return {
         'AL': [
             {'team_id': '136', 'team_abbr': 'SEA', 'games_back': '-'},
@@ -426,6 +432,7 @@ def _wildcard_teams():
 
 
 def _field_fixture():
+    """Field fixture."""
     return {
         'venue': 'Oracle Park',
         'detailed_state': 'In Progress',
@@ -464,6 +471,7 @@ def _field_fixture():
 
 
 def _pitch_fixture():
+    """Pitch fixture."""
     return {
         'detailed_state': 'In Progress',
         'inning_state': 'Top',
@@ -487,6 +495,7 @@ def _pitch_fixture():
 
 
 def _scorecard_lineup(n=9):
+    """Scorecard lineup."""
     codes = ['1B', 'K', 'HR', '6-3', 'BB', '2B', 'F9', '3B', 'K']
     names = ['Mookie Betts', 'Freddie Freeman', 'Max Muncy', 'Will Smith',
              'J.D. Martinez', 'Chris Taylor', 'Miguel Vargas', 'Michael Grove', 'James Outman']
@@ -509,6 +518,7 @@ def _scorecard_lineup(n=9):
 
 
 def _scorecard_fixture():
+    """Scorecard fixture."""
     return {
         'detailed_state': 'In Progress',
         'inning_state': 'Top',
@@ -538,6 +548,7 @@ def _scorecard_fixture():
 
 
 def _nohitter_game():
+    """Nohitter game."""
     g = _live(117, 147, 'HOU', 'NYY', 0, 0, 7, 'Bot', 2, 1, 1,
               None, None, None, 'Gerrit Cole', 'Alex Bregman', 98, 97.5, 'FF',
               no_hitter=True)
@@ -547,6 +558,7 @@ def _nohitter_game():
 
 
 def _wide_live_game():
+    """Wide live game."""
     g = _live(139, 147, 'TB', 'NYY', 2, 3, 7, 'Top', 1, 2, 1,
               'Yandy Diaz', None, None, 'Gerrit Cole', 'Randy Arozarena',
               87, 96.2, 'FF', 45.0)
@@ -595,6 +607,7 @@ def _render_scoreboard(games, show_win_prob=True):
 
 
 def generate_scoreboard_pregame():
+    """Generate scoreboard pregame."""
     print("Generating scoreboard_pregame.png ...")
     img = _render_scoreboard(PREGAME_GAMES * 3, show_win_prob=False)
     _save(img, 'scoreboard_pregame.png', scale=1)
@@ -602,6 +615,7 @@ def generate_scoreboard_pregame():
 
 
 def generate_scoreboard_live():
+    """Generate scoreboard live."""
     print("Generating scoreboard_live.png ...")
     games = LIVE_GAMES * 2 + PREGAME_GAMES[:5]
     img = _render_scoreboard(games)
@@ -610,6 +624,7 @@ def generate_scoreboard_live():
 
 
 def generate_scoreboard_finals():
+    """Generate scoreboard finals."""
     print("Generating scoreboard_finals.png ...")
     img = _render_scoreboard(FINAL_GAMES)
     _save(img, 'scoreboard_finals.png', scale=1)
@@ -617,6 +632,7 @@ def generate_scoreboard_finals():
 
 
 def generate_scoreboard_nohitter():
+    """Generate scoreboard nohitter."""
     print("Generating scoreboard_nohitter.png ...")
     games = [_nohitter_game()] + LIVE_GAMES[:4] + FINAL_GAMES[:5] + PREGAME_GAMES[:5]
     img = _render_scoreboard(games)
@@ -641,6 +657,7 @@ def _crop_tile(img: Image.Image, col: int, row: int) -> Image.Image:
 
 
 def generate_tile_pregame():
+    """Generate tile pregame."""
     print("Generating tile_pregame.png ...")
     img = _render_scoreboard(PREGAME_GAMES * 3)
     tile = _crop_tile(img, 1, 1)
@@ -648,6 +665,7 @@ def generate_tile_pregame():
 
 
 def generate_tile_live():
+    """Generate tile live."""
     print("Generating tile_live.png ...")
     games = LIVE_GAMES * 3
     img = _render_scoreboard(games)
@@ -656,6 +674,7 @@ def generate_tile_live():
 
 
 def generate_tile_live_detail():
+    """Generate tile live detail."""
     print("Generating tile_live_detail.png ...")
     bi_game = _between_innings(139, 147, 'TB', 'NYY', inning=7, away_runs=2, home_runs=3)
     games = [bi_game] + LIVE_GAMES[1:] * 3
@@ -665,6 +684,7 @@ def generate_tile_live_detail():
 
 
 def generate_tile_final():
+    """Generate tile final."""
     print("Generating tile_final.png ...")
     img = _render_scoreboard(FINAL_GAMES)
     tile = _crop_tile(img, 1, 1)
@@ -672,6 +692,7 @@ def generate_tile_final():
 
 
 def generate_wide_cell():
+    """Render the wide-cell doc screenshot showing the expanded linescore box layout."""
     print("Generating wide_cell.png ...")
     from image_box import draw_wide_box
     from image_standings import draw_standings_sidebar, draw_wildcard_header
@@ -693,6 +714,7 @@ def generate_wide_cell():
 
 
 def generate_field_mode():
+    """Generate field mode."""
     print("Generating field_mode.png ...")
     from field_view import render_field_view
 
@@ -702,6 +724,7 @@ def generate_field_mode():
 
 
 def generate_pitch_mode():
+    """Generate pitch mode."""
     print("Generating pitch_mode.png ...")
     from pitch_view import render_pitch_view
 
@@ -711,6 +734,7 @@ def generate_pitch_mode():
 
 
 def generate_scorecard_mode():
+    """Generate scorecard mode."""
     print("Generating scorecard_mode.png ...")
     from scorecard_view import render_scorecard_view
 
@@ -755,6 +779,7 @@ def generate_demo_gif():
     frames = []
 
     def _add(img: Image.Image, repeat: int = 1):
+        """Add."""
         gray = img.convert('L')
         for _ in range(repeat):
             frames.append(gray)
@@ -831,6 +856,7 @@ def generate_demo_gif():
 # ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point: generate all documentation screenshots into the docs/ directory."""
     print(f"Generating docs screenshots → {DOCS_DIR}/")
     generate_scoreboard_pregame()
     generate_scoreboard_live()

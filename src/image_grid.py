@@ -61,6 +61,7 @@ def _find_wide_games(game_list, config, team_data):
     # Find the in-progress game farthest along:
     # 1. highest inning  2. Bottom > Top  3. most outs  4. earliest start time
     def _progress(idx):
+        """Progress."""
         g = game_list[idx]
         inning = g.get('current_inning') or 0
         # Order within an inning: Top < Middle (break) < Bottom < End (break). This
@@ -75,6 +76,7 @@ def _find_wide_games(game_list, config, team_data):
     # Ranking used when a subset must be chosen: the featured live game outranks
     # everything else; ties beyond that fall back to game progress.
     def _rank(idx):
+        """Rank."""
         return (1 if idx == featured_idx else 0,) + _progress(idx)
 
     if len(game_list) < 15:
@@ -358,6 +360,7 @@ def _free_grid_slot(slots):
 
 
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None):
+    """Render the full scoreboard grid of game boxes onto Himage."""
 
     draw = ImageDraw.Draw(Himage)
     config = load_yaml_file('config.yaml')

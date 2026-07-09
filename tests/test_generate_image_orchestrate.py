@@ -60,6 +60,7 @@ TEAM_DATA = {
 
 
 def _base_game(**overrides):
+    """Base game."""
     g = {
         'game_pk': 1001,
         'away_team_id': 119,
@@ -100,6 +101,7 @@ def _base_game(**overrides):
 
 
 def _live_game(**overrides):
+    """Live game."""
     g = _base_game(
         detailed_state='In Progress',
         current_inning=7,
@@ -135,12 +137,14 @@ def _fake_loader(overrides):
     default-empty-dict behavior for a missing file).
     """
     def _load(file_name, *args, **kwargs):
+        """Load."""
         return overrides.get(file_name, {})
     return _load
 
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
+    """Clean env."""
     monkeypatch.delenv('FEATURED_TEAM_FULLSCREEN', raising=False)
     yield
 
@@ -532,6 +536,7 @@ def test_compute_grid_layout_called_once_per_render():
     calls = []
 
     def _spy(*args, **kwargs):
+        """Spy."""
         calls.append(1)
         return real_compute(*args, **kwargs)
 
@@ -651,6 +656,7 @@ def test_grid_path_wildcard_sidebar_and_dark_mode():
 
 @needs_pil
 def test_grid_path_wildcard_skipped_for_aaa_league_mode():
+    """Grid path wildcard skipped for aaa league mode."""
     import generate_image
 
     stub_img = Image.new('1', (800, 480), 255)
@@ -676,6 +682,7 @@ def test_grid_path_wildcard_skipped_for_aaa_league_mode():
 # ---------------------------------------------------------------------------
 
 def _live_fs_game(**overrides):
+    """Live fs game."""
     g = {
         'game_pk': 9001, 'away_team_id': 147, 'home_team_id': 111,
         'detailed_state': 'In Progress', 'inningState': 'Top', 'current_inning': 5,
@@ -748,6 +755,7 @@ def test_featured_fullscreen_partial_refresh_zone_for_single_field(monkeypatch, 
 
 @needs_pil
 def test_featured_fullscreen_all_three_zones_changed_falls_back_to_full_refresh(monkeypatch):
+    """Featured fullscreen all three zones changed falls back to full refresh."""
     import generate_image
 
     monkeypatch.setenv('FEATURED_TEAM_FULLSCREEN', 'true')
@@ -843,6 +851,7 @@ def test_linescore_window_skips_final_game_with_empty_game_pk():
     game_no_pk = dict(_base_game(game_pk='', detailed_state='Final'))
 
     def fake_load(filename, *a, **kw):
+        """Fake load."""
         return {
             'old_scoreboard_state.json': [_base_game(game_pk=1)],
             'score_alerts.json': {},
@@ -881,6 +890,7 @@ def test_linescore_window_no_end_time_utc_uses_fallback():
     game_no_end['game_end_time_utc'] = None
 
     def fake_load(filename, *a, **kw):
+        """Fake load."""
         return {
             'old_scoreboard_state.json': [],
             'score_alerts.json': {},
@@ -920,6 +930,7 @@ def test_playoff_bracket_header_drawn_when_bracket_data_present():
                                 'away_wins': 2, 'home_wins': 3, 'complete': False}]}
 
     def fake_load(filename, *a, **kw):
+        """Fake load."""
         return {
             'playoff_bracket.json': bracket_data,
         }.get(filename, {})

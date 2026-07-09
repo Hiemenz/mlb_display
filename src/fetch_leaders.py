@@ -77,6 +77,7 @@ def fetch_leaders(season=None, sport_id=1):
 
 
 def main():
+    """CLI entry point: fetch MLB season statistical leaders and write to data/leaders.json."""
     parser = argparse.ArgumentParser(description='Fetch MLB season statistical leaders')
     parser.add_argument('--season', type=int, help='Season year (default: current year)')
     parser.add_argument('--sport-id', type=int, default=1, help='Sport ID (default: 1=MLB)')

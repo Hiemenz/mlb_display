@@ -19,6 +19,7 @@ _COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 
 
 def _compass_from_degrees(deg):
+    """Compass from degrees."""
     if deg is None:
         return None
     idx = int((float(deg) + 22.5) // 45) % 8
@@ -42,6 +43,7 @@ def _parse_iso_utc(iso_str):
 
 
 def _load_cache():
+    """Load cache."""
     try:
         if not os.path.isfile(_CACHE_PATH):
             return {}
@@ -52,6 +54,7 @@ def _load_cache():
 
 
 def _save_cache(cache):
+    """Save cache."""
     try:
         os.makedirs(os.path.dirname(_CACHE_PATH), exist_ok=True)
         with open(_CACHE_PATH, 'w') as f:
@@ -61,10 +64,12 @@ def _save_cache(cache):
 
 
 def _cache_key(venue_id, game_dt_utc):
+    """Cache key."""
     return f'{venue_id}:{game_dt_utc.strftime("%Y-%m-%dT%H")}'
 
 
 def _is_fresh(entry, ttl_minutes):
+    """Is fresh."""
     fetched = _parse_iso_utc(entry.get('fetched_at'))
     if fetched is None:
         return False
@@ -72,6 +77,7 @@ def _is_fresh(entry, ttl_minutes):
 
 
 def _fetch_open_meteo(lat, lon):
+    """Fetch open meteo."""
     params = {
         'latitude': f'{lat:.4f}',
         'longitude': f'{lon:.4f}',
@@ -88,6 +94,7 @@ def _fetch_open_meteo(lat, lon):
 
 
 def _pick_hour(payload, game_dt_utc):
+    """Pick hour."""
     hourly = payload.get('hourly') or {}
     times = hourly.get('time') or []
     if not times:
@@ -108,6 +115,7 @@ def _pick_hour(payload, game_dt_utc):
             return None
 
     def _at(field):
+        """At."""
         series = hourly.get(field) or []
         return series[idx] if idx < len(series) else None
 
@@ -159,6 +167,7 @@ def get_forecast(venue_id, lat, lon, game_utc_iso, cache_ttl_minutes=60):
 
 
 def _prune_cache(cache, keep_days=3):
+    """Prune cache."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
     stale = []
     for key in list(cache.keys()):

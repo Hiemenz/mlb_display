@@ -176,6 +176,7 @@ def _parse(api_games, sport_id=1, config=None):
     captured = {}
 
     def fake_save(data, name):
+        """Fake save."""
         captured[name] = data
 
     schedule_data = {'dates': [{'games': api_games}]}
@@ -372,27 +373,33 @@ class TestDrawWildcardHeaderSmoke:
     _AL_BOX_TOP      = (32, 1, 104, 3)  # top edge of 3-team AL wildcard box (3 * 24 = 72 wide)
 
     def _blank(self):
+        """Blank."""
         return Image.new('1', (800, 480), 255)
 
     def test_empty_wildcard_dict_no_crash(self):
+        """Empty wildcard dict no crash."""
         draw_wildcard_header(self._blank(), {})
 
     def test_empty_al_nl_lists_no_crash(self):
+        """Empty al nl lists no crash."""
         draw_wildcard_header(self._blank(), {'AL': [], 'NL': []})
 
     def test_one_al_team_no_crash(self):
+        """One al team no crash."""
         draw_wildcard_header(self._blank(), {
             'AL': [{'abbr': 'NYY', 'team_id': '999', 'gb': '-'}],
             'NL': [],
         })
 
     def test_one_nl_team_no_crash(self):
+        """One nl team no crash."""
         draw_wildcard_header(self._blank(), {
             'AL': [],
             'NL': [{'abbr': 'LAD', 'team_id': '998', 'gb': '-'}],
         })
 
     def test_max_twelve_teams_per_league_no_crash(self):
+        """Max twelve teams per league no crash."""
         al = [{'abbr': f'A{i:02d}', 'team_id': str(i), 'gb': '-'} for i in range(12)]
         nl = [{'abbr': f'N{i:02d}', 'team_id': str(100 + i), 'gb': '-'} for i in range(12)]
         draw_wildcard_header(self._blank(), {'AL': al, 'NL': nl})
@@ -468,6 +475,7 @@ class TestStandingsSidebarMovers:
     _INDICATOR_REGION = (2, 25, 4, 480)
 
     def _blank(self):
+        """Blank."""
         return Image.new('1', (800, 480), 255)
 
     def _render(self, cur_teams, prev_teams=None, abbr_map=None):
@@ -493,6 +501,7 @@ class TestStandingsSidebarMovers:
             }
 
         def fake_load(fname):
+            """Fake load."""
             if fname == 'standings_prev.json' and prev_data is not None:
                 return prev_data
             return {}
@@ -673,6 +682,7 @@ class TestGamesJsonSchema:
 
     @pytest.fixture(scope='class')
     def games(self):
+        """Games."""
         path = os.path.join(DATA_DIR, 'games.json')
         if not os.path.exists(path):
             pytest.skip("data/games.json not available")
@@ -832,6 +842,7 @@ class TestStandingsJsonSchema:
 
     @pytest.fixture(scope='class')
     def standings_data(self):
+        """Standings data."""
         path = os.path.join(DATA_DIR, 'standings.json')
         if not os.path.exists(path):
             pytest.skip("data/standings.json not available")
@@ -844,6 +855,7 @@ class TestStandingsJsonSchema:
         assert 'team_abbreviation' in standings_data
 
     def test_standings_value_is_dict(self, standings_data):
+        """Standings value is dict."""
         assert isinstance(standings_data['standings'], dict)
 
     def test_team_abbreviation_maps_string_to_string(self, standings_data):
@@ -1096,6 +1108,7 @@ class TestParseGamesContract:
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
 
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
@@ -1109,6 +1122,7 @@ class TestParseGamesContract:
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
 
         with patch('fetch_games.save_off_results', side_effect=fake_save), \
@@ -1123,6 +1137,7 @@ class TestParseGamesContract:
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
 
         data = {'dates': [{'games': [_minimal_game_api(away_abbr='BOS', away_id=111,
@@ -1168,18 +1183,23 @@ class TestSaveSituationDetectionViaApi:
         )
 
     def _flag(self, current_inning, away_runs, home_runs):
+        """Flag."""
         return _parse([self._ip_game(current_inning, away_runs, home_runs)])[0]['save_situation']
 
     def test_inning_7_diff_1_is_save(self):
+        """Inning 7 diff 1 is save."""
         assert self._flag(7, 5, 4) is True
 
     def test_inning_7_diff_3_is_save(self):
+        """Inning 7 diff 3 is save."""
         assert self._flag(7, 7, 4) is True
 
     def test_inning_9_diff_2_is_save(self):
+        """Inning 9 diff 2 is save."""
         assert self._flag(9, 6, 4) is True
 
     def test_extra_innings_diff_1_is_save(self):
+        """Extra innings diff 1 is save."""
         assert self._flag(11, 5, 4) is True
 
     def test_tied_game_is_not_save(self):
@@ -1199,9 +1219,11 @@ class TestSaveSituationDetectionViaApi:
         assert self._flag(7, 5, 3) is True   # away leads 5-3
 
     def test_scheduled_game_never_save(self):
+        """Scheduled game never save."""
         assert _parse([_minimal_game_api(state='Scheduled')])[0]['save_situation'] is False
 
     def test_final_game_not_save(self):
+        """Final game not save."""
         api_game = _minimal_game_api(state='Final', away_runs=5, home_runs=4)
         assert _parse([api_game])[0]['save_situation'] is False
 
@@ -1226,6 +1248,7 @@ class TestWbcAbbreviationOverride:
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
 
         api_game = _minimal_game_api(
@@ -1258,6 +1281,7 @@ class TestWbcAbbreviationOverride:
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
 
         api_game = _minimal_game_api(home_abbr='COL', home_id=9902)
@@ -1278,6 +1302,7 @@ class TestWbcAbbreviationOverride:
         captured = {}
 
         def fake_save(data, name):
+            """Fake save."""
             captured[name] = data
 
         api_game = _minimal_game_api(away_abbr='COL', away_id=115)

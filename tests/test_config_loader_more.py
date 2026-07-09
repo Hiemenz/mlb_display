@@ -16,6 +16,7 @@ import config_loader
 
 class TestLoadDotenv:
     def test_no_env_file_returns_early(self, tmp_path, monkeypatch):
+        """No env file returns early."""
         missing = tmp_path / '.env'
         monkeypatch.setattr(config_loader, '_ENV_FILE', str(missing))
         # Should simply return without raising and without touching os.environ.
@@ -25,6 +26,7 @@ class TestLoadDotenv:
         assert sentinel not in os.environ
 
     def test_loads_new_vars_from_env_file(self, tmp_path, monkeypatch):
+        """Loads new vars from env file."""
         env_file = tmp_path / '.env'
         env_file.write_text('MY_TEST_VAR=hello\n# comment line\n\nBAD_LINE_NO_EQUALS\nQUOTED="wrapped"\n')
         monkeypatch.setattr(config_loader, '_ENV_FILE', str(env_file))
@@ -39,6 +41,7 @@ class TestLoadDotenv:
             os.environ.pop('QUOTED', None)
 
     def test_does_not_overwrite_existing_env_var(self, tmp_path, monkeypatch):
+        """Does not overwrite existing env var."""
         env_file = tmp_path / '.env'
         env_file.write_text('EXISTING_VAR=from_file\n')
         monkeypatch.setattr(config_loader, '_ENV_FILE', str(env_file))
@@ -56,12 +59,14 @@ class TestLoadDotenv:
 
 class TestLoadConfig:
     def test_valid_config_returns_dict(self, tmp_path):
+        """Valid config returns dict."""
         p = tmp_path / 'config.yaml'
         p.write_text('key: value\n')
         result = config_loader.load_config(str(p))
         assert result == {'key': 'value'}
 
     def test_missing_file_returns_empty_dict(self, tmp_path, capsys):
+        """Missing file returns empty dict."""
         missing = tmp_path / 'nope.yaml'
         result = config_loader.load_config(str(missing))
         assert result == {}
@@ -69,12 +74,14 @@ class TestLoadConfig:
         assert 'Config file not found' in captured.out
 
     def test_empty_file_returns_empty_dict(self, tmp_path):
+        """Empty file returns empty dict."""
         p = tmp_path / 'empty.yaml'
         p.write_text('')
         result = config_loader.load_config(str(p))
         assert result == {}
 
     def test_generic_exception_returns_empty_dict(self, tmp_path, capsys):
+        """Generic exception returns empty dict."""
         p = tmp_path / 'config.yaml'
         p.write_text('key: value\n')
         with patch('config_loader.yaml.safe_load', side_effect=ValueError('boom')):
@@ -84,6 +91,7 @@ class TestLoadConfig:
         assert 'Error loading config' in captured.out
 
     def test_no_path_uses_default(self):
+        """No path uses default."""
         # Default config.yaml should exist in this repo and load as a dict.
         result = config_loader.load_config()
         assert isinstance(result, dict)
@@ -95,12 +103,14 @@ class TestLoadConfig:
 
 class TestAddConfigArg:
     def test_adds_config_argument(self):
+        """Adds config argument."""
         parser = argparse.ArgumentParser()
         config_loader.add_config_arg(parser)
         args = parser.parse_args([])
         assert args.config is None
 
     def test_config_argument_parses_value(self):
+        """Config argument parses value."""
         parser = argparse.ArgumentParser()
         config_loader.add_config_arg(parser)
         args = parser.parse_args(['--config', '/some/path.yaml'])

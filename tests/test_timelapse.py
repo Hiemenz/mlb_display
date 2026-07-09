@@ -28,6 +28,7 @@ UTC = pytz.utc
 
 
 def _dt(hour, minute=0, day=20):
+    """Dt."""
     return UTC.localize(datetime(2026, 6, day, hour, minute, 0))
 
 
@@ -36,31 +37,37 @@ def _dt(hour, minute=0, day=20):
 # ---------------------------------------------------------------------------
 
 def test_ordinal_known_innings():
+    """Ordinal known innings."""
     assert _ordinal(1) == '1st'
     assert _ordinal(9) == '9th'
     assert _ordinal('5') == '5th'
 
 
 def test_ordinal_unknown_falls_back_to_th_suffix():
+    """Ordinal unknown falls back to th suffix."""
     assert _ordinal(23) == '23th'
 
 
 def test_ordinal_invalid_returns_none():
+    """Ordinal invalid returns none."""
     assert _ordinal(None) is None
     assert _ordinal('not-a-number') is None
 
 
 def test_parse_mlb_time_with_fractional_seconds():
+    """Parse mlb time with fractional seconds."""
     result = _parse_mlb_time('2026-06-20T23:05:00.123Z')
     assert result == _dt(23, 5).replace(microsecond=123000)
 
 
 def test_parse_mlb_time_without_fractional_seconds():
+    """Parse mlb time without fractional seconds."""
     result = _parse_mlb_time('2026-06-20T23:05:00Z')
     assert result == _dt(23, 5)
 
 
 def test_parse_mlb_time_invalid_raises():
+    """Parse mlb time invalid raises."""
     with pytest.raises(ValueError):
         _parse_mlb_time('not-a-timestamp')
 
@@ -74,6 +81,7 @@ def _play(inning=1, half='top', complete=True, start='2026-06-20T23:00:00Z',
           batter_id=1, batter_name='Mookie Betts', pitcher_name='Logan Webb',
           event='Strikeout', event_type='strikeout', description='Betts strikes out.',
           events=None, review=None):
+    """Play."""
     ev = events if events is not None else []
     return {
         'about': {
@@ -96,6 +104,7 @@ def _play(inning=1, half='top', complete=True, start='2026-06-20T23:00:00Z',
 
 def _pitch_event(time='2026-06-20T22:59:30Z', balls=1, strikes=1, outs=0,
                   challenge_team=None, in_progress=False, overturned=False):
+    """Pitch event."""
     ev = {
         'type': 'pitch', 'startTime': time,
         'count': {'balls': balls, 'strikes': strikes, 'outs': outs},
@@ -109,6 +118,7 @@ def _pitch_event(time='2026-06-20T22:59:30Z', balls=1, strikes=1, outs=0,
 
 
 def _live_feed(all_plays=None):
+    """Live feed."""
     return {
         'gameData': {
             'datetime': {'dateTime': '2026-06-20T22:35:00Z'},
@@ -133,7 +143,9 @@ def _live_feed(all_plays=None):
 
 
 def _mock_requests_get(live_feed, wp_data=None):
+    """Mock requests get."""
     def _get(url, timeout=None):
+        """Get."""
         resp = MagicMock()
         if 'winProbability' in url:
             resp.json.return_value = wp_data or []
@@ -144,6 +156,7 @@ def _mock_requests_get(live_feed, wp_data=None):
 
 
 def test_fetch_game_timeline_basic_completed_play():
+    """Fetch game timeline basic completed play."""
     feed = _live_feed(all_plays=[
         _play(inning=1, half='top', away_score=1, home_score=0, outs_after=3,
               events=[_pitch_event()]),
@@ -158,6 +171,7 @@ def test_fetch_game_timeline_basic_completed_play():
 
 
 def test_fetch_game_timeline_skips_incomplete_plays_for_timeline_but_keeps_pitch_events():
+    """Fetch game timeline skips incomplete plays for timeline but keeps pitch events."""
     feed = _live_feed(all_plays=[
         _play(complete=False, events=[_pitch_event()]),
     ])
@@ -168,6 +182,7 @@ def test_fetch_game_timeline_skips_incomplete_plays_for_timeline_but_keeps_pitch
 
 
 def test_fetch_game_timeline_tracks_abs_challenges():
+    """Fetch game timeline tracks abs challenges."""
     feed = _live_feed(all_plays=[
         _play(outs_after=1, events=[
             _pitch_event(challenge_team=111, in_progress=False, overturned=False),
@@ -179,6 +194,7 @@ def test_fetch_game_timeline_tracks_abs_challenges():
 
 
 def test_fetch_game_timeline_ignores_in_progress_and_overturned_challenges():
+    """Fetch game timeline ignores in progress and overturned challenges."""
     feed = _live_feed(all_plays=[
         _play(outs_after=1, events=[
             _pitch_event(challenge_team=111, in_progress=True),
@@ -191,6 +207,7 @@ def test_fetch_game_timeline_ignores_in_progress_and_overturned_challenges():
 
 
 def test_fetch_game_timeline_win_probability_scaled_from_fraction():
+    """Fetch game timeline win probability scaled from fraction."""
     feed = _live_feed(all_plays=[_play(outs_after=1)])
     wp = [{'atBatIndex': 0, 'awayTeamWinProbability': 0.55, 'homeTeamWinProbability': 0.45,
            'result': {'event': 'Groundout', 'eventType': 'field_out', 'description': 'ground out'}}]
@@ -202,6 +219,7 @@ def test_fetch_game_timeline_win_probability_scaled_from_fraction():
 
 
 def test_fetch_game_timeline_win_probability_already_percent():
+    """Fetch game timeline win probability already percent."""
     feed = _live_feed(all_plays=[_play(outs_after=1)])
     wp = [{'atBatIndex': 0, 'awayTeamWinProbability': 55.0, 'homeTeamWinProbability': 45.0,
            'result': {'event': 'Groundout', 'eventType': 'field_out'}}]
@@ -211,6 +229,7 @@ def test_fetch_game_timeline_win_probability_already_percent():
 
 
 def test_fetch_game_timeline_skips_substitution_events_for_last_play():
+    """Fetch game timeline skips substitution events for last play."""
     feed = _live_feed(all_plays=[
         _play(outs_after=0, event='Pitching Substitution', event_type='substitution'),
         _play(outs_after=1, event='Strikeout', event_type='strikeout',
@@ -230,6 +249,7 @@ def test_fetch_game_timeline_live_feed_failure_propagates():
 
 
 def test_fetch_game_timeline_next_batters_after_inning_break():
+    """Fetch game timeline next batters after inning break."""
     feed = _live_feed(all_plays=[
         _play(inning=1, half='top', outs_after=3,
               start='2026-06-20T23:00:00Z', end='2026-06-20T23:05:00Z',
@@ -242,6 +262,7 @@ def test_fetch_game_timeline_next_batters_after_inning_break():
 
 
 def test_fetch_game_timeline_no_scheduled_start():
+    """Fetch game timeline no scheduled start."""
     feed = _live_feed()
     feed['gameData']['datetime'] = {}
     with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
@@ -250,6 +271,7 @@ def test_fetch_game_timeline_no_scheduled_start():
 
 
 def test_fetch_game_timeline_malformed_start_time_ignored():
+    """Fetch game timeline malformed start time ignored."""
     feed = _live_feed()
     feed['gameData']['datetime'] = {'dateTime': 'garbage'}
     with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
@@ -258,6 +280,7 @@ def test_fetch_game_timeline_malformed_start_time_ignored():
 
 
 def test_fetch_game_timeline_play_missing_start_or_end_time_skipped():
+    """Fetch game timeline play missing start or end time skipped."""
     play_no_end = _play()
     play_no_end['about']['endTime'] = ''
     feed = _live_feed(all_plays=[play_no_end])
@@ -267,6 +290,7 @@ def test_fetch_game_timeline_play_missing_start_or_end_time_skipped():
 
 
 def test_fetch_game_timeline_first_actual_pitch_fallback_to_first_completed_play():
+    """Fetch game timeline first actual pitch fallback to first completed play."""
     feed = _live_feed(all_plays=[_play(outs_after=1)])  # no pitch events at all
     with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
         tl = _fetch_game_timeline(12345)
@@ -278,15 +302,18 @@ def test_fetch_game_timeline_first_actual_pitch_fallback_to_first_completed_play
 # ---------------------------------------------------------------------------
 
 def _completed_play(inning, half, away_score, home_score, end_time):
+    """Completed play."""
     return {'end_time': end_time, 'inning': inning, 'half_inning': half,
             'away_score': away_score, 'home_score': home_score}
 
 
 def test_inning_runs_at_time_empty_plays():
+    """Inning runs at time empty plays."""
     assert _inning_runs_at_time([], _dt(23)) == ([], [])
 
 
 def test_inning_runs_at_time_top_only_no_bottom_yet():
+    """Inning runs at time top only no bottom yet."""
     plays = [_completed_play(1, 'top', 1, 0, _dt(23, 5))]
     away, home = _inning_runs_at_time(plays, _dt(23, 10))
     assert away == [1]
@@ -294,6 +321,7 @@ def test_inning_runs_at_time_top_only_no_bottom_yet():
 
 
 def test_inning_runs_at_time_full_inning():
+    """Inning runs at time full inning."""
     plays = [
         _completed_play(1, 'top', 1, 0, _dt(23, 5)),
         _completed_play(1, 'bottom', 1, 2, _dt(23, 15)),
@@ -304,6 +332,7 @@ def test_inning_runs_at_time_full_inning():
 
 
 def test_inning_runs_at_time_ignores_plays_after_target():
+    """Inning runs at time ignores plays after target."""
     plays = [
         _completed_play(1, 'top', 1, 0, _dt(23, 5)),
         _completed_play(2, 'top', 3, 0, _dt(23, 40)),
@@ -313,6 +342,7 @@ def test_inning_runs_at_time_ignores_plays_after_target():
 
 
 def test_inning_runs_at_time_stops_at_first_missing_top():
+    """Inning runs at time stops at first missing top."""
     # If inning 2's top half is missing but inning 3's exists, stop at 2.
     plays = [
         _completed_play(1, 'top', 1, 0, _dt(23, 5)),
@@ -329,12 +359,14 @@ def test_inning_runs_at_time_stops_at_first_missing_top():
 # ---------------------------------------------------------------------------
 
 def _base_game(**overrides):
+    """Base game."""
     g = {'game_pk': 1, 'detailed_state': 'Scheduled', 'away_team_id': 111, 'home_team_id': 147}
     g.update(overrides)
     return g
 
 
 def _tl(**overrides):
+    """Tl."""
     base = {
         'scheduled_start_utc': _dt(23),
         'first_pitch_utc': _dt(23, 5),
@@ -351,12 +383,14 @@ def _tl(**overrides):
 
 
 def test_game_state_before_first_pitch_is_scheduled():
+    """Game state before first pitch is scheduled."""
     state = _game_state_at_time(_base_game(), _tl(), _dt(22, 50))
     assert state['detailed_state'] == 'Scheduled'
     assert state['away_runs'] is None
 
 
 def test_game_state_after_last_play_buffer_is_final():
+    """Game state after last play buffer is final."""
     plays = [_completed_play(9, 'bottom', 5, 3, _dt(23, 30))]
     state = _game_state_at_time(_base_game(), _tl(plays=plays), _dt(23, 40))
     assert state['detailed_state'] == 'Final'
@@ -365,6 +399,7 @@ def test_game_state_after_last_play_buffer_is_final():
 
 
 def test_game_state_final_keeps_last_play_from_wp_events():
+    """Game state final keeps last play from wp events."""
     plays = [_completed_play(9, 'bottom', 5, 3, _dt(23, 30))]
     wp_events = [{'time': _dt(23, 30), 'last_play': 'Groundout', 'last_play_inn': 9,
                   'last_play_top': False, 'last_play_desc': 'ground out to short'}]
@@ -373,11 +408,13 @@ def test_game_state_final_keeps_last_play_from_wp_events():
 
 
 def test_game_state_terminal_status_preserved_without_plays():
+    """Game state terminal status preserved without plays."""
     state = _game_state_at_time(_base_game(detailed_state='Postponed'), _tl(plays=[]), _dt(23, 10))
     assert state['detailed_state'] == 'Postponed'
 
 
 def test_game_state_between_plays_inning_break_middle():
+    """Game state between plays inning break middle."""
     plays = [_completed_play(1, 'top', 1, 0, _dt(23, 10))]
     plays[0]['outs_after'] = 3
     plays[0]['pitcher'] = 'Logan Webb'
@@ -389,6 +426,7 @@ def test_game_state_between_plays_inning_break_middle():
 
 
 def test_game_state_between_plays_inning_continues_bottom():
+    """Game state between plays inning continues bottom."""
     plays = [_completed_play(1, 'top', 1, 0, _dt(23, 10))]
     plays[0]['outs_after'] = 2
     plays[0]['pitcher'] = 'Logan Webb'
@@ -398,6 +436,7 @@ def test_game_state_between_plays_inning_continues_bottom():
 
 
 def test_game_state_mid_at_bat_uses_pitch_event():
+    """Game state mid at bat uses pitch event."""
     pitch_events = [{'time': _dt(23, 11), 'balls': 2, 'strikes': 1, 'outs': 0,
                       'inning': 1, 'half_inning': 'top', 'away_score': 0, 'home_score': 0,
                       'pitcher': 'Logan Webb', 'batter': 'Mookie Betts',
@@ -410,6 +449,7 @@ def test_game_state_mid_at_bat_uses_pitch_event():
 
 
 def test_game_state_mid_at_bat_includes_win_probability_from_wp_events():
+    """Game state mid at bat includes win probability from wp events."""
     pitch_events = [{'time': _dt(23, 11), 'balls': 2, 'strikes': 1, 'outs': 0,
                       'inning': 1, 'half_inning': 'top', 'away_score': 0, 'home_score': 0,
                       'pitcher': 'Logan Webb', 'batter': 'Mookie Betts',
@@ -427,12 +467,14 @@ def test_game_state_mid_at_bat_includes_win_probability_from_wp_events():
 
 
 def test_game_state_no_pitch_events_or_plays_is_scheduled():
+    """Game state no pitch events or plays is scheduled."""
     tl = _tl(first_actual_pitch_utc=_dt(22, 50), last_play_utc=_dt(23, 30))
     state = _game_state_at_time(_base_game(), tl, _dt(22, 55))
     assert state['detailed_state'] == 'Scheduled'
 
 
 def test_game_state_abs_challenges_default_full_allotment():
+    """Game state abs challenges default full allotment."""
     pitch_events = [{'time': _dt(23, 11), 'balls': 0, 'strikes': 0, 'outs': 0,
                       'inning': 1, 'half_inning': 'top', 'away_score': 0, 'home_score': 0,
                       'pitcher': '', 'batter': '', 'runner_on_first': None,
@@ -444,6 +486,7 @@ def test_game_state_abs_challenges_default_full_allotment():
 
 
 def test_game_state_abs_challenges_reflect_usage():
+    """Game state abs challenges reflect usage."""
     pitch_events = [{'time': _dt(23, 11), 'balls': 0, 'strikes': 0, 'outs': 0,
                       'inning': 1, 'half_inning': 'top', 'away_score': 0, 'home_score': 0,
                       'pitcher': '', 'batter': '', 'runner_on_first': None,
@@ -455,6 +498,7 @@ def test_game_state_abs_challenges_reflect_usage():
 
 
 def test_game_state_next_batters_shown_during_break():
+    """Game state next batters shown during break."""
     plays = [_completed_play(1, 'top', 1, 0, _dt(23, 10))]
     plays[0]['outs_after'] = 3
     plays[0]['pitcher'] = 'Logan Webb'
@@ -471,35 +515,41 @@ def test_game_state_next_batters_shown_during_break():
 # ---------------------------------------------------------------------------
 
 def test_any_game_active_true_within_window():
+    """Any game active true within window."""
     timelines = {'1': {'pitch_events': [{'balls': 1, 'strikes': 0, 'time': _dt(23)}],
                         'plays': [], 'last_play_utc': None, 'first_pitch_utc': None}}
     assert _any_game_active(timelines, _dt(23, 5)) is True
 
 
 def test_any_game_active_false_before_start():
+    """Any game active false before start."""
     timelines = {'1': {'pitch_events': [{'balls': 1, 'strikes': 0, 'time': _dt(23)}],
                         'plays': [], 'last_play_utc': None, 'first_pitch_utc': None}}
     assert _any_game_active(timelines, _dt(22)) is False
 
 
 def test_any_game_active_false_after_end_buffer():
+    """Any game active false after end buffer."""
     timelines = {'1': {'pitch_events': [{'balls': 1, 'strikes': 0, 'time': _dt(23)}],
                         'plays': [], 'last_play_utc': _dt(23, 30), 'first_pitch_utc': None}}
     assert _any_game_active(timelines, _dt(23, 40)) is False
 
 
 def test_any_game_active_falls_back_to_first_completed_play():
+    """Any game active falls back to first completed play."""
     timelines = {'1': {'pitch_events': [], 'plays': [{'end_time': _dt(23)}],
                         'last_play_utc': None, 'first_pitch_utc': None}}
     assert _any_game_active(timelines, _dt(23, 5)) is True
 
 
 def test_any_game_active_no_data_at_all():
+    """Any game active no data at all."""
     timelines = {'1': {'pitch_events': [], 'plays': [], 'last_play_utc': None, 'first_pitch_utc': None}}
     assert _any_game_active(timelines, _dt(23)) is False
 
 
 def test_any_game_active_empty_dict():
+    """Any game active empty dict."""
     assert _any_game_active({}, _dt(23)) is False
 
 
@@ -509,16 +559,19 @@ def test_any_game_active_empty_dict():
 
 @pytest.fixture
 def _no_games(monkeypatch):
+    """No games."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file', MagicMock(return_value={'games': []}))
 
 
 def test_generate_gif_no_games_found_returns_early(_no_games, capsys):
+    """Generate gif no games found returns early."""
     generate_gif('2026-06-20', None, None, '/tmp/out.gif', 1, 300, 1, {})
     assert 'No games found' in capsys.readouterr().out
 
 
 def test_generate_gif_no_timeline_data_returns_early(monkeypatch, capsys):
+    """Generate gif no timeline data returns early."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
                          lambda f: {'games': [{'game_pk': 1}]} if 'games' in f else {})
@@ -530,6 +583,7 @@ def test_generate_gif_no_timeline_data_returns_early(monkeypatch, capsys):
 
 
 def test_generate_gif_cannot_determine_window_without_hints(monkeypatch, capsys):
+    """Generate gif cannot determine window without hints."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
                          lambda f: {'games': [{'game_pk': 1}]} if 'games' in f else {})
@@ -544,6 +598,7 @@ def test_generate_gif_cannot_determine_window_without_hints(monkeypatch, capsys)
 
 
 def test_generate_gif_renders_frames_and_saves(monkeypatch, tmp_path, capsys):
+    """Generate gif renders frames and saves."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
                          lambda f: {'games': [{'game_pk': 1, 'venue': 'Fenway Park', 'game_date': '2026-06-20'}]}
@@ -573,6 +628,7 @@ def test_generate_gif_renders_frames_and_saves(monkeypatch, tmp_path, capsys):
 
 
 def test_generate_gif_end_before_start_returns_early(monkeypatch, capsys):
+    """Generate gif end before start returns early."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
                          lambda f: {'games': [{'game_pk': 1}]} if 'games' in f else {})
@@ -587,12 +643,14 @@ def test_generate_gif_end_before_start_returns_early(monkeypatch, capsys):
 
 
 def test_generate_gif_weather_attach_error_is_caught(monkeypatch, capsys):
+    """Generate gif weather attach error is caught."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
                          lambda f: {'games': [{'game_pk': 1, 'venue': 'Fenway Park', 'game_date': '2026-06-20'}]}
                          if 'games' in f else {})
 
     def _boom(*a, **k):
+        """Boom."""
         raise Exception('stadium lookup broke')
     monkeypatch.setattr(tl_mod, '_lookup_stadium', _boom)
     monkeypatch.setattr(tl_mod, '_fetch_game_timeline', MagicMock(side_effect=Exception('boom')))
@@ -603,6 +661,7 @@ def test_generate_gif_weather_attach_error_is_caught(monkeypatch, capsys):
 
 
 def test_generate_gif_standings_fetch_error_is_caught(monkeypatch, capsys):
+    """Generate gif standings fetch error is caught."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
                          lambda f: {'games': [{'game_pk': 1}]} if 'games' in f else {})
@@ -618,6 +677,7 @@ def test_generate_gif_standings_fetch_error_is_caught(monkeypatch, capsys):
 # ---------------------------------------------------------------------------
 
 def test_main_requires_start_and_end_together(monkeypatch, capsys):
+    """Main requires start and end together."""
     monkeypatch.setattr('sys.argv', ['timelapse.py', '--date', '2026-06-20', '--start', '18:00'])
     with pytest.raises(SystemExit):
         tl_mod.main()
@@ -625,11 +685,13 @@ def test_main_requires_start_and_end_together(monkeypatch, capsys):
 
 
 def test_main_invokes_generate_gif(monkeypatch):
+    """Main invokes generate gif."""
     monkeypatch.setattr('sys.argv', ['timelapse.py', '--date', '2026-06-20'])
     monkeypatch.setattr(tl_mod, 'load_yaml_file', lambda f: {'timezone': 'America/Chicago'})
     called = {}
 
     def _fake_generate_gif(*args, **kwargs):
+        """Fake generate gif."""
         called['args'] = args
 
     monkeypatch.setattr(tl_mod, 'generate_gif', _fake_generate_gif)
@@ -642,9 +704,11 @@ def test_main_invokes_generate_gif(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_fetch_game_timeline_win_probability_endpoint_failure_ignored():
+    """Fetch game timeline win probability endpoint failure ignored."""
     feed = _live_feed(all_plays=[_play(outs_after=1)])
 
     def _get(url, timeout=None):
+        """Get."""
         if 'winProbability' in url:
             raise Exception('wp endpoint down')
         resp = MagicMock()
@@ -657,6 +721,7 @@ def test_fetch_game_timeline_win_probability_endpoint_failure_ignored():
 
 
 def test_fetch_game_timeline_malformed_play_start_time_ignored():
+    """Fetch game timeline malformed play start time ignored."""
     play = _play(start='garbage-timestamp')
     feed = _live_feed(all_plays=[play])
     with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
@@ -665,6 +730,7 @@ def test_fetch_game_timeline_malformed_play_start_time_ignored():
 
 
 def test_fetch_game_timeline_home_team_challenge_attribution():
+    """Fetch game timeline home team challenge attribution."""
     feed = _live_feed(all_plays=[
         _play(outs_after=1, events=[_pitch_event(challenge_team=147)]),  # home_id=147
     ])
@@ -674,6 +740,7 @@ def test_fetch_game_timeline_home_team_challenge_attribution():
 
 
 def test_fetch_game_timeline_pitch_event_missing_start_time_skipped():
+    """Fetch game timeline pitch event missing start time skipped."""
     play = _play(events=[{'type': 'pitch', 'startTime': '', 'count': {}}])
     feed = _live_feed(all_plays=[play])
     with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
@@ -682,6 +749,7 @@ def test_fetch_game_timeline_pitch_event_missing_start_time_skipped():
 
 
 def test_fetch_game_timeline_pitch_event_malformed_time_skipped():
+    """Fetch game timeline pitch event malformed time skipped."""
     play = _play(events=[{'type': 'pitch', 'startTime': 'garbage', 'count': {}}])
     feed = _live_feed(all_plays=[play])
     with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
@@ -690,6 +758,7 @@ def test_fetch_game_timeline_pitch_event_malformed_time_skipped():
 
 
 def test_fetch_game_timeline_malformed_end_time_play_dropped():
+    """Fetch game timeline malformed end time play dropped."""
     play = _play(end='garbage-end-time')
     feed = _live_feed(all_plays=[play])
     with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
@@ -698,6 +767,7 @@ def test_fetch_game_timeline_malformed_end_time_play_dropped():
 
 
 def test_fetch_game_timeline_next_batters_bottom_half_break_uses_away_lineup():
+    """Fetch game timeline next batters bottom half break uses away lineup."""
     # Bottom half ends (outs_after=3) -> next up is the away team, top half.
     play = _play(inning=1, half='bottom', outs_after=3,
                  start='2026-06-20T23:00:00Z', end='2026-06-20T23:05:00Z')
@@ -708,6 +778,7 @@ def test_fetch_game_timeline_next_batters_bottom_half_break_uses_away_lineup():
 
 
 def test_fetch_game_timeline_next_batters_empty_lineup_skipped():
+    """Fetch game timeline next batters empty lineup skipped."""
     feed = _live_feed(all_plays=[
         _play(inning=1, half='top', outs_after=3,
               start='2026-06-20T23:00:00Z', end='2026-06-20T23:05:00Z'),
@@ -760,6 +831,7 @@ def test_fetch_game_timeline_next_batters_resumes_lineup_after_known_last_batter
 # ---------------------------------------------------------------------------
 
 def test_game_state_mid_at_bat_stops_at_first_future_pitch_event():
+    """Game state mid at bat stops at first future pitch event."""
     pitch_events = [
         {'time': _dt(23, 10), 'balls': 1, 'strikes': 0, 'outs': 0, 'inning': 1,
          'half_inning': 'top', 'away_score': 0, 'home_score': 0, 'pitcher': 'A', 'batter': 'B',
@@ -774,6 +846,7 @@ def test_game_state_mid_at_bat_stops_at_first_future_pitch_event():
 
 
 def test_game_state_challenge_events_stops_at_first_future_entry():
+    """Game state challenge events stops at first future entry."""
     pitch_events = [{'time': _dt(23, 5), 'balls': 0, 'strikes': 0, 'outs': 0, 'inning': 1,
                       'half_inning': 'top', 'away_score': 0, 'home_score': 0,
                       'pitcher': '', 'batter': '', 'runner_on_first': None,
@@ -788,6 +861,7 @@ def test_game_state_challenge_events_stops_at_first_future_entry():
 
 
 def test_game_state_next_batters_stops_at_first_future_entry():
+    """Game state next batters stops at first future entry."""
     plays = [_completed_play(1, 'top', 1, 0, _dt(23, 10))]
     plays[0]['outs_after'] = 3
     plays[0]['pitcher'] = 'Logan Webb'
@@ -801,6 +875,7 @@ def test_game_state_next_batters_stops_at_first_future_entry():
 
 
 def test_game_state_last_event_loop_stops_at_first_future_play():
+    """Game state last event loop stops at first future play."""
     plays = [
         _completed_play(1, 'top', 1, 0, _dt(23, 5)),
         _completed_play(1, 'bottom', 1, 1, _dt(23, 25)),
@@ -820,6 +895,7 @@ def test_game_state_last_event_loop_stops_at_first_future_play():
 # ---------------------------------------------------------------------------
 
 def test_generate_gif_skips_game_with_no_game_pk(monkeypatch, capsys):
+    """Generate gif skips game with no game pk."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
                          lambda f: {'games': [{}]} if 'games' in f else {})
@@ -830,6 +906,7 @@ def test_generate_gif_skips_game_with_no_game_pk(monkeypatch, capsys):
 
 
 def test_generate_gif_attaches_weather_when_stadium_and_forecast_available(monkeypatch):
+    """Generate gif attaches weather when stadium and forecast available."""
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     games = [{'game_pk': 1, 'venue': 'Fenway Park', 'game_date': '2026-06-20'}]
     monkeypatch.setattr(tl_mod, 'load_json_file',
@@ -847,6 +924,7 @@ def test_generate_gif_attaches_weather_when_stadium_and_forecast_available(monke
 
 
 def test_generate_gif_auto_detects_window_and_renders_active_frame(monkeypatch, tmp_path, capsys):
+    """Generate gif auto detects window and renders active frame."""
     from PIL import Image
     games = [{'game_pk': 1}]
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
@@ -882,6 +960,7 @@ def test_generate_gif_auto_detects_window_and_renders_active_frame(monkeypatch, 
 
 
 def test_generate_gif_frame_render_returns_none_is_skipped(monkeypatch, capsys):
+    """Generate gif frame render returns none is skipped."""
     games = [{'game_pk': 1}]
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
@@ -910,6 +989,7 @@ def test_generate_gif_frame_render_returns_none_is_skipped(monkeypatch, capsys):
 
 
 def test_generate_gif_frame_render_exception_is_caught(monkeypatch, capsys):
+    """Generate gif frame render exception is caught."""
     games = [{'game_pk': 1}]
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
@@ -937,6 +1017,7 @@ def test_generate_gif_frame_render_exception_is_caught(monkeypatch, capsys):
 
 
 def test_generate_gif_trailing_frame_skip_and_error_paths(monkeypatch, capsys):
+    """Generate gif trailing frame skip and error paths."""
     games = [{'game_pk': 1}]
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
     monkeypatch.setattr(tl_mod, 'load_json_file',
@@ -958,6 +1039,7 @@ def test_generate_gif_trailing_frame_skip_and_error_paths(monkeypatch, capsys):
     call_count = {'n': 0}
 
     def _orchestrate(*args, **kwargs):
+        """Orchestrate."""
         call_count['n'] += 1
         if call_count['n'] == 1:
             return None  # main-loop frame skipped
@@ -972,6 +1054,7 @@ def test_generate_gif_trailing_frame_skip_and_error_paths(monkeypatch, capsys):
 
 
 def test_generate_gif_trailing_frame_skip_when_render_returns_none(monkeypatch, capsys):
+    """Generate gif trailing frame skip when render returns none."""
     from PIL import Image
     games = [{'game_pk': 1}]
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
@@ -995,6 +1078,7 @@ def test_generate_gif_trailing_frame_skip_when_render_returns_none(monkeypatch, 
     call_count = {'n': 0}
 
     def _orchestrate(*args, **kwargs):
+        """Orchestrate."""
         call_count['n'] += 1
         # First call (main loop) succeeds so "No frames generated" doesn't fire;
         # every later call — including the trailing frame, always called last —
@@ -1010,6 +1094,7 @@ def test_generate_gif_trailing_frame_skip_when_render_returns_none(monkeypatch, 
 
 
 def test_generate_gif_writes_mp4_with_multiple_frames(monkeypatch, tmp_path, capsys):
+    """Generate gif writes mp4 with multiple frames."""
     from PIL import Image
     games = [{'game_pk': 1}]
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
@@ -1043,6 +1128,7 @@ def test_generate_gif_writes_mp4_with_multiple_frames(monkeypatch, tmp_path, cap
 
 
 def test_generate_gif_imageio_missing_is_reported(monkeypatch, tmp_path, capsys):
+    """Generate gif imageio missing is reported."""
     from PIL import Image
     games = [{'game_pk': 1}]
     monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())

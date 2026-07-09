@@ -28,25 +28,30 @@ import render_scoreboard
 
 @pytest.mark.parametrize('mode_value', ['scoreboard', 'linescore', 'field', 'scorecard', 'pitch'])
 def test_get_display_mode_explicit(mode_value):
+    """Get display mode explicit."""
     config = {'display_mode': mode_value}
     assert render_scoreboard._get_display_mode(config) == mode_value
 
 
 def test_get_display_mode_invalid_falls_through_to_scoreboard_true():
+    """Get display mode invalid falls through to scoreboard true."""
     config = {'display_mode': 'not-a-real-mode', 'scoreboard': True}
     assert render_scoreboard._get_display_mode(config) == 'scoreboard'
 
 
 def test_get_display_mode_invalid_falls_through_to_linescore():
+    """Get display mode invalid falls through to linescore."""
     config = {'display_mode': 'bogus', 'scoreboard': False}
     assert render_scoreboard._get_display_mode(config) == 'linescore'
 
 
 def test_get_display_mode_scoreboard_true():
+    """Get display mode scoreboard true."""
     assert render_scoreboard._get_display_mode({'scoreboard': True}) == 'scoreboard'
 
 
 def test_get_display_mode_scoreboard_false():
+    """Get display mode scoreboard false."""
     assert render_scoreboard._get_display_mode({'scoreboard': False}) == 'linescore'
 
 
@@ -61,6 +66,7 @@ def test_get_display_mode_default_when_absent():
 # ---------------------------------------------------------------------------
 
 def _game(game_pk=555, away_team_id=119, home_team_id=137):
+    """Game."""
     return {'game_pk': game_pk, 'away_team_id': away_team_id, 'home_team_id': home_team_id}
 
 
@@ -69,6 +75,7 @@ _TEAM_DATA = {'team_abbreviation': {'119': 'LAD', '137': 'SF'}}
 
 @needs_pil
 def test_render_single_game_mode_field(tmp_path):
+    """Render single game mode field."""
     fake_image = Image.new('1', (800, 480), 255)
     out_path = str(tmp_path / 'out.bmp')
     with patch('render_scoreboard.select_game', return_value=_game()), \
@@ -85,6 +92,7 @@ def test_render_single_game_mode_field(tmp_path):
 
 @needs_pil
 def test_render_single_game_mode_scorecard():
+    """Render single game mode scorecard."""
     fake_image = Image.new('1', (800, 480), 255)
     with patch('render_scoreboard.select_game', return_value=_game()), \
          patch('render_scoreboard.fetch_scorecard_data', return_value={}) as m_fetch, \
@@ -98,6 +106,7 @@ def test_render_single_game_mode_scorecard():
 
 @needs_pil
 def test_render_single_game_mode_pitch():
+    """Render single game mode pitch."""
     fake_image = Image.new('1', (800, 480), 255)
     with patch('render_scoreboard.select_game', return_value=_game()), \
          patch('render_scoreboard.fetch_pitch_view_data', return_value={}) as m_fetch, \
@@ -110,12 +119,14 @@ def test_render_single_game_mode_pitch():
 
 
 def test_render_single_game_mode_no_game_found():
+    """Render single game mode no game found."""
     with patch('render_scoreboard.select_game', return_value=None):
         result = render_scoreboard._render_single_game_mode('field', [], _TEAM_DATA, {})
     assert result is None
 
 
 def test_render_single_game_mode_missing_game_pk():
+    """Render single game mode missing game pk."""
     game = _game()
     del game['game_pk']
     with patch('render_scoreboard.select_game', return_value=game):
@@ -142,6 +153,7 @@ def _loader(games_payload=None, teams_payload=None):
     teams_payload = teams_payload if teams_payload is not None else {'team_abbreviation': {}}
 
     def _fn(filename, file_path=None):
+        """Fn."""
         if filename == 'games.json':
             return games_payload
         if filename == 'teams.json':
@@ -202,6 +214,7 @@ def test_render_team_data_missing_abbreviation_key_falls_back():
     captured = {}
 
     def _fake_orchestrate(game_state_data, team_data, date_str, bypass_cache, config):
+        """Fake orchestrate."""
         captured['team_data'] = team_data
         return None
 
@@ -298,6 +311,7 @@ def test_render_fullscreen_disabled_by_default_keeps_zone_regions(tmp_path, monk
 
 @needs_pil
 def test_pixel_diff_bands_no_changes():
+    """Pixel diff bands no changes."""
     img = Image.new('1', (64, 64), 255)
     bands = render_scoreboard._pixel_diff_bands(img, img)
     assert bands == []
@@ -305,6 +319,7 @@ def test_pixel_diff_bands_no_changes():
 
 @needs_pil
 def test_pixel_diff_bands_localized_change():
+    """Pixel diff bands localized change."""
     old = Image.new('L', (64, 64), 255)
     new = old.copy()
     draw = ImageDraw.Draw(new)
@@ -322,6 +337,7 @@ def test_pixel_diff_bands_localized_change():
 
 @needs_pil
 def test_pixel_diff_bands_two_separate_clusters():
+    """Pixel diff bands two separate clusters."""
     old = Image.new('L', (64, 100), 255)
     new = old.copy()
     draw = ImageDraw.Draw(new)
@@ -334,6 +350,7 @@ def test_pixel_diff_bands_two_separate_clusters():
 
 @needs_pil
 def test_pixel_diff_bands_large_change_returns_full_frame():
+    """Pixel diff bands large change returns full frame."""
     old = Image.new('L', (64, 64), 255)
     new = Image.new('L', (64, 64), 0)  # every pixel differs
     bands = render_scoreboard._pixel_diff_bands(old, new)
@@ -353,6 +370,7 @@ def test_pixel_diff_bands_exception_returns_none():
 # ---------------------------------------------------------------------------
 
 def test_main_help_exits_cleanly(monkeypatch):
+    """Main help exits cleanly."""
     monkeypatch.setattr('sys.argv', ['render_scoreboard.py', '--help'])
     with pytest.raises(SystemExit) as exc_info:
         render_scoreboard.main()
@@ -360,6 +378,7 @@ def test_main_help_exits_cleanly(monkeypatch):
 
 
 def test_main_invokes_render_with_mode_override_and_output(monkeypatch, tmp_path):
+    """Main invokes render with mode override and output."""
     out_path = str(tmp_path / 'out.bmp')
     monkeypatch.setattr(
         'sys.argv',
@@ -376,6 +395,7 @@ def test_main_invokes_render_with_mode_override_and_output(monkeypatch, tmp_path
 
 @needs_pil
 def test_main_prints_output_path_on_success(monkeypatch, tmp_path, capsys):
+    """Main prints output path on success."""
     out_path = str(tmp_path / 'out.bmp')
     fake_image = Image.new('1', (800, 480), 255)
     monkeypatch.setattr('sys.argv', ['render_scoreboard.py', '--output', out_path])

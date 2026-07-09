@@ -55,6 +55,7 @@ def fetch_team_list(sport_id=1):
 
 
 def load_local_team_list(root):
+    """Load local team list."""
     teams_path = os.path.join(root, 'data', 'teams.json')
     if not os.path.exists(teams_path):
         return None
@@ -64,6 +65,7 @@ def load_local_team_list(root):
 
 
 def _load_render_config(root):
+    """Load render config."""
     config_path = os.path.join(root, 'pic', 'logo_render_config.json')
     try:
         with open(config_path) as f:
@@ -90,6 +92,7 @@ def _svg_to_png(svg_bytes, dest, size=500):
 
 
 def download_logos(abbr_map, logodir, render_config=None, sport_id=1):
+    """Download PNG logos for all teams in abbr_map into logodir, returning (success_count, failed_list)."""
     os.makedirs(logodir, exist_ok=True)
     success, failed = 0, []
     non_dark = set((render_config or {}).get('non_dark', []))
@@ -172,6 +175,7 @@ def download_logos(abbr_map, logodir, render_config=None, sport_id=1):
 
 
 def main():
+    """CLI entry point: download team logos from the ESPN CDN into pic/logos/."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--fetch-teams', action='store_true',

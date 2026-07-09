@@ -37,11 +37,13 @@ from test_wide_cell import _base_game, _live_game, _between_innings_game  # noqa
 
 @pytest.fixture
 def white_image():
+    """White image."""
     return Image.new('1', (800, 480), 255)
 
 
 @pytest.fixture
 def team_data():
+    """Team data."""
     return {
         'team_abbreviation': {
             '119': 'LAD', '137': 'SF', '133': 'OAK', '144': 'ATL',
@@ -60,6 +62,7 @@ def _tiny_logo(size=28):
 # ---------------------------------------------------------------------------
 
 def test_set_historical_mode_toggles():
+    """Set historical mode toggles."""
     import image_box
     image_box.set_historical_mode(True)
     assert image_box._historical_mode is True
@@ -87,6 +90,7 @@ def test_get_or_set_final_time_from_stored_file():
 
 
 def test_get_or_set_final_time_memory_cache_hit():
+    """Get or set final time memory cache hit."""
     import image_box
     with patch('image_box.load_json_file', return_value={}), \
          patch('image_box.save_off_results'):
@@ -130,6 +134,7 @@ def test_linescore_grid_use_logos_found(white_image, team_data):
 
 @needs_pil
 def test_linescore_grid_use_logos_missing_falls_back_to_text(white_image, team_data):
+    """Linescore grid use logos missing falls back to text."""
     from image_box import _draw_linescore_grid
     draw = ImageDraw.Draw(white_image)
     game = _base_game(detailed_state='Final')
@@ -159,6 +164,7 @@ def test_linescore_grid_extra_innings_window_slides(white_image, team_data):
 
 @needs_pil
 def test_linescore_grid_double_digit_run_uses_font9(white_image, team_data):
+    """Linescore grid double digit run uses font9."""
     from image_box import _draw_linescore_grid
     draw = ImageDraw.Draw(white_image)
     game = _base_game(
@@ -179,6 +185,7 @@ def test_linescore_grid_double_digit_run_uses_font9(white_image, team_data):
 @needs_pil
 @pytest.mark.parametrize("use_logos", [True, False])
 def test_challenge_dots_full_and_partial(white_image, use_logos):
+    """Challenge dots full and partial."""
     from image_box import _draw_challenge_dots
     draw = ImageDraw.Draw(white_image)
     game = _base_game(
@@ -205,6 +212,7 @@ def test_challenge_dots_grown_max_extra_innings(white_image):
 
 @needs_pil
 def test_challenge_dots_replay_remaining_clamped_above_one(white_image):
+    """Challenge dots replay remaining clamped above one."""
     from image_box import _draw_challenge_dots
     draw = ImageDraw.Draw(white_image)
     game = _base_game(away_replay_remaining=5, home_replay_remaining=-2)
@@ -213,6 +221,7 @@ def test_challenge_dots_replay_remaining_clamped_above_one(white_image):
 
 @needs_pil
 def test_challenge_dots_no_data_no_crash(white_image):
+    """Challenge dots no data no crash."""
     from image_box import _draw_challenge_dots
     draw = ImageDraw.Draw(white_image)
     game = _base_game()
@@ -225,6 +234,7 @@ def test_challenge_dots_no_data_no_crash(white_image):
 
 @needs_pil
 def test_weather_footer_dome_takes_priority(white_image):
+    """Weather footer dome takes priority."""
     from image_box import _draw_weather_footer
     from image_assets import _get_font
     draw = ImageDraw.Draw(white_image)
@@ -234,6 +244,7 @@ def test_weather_footer_dome_takes_priority(white_image):
 
 @needs_pil
 def test_weather_footer_no_weather_data_returns_early(white_image):
+    """Weather footer no weather data returns early."""
     from image_box import _draw_weather_footer
     from image_assets import _get_font
     draw = ImageDraw.Draw(white_image)
@@ -253,6 +264,7 @@ def test_weather_footer_low_wind_and_zero_precip_excluded(white_image):
 
 @needs_pil
 def test_weather_footer_full_candidate_with_wind_dir(white_image):
+    """Weather footer full candidate with wind dir."""
     from image_box import _draw_weather_footer
     from image_assets import _get_font
     draw = ImageDraw.Draw(white_image)
@@ -270,6 +282,7 @@ def test_weather_footer_tv_channel_getlength_attributeerror_fallback(white_image
 
     class _NoGetLength:
         def __getattr__(self, name):
+            """Getattr  ."""
             if name == 'getlength':
                 raise AttributeError(name)
             return getattr(real_font, name)
@@ -290,6 +303,7 @@ def test_weather_footer_candidate_getlength_attributeerror_fallback(white_image)
 
     class _NoGetLength:
         def __getattr__(self, name):
+            """Getattr  ."""
             if name == 'getlength':
                 raise AttributeError(name)
             return getattr(real_font, name)
@@ -304,6 +318,7 @@ def test_weather_footer_candidate_getlength_attributeerror_fallback(white_image)
 # ---------------------------------------------------------------------------
 
 def test_load_tomorrow_games_cache_hit_returns_cached():
+    """Load tomorrow games cache hit returns cached."""
     import image_box
     with patch('image_box.load_yaml_file', return_value={'timezone': 'America/Chicago'}), \
          patch('image_box.load_json_file') as mock_load:
@@ -322,6 +337,7 @@ def test_load_tomorrow_games_cache_miss_fetches_and_reloads():
     calls = {'n': 0}
 
     def _fake_load(name, file_path=None):
+        """Fake load."""
         calls['n'] += 1
         if calls['n'] == 1:
             return {'date': '2000-01-01', 'games': None}  # stale
@@ -336,6 +352,7 @@ def test_load_tomorrow_games_cache_miss_fetches_and_reloads():
 
 
 def test_load_tomorrow_games_exception_returns_none():
+    """Load tomorrow games exception returns none."""
     import image_box
     with patch('image_box.load_yaml_file', return_value={'timezone': 'America/Chicago'}), \
          patch('image_box.load_json_file', side_effect=RuntimeError('boom')):
@@ -363,6 +380,7 @@ _PREV_TEAM_DATA = {'team_abbreviation': {'119': 'LAD', '137': 'SF', '147': 'NYY'
 
 @needs_pil
 def test_next_game_preview_no_games_found_noop(white_image):
+    """Next game preview no games found noop."""
     from image_box import _draw_next_game_preview
     draw = ImageDraw.Draw(white_image)
     _draw_next_game_preview(
@@ -411,6 +429,7 @@ def test_next_game_preview_same_series_full_time(white_image):
 
 @needs_pil
 def test_next_game_preview_away_only(white_image):
+    """Next game preview away only."""
     from image_box import _draw_next_game_preview
     draw = ImageDraw.Draw(white_image)
     tmrw_games = [{'home_team_id': 111, 'away_team_id': 119, 'game_pk': 6,
@@ -423,6 +442,7 @@ def test_next_game_preview_away_only(white_image):
 
 @needs_pil
 def test_next_game_preview_home_only(white_image):
+    """Next game preview home only."""
     from image_box import _draw_next_game_preview
     draw = ImageDraw.Draw(white_image)
     tmrw_games = [{'home_team_id': 137, 'away_team_id': 111, 'game_pk': 7,
@@ -466,6 +486,7 @@ def test_next_game_preview_logos_found(white_image):
 
 @needs_pil
 def test_next_game_preview_logos_missing_falls_back_to_text(white_image):
+    """Next game preview logos missing falls back to text."""
     from image_box import _draw_next_game_preview
     draw = ImageDraw.Draw(white_image)
     tmrw_games = [
@@ -501,6 +522,7 @@ def test_next_game_preview_narrow_strip_time_does_not_fit(white_image):
 @needs_pil
 class TestDrawBoxFinalFlags:
     def _render_final(self, white_image, team_data, **overrides):
+        """Render final."""
         import image_box
         game = _base_game(detailed_state='Final', **overrides)
         image_box.set_historical_mode(True)
@@ -511,28 +533,34 @@ class TestDrawBoxFinalFlags:
             image_box.set_historical_mode(False)
 
     def test_no_hitter_flag(self, white_image, team_data):
+        """No hitter flag."""
         result = self._render_final(white_image, team_data, no_hitter=True)
         assert isinstance(result, Image.Image)
 
     def test_perfect_game_flag(self, white_image, team_data):
+        """Perfect game flag."""
         result = self._render_final(white_image, team_data, perfect_game=True)
         assert isinstance(result, Image.Image)
 
     def test_walk_off_flag(self, white_image, team_data):
+        """Walk off flag."""
         result = self._render_final(white_image, team_data, walk_off=True)
         assert isinstance(result, Image.Image)
 
     def test_tied_final_game(self, white_image, team_data):
+        """Tied final game."""
         result = self._render_final(white_image, team_data, away_runs=4, home_runs=4,
                                       winner_name=None, loser_name=None)
         assert isinstance(result, Image.Image)
 
     def test_saver_with_saves_count(self, white_image, team_data):
+        """Saver with saves count."""
         result = self._render_final(white_image, team_data, saver_name='Josh Hader',
                                       saver_saves=30)
         assert isinstance(result, Image.Image)
 
     def test_extra_innings_final(self, white_image, team_data):
+        """Extra innings final."""
         result = self._render_final(
             white_image, team_data, current_inning=11,
             away_inning_runs=[0] * 9 + [1, 0],
@@ -541,6 +569,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_sweep_early_ghost_and_series_score(self, white_image, team_data):
+        """Sweep early ghost and series score."""
         result = self._render_final(
             white_image, team_data,
             series_total_games=4, series_wins=4, series_losses=0,
@@ -550,6 +579,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_sweep_with_logo_found(self, white_image, team_data):
+        """Sweep with logo found."""
         with patch('image_box._logo_small', return_value=_tiny_logo(14)):
             result = self._render_final(
                 white_image, team_data,
@@ -560,6 +590,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_series_clinched_playoffs_logo_missing(self, white_image, team_data):
+        """Series clinched playoffs logo missing."""
         with patch('image_box._logo_small', return_value=None):
             result = self._render_final(
                 white_image, team_data,
@@ -571,6 +602,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_series_tied(self, white_image, team_data):
+        """Series tied."""
         result = self._render_final(
             white_image, team_data,
             series_total_games=5, series_wins=2, series_losses=2,
@@ -579,6 +611,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_series_leading_logo_found(self, white_image, team_data):
+        """Series leading logo found."""
         with patch('image_box._logo_small', return_value=_tiny_logo(14)):
             result = self._render_final(
                 white_image, team_data,
@@ -590,6 +623,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_series_leading_logo_missing(self, white_image, team_data):
+        """Series leading logo missing."""
         with patch('image_box._logo_small', return_value=None):
             result = self._render_final(
                 white_image, team_data,
@@ -600,6 +634,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_winner_ghost_logo_use_logos(self, white_image, team_data):
+        """Winner ghost logo use logos."""
         with patch('image_box._logo_ghost', return_value=_tiny_logo(110)):
             result = self._render_final(white_image, team_data)
             import image_box
@@ -614,6 +649,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_team_logos_found(self, white_image, team_data):
+        """Team logos found."""
         import image_box
         with patch('image_box._logo_small', return_value=_tiny_logo(28)):
             image_box.set_historical_mode(True)
@@ -626,6 +662,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_team_logos_missing_falls_back_to_text(self, white_image, team_data):
+        """Team logos missing falls back to text."""
         import image_box
         with patch('image_box._logo_small', return_value=None), \
              patch('image_box._logo_ghost', return_value=None):
@@ -639,6 +676,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_game_duration_sweep(self, white_image, team_data):
+        """Game duration sweep."""
         result = self._render_final(
             white_image, team_data, game_duration_minutes=185,
             series_total_games=3, series_wins=3, series_losses=0,
@@ -648,6 +686,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_game_duration_doubleheader_non_sweep(self, white_image, team_data):
+        """Game duration doubleheader non sweep."""
         result = self._render_final(
             white_image, team_data, game_duration_minutes=145,
             double_header='Y', game_number=1,
@@ -655,10 +694,12 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_game_duration_non_dh_centered(self, white_image, team_data):
+        """Game duration non dh centered."""
         result = self._render_final(white_image, team_data, game_duration_minutes=210)
         assert isinstance(result, Image.Image)
 
     def test_doubleheader_game_number_in_header(self, white_image, team_data):
+        """Doubleheader game number in header."""
         result = self._render_final(
             white_image, team_data, double_header='Y', game_number=2,
             game_duration_minutes=None,
@@ -666,6 +707,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_end_time_shown_when_show_always_configured(self, white_image, team_data):
+        """End time shown when show always configured."""
         import image_box
         with patch('image_box.load_yaml_file', return_value={'show_game_end_time_always': True,
                                                                'final_linescore_minutes': 60}):
@@ -680,6 +722,7 @@ class TestDrawBoxFinalFlags:
         assert isinstance(result, Image.Image)
 
     def test_no_hitter_header_invert_on_final(self, white_image, team_data):
+        """No hitter header invert on final."""
         result = self._render_final(white_image, team_data, no_hitter=True)
         assert isinstance(result, Image.Image)
 
@@ -712,6 +755,7 @@ def test_next_game_preview_triggered_from_draw_box_final(white_image, team_data)
 
 @needs_pil
 def test_next_game_preview_triggered_from_draw_box_postponed(white_image, team_data):
+    """Next game preview triggered from draw box postponed."""
     import image_box
     game = _base_game(detailed_state='Postponed', away_runs=None, home_runs=None)
     fake_tomorrow = {
@@ -735,6 +779,7 @@ class TestDrawBoxGameStates:
         'Delayed', 'Suspended', 'Postponed', 'Cancelled', 'Cancelled: Rain',
     ])
     def test_state_no_crash(self, white_image, team_data, state):
+        """State no crash."""
         import image_box
         game = _base_game(detailed_state=state, current_inning=5, inningState='Top',
                            away_runs=2, home_runs=1)
@@ -780,6 +825,7 @@ class TestDrawBoxGameStates:
         assert isinstance(result, Image.Image)
 
     def test_postponed_with_makeup_description(self, white_image, team_data):
+        """Postponed with makeup description."""
         import image_box
         game = _base_game(
             detailed_state='Postponed', away_runs=None, home_runs=None,
@@ -794,6 +840,7 @@ class TestDrawBoxGameStates:
         assert isinstance(result, Image.Image)
 
     def test_postponed_series_leader_logo_found(self, white_image, team_data):
+        """Postponed series leader logo found."""
         import image_box
         game = _base_game(
             detailed_state='Postponed', away_runs=None, home_runs=None,
@@ -810,6 +857,7 @@ class TestDrawBoxGameStates:
         assert isinstance(result, Image.Image)
 
     def test_postponed_series_not_started_no_score_shown(self, white_image, team_data):
+        """Postponed series not started no score shown."""
         import image_box
         game = _base_game(
             detailed_state='Postponed', away_runs=None, home_runs=None,
@@ -835,6 +883,7 @@ class TestDrawBoxGameStates:
         assert isinstance(result, Image.Image)
 
     def test_scheduled_with_moneylines(self, white_image, team_data):
+        """Scheduled with moneylines."""
         from image_box import draw_box
         game = _base_game(
             detailed_state='Scheduled', away_runs=None, home_runs=None,
@@ -844,6 +893,7 @@ class TestDrawBoxGameStates:
         assert isinstance(result, Image.Image)
 
     def test_scheduled_no_weather_fields_at_all(self, white_image, team_data):
+        """Scheduled no weather fields at all."""
         from image_box import draw_box
         game = _base_game(detailed_state='Scheduled', away_runs=None, home_runs=None)
         for f in ('weather_temp_f', 'weather_wind_mph', 'weather_wind_dir',
@@ -860,6 +910,7 @@ class TestDrawBoxGameStates:
 @needs_pil
 class TestDrawBoxInProgress:
     def test_long_pitcher_name_fit_text_fallback(self, white_image, team_data):
+        """Long pitcher name fit text fallback."""
         game = _live_game(
             current_pitcher='Bartholomew Christopherson-Longname',
             last_pitch_type='FB', last_pitch_speed=97.2,
@@ -869,12 +920,14 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_pitch_count_without_speed(self, white_image, team_data):
+        """Pitch count without speed."""
         game = _live_game(last_pitch_speed=None, pitch_count=55)
         from image_box import draw_box
         result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
         assert isinstance(result, Image.Image)
 
     def test_ab_done_shows_next_batter(self, white_image, team_data):
+        """Ab done shows next batter."""
         game = _live_game(
             current_at_bat_complete=True, due_up='Freddie Freeman',
             current_inning=5, inningState='Top',
@@ -884,6 +937,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_save_situation_flag(self, white_image, team_data):
+        """Save situation flag."""
         game = _live_game(save_situation=True, current_inning=9, inningState='Bottom',
                            num_of_outs=2)
         from image_box import draw_box
@@ -891,12 +945,14 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_active_no_no_perfect_game_label(self, white_image, team_data):
+        """Active no no perfect game label."""
         game = _live_game(perfect_game=True, current_inning=7, inningState='Top')
         from image_box import draw_box
         result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
         assert isinstance(result, Image.Image)
 
     def test_active_no_no_no_hitter_label(self, white_image, team_data):
+        """Active no no no hitter label."""
         game = _live_game(no_hitter=True, current_inning=8, inningState='Bottom')
         from image_box import draw_box
         result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
@@ -910,18 +966,21 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_strike_calls_looking(self, white_image, team_data):
+        """Strike calls looking."""
         game = _live_game(strikes=2, strike_calls=['C', 'C'])
         from image_box import draw_box
         result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
         assert isinstance(result, Image.Image)
 
     def test_stolen_base_header_invert(self, white_image, team_data):
+        """Stolen base header invert."""
         game = _live_game(last_play='Stolen Base 2B', last_play_rbi=0)
         from image_box import draw_box
         result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
         assert isinstance(result, Image.Image)
 
     def test_manfred_man_extra_innings_no_play_yet(self, white_image, team_data):
+        """Manfred man extra innings no play yet."""
         game = _live_game(
             current_inning=10, inningState='Top', num_of_outs=0,
             runner_on_second='Auto Runner', last_play=None, sub_event=None,
@@ -932,6 +991,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_challenge_state_with_logo_found(self, white_image, team_data):
+        """Challenge state with logo found."""
         game = _live_game(
             detailed_state='Player challenge', challenge_team_abbr='LAD',
         )
@@ -941,6 +1001,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_challenge_state_with_logo_missing(self, white_image, team_data):
+        """Challenge state with logo missing."""
         game = _live_game(
             detailed_state='Manager challenge', challenge_team_abbr='SF',
         )
@@ -964,6 +1025,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_between_innings_pitching_change_long_pitcher_name(self, white_image, team_data):
+        """Between innings pitching change long pitcher name."""
         game = _between_innings_game(
             sub_event='PC: Bartholomew Longpitchernamefortruncation',
             next_pitcher=None,
@@ -973,6 +1035,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_between_innings_game_ending_state_suppresses_panel(self, white_image, team_data):
+        """Between innings game ending state suppresses panel."""
         game = _between_innings_game(
             current_inning=9, inningState='End', away_runs=5, home_runs=3,
         )
@@ -988,6 +1051,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_win_prob_bar_with_logos_found(self, white_image, team_data):
+        """Win prob bar with logos found."""
         game = _live_game(away_win_probability=48.0, home_win_probability=52.0)
         from image_box import draw_box
         with patch('image_box._logo_small', return_value=_tiny_logo(18)):
@@ -1012,6 +1076,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_run_scored_header_invert(self, white_image, team_data):
+        """Run scored header invert."""
         game = _live_game(last_play_rbi=2, score_changed=True)
         from image_box import draw_box
         result = draw_box(white_image, 32, 30, game, team_data, use_logos=False,
@@ -1019,6 +1084,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_fielder_enhanced_flyout_from_description(self, white_image, team_data):
+        """Fielder enhanced flyout from description."""
         game = _live_game(
             last_play='Flyout', last_play_description='Fly out to center fielder',
             last_play_inning=7, last_play_is_top=True, current_inning=7,
@@ -1029,6 +1095,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_grounded_into_double_play_from_description(self, white_image, team_data):
+        """Grounded into double play from description."""
         game = _live_game(
             last_play='Grounded Into DP', last_play_description='shortstop to second baseman to first baseman',
             last_play_inning=7, last_play_is_top=True, current_inning=7,
@@ -1039,6 +1106,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_strikeout_looking_upgrades_to_kl(self, white_image, team_data):
+        """Strikeout looking upgrades to kl."""
         game = _live_game(
             last_play='Strikeout', last_play_description='strikes out looking',
             last_play_inning=7, last_play_is_top=True, current_inning=7,
@@ -1049,6 +1117,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_rbi_home_run_grand_slam_label(self, white_image, team_data):
+        """Rbi home run grand slam label."""
         game = _live_game(
             last_play='Home Run', last_play_rbi=4,
             last_play_inning=7, last_play_is_top=True, current_inning=7,
@@ -1059,6 +1128,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_rbi_two_run_home_run_label(self, white_image, team_data):
+        """Rbi two run home run label."""
         game = _live_game(
             last_play='Home Run', last_play_rbi=2,
             last_play_inning=7, last_play_is_top=True, current_inning=7,
@@ -1069,6 +1139,7 @@ class TestDrawBoxInProgress:
         assert isinstance(result, Image.Image)
 
     def test_between_innings_due_up_fallback(self, white_image, team_data):
+        """Between innings due up fallback."""
         game = _between_innings_game(last_play=None, sub_event=None,
                                       current_hitter='Mookie Betts')
         from image_box import draw_box
@@ -1083,18 +1154,21 @@ class TestDrawBoxInProgress:
 @needs_pil
 class TestDrawWideBoxMore:
     def test_run_scored_header_invert_both_cells(self, white_image, team_data):
+        """Run scored header invert both cells."""
         from image_box import draw_wide_box
         game = _live_game(last_play_rbi=1)
         result = draw_wide_box(white_image, 0, 0, game, team_data, score_changed=True)
         assert isinstance(result, Image.Image)
 
     def test_between_innings_no_header_invert(self, white_image, team_data):
+        """Between innings no header invert."""
         from image_box import draw_wide_box
         game = _between_innings_game(last_play_rbi=3)
         result = draw_wide_box(white_image, 0, 0, game, team_data, score_changed=True)
         assert isinstance(result, Image.Image)
 
     def test_right_panel_strike_calls_swinging_and_foul(self, white_image, team_data):
+        """Right panel strike calls swinging and foul."""
         from image_box import draw_wide_box
         game = _live_game(strikes=2, strike_calls=['S', 'F'])
         result = draw_wide_box(white_image, 0, 0, game, team_data)
@@ -1113,6 +1187,7 @@ class TestDrawWideBoxMore:
         assert isinstance(result, Image.Image)
 
     def test_right_panel_pitch_label_too_wide_truncated(self, white_image, team_data):
+        """Right panel pitch label too wide truncated."""
         from image_box import draw_wide_box
         game = _live_game(ab_pitches=[
             {'seq': 1, 'px': 0.0, 'pz': 2.5, 'sz_top': 3.4, 'sz_bot': 1.6,
@@ -1122,24 +1197,28 @@ class TestDrawWideBoxMore:
         assert isinstance(result, Image.Image)
 
     def test_right_panel_three_outs_hides_bases(self, white_image, team_data):
+        """Right panel three outs hides bases."""
         from image_box import draw_wide_box
         game = _live_game(num_of_outs=3)
         result = draw_wide_box(white_image, 0, 0, game, team_data)
         assert isinstance(result, Image.Image)
 
     def test_right_panel_no_pitcher_ks_bottom_half(self, white_image, team_data):
+        """Right panel no pitcher ks bottom half."""
         from image_box import draw_wide_box
         game = _live_game(inningState='Bottom', away_pitcher_ks=[])
         result = draw_wide_box(white_image, 0, 0, game, team_data)
         assert isinstance(result, Image.Image)
 
     def test_right_panel_away_pitcher_ks_bottom_half(self, white_image, team_data):
+        """Right panel away pitcher ks bottom half."""
         from image_box import draw_wide_box
         game = _live_game(inningState='Bottom', away_pitcher_ks=['K', 'L', 'K'])
         result = draw_wide_box(white_image, 0, 0, game, team_data)
         assert isinstance(result, Image.Image)
 
     def test_right_panel_ab_done_shows_next_batter(self, white_image, team_data):
+        """Right panel ab done shows next batter."""
         from image_box import draw_wide_box
         game = _live_game(current_at_bat_complete=True, due_up='Will Smith',
                            current_inning=5, inningState='Top')
@@ -1147,6 +1226,7 @@ class TestDrawWideBoxMore:
         assert isinstance(result, Image.Image)
 
     def test_right_panel_long_pitcher_name_shrinks_font(self, white_image, team_data):
+        """Right panel long pitcher name shrinks font."""
         from image_box import draw_wide_box
         game = _live_game(current_pitcher='Bartholomew Christopherson-Longname',
                            last_pitch_type='FB', last_pitch_speed=98.1, pitch_count=90)
@@ -1154,6 +1234,7 @@ class TestDrawWideBoxMore:
         assert isinstance(result, Image.Image)
 
     def test_right_panel_long_batter_label_shrinks_font(self, white_image, team_data):
+        """Right panel long batter label shrinks font."""
         from image_box import draw_wide_box
         game = _live_game(current_play_batter='Maximilian Verylongbattername',
                            batter_hits=3, batter_at_bats=4)
@@ -1212,6 +1293,7 @@ def test_next_game_preview_logo_w_found(white_image):
 @needs_pil
 class TestSeriesWinnerResolution:
     def _render_final(self, white_image, team_data, **overrides):
+        """Render final."""
         import image_box
         game = _base_game(detailed_state='Final', **overrides)
         image_box.set_historical_mode(True)
@@ -1244,6 +1326,7 @@ class TestSeriesWinnerResolution:
         assert isinstance(result, Image.Image)
 
     def test_series_leading_home_via_series_result(self, white_image, team_data):
+        """Series leading home via series result."""
         result = self._render_final(
             white_image, team_data,
             series_total_games=5, series_wins=2, series_losses=1,
@@ -1265,6 +1348,7 @@ class TestSeriesWinnerResolution:
         assert isinstance(result, Image.Image)
 
     def test_series_tied_with_overline(self, white_image, team_data):
+        """Series tied with overline."""
         result = self._render_final(
             white_image, team_data,
             series_total_games=4, series_wins=2, series_losses=2,
@@ -1274,6 +1358,7 @@ class TestSeriesWinnerResolution:
         assert isinstance(result, Image.Image)
 
     def test_postponed_series_leader_home(self, white_image, team_data):
+        """Postponed series leader home."""
         import image_box
         game = _base_game(
             detailed_state='Postponed', away_runs=None, home_runs=None,
@@ -1355,6 +1440,7 @@ class TestPlayByPlayFielderMapping:
     """Covers the remaining _abbr_play -> fielder-position enhancement branches."""
 
     def _render(self, white_image, team_data, **overrides):
+        """Render."""
         game = _live_game(
             last_play_inning=7, last_play_is_top=True, current_inning=7,
             inningState='Top', **overrides,
@@ -1363,60 +1449,72 @@ class TestPlayByPlayFielderMapping:
         return draw_box(white_image, 32, 30, game, team_data, use_logos=False)
 
     def test_lineout_with_fielder(self, white_image, team_data):
+        """Lineout with fielder."""
         result = self._render(white_image, team_data, last_play='Lineout',
                                last_play_description='line out to left fielder')
         assert isinstance(result, Image.Image)
 
     def test_popout_with_fielder(self, white_image, team_data):
+        """Popout with fielder."""
         result = self._render(white_image, team_data, last_play='Popout',
                                last_play_description='pop out to catcher')
         assert isinstance(result, Image.Image)
 
     def test_sac_fly_with_fielder(self, white_image, team_data):
+        """Sac fly with fielder."""
         result = self._render(white_image, team_data, last_play='Sac Fly',
                                last_play_description='sac fly to right fielder')
         assert isinstance(result, Image.Image)
 
     def test_sac_bunt_with_fielder(self, white_image, team_data):
+        """Sac bunt with fielder."""
         result = self._render(white_image, team_data, last_play='Sac Bunt',
                                last_play_description='sac bunt, third baseman to first baseman')
         assert isinstance(result, Image.Image)
 
     def test_groundout_fielder_sequence(self, white_image, team_data):
+        """Groundout fielder sequence."""
         result = self._render(white_image, team_data, last_play='Groundout',
                                last_play_description='shortstop to second baseman to first baseman')
         assert isinstance(result, Image.Image)
 
     def test_triple_play_fielder_sequence(self, white_image, team_data):
+        """Triple play fielder sequence."""
         result = self._render(white_image, team_data, last_play='Triple Play',
                                last_play_description='shortstop to second baseman to first baseman')
         assert isinstance(result, Image.Image)
 
     def test_caught_stealing_fielder_sequence(self, white_image, team_data):
+        """Caught stealing fielder sequence."""
         result = self._render(white_image, team_data, last_play='Caught Stealing',
                                last_play_description='catcher to shortstop')
         assert isinstance(result, Image.Image)
 
     def test_pickoff_with_fielder(self, white_image, team_data):
+        """Pickoff with fielder."""
         result = self._render(white_image, team_data, last_play='Pickoff',
                                last_play_description='pitcher to first baseman')
         assert isinstance(result, Image.Image)
 
     def test_pickoff_without_fielder_description(self, white_image, team_data):
+        """Pickoff without fielder description."""
         result = self._render(white_image, team_data, last_play='Pickoff',
                                last_play_description='')
         assert isinstance(result, Image.Image)
 
     def test_field_error_with_fielder(self, white_image, team_data):
+        """Field error with fielder."""
         result = self._render(white_image, team_data, last_play='Field Error',
                                last_play_description='field error by third baseman')
         assert isinstance(result, Image.Image)
 
     def test_rbi_single_gets_rbi_prefix(self, white_image, team_data):
+        """Rbi single gets rbi prefix."""
         result = self._render(white_image, team_data, last_play='Single', last_play_rbi=1)
         assert isinstance(result, Image.Image)
 
     def test_rbi_double_gets_multi_rbi_prefix(self, white_image, team_data):
+        """Rbi double gets multi rbi prefix."""
         result = self._render(white_image, team_data, last_play='Double', last_play_rbi=2)
         assert isinstance(result, Image.Image)
 
@@ -1435,6 +1533,7 @@ def test_between_innings_play_display_from_matching_last_play(white_image, team_
 
 @needs_pil
 def test_between_innings_due_up_name_truncated(white_image, team_data):
+    """Between innings due up name truncated."""
     game = _between_innings_game(
         last_play=None, sub_event=None,
         current_hitter='Bartholomew Christopherson Longname The Third',
@@ -1446,6 +1545,7 @@ def test_between_innings_due_up_name_truncated(white_image, team_data):
 
 @needs_pil
 def test_delayed_reason_truncated(white_image, team_data):
+    """Delayed reason truncated."""
     game = _base_game(
         detailed_state='Delayed', current_inning=4, inningState='Top',
         away_runs=1, home_runs=0,
@@ -1463,6 +1563,7 @@ def test_delayed_reason_truncated(white_image, team_data):
 
 @needs_pil
 def test_scheduled_with_streak_map_shows_l10_and_streak(white_image, team_data):
+    """Scheduled with streak map shows l10 and streak."""
     from image_box import draw_box
     game = _base_game(detailed_state='Scheduled', away_runs=None, home_runs=None)
     streak_map = {
@@ -1476,6 +1577,7 @@ def test_scheduled_with_streak_map_shows_l10_and_streak(white_image, team_data):
 
 @needs_pil
 def test_sweep_with_doubleheader_game_number_beside_duration(white_image, team_data):
+    """Sweep with doubleheader game number beside duration."""
     import image_box
     game = _base_game(
         detailed_state='Final', game_duration_minutes=175,
@@ -1497,6 +1599,7 @@ def test_sweep_with_doubleheader_game_number_beside_duration(white_image, team_d
 
 @needs_pil
 def test_win_prob_invalid_string_values_default_to_50_50(white_image, team_data):
+    """Win prob invalid string values default to 50 50."""
     game = _live_game(away_win_probability='N/A', home_win_probability='N/A')
     from image_box import draw_box
     result = draw_box(white_image, 32, 30, game, team_data, use_logos=False,
@@ -1537,6 +1640,7 @@ class TestWidePanelExtra:
         assert isinstance(result, Image.Image)
 
     def test_between_innings_next_batter_truncated(self, white_image, team_data):
+        """Between innings next batter truncated."""
         from image_box import draw_wide_box
         game = _between_innings_game(
             next_batter_1='Bartholomew Christopherson Longname The Third Esquire',
@@ -1545,6 +1649,7 @@ class TestWidePanelExtra:
         assert isinstance(result, Image.Image)
 
     def test_batter_label_shrinks_past_font9(self, white_image, team_data):
+        """Batter label shrinks past font9."""
         from image_box import draw_wide_box
         game = _live_game(
             current_play_batter='Maximilian Bartholomew Christopherson-Longname The Fourth',
@@ -1556,6 +1661,7 @@ class TestWidePanelExtra:
 
 @needs_pil
 def test_grid_final_with_flags_and_series(white_image, team_data):
+    """Grid final with flags and series."""
     import image_box
     from image_grid import draw_out_of_town_score_board
     games = [

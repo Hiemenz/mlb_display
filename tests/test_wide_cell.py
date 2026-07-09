@@ -26,11 +26,13 @@ needs_pil = pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
 
 @pytest.fixture
 def white_image():
+    """White image."""
     return Image.new('1', (800, 480), 255)
 
 
 @pytest.fixture
 def team_data():
+    """Team data."""
     return {
         'team_abbreviation': {
             '119': 'LAD',
@@ -44,6 +46,7 @@ def team_data():
 
 
 def _base_game(**overrides):
+    """Base game."""
     g = {
         'game_pk': 1001,
         'away_team_id': 119,
@@ -152,6 +155,7 @@ def _live_game(**overrides):
 
 
 def _between_innings_game(**overrides):
+    """Between innings game."""
     g = _live_game(
         inningState='Middle',
         num_of_outs=3,
@@ -170,6 +174,7 @@ def _between_innings_game(**overrides):
 
 @needs_pil
 def test_wide_box_in_progress(white_image, team_data):
+    """Wide box in progress."""
     from image_box import draw_wide_box
     result = draw_wide_box(white_image, 0, 0, _live_game(), team_data)
     assert isinstance(result, Image.Image)
@@ -178,6 +183,7 @@ def test_wide_box_in_progress(white_image, team_data):
 
 @needs_pil
 def test_wide_box_between_innings(white_image, team_data):
+    """Wide box between innings."""
     from image_box import draw_wide_box
     result = draw_wide_box(white_image, 0, 0, _between_innings_game(), team_data)
     assert isinstance(result, Image.Image)
@@ -185,6 +191,7 @@ def test_wide_box_between_innings(white_image, team_data):
 
 @needs_pil
 def test_wide_box_no_pitches(white_image, team_data):
+    """Wide box no pitches."""
     from image_box import draw_wide_box
     result = draw_wide_box(white_image, 0, 0, _live_game(ab_pitches=[]), team_data)
     assert isinstance(result, Image.Image)
@@ -243,6 +250,7 @@ def test_wide_box_many_pitches(white_image, team_data):
 
 @needs_pil
 def test_wide_box_with_win_prob(white_image, team_data):
+    """Wide box with win prob."""
     from image_box import draw_wide_box
     result = draw_wide_box(
         white_image, 0, 0, _live_game(), team_data, show_win_prob=True
@@ -388,6 +396,7 @@ def _make_game_list(states_and_innings):
 
 
 def test_find_wide_games_fewer_than_15():
+    """Find wide games fewer than 15."""
     from image_grid import _find_wide_games
     games = _make_game_list([
         ('Final', 9, 'End'),
@@ -399,6 +408,7 @@ def test_find_wide_games_fewer_than_15():
 
 
 def test_find_wide_games_all_in_progress():
+    """Find wide games all in progress."""
     from image_grid import _find_wide_games
     games = _make_game_list([('In Progress', i + 1, 'Top') for i in range(5)])
     result = _find_wide_games(games, {}, {})
@@ -430,6 +440,7 @@ def test_find_wide_games_14_games_one_wide():
 
 
 def test_find_wide_games_15_plus_no_force():
+    """Find wide games 15 plus no force."""
     from image_grid import _find_wide_games
     games = _make_game_list([('In Progress', 7, 'Top')] * 15)
     result = _find_wide_games(games, {'wide_cell_always': False}, {})
@@ -437,6 +448,7 @@ def test_find_wide_games_15_plus_no_force():
 
 
 def test_find_wide_games_15_plus_force_picks_farthest():
+    """Find wide games 15 plus force picks farthest."""
     from image_grid import _find_wide_games
     games = _make_game_list([
         ('In Progress', 5, 'Top'),   # 0
@@ -449,6 +461,7 @@ def test_find_wide_games_15_plus_force_picks_farthest():
 
 
 def test_find_wide_games_tiebreak_by_half():
+    """Find wide games tiebreak by half."""
     from image_grid import _find_wide_games
     games = _make_game_list([
         ('In Progress', 7, 'Top'),    # 0
@@ -459,6 +472,7 @@ def test_find_wide_games_tiebreak_by_half():
 
 
 def test_find_wide_games_tiebreak_by_outs():
+    """Find wide games tiebreak by outs."""
     from image_grid import _find_wide_games
     games = [
         {'game_pk': 0, 'detailed_state': 'In Progress', 'current_inning': 7,
@@ -511,6 +525,7 @@ _FEAT_TD = {'team_abbreviation': {'147': 'NYY', '111': 'BOS', '119': 'LAD', '137
 
 
 def _g(pk, away_id, home_id, state, inning=5, half='Top'):
+    """G."""
     return {
         'game_pk': pk, 'away_team_id': away_id, 'home_team_id': home_id,
         'detailed_state': state, 'current_inning': inning, 'inningState': half,
@@ -566,6 +581,7 @@ def test_featured_default_off_preserves_old_behavior():
 
 @needs_pil
 def test_grid_with_one_wide_game(white_image, team_data):
+    """Grid with one wide game."""
     from image_grid import draw_out_of_town_score_board
     games = [_live_game(game_pk=1)] + [
         _base_game(game_pk=i + 2) for i in range(5)

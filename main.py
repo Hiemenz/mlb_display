@@ -57,6 +57,7 @@ _load_dotenv()
 
 
 def _data_path(filename):
+    """Data path."""
     return os.path.join(_REPO_ROOT, 'data', filename)
 
 
@@ -73,6 +74,7 @@ def _in_night_window(config):
 
 
 def _load_schedule_state():
+    """Load schedule state."""
     path = _data_path('schedule_state.json')
     if os.path.exists(path):
         try:
@@ -84,6 +86,7 @@ def _load_schedule_state():
 
 
 def _save_schedule_state(state):
+    """Save schedule state."""
     path = _data_path('schedule_state.json')
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
@@ -264,6 +267,7 @@ def _should_skip_poll(date_str, config, sched):
 
 
 def _update_schedule_state(game_state_data, date_str, config, sched):
+    """Update schedule state."""
     sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
     sched['last_fetch_date'] = date_str
     if not game_state_data:
@@ -301,6 +305,7 @@ def _update_schedule_state(game_state_data, date_str, config, sched):
 # ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point: run the full fetch → render → display pipeline."""
     parser = argparse.ArgumentParser(
         description='MLB Display — fetch → render → display pipeline',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -327,6 +332,7 @@ Examples:
         print("Development mode - e-ink display updates will be skipped")
 
     def _env_is_test():
+        """Env is test."""
         if os.environ.get('ENV', '').lower() == 'test':
             return True
         try:

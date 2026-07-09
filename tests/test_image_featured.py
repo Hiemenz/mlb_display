@@ -130,6 +130,7 @@ def _scheduled_game(**overrides):
 
 
 def _final_game(**overrides):
+    """Final game."""
     g = _scheduled_game(
         detailed_state='Final', away_runs=3, home_runs=5,
         away_hits=8, home_hits=10, away_errors=0, home_errors=1,
@@ -151,10 +152,12 @@ def _final_game(**overrides):
 # ---------------------------------------------------------------------------
 
 def _g(pk, away, home, state):
+    """G."""
     return {'game_pk': pk, 'away_team_id': away, 'home_team_id': home, 'detailed_state': state}
 
 
 def test_find_featured_game_scheduled_priority():
+    """Find featured game scheduled priority."""
     from image_featured import _find_featured_game
     games = [_g(1, 119, 137, 'Final'), _g(2, 147, 111, 'Scheduled')]
     result = _find_featured_game(games, TEAM_DATA, 'NYY')
@@ -162,6 +165,7 @@ def test_find_featured_game_scheduled_priority():
 
 
 def test_find_featured_game_in_progress_priority_over_final():
+    """Find featured game in progress priority over final."""
     from image_featured import _find_featured_game
     games = [_g(1, 147, 111, 'Final'), _g(2, 147, 111, 'In Progress')]
     result = _find_featured_game(games, TEAM_DATA, 'NYY')
@@ -169,6 +173,7 @@ def test_find_featured_game_in_progress_priority_over_final():
 
 
 def test_find_featured_game_final_returns_last_matching():
+    """Find featured game final returns last matching."""
     from image_featured import _find_featured_game
     games = [_g(1, 147, 111, 'Final'), _g(2, 147, 111, 'Completed Early: Rain')]
     result = _find_featured_game(games, TEAM_DATA, 'NYY')
@@ -176,6 +181,7 @@ def test_find_featured_game_final_returns_last_matching():
 
 
 def test_find_featured_game_primary_not_playing_falls_back_to_live():
+    """Find featured game primary not playing falls back to live."""
     from image_featured import _find_featured_game
     games = [_g(1, 119, 137, 'Final'), _g(2, 133, 144, 'In Progress')]
     result = _find_featured_game(games, TEAM_DATA, 'NYY')
@@ -183,6 +189,7 @@ def test_find_featured_game_primary_not_playing_falls_back_to_live():
 
 
 def test_find_featured_game_primary_not_playing_no_live_falls_back_to_first():
+    """Find featured game primary not playing no live falls back to first."""
     from image_featured import _find_featured_game
     games = [_g(1, 119, 137, 'Final'), _g(2, 133, 144, 'Final')]
     result = _find_featured_game(games, TEAM_DATA, 'NYY')
@@ -190,6 +197,7 @@ def test_find_featured_game_primary_not_playing_no_live_falls_back_to_first():
 
 
 def test_find_featured_game_empty_list_returns_none():
+    """Find featured game empty list returns none."""
     from image_featured import _find_featured_game
     assert _find_featured_game([], TEAM_DATA, 'NYY') is None
 
@@ -210,6 +218,7 @@ def test_find_featured_game_challenge_state_falls_back_to_last_primary_game():
 
 @needs_pil
 def test_live_fullscreen_basic():
+    """Live fullscreen basic."""
     from image_featured import draw_live_fullscreen_game
     img = draw_live_fullscreen_game(_live_game(), TEAM_DATA, CONFIG)
     assert isinstance(img, Image.Image)
@@ -219,6 +228,7 @@ def test_live_fullscreen_basic():
 
 @needs_pil
 def test_live_fullscreen_bases_loaded():
+    """Live fullscreen bases loaded."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         runner_on_first='Mookie Betts', runner_on_second='Freddie Freeman',
@@ -231,6 +241,7 @@ def test_live_fullscreen_bases_loaded():
 
 @needs_pil
 def test_live_fullscreen_bases_empty():
+    """Live fullscreen bases empty."""
     from image_featured import draw_live_fullscreen_game
     img = draw_live_fullscreen_game(_live_game(), TEAM_DATA, CONFIG)  # defaults: all None
     assert isinstance(img, Image.Image)
@@ -238,6 +249,7 @@ def test_live_fullscreen_bases_empty():
 
 @needs_pil
 def test_live_fullscreen_challenges_present():
+    """Live fullscreen challenges present."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         away_challenges_remaining=1, home_challenges_remaining=0,
@@ -249,6 +261,7 @@ def test_live_fullscreen_challenges_present():
 
 @needs_pil
 def test_live_fullscreen_challenges_none():
+    """Live fullscreen challenges none."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         away_challenges_remaining=None, home_challenges_remaining=None,
@@ -260,6 +273,7 @@ def test_live_fullscreen_challenges_none():
 
 @needs_pil
 def test_live_fullscreen_win_probability_as_fraction():
+    """Live fullscreen win probability as fraction."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(away_win_probability=0.42, home_win_probability=0.58)
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -277,6 +291,7 @@ def test_live_fullscreen_win_probability_as_percentage():
 
 @needs_pil
 def test_live_fullscreen_win_probability_missing():
+    """Live fullscreen win probability missing."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(away_win_probability=None, home_win_probability=58.0)
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -294,6 +309,7 @@ def test_live_fullscreen_win_probability_invalid_value_does_not_crash():
 
 @needs_pil
 def test_live_fullscreen_sub_event_pitching_change():
+    """Live fullscreen sub event pitching change."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(inningState='Middle', sub_event='PC:New Pitcher', next_pitcher='Camilo Doval')
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -312,6 +328,7 @@ def test_live_fullscreen_player_challenge_normalizes_sub_event():
 
 @needs_pil
 def test_live_fullscreen_manager_challenge_normalizes_sub_event():
+    """Live fullscreen manager challenge normalizes sub event."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(detailed_state='Manager challenge')
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -320,6 +337,7 @@ def test_live_fullscreen_manager_challenge_normalizes_sub_event():
 
 @needs_pil
 def test_live_fullscreen_between_innings_with_due_up_batters():
+    """Live fullscreen between innings with due up batters."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         inningState='Middle',
@@ -341,6 +359,7 @@ def test_live_fullscreen_three_outs_lag_shows_mid_label():
 
 @needs_pil
 def test_live_fullscreen_extra_innings_sliding_linescore_window():
+    """Live fullscreen extra innings sliding linescore window."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         inningState='Middle', current_inning=11,
@@ -352,6 +371,7 @@ def test_live_fullscreen_extra_innings_sliding_linescore_window():
 
 @needs_pil
 def test_live_fullscreen_save_situation_badge():
+    """Live fullscreen save situation badge."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(save_situation=True)
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -370,6 +390,7 @@ def test_live_fullscreen_strikeout_looking_draws_backwards_k():
 
 @needs_pil
 def test_live_fullscreen_flyout_resolves_fielder_position():
+    """Live fullscreen flyout resolves fielder position."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(last_play='Flyout', last_play_description='fly ball to right fielder')
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -383,6 +404,7 @@ def test_live_fullscreen_flyout_resolves_fielder_position():
 ])
 @needs_pil
 def test_live_fullscreen_rbi_event_labels(last_play, rbi):
+    """Live fullscreen rbi event labels."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(last_play=last_play, last_play_rbi=rbi)
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -391,6 +413,7 @@ def test_live_fullscreen_rbi_event_labels(last_play, rbi):
 
 @needs_pil
 def test_live_fullscreen_run_scored_inverts_header():
+    """Live fullscreen run scored inverts header."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(last_play='Home Run', last_play_rbi=1)
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -399,6 +422,7 @@ def test_live_fullscreen_run_scored_inverts_header():
 
 @needs_pil
 def test_live_fullscreen_long_pitcher_name_shrinks_font():
+    """Live fullscreen long pitcher name shrinks font."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         inningState='Middle',
@@ -410,6 +434,7 @@ def test_live_fullscreen_long_pitcher_name_shrinks_font():
 
 @needs_pil
 def test_live_fullscreen_long_batter_names_shrink_font():
+    """Live fullscreen long batter names shrink font."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         inningState='Middle',
@@ -423,6 +448,7 @@ def test_live_fullscreen_long_batter_names_shrink_font():
 
 @needs_pil
 def test_live_fullscreen_at_bat_complete_uses_due_up():
+    """Live fullscreen at bat complete uses due up."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(current_at_bat_complete=True, due_up='Freddie Freeman', in_hole='Will Smith')
     img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
@@ -431,6 +457,7 @@ def test_live_fullscreen_at_bat_complete_uses_due_up():
 
 @needs_pil
 def test_live_fullscreen_on_deck_equal_to_batter_is_suppressed():
+    """Live fullscreen on deck equal to batter is suppressed."""
     from image_featured import draw_live_fullscreen_game
     game = _live_game(
         current_at_bat_complete=True, due_up='Same Guy',
@@ -442,6 +469,7 @@ def test_live_fullscreen_on_deck_equal_to_batter_is_suppressed():
 
 @needs_pil
 def test_live_fullscreen_config_none_loads_real_yaml_mocked():
+    """Live fullscreen config none loads real yaml mocked."""
     from image_featured import draw_live_fullscreen_game
     with patch('image_featured.load_yaml_file', return_value=CONFIG) as mock_load:
         img = draw_live_fullscreen_game(_live_game(), TEAM_DATA, None)
@@ -455,6 +483,7 @@ def test_live_fullscreen_config_none_loads_real_yaml_mocked():
 
 @needs_pil
 def test_featured_fullscreen_delegates_to_live_for_in_progress():
+    """Featured fullscreen delegates to live for in progress."""
     from image_featured import draw_featured_game_fullscreen
     stub = Image.new('1', (800, 480), 255)
     with patch('image_featured.draw_live_fullscreen_game', return_value=stub) as mock_live:
@@ -467,6 +496,7 @@ def test_featured_fullscreen_delegates_to_live_for_in_progress():
 @pytest.mark.parametrize('state', ['Player challenge', 'Manager challenge'])
 @needs_pil
 def test_featured_fullscreen_delegates_to_live_for_challenge_states(state):
+    """Featured fullscreen delegates to live for challenge states."""
     from image_featured import draw_featured_game_fullscreen
     stub = Image.new('1', (800, 480), 255)
     with patch('image_featured.draw_live_fullscreen_game', return_value=stub) as mock_live:
@@ -478,6 +508,7 @@ def test_featured_fullscreen_delegates_to_live_for_challenge_states(state):
 
 @needs_pil
 def test_featured_fullscreen_scheduled_game_no_standings():
+    """Featured fullscreen scheduled game no standings."""
     from image_featured import draw_featured_game_fullscreen
     with patch('image_featured.load_json_file', return_value={}):
         img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, CONFIG)
@@ -522,6 +553,7 @@ def test_featured_fullscreen_wildcard_header_calls_image_standings():
 
 @needs_pil
 def test_featured_fullscreen_standings_sidebar_calls_left_and_right():
+    """Featured fullscreen standings sidebar calls left and right."""
     from image_featured import draw_featured_game_fullscreen
     sb_config = dict(CONFIG, show_standings_sidebar=True)
     with patch('image_featured.load_json_file', return_value=_STANDINGS_DATA), \
@@ -536,6 +568,7 @@ def test_featured_fullscreen_standings_sidebar_calls_left_and_right():
 
 @needs_pil
 def test_featured_fullscreen_wildcard_and_sidebar_both_off():
+    """Featured fullscreen wildcard and sidebar both off."""
     from image_featured import draw_featured_game_fullscreen
     with patch('image_featured.load_json_file', return_value=_STANDINGS_DATA), \
          patch('image_featured.derive_wildcard_from_standings') as mock_derive, \
@@ -572,6 +605,7 @@ def test_featured_fullscreen_missing_standings_data_skips_without_crash():
 
 @needs_pil
 def test_featured_fullscreen_date_label_full_format():
+    """Featured fullscreen date label full format."""
     from image_featured import draw_featured_game_fullscreen
     with patch('image_featured.load_json_file', return_value={}):
         img = draw_featured_game_fullscreen(_scheduled_game(game_date='2026-06-20'), TEAM_DATA, CONFIG)
@@ -580,6 +614,7 @@ def test_featured_fullscreen_date_label_full_format():
 
 @needs_pil
 def test_featured_fullscreen_date_label_malformed_falls_back_to_raw_string():
+    """Featured fullscreen date label malformed falls back to raw string."""
     from image_featured import draw_featured_game_fullscreen
     with patch('image_featured.load_json_file', return_value={}):
         img = draw_featured_game_fullscreen(_scheduled_game(game_date='not-a-date'), TEAM_DATA, CONFIG)
@@ -588,6 +623,7 @@ def test_featured_fullscreen_date_label_malformed_falls_back_to_raw_string():
 
 @needs_pil
 def test_featured_fullscreen_no_date_skips_date_label():
+    """Featured fullscreen no date skips date label."""
     from image_featured import draw_featured_game_fullscreen
     with patch('image_featured.load_json_file', return_value={}):
         img = draw_featured_game_fullscreen(_scheduled_game(game_date=None), TEAM_DATA, CONFIG)
@@ -611,6 +647,7 @@ def test_featured_fullscreen_date_label_narrow_with_wildcard_standings():
 
 @needs_pil
 def test_featured_fullscreen_config_none_loads_real_yaml_mocked():
+    """Featured fullscreen config none loads real yaml mocked."""
     from image_featured import draw_featured_game_fullscreen
     with patch('image_featured.load_yaml_file', return_value=CONFIG) as mock_load, \
          patch('image_featured.load_json_file', return_value={}):

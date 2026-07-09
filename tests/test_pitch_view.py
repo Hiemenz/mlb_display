@@ -24,6 +24,7 @@ needs_pil = pytest.mark.skipif(not PIL_AVAILABLE, reason="PIL not installed")
 
 @pytest.fixture(autouse=True)
 def _no_network(request):
+    """No network."""
     if not PIL_AVAILABLE:
         yield
         return
@@ -32,6 +33,7 @@ def _no_network(request):
 
 
 def _base_game(**overrides):
+    """Base game."""
     g = {
         'detailed_state': 'In Progress',
         'inning_state': 'Top',
@@ -70,6 +72,7 @@ def _base_game(**overrides):
 
 @needs_pil
 def test_happy_path_in_progress():
+    """Happy path in progress."""
     from pitch_view import render_pitch_view
     result = render_pitch_view(_base_game())
     assert isinstance(result, Image.Image)
@@ -84,6 +87,7 @@ def test_happy_path_in_progress():
 
 @needs_pil
 def test_no_pitches():
+    """No pitches."""
     from pitch_view import render_pitch_view
     result = render_pitch_view(_base_game(pitches=[]))
     assert isinstance(result, Image.Image)
@@ -92,6 +96,7 @@ def test_no_pitches():
 
 @needs_pil
 def test_all_pitch_codes():
+    """All pitch codes."""
     from pitch_view import render_pitch_view
     pitches = [
         {'px': -0.5, 'pz': 2.0, 'code': 'S', 'seq': 1, 'pitch_type': 'FB', 'speed': 95.0},
@@ -125,6 +130,7 @@ def test_pitch_missing_speed_and_type():
 
 @needs_pil
 def test_missing_batter_pitcher():
+    """Missing batter pitcher."""
     from pitch_view import render_pitch_view
     game = _base_game()
     game.pop('batter', None)
@@ -136,6 +142,7 @@ def test_missing_batter_pitcher():
 
 @needs_pil
 def test_empty_data_dict():
+    """Empty data dict."""
     from pitch_view import render_pitch_view
     result = render_pitch_view({})
     assert isinstance(result, Image.Image)
@@ -150,6 +157,7 @@ def test_empty_data_dict():
 @needs_pil
 @pytest.mark.parametrize('state', ['Scheduled', 'Warmup', 'In Progress', 'Final', 'Game Over'])
 def test_detailed_state_variants(state):
+    """Detailed state variants."""
     from pitch_view import render_pitch_view
     result = render_pitch_view(_base_game(detailed_state=state))
     assert isinstance(result, Image.Image)
@@ -162,6 +170,7 @@ def test_detailed_state_variants(state):
 
 @needs_pil
 def test_dark_mode_true():
+    """Dark mode true."""
     from pitch_view import render_pitch_view
     result = render_pitch_view(_base_game(), dark_mode=True)
     assert isinstance(result, Image.Image)
@@ -171,6 +180,7 @@ def test_dark_mode_true():
 
 @needs_pil
 def test_dark_mode_false():
+    """Dark mode false."""
     from pitch_view import render_pitch_view
     result = render_pitch_view(_base_game(), dark_mode=False)
     assert isinstance(result, Image.Image)
@@ -182,6 +192,7 @@ def test_dark_mode_false():
 
 @needs_pil
 def test_long_pitch_log_overflow():
+    """Long pitch log overflow."""
     from pitch_view import render_pitch_view
     pitches = [
         {'px': 0.1 * (i % 3 - 1), 'pz': 2.0 + 0.05 * i, 'code': 'S' if i % 2 else 'B',
