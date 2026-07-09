@@ -2,7 +2,7 @@ import os
 import json
 import random
 import time as _time_mod
-from datetime import datetime
+from datetime import datetime, timezone
 import pytz
 from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
@@ -50,6 +50,56 @@ def compare_json_dicts_sorted(dict1, dict2):
 def load_and_sort_json(json_string):
     """Load JSON data from a string and sort it."""
     return json.loads(json_string, object_pairs_hook=OrderedDict)
+
+
+def _get_system_uptime():
+    """Return system uptime string ('Xh Ym') or '' if unavailable."""
+    try:
+        with open('/proc/uptime') as f:
+            secs = float(f.read().split()[0])
+        h = int(secs // 3600)
+        m = int((secs % 3600) // 60)
+        return f"{h}h {m}m"
+    except Exception:
+        return ''
+
+
+def _draw_debug_overlay(Himage, config):
+    """Draw uptime + last-fetch timestamp in the bottom-right corner."""
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9)
+
+    uptime = _get_system_uptime()
+    sched = load_json_file('schedule_state.json')
+    last_fetch_iso = sched.get('last_game_fetch', '')
+    last_fetch_str = ''
+    if last_fetch_iso:
+        try:
+            tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
+            dt = datetime.fromisoformat(last_fetch_iso)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc).astimezone(tz)
+            last_fetch_str = dt.strftime('%-I:%M%p').lower()
+        except Exception:
+            last_fetch_str = last_fetch_iso[11:16]
+
+    parts = []
+    if uptime:
+        parts.append(f"up {uptime}")
+    if last_fetch_str:
+        parts.append(f"fetch {last_fetch_str}")
+    text = '  '.join(parts)
+    if not text:
+        return Himage
+
+    W, H = Himage.size
+    tw = int(font.getlength(text))
+    x = W - tw - 4
+    y = H - 12
+    # White knockout behind text so it's readable over a dark game cell
+    draw.rectangle([x - 1, y - 1, x + tw + 1, y + 11], fill=255)
+    draw.text((x, y), text, font=font, fill=0)
+    return Himage
 
 
 def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_cache=False, config=None):
@@ -278,6 +328,9 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         if standings_data and 'standings' in standings_data:
             Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode)
             Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode)
+
+    if config.get('show_debug_overlay', False):
+        Himage = _draw_debug_overlay(Himage, config)
 
     if config.get('dark_mode', False):
         Himage = ImageOps.invert(Himage.convert('L')).convert('1')

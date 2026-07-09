@@ -8,6 +8,7 @@ from util import load_json_file, load_yaml_file
 from image_assets import _get_font, ImageDraw, Image
 from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box
+from image_leaders import draw_leaders_cell
 
 
 # Live game states that qualify for a wide (2-cell) tile. Challenge/review states
@@ -452,16 +453,18 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 streak_map=streak_map,
             )
 
-    # QR code disabled — not supported on this Pi build
-    # if config.get('show_config_qr', True):
-    #     _free = _free_grid_slot(_slots)
-    #     if _free is not None:
-    #         _ip = _get_lan_ip()
-    #         if _ip:
-    #             _port = config.get('config_server_port', 8080)
-    #             _qx = _free[0] * 150 + x_start
-    #             _qy = _free[1] * 150 + y_start
-    #             Himage = _draw_config_qr_cell(Himage, _qx, _qy, f'http://{_ip}:{_port}/')
+    if config.get('show_leaders_panel', False):
+        _free = _free_grid_slot(_slots)
+        if _free is not None:
+            _leaders_data = load_json_file('leaders.json').get('leaders', {})
+            _rotation_min = config.get('leaders_rotation_minutes', 5)
+            _lx = _free[0] * 150 + x_start
+            _ly = _free[1] * 150 + y_start
+            Himage = draw_leaders_cell(
+                Himage, _lx, _ly, _leaders_data, team_data,
+                rotation_minutes=_rotation_min,
+                use_logos=use_logos,
+            )
 
     Himage.save('score_board.bmp')
     return Himage

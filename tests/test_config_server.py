@@ -22,11 +22,12 @@ primary_backup: BOS
 
 league_mode: mlb
 
-dark_mode: true
 use_team_logos: True
 show_standings_sidebar: true
 show_wildcard_standings: true
 wide_cell_always: false
+show_leaders_panel: false
+show_debug_overlay: false
 """
 
 SAMPLE_ENV = """\
@@ -97,7 +98,7 @@ def test_set_yaml_scalar_preserves_comments_and_other_keys(isolated_files):
             assert line in after
     # Untouched keys must be byte-for-byte identical.
     assert 'primary_backup: BOS' in after
-    assert 'dark_mode: true' in after
+    assert 'show_leaders_panel: false' in after
 
 
 def test_set_yaml_scalar_appends_when_key_absent(isolated_files):
@@ -151,9 +152,10 @@ def test_save_updates_yaml_bool_field(client, isolated_files):
     yaml_path, env_path = isolated_files
     resp = client.post('/save', data={
         'primary': 'BOS', 'display_mode': 'scoreboard', 'league_mode': 'mlb',
-        'dark_mode': 'on', 'use_team_logos': 'on', 'show_standings_sidebar': 'on',
+        'show_leaders_panel': 'on', 'use_team_logos': 'on', 'show_standings_sidebar': 'on',
         'show_wildcard_standings': 'on', 'wide_cell_always': '',
-        'show_config_qr': 'on', 'FEATURED_TEAM_FULLSCREEN': '', 'LEAGUE_MODE': 'mlb',
+        'show_config_qr': 'on', 'show_debug_overlay': '',
+        'FEATURED_TEAM_FULLSCREEN': '', 'LEAGUE_MODE': 'mlb',
     })
     assert resp.status_code == 302
     assert resp.headers['Location'] == '/?saved=1'
@@ -166,22 +168,24 @@ def test_save_unchecked_checkbox_writes_false(client, isolated_files):
     yaml_path, _ = isolated_files
     client.post('/save', data={
         'primary': 'NYY', 'display_mode': 'scoreboard', 'league_mode': 'mlb',
-        # dark_mode omitted entirely == unchecked checkbox
+        # show_leaders_panel omitted entirely == unchecked checkbox
         'use_team_logos': 'on', 'show_standings_sidebar': 'on',
         'show_wildcard_standings': 'on', 'wide_cell_always': '',
-        'show_config_qr': '', 'FEATURED_TEAM_FULLSCREEN': '', 'LEAGUE_MODE': 'mlb',
+        'show_config_qr': '', 'show_debug_overlay': 'on',
+        'FEATURED_TEAM_FULLSCREEN': '', 'LEAGUE_MODE': 'mlb',
     })
     after = yaml_path.read_text()
-    assert 'dark_mode: false' in after
+    assert 'show_leaders_panel: false' in after
 
 
 def test_save_env_field(client, isolated_files):
     _, env_path = isolated_files
     client.post('/save', data={
         'primary': 'NYY', 'display_mode': 'scoreboard', 'league_mode': 'mlb',
-        'dark_mode': 'on', 'use_team_logos': 'on', 'show_standings_sidebar': 'on',
+        'show_leaders_panel': 'on', 'use_team_logos': 'on', 'show_standings_sidebar': 'on',
         'show_wildcard_standings': 'on', 'wide_cell_always': '',
-        'show_config_qr': 'on', 'FEATURED_TEAM_FULLSCREEN': 'on', 'LEAGUE_MODE': 'aaa',
+        'show_config_qr': 'on', 'show_debug_overlay': '',
+        'FEATURED_TEAM_FULLSCREEN': 'on', 'LEAGUE_MODE': 'aaa',
     })
     after = env_path.read_text()
     assert 'FEATURED_TEAM_FULLSCREEN=true' in after
