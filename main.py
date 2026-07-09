@@ -9,7 +9,7 @@ import os
 import json
 import platform
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytz
 
@@ -71,6 +71,23 @@ def _in_night_window(config):
     if night_start >= night_end:
         return current_hour >= night_start or current_hour < night_end
     return night_start <= current_hour < night_end
+
+
+def _in_dark_window(config):
+    """Return True when the display should be in dark mode (evening through morning).
+
+    Driven by dark_start / dark_end config keys (default 20 → 7) so that the
+    display colour scheme is independent of the refresh-suppression night window.
+    Falls back to night_start / night_end if the dark_* keys are absent.
+    """
+    dark_start = config.get('dark_start', config.get('night_start', 20))
+    dark_end = config.get('dark_end', config.get('night_end', 7))
+    tz = config.get('timezone', 'America/Chicago')
+    local_tz = pytz.timezone(tz)
+    current_hour = datetime.now(local_tz).hour
+    if dark_start >= dark_end:
+        return current_hour >= dark_start or current_hour < dark_end
+    return dark_start <= current_hour < dark_end
 
 
 def _load_schedule_state():
@@ -268,7 +285,7 @@ def _should_skip_poll(date_str, config, sched):
 
 def _update_schedule_state(game_state_data, date_str, config, sched):
     """Update schedule state."""
-    sched['last_game_fetch'] = datetime.now().isoformat(timespec='seconds')
+    sched['last_game_fetch'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
     sched['last_fetch_date'] = date_str
     if not game_state_data:
         priority = config.get('sport_id_priority', [1, 8, 16])
@@ -557,17 +574,21 @@ Examples:
         except Exception as e:
             print(f"Warning: leaders fetch failed: {e}")
 
-    # 8. Auto dark/light mode: derive from time-of-day (night window = dark).
+    # 8. Auto dark/light mode: day = light, night = dark.
+    # Uses dark_start / dark_end config keys (defaults: 20 → 7) so the display
+    # dark window is independent of the refresh-suppression night window.
     # Detect day↔night transitions and force a full e-ink refresh to prevent
-    # ghosting from residual charge when the polarity of the entire image flips.
-    # If night_mode is disabled entirely, always use light mode.
-    _is_dark = _in_night_window(config) if config.get('night_mode', True) else False
+    # ghosting when the polarity of the entire image flips.
+    _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     config['dark_mode'] = _is_dark
     _dark_transitioned = False
     if not _no_throttle and not args.date:
         _last_dark = sched.get('last_dark_mode')
-        if _last_dark is not None and _last_dark != _is_dark:
-            print(f"Dark mode transition: {'light→dark' if _is_dark else 'dark→light'} — forcing full refresh")
+        if _last_dark is None or _last_dark != _is_dark:
+            # None = first run after Pi boot/state reset — force a full refresh so the
+            # display is guaranteed to start in the correct mode without ghosting.
+            label = 'first-run' if _last_dark is None else ('light→dark' if _is_dark else 'dark→light')
+            print(f"Dark mode transition: {label} — forcing full refresh")
             _dark_transitioned = True
         sched['last_dark_mode'] = _is_dark
         _save_schedule_state(sched)
