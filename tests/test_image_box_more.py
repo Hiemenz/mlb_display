@@ -578,6 +578,24 @@ class TestDrawBoxFinalFlags:
         )
         assert isinstance(result, Image.Image)
 
+    def test_sweep_takes_priority_over_walkoff_in_header(self, white_image, team_data):
+        """When a Final is both a series-clinching sweep and a walk-off win, the
+        header ghost must show SWEEP, not WALKOFF — sweep is the higher-priority
+        headline. Renders sweep+walkoff and sweep-only and asserts they're pixel
+        identical, proving the WALKOFF text is fully suppressed.
+        """
+        sweep_kwargs = dict(
+            series_total_games=4, series_wins=4, series_losses=0,
+            series_description='Regular Season', series_result='LAD wins 4-0',
+            away_team_is_winner=True, home_team_is_winner=False,
+        )
+        img_sweep_only = self._render_final(white_image, team_data, **sweep_kwargs)
+        img_sweep_walkoff = self._render_final(
+            Image.new('1', (800, 480), 255), team_data, walk_off=True, **sweep_kwargs,
+        )
+        assert list(img_sweep_only.getdata()) == list(img_sweep_walkoff.getdata()), \
+            "sweep + walk_off should render identically to sweep alone (WALKOFF hidden)"
+
     def test_sweep_with_logo_found(self, white_image, team_data):
         """Sweep with logo found."""
         with patch('image_box._logo_small', return_value=_tiny_logo(14)):
