@@ -283,7 +283,7 @@ class TestLayOutRowMajor:
         tokens = [('wide', self._g(i)) for i in range(4)]
         ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=2)
         assert len(ordered) == len(positions) == 4
-        for slot_type, col, row in positions:
+        for slot_type, col, _row in positions:
             assert 0 <= col <= 4
             if slot_type == 'wide':
                 assert col <= 3
