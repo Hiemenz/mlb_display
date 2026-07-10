@@ -204,8 +204,10 @@ def test_draw_debug_overlay_stale_fetch_inverts_box(tmp_path):
     assert (bottom_right == 0).any(), "Expected black pixels in stale overlay"
 
 
-def test_draw_debug_overlay_fresh_fetch_white_box(tmp_path):
-    """When fetch is fresh, background box should be white."""
+def test_draw_debug_overlay_fresh_fetch_draws_nothing(tmp_path):
+    """Below the stale threshold, the overlay draws nothing at all — the
+    corner stays untouched rather than showing an uptime/last-fetch
+    readout during normal operation."""
     img = _blank_image()
     config = {
         'timezone': 'America/Chicago',
@@ -213,7 +215,7 @@ def test_draw_debug_overlay_fresh_fetch_white_box(tmp_path):
         'night_start': 2,
         'night_end': 7,
     }
-    # Last fetch 10 minutes ago
+    # Last fetch 10 minutes ago — well under the stale threshold
     fresh_dt = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
     sched = {'last_game_fetch': fresh_dt}
 
@@ -224,8 +226,8 @@ def test_draw_debug_overlay_fresh_fetch_white_box(tmp_path):
     import numpy as np
     arr = np.array(result.convert('L'))
     bottom_right = arr[-20:, -250:]
-    # White background — most pixels should be white (255)
-    assert (bottom_right == 255).sum() > (bottom_right == 0).sum()
+    # Fully blank — no box, no text — until the fetch actually goes stale.
+    assert (bottom_right == 255).all()
 
 
 # ---------------------------------------------------------------------------
