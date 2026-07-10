@@ -60,17 +60,27 @@ class TestCurrentCategory:
         """Returns a known category."""
         assert _current_category() in _CATEGORIES
 
-    def test_rotation_cycles_all_categories(self):
-        """Rotation cycles all categories."""
-        # minute_block = 0 → idx 0; 5 → idx 1; 10 → idx 2; ...; wraps after
-        # len(_CATEGORIES) steps of `rotation_minutes` each.
+    def test_rotation_eventually_covers_all_categories(self):
+        """Rotation eventually covers all categories."""
+        # Selection is randomized per time block, so a handful of consecutive
+        # blocks won't necessarily hit every category — sample many blocks
+        # instead to confirm the full category set is reachable.
         with patch('image_leaders.datetime') as mock_dt:
             seen = set()
-            for step in range(len(_CATEGORIES)):
+            for step in range(200):
                 mock_dt.now.return_value.hour = 0
                 mock_dt.now.return_value.minute = step * 5
                 seen.add(_current_category(rotation_minutes=5))
             assert seen == set(_CATEGORIES)
+
+    def test_rotation_stable_within_time_block(self):
+        """Rotation stable within time block."""
+        with patch('image_leaders.datetime') as mock_dt:
+            mock_dt.now.return_value.hour = 3
+            mock_dt.now.return_value.minute = 17
+            first = _current_category(rotation_minutes=5)
+            second = _current_category(rotation_minutes=5)
+            assert first == second
 
     def test_zero_rotation_minutes_does_not_crash(self):
         """Zero rotation minutes does not crash."""
@@ -108,11 +118,11 @@ class TestRotatingCategories:
 
     def test_window_slides_over_time(self):
         """Window slides over time."""
-        # With a 2-slot window, different rotation offsets should show
-        # different (wrapping) subsets of categories over time.
+        # With a 2-slot window, the randomized subset shown per rotation
+        # window should still surface every category if sampled long enough.
         with patch('image_leaders.datetime') as mock_dt:
             seen = set()
-            for step in range(len(_CATEGORIES)):
+            for step in range(200):
                 mock_dt.now.return_value.hour = 0
                 mock_dt.now.return_value.minute = step * 5
                 seen.update(rotating_categories(2, rotation_minutes=5))

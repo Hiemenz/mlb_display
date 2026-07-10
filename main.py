@@ -166,6 +166,37 @@ def _maybe_generate_video(date_str, config):
 
 
 _STANDINGS_MAX_AGE_HOURS = 20  # refresh if standings.json is older than this
+_LEADERS_MAX_AGE_HOURS = 24    # refresh if leaders.json is older than this
+
+
+def _should_refresh_leaders(sched):
+    """Return True if leaders.json needs a refresh.
+
+    Mirrors _should_refresh_standings: season stat leaders barely move
+    mid-game, so we only refetch when the cache is missing/stale (catches
+    the once-a-day / offline-for-a-day cases) or a game that is now Final
+    wasn't Final during the last leaders refresh — i.e. once games wrap up.
+    """
+    leaders_path = _data_path('leaders.json')
+    if not os.path.exists(leaders_path):
+        return True
+
+    import time as _t
+    age_hours = (_t.time() - os.path.getmtime(leaders_path)) / 3600
+    if age_hours >= _LEADERS_MAX_AGE_HOURS:
+        print(f"Leaders stale ({age_hours:.1f}h old) — refreshing")
+        return True
+
+    try:
+        games = load_json_file('games.json').get('games', [])
+    except Exception:
+        return False
+    current_finals = {
+        str(g['game_pk']) for g in games
+        if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
+    }
+    known_finals = set(sched.get('leaders_final_pks', []))
+    return bool(current_finals - known_finals)
 
 
 def _should_refresh_standings(sched):
@@ -566,11 +597,20 @@ Examples:
         except Exception as e:
             print(f"Warning: playoff bracket fetch failed: {e}")
 
-    # 7d. Season leaders refresh (HR/AVG/ERA — cached 20h, only when panel is enabled)
-    if config.get('show_leaders_panel', False) and league_mode != 'aaa':
+    # 7d. Season leaders refresh (HR/AVG/ERA/Saves/Hits) — only when panel is
+    # enabled, and only once games have gone Final (or cache is stale/missing),
+    # not on every poll — leaders barely move mid-game.
+    if config.get('show_leaders_panel', False) and league_mode != 'aaa' and _should_refresh_leaders(sched):
+        print("Refreshing leaders (new Finals detected or no cache)...")
         try:
             _leaders_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
             fetch_leaders(sport_id=_leaders_sport)
+            games = load_json_file('games.json').get('games', [])
+            sched['leaders_final_pks'] = [
+                str(g['game_pk']) for g in games
+                if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
+            ]
+            _save_schedule_state(sched)
         except Exception as e:
             print(f"Warning: leaders fetch failed: {e}")
 
