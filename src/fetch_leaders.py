@@ -17,8 +17,49 @@ from util import save_off_results, load_json_file
 
 _BASE_URL = 'https://statsapi.mlb.com/api/v1'
 _CACHE_TTL_HOURS = 20
-_TOP_N = 10
-_CATEGORIES = ['homeRuns', 'battingAverage', 'earnedRunAverage', 'saves', 'hits']
+_TOP_N = 8
+_CATEGORIES = [
+    'homeRuns', 'battingAverage', 'earnedRunAverage', 'saves', 'hits',
+    'runsBattedIn', 'stolenBases',
+]
+# Whether a *higher* stat value is better for each category (used to sort
+# leaders ourselves rather than trust the API's returned order — earned
+# run average is the only category where lower is better).
+_HIGHER_IS_BETTER = {
+    'homeRuns':         True,
+    'battingAverage':   True,
+    'earnedRunAverage': False,
+    'saves':             True,
+    'hits':              True,
+    'runsBattedIn':      True,
+    'stolenBases':       True,
+}
+
+
+def _sort_and_rank(entries, higher_is_better):
+    """Sort leader entries by value (best first) and re-derive rank, so a
+    category is never shown worst-first regardless of API ordering. Ties
+    (equal value) share the same rank, matching standard leaderboard style.
+    """
+    def _num(entry):
+        try:
+            return float(entry.get('value') or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    ordered = sorted(entries, key=_num, reverse=higher_is_better)
+    ranked = []
+    prev_val = None
+    rank = 0
+    for i, entry in enumerate(ordered):
+        val = _num(entry)
+        if prev_val is None or val != prev_val:
+            rank = i + 1
+        entry = dict(entry)
+        entry['rank'] = rank
+        ranked.append(entry)
+        prev_val = val
+    return ranked
 
 
 def fetch_leaders(season=None, sport_id=1):
@@ -61,7 +102,7 @@ def fetch_leaders(season=None, sport_id=1):
                     'name': leader.get('person', {}).get('fullName', ''),
                     'team_id': str(leader.get('team', {}).get('id', '')),
                 })
-            leaders[cat] = entries
+            leaders[cat] = _sort_and_rank(entries, _HIGHER_IS_BETTER.get(cat, True))
 
         result = {
             'season': season,
