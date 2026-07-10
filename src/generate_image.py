@@ -107,12 +107,12 @@ def _fetch_skip_is_expected(config, sched):
 
 
 def _draw_debug_overlay(Himage, config):
-    """Draw uptime + last-fetch timestamp in the bottom-right corner.
-
-    Normal: white box, black text — "up 4h 12m  fetch 9:47pm"
-    Stale (>2h since last fetch, and a fetch was actually expected):
-      inverted black box, white text with elapsed age instead of clock time —
-      "up 4h 12m  stale 3h 5m" — so it's impossible to miss.
+    """Draw an uptime + last-fetch alarm in the bottom-right corner, but only
+    once the fetch is actually stale (>2h since last fetch, and a fetch was
+    expected) — "up 4h 12m  stale 3h 5m" in an inverted black box, white
+    text, impossible to miss. Below that threshold this draws nothing, so
+    the corner stays clean during normal operation instead of always
+    showing a clock/uptime readout nobody needs to see.
 
     The alarm is suppressed during the night-mode window and on off-days
     (when smart polling has determined there are no games) to avoid false
@@ -126,7 +126,6 @@ def _draw_debug_overlay(Himage, config):
     last_fetch_iso = sched.get('last_game_fetch', '')
 
     fetch_age_hours = None
-    last_fetch_str = ''
     if last_fetch_iso:
         try:
             dt = datetime.fromisoformat(last_fetch_iso)
@@ -136,47 +135,30 @@ def _draw_debug_overlay(Himage, config):
         except Exception:
             pass
 
-        if fetch_age_hours is not None and fetch_age_hours >= _DEBUG_STALE_HOURS:
-            h = int(fetch_age_hours)
-            m = int((fetch_age_hours % 1) * 60)
-            last_fetch_str = f"stale {h}h {m}m"
-        else:
-            try:
-                tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
-                dt = datetime.fromisoformat(last_fetch_iso)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc).astimezone(tz)
-                last_fetch_str = dt.strftime('%-I:%M%p').lower()
-            except Exception:
-                last_fetch_str = last_fetch_iso[11:16]
-
     stale = (
         fetch_age_hours is not None
         and fetch_age_hours >= _DEBUG_STALE_HOURS
         and not _fetch_skip_is_expected(config, sched)
     )
+    if not stale:
+        return Himage
 
+    h = int(fetch_age_hours)
+    m = int((fetch_age_hours % 1) * 60)
     parts = []
     if uptime:
         parts.append(f"up {uptime}")
-    if last_fetch_str:
-        parts.append(last_fetch_str)
+    parts.append(f"stale {h}h {m}m")
     text = '  '.join(parts)
-    if not text:
-        return Himage
 
     W, H = Himage.size
     tw = int(font.getlength(text))
     x = W - tw - 4
     y = H - 12
 
-    if stale:
-        # Inverted box: black background, white text — hard to miss
-        draw.rectangle([x - 2, y - 2, x + tw + 2, y + 11], fill=0)
-        draw.text((x, y), text, font=font, fill=255)
-    else:
-        draw.rectangle([x - 1, y - 1, x + tw + 1, y + 11], fill=255)
-        draw.text((x, y), text, font=font, fill=0)
+    # Inverted box: black background, white text — hard to miss
+    draw.rectangle([x - 2, y - 2, x + tw + 2, y + 11], fill=0)
+    draw.text((x, y), text, font=font, fill=255)
 
     return Himage
 

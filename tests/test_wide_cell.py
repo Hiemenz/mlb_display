@@ -618,10 +618,11 @@ def test_grid_15_games_wide_cell_always(white_image, team_data):
 
 @needs_pil
 def test_compute_grid_layout_two_wide_at_col0():
-    """Two in-progress games on a 13-game slate both get wide tiles at col 0.
-    The first is pinned to row 0 (index 0, no favorite_team_first reorder
-    needed since it's already first); the second is pushed down to the
-    lowest row the zero-gap constraint allows rather than sharing row 0."""
+    """Two in-progress games on a 13-game slate both become wide tiles,
+    grouped together in the same (bottom) row rather than split across
+    separate rows — the live-game clustering groups every live game into
+    one row, widening as many as the grid's overall wide budget allows
+    (here both)."""
     from image_grid import compute_grid_layout
     games = _make_game_list(
         [('In Progress', 7, 'Top'),                       # 0
@@ -633,10 +634,10 @@ def test_compute_grid_layout_two_wide_at_col0():
     wide_slots = [(gl.get('game_pk'), s) for gl, s in zip(game_list, slots)
                   if s[0] == 'wide']
     assert len(wide_slots) == 2
-    # Both wide tiles begin at col 0 (each leads its own row); the second one
-    # is pushed to the lowest row (row 2) rather than sharing row 0.
-    assert {s[1] for _, s in wide_slots} == {0}
-    assert {s[2] for _, s in wide_slots} == {0, 2}
+    # Both wide tiles land in the same row, non-overlapping (2 units apart).
+    cols = sorted(s[1] for _, s in wide_slots)
+    assert cols[1] - cols[0] >= 2
+    assert len({s[2] for _, s in wide_slots}) == 1
 
 
 def test_compute_grid_layout_favorite_team_first_moves_game_to_front():

@@ -2320,15 +2320,20 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
         # Pitch circles: invert only strikes that are in the zone
         PITCH_R = max(5 * s, 5)
+        # Pitches well outside the strike zone must still render — pinned just
+        # outside the drawn box — rather than bleeding past the panel into
+        # whatever's drawn next to this tile (the neighboring game's cell).
+        _pitch_min_x = zone_lx - 20 * s
+        _pitch_max_x = rp_x + rp_w - PITCH_R - 2 * s
+        _pitch_min_y = rp_y + header_h + PITCH_R + 2 * s
+        _pitch_max_y = rp_y + rp_h - PITCH_R - 2 * s
         for pitch_num, pitch in enumerate(ab_pitches, start=1):
             px_c, pz_c = pitch.get('px'), pitch.get('pz')
             if px_c is None or pz_c is None:
                 continue
             bx, by = _to_pixel(px_c, pz_c)
-            # Clip pitches that are entirely outside the tile (far wide/high), but
-            # allow pitches that overlap the zone border to show as "off the plate".
-            if by < rp_y - PITCH_R or by > rp_y + rp_h + PITCH_R:
-                continue
+            bx = max(_pitch_min_x, min(_pitch_max_x, bx))
+            by = max(_pitch_min_y, min(_pitch_max_y, by))
             # Prefer the result/call code; fall back to 'code' for callers that
             # supply the call code there directly.
             _code = (pitch.get('call') or pitch.get('code') or '').upper()
@@ -2546,14 +2551,18 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     _k_glyph_h = _k_bbox[3] - _k_bbox[1]
     _k_tmp_w = max(_k_bbox[2] - _k_bbox[0] + 3, 4)
-    _k_tmp_h = max(_k_glyph_h + 2, 4)
+    _k_tmp_h = max(_k_glyph_h + 3, 4)
     # Center the glyphs vertically in the 20px gap below the tile border.
     _k_strip_y = rp_y + rp_h + (20 * s - _k_glyph_h) // 2 - 1 * s
+    # Individual Ks sit 1px lower than a plain baseline within their temp
+    # tile (see _k_top below) — the milestone badge must use the same
+    # vertical offset so "10K" lands on the same plane as the loose Ks.
+    _k_top = 2
     _k_x = rp_x + 2 * s
 
     # Draw milestone badge ("10K", "20K", …)
     if _milestone_label:
-        _bl_y = _k_strip_y - _k_bbox[1]
+        _bl_y = _k_strip_y + _k_top - _k_bbox[1]
         draw.text((_k_x,         _bl_y), _milestone_label, font=_k_font, fill=0)
         draw.text((_k_x + 1 * s, _bl_y), _milestone_label, font=_k_font, fill=0)
         _k_x += int(_k_font.getlength(_milestone_label)) + 3
@@ -2567,8 +2576,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             break
         _k_tmp = Image.new('1', (_k_tmp_w, _k_tmp_h), 1)
         _ktd = ImageDraw.Draw(_k_tmp)
-        _ktd.text((1 - _k_bbox[0], 1 - _k_bbox[1]), 'K', font=_k_font, fill=0)
-        _ktd.text((2 - _k_bbox[0], 1 - _k_bbox[1]), 'K', font=_k_font, fill=0)  # bold strike
+        _ktd.text((1 - _k_bbox[0], _k_top - _k_bbox[1]), 'K', font=_k_font, fill=0)
+        _ktd.text((2 - _k_bbox[0], _k_top - _k_bbox[1]), 'K', font=_k_font, fill=0)  # bold strike
         if _k == 'L':
             _k_tmp = _k_tmp.transpose(Image.FLIP_LEFT_RIGHT)
         Himage.paste(_k_tmp, (int(_k_x), int(_k_strip_y)))

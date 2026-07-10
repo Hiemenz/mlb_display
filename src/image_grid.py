@@ -8,12 +8,179 @@ from util import load_json_file, load_yaml_file
 from image_assets import _get_font, ImageDraw, Image
 from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box
-from image_leaders import draw_leaders_cell
+from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
 
 
 # Live game states that qualify for a wide (2-cell) tile. Challenge/review states
 # are still an active game, so they must keep the wide slot they already had.
 _LIVE_WIDE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
+
+_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
+
+
+def _overflow_priority(g):
+    """Sort key used when there are more games than grid slots: live games
+    first, Final games last, everything else in between."""
+    state = g.get('detailed_state')
+    if state in _LIVE_WIDE_STATES:
+        return 0
+    if state in _FINAL_STATES:
+        return 2
+    return 1
+
+
+def _game_progress(g):
+    """How far into the game a live game is: 1. highest inning  2. Bottom >
+    Top  3. most outs  4. earliest start time. Used to rank live games when
+    only some of them can be shown as wide tiles."""
+    inning = g.get('current_inning') or 0
+    # Order within an inning: Top < Middle (break) < Bottom < End (break). This
+    # keeps a game that just went to break ranked at/above where it was, so it
+    # doesn't lose its wide slot to another game when the inning turns over.
+    half  = {'Top': 0, 'Middle': 1, 'Bottom': 2, 'End': 3}.get(g.get('inningState'), 0)
+    outs  = g.get('num_of_outs') or 0
+    # Earlier start = higher priority when all else equal; negate so max() works
+    start = g.get('game_datetime') or ''
+    return (inning, half, outs, start)
+
+
+def _featured_live_index(games, indices, config, team_data):
+    """Return the index (from ``indices``) of the featured (primary) team's
+    live game, or None if wide_cell_featured is off or the team isn't live."""
+    if not config.get('wide_cell_featured', False):
+        return None
+    primary = config.get('primary', '')
+    if not primary:
+        return None
+    abbr_map = team_data.get('team_abbreviation', {})
+    for i in indices:
+        g = games[i]
+        away = abbr_map.get(str(g.get('away_team_id', '')), '')
+        home = abbr_map.get(str(g.get('home_team_id', '')), '')
+        if primary in (away, home):
+            return i
+    return None
+
+
+def _lay_out_row_major(tokens, start_slot):
+    """Place (slot_type, game) tokens row-major from ``start_slot`` (5 units
+    per row: 2 for 'wide', 1 for 'normal'), never leaving a dead gap.
+
+    A wide tile can't start in a row's last column (only 1 unit left). When
+    that happens, a later 'normal' token is pulled forward to fill that one
+    unit; if none remains later in ``tokens``, the wide tile is demoted to
+    normal instead — filling the gap with itself rather than wasting the
+    slot. (Widening is a best-effort preference, not a hard requirement.)
+
+    Returns (ordered_games, positions, next_slot_idx).
+    """
+    tokens = list(tokens)
+    ordered = []
+    positions = []
+    slot_idx = start_slot
+    i = 0
+    while i < len(tokens):
+        slot_type, g = tokens[i]
+        if slot_type == 'wide' and slot_idx % 5 == 4:
+            j = next((k for k in range(i + 1, len(tokens)) if tokens[k][0] == 'normal'), None)
+            if j is not None:
+                tokens[i], tokens[j] = tokens[j], tokens[i]
+                slot_type, g = tokens[i]
+            else:
+                slot_type = 'normal'
+        ordered.append(g)
+        positions.append((slot_type, slot_idx % 5, slot_idx // 5))
+        slot_idx += 2 if slot_type == 'wide' else 1
+        i += 1
+    return ordered, positions, slot_idx
+
+
+def _cluster_live_games(game_list, config, team_data):
+    """When there are 2-5 live games (and no grid overflow), group them all
+    into their own block at the bottom instead of leaving some behind in
+    earlier rows next to finished games. A single live game has nothing to
+    be split from, so it's left for _find_wide_games/_pack_grid as before.
+
+    Places every non-live game first, row-major from the top (right after a
+    pinned favorite-team game, if any), then starts the live games fresh at
+    the next row boundary so they can never be split across a row shared
+    with a finished game. As many of them as the grid's overall wide budget
+    allows are widened — farthest-along first, featured team preferred when
+    wide_cell_featured is set — even if that spills the live block across
+    more than one row: filling that room with live games takes priority over
+    leaving slots free for other panels (e.g. the leaders tiles), which only
+    ever claim whatever grid slots end up genuinely unused. If the non-live
+    games don't end on a row boundary, the row before the live block is left
+    short instead (the tradeoff that keeps every live game together).
+
+    This bypasses _pack_grid entirely: that function always reserves slot
+    (0, 0) for whatever sits at game_list[0], which throws off the row-unit
+    math needed to land the live block exactly on a full final row.
+
+    Returns (new_game_list, positions) with positions already computed, or
+    (game_list, None) if clustering doesn't apply (fewer than 2 or more than
+    5 live games, or grid overflow) — signalling the caller should fall back
+    to the general _find_wide_games/_pack_grid path instead.
+    """
+    if len(game_list) >= 15:
+        # At 15+ games there's no spare capacity for a full live row anyway;
+        # defer to _find_wide_games, which has its own wide_cell_always /
+        # wide_cell_featured handling for this boundary (including the
+        # deliberate one-game drop those options allow).
+        return game_list, None
+
+    pinned = 1 if (config.get('favorite_team_first', False) and game_list) else 0
+    rest = game_list[pinned:]
+    live_idxs = [i for i, g in enumerate(rest) if g.get('detailed_state') in _LIVE_WIDE_STATES]
+    if not (2 <= len(live_idxs) <= 5):
+        return game_list, None
+
+    live_set = set(live_idxs)
+    others = [g for i, g in enumerate(rest) if i not in live_set]
+    lives = [rest[i] for i in live_idxs]
+
+    global_max_wide = max(0, 15 - len(game_list))
+    w = min(len(lives), global_max_wide)
+
+    chosen = set()
+    if w > 0:
+        featured = _featured_live_index(lives, range(len(lives)), config, team_data)
+
+        def _rank(i):
+            return (1 if i == featured else 0,) + _game_progress(lives[i])
+
+        chosen = set(sorted(range(len(lives)), key=_rank, reverse=True)[:w])
+
+    wide_lives = [g for i, g in enumerate(lives) if i in chosen]
+    normal_lives = [g for i, g in enumerate(lives) if i not in chosen]
+    # Wide tiles lead the live row, with any lone filler cell trailing (e.g.
+    # 2+2+1), so the widened/featured games read first left-to-right.
+    live_row = [('wide', g) for g in wide_lives] + [('normal', g) for g in normal_lives]
+
+    new_game_list = []
+    positions = []
+    slot_idx = 0
+    if pinned:
+        new_game_list.append(game_list[0])
+        positions.append(('normal', 0, 0))
+        slot_idx = 1
+    for g in others:
+        new_game_list.append(g)
+        positions.append(('normal', slot_idx % 5, slot_idx // 5))
+        slot_idx += 1
+    # Start the live block at a fresh row boundary — but only if there's
+    # still room left for it there; rounding up unconditionally can push it
+    # past the 15-slot grid (e.g. 11 others + 2 wide live = 15 units exactly,
+    # with no room to spare for the row-alignment gap).
+    _live_units = len(lives) + len(wide_lives)
+    _rounded = slot_idx + (5 - slot_idx % 5) % 5
+    if _rounded + _live_units <= 15:
+        slot_idx = _rounded
+    _live_ordered, _live_positions, _ = _lay_out_row_major(live_row, slot_idx)
+    new_game_list.extend(_live_ordered)
+    positions.extend(_live_positions)
+
+    return new_game_list, positions
 
 
 def _find_wide_games(game_list, config, team_data):
@@ -45,39 +212,13 @@ def _find_wide_games(game_list, config, team_data):
     in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
 
     # Featured-team preference: index of the primary team's live game, if enabled.
-    featured_idx = None
-    if config.get('wide_cell_featured', False):
-        primary = config.get('primary', '')
-        if primary:
-            abbr_map = team_data.get('team_abbreviation', {})
-            for i in in_progress:
-                g = game_list[i]
-                away = abbr_map.get(str(g.get('away_team_id', '')), '')
-                home = abbr_map.get(str(g.get('home_team_id', '')), '')
-                if primary in (away, home):
-                    featured_idx = i
-                    break
-
-    # Find the in-progress game farthest along:
-    # 1. highest inning  2. Bottom > Top  3. most outs  4. earliest start time
-    def _progress(idx):
-        """Progress."""
-        g = game_list[idx]
-        inning = g.get('current_inning') or 0
-        # Order within an inning: Top < Middle (break) < Bottom < End (break). This
-        # keeps a game that just went to break ranked at/above where it was, so it
-        # doesn't lose its wide slot to another game when the inning turns over.
-        half  = {'Top': 0, 'Middle': 1, 'Bottom': 2, 'End': 3}.get(g.get('inningState'), 0)
-        outs  = g.get('num_of_outs') or 0
-        # Earlier start = higher priority when all else equal; negate so max() works
-        start = g.get('game_datetime') or ''
-        return (inning, half, outs, start)
+    featured_idx = _featured_live_index(game_list, in_progress, config, team_data)
 
     # Ranking used when a subset must be chosen: the featured live game outranks
     # everything else; ties beyond that fall back to game progress.
     def _rank(idx):
         """Rank."""
-        return (1 if idx == featured_idx else 0,) + _progress(idx)
+        return (1 if idx == featured_idx else 0,) + _game_progress(game_list[idx])
 
     if len(game_list) < 15:
         # Only widen as many games as there are spare slots (15 - games).
@@ -195,21 +336,34 @@ def _pack_grid(game_list, wide_set):
             cap -= 1
         # Each pop() took the highest-index (latest) remaining game for this
         # row; reverse each group back to ascending order, wide tiles first
-        # (leading columns) so they read left-to-right like a normal row.
+        # (leading columns) so they read left-to-right like a normal row —
+        # except when a single lone filler cell shares the row with two or
+        # more wide tiles (e.g. 2+2+1): with the wide tiles as the majority,
+        # the lone filler leads instead (1+2+2) rather than trailing as an
+        # odd single cell after two full-width blocks.
         wide_tokens.reverse()
         normal_tokens.reverse()
-        bucket_tokens[bi] = wide_tokens + normal_tokens
+        if len(normal_tokens) == 1 and len(wide_tokens) >= 2:
+            bucket_tokens[bi] = normal_tokens + wide_tokens
+        else:
+            bucket_tokens[bi] = wide_tokens + normal_tokens
 
     slot_idx = pinned_cost
-    for tokens in bucket_tokens:
+    for bi, tokens in enumerate(bucket_tokens):
         row = slot_idx // 5
         col = slot_idx % 5
+        row_start = slot_idx
         for slot_type, gi in tokens:
             new_order.append(gi)
             positions.append((slot_type, col, row))
             step = 2 if slot_type == 'wide' else 1
             col += step
             slot_idx += step
+        # Always advance to this row's intended capacity, even if the bucket
+        # left some of it unfilled (e.g. no normal games remained to plug a
+        # lone leftover unit) — otherwise the next bucket's column arithmetic
+        # drifts into the row above and can land a wide tile at col 4.
+        slot_idx = row_start + row_caps[bi]
 
     return [game_list[i] for i in new_order], positions
 
@@ -291,6 +445,18 @@ def compute_grid_layout(game_state_data, team_data, config):
                     game_list.insert(0, game_list.pop(i))
                     break
 
+    # More games than the 15-slot grid can hold: games still In Progress must
+    # not be bumped off (or drawn past the visible rows) in favor of games
+    # that have already finished. Stable-sort everyone after the pinned slot
+    # so live games sort first, Final games sort last, and every other state
+    # (scheduled/warmup/postponed) keeps its original relative order between
+    # them — only priority changes, not the underlying data.
+    if len(game_list) > 15:
+        _pinned = game_list[:1] if config.get('favorite_team_first', False) else []
+        _rest = game_list[1:] if _pinned else game_list
+        _rest = sorted(_rest, key=_overflow_priority)
+        game_list = _pinned + _rest if _pinned else _rest
+
     # With 16+ games, a doubleheader, and a rainout, push postponed/cancelled games
     # off the 5×3 grid (to position 16+) so the doubleheader pair stays visible
     # instead. This applies even if the affected team is the featured team.
@@ -301,6 +467,14 @@ def compute_grid_layout(game_state_data, team_data, config):
         for _ppd_g in _ppd_games:
             game_list.remove(_ppd_g)
             game_list.append(_ppd_g)
+
+    # When 1-5 live games exist and everyone fits on the grid, group all of
+    # them into the bottom row (rather than splitting some off into earlier
+    # rows next to finished games), widening just enough to fill that row
+    # exactly. Otherwise fall back to the general wide-cell selection below.
+    _clustered_list, _clustered_slots = _cluster_live_games(game_list, config, team_data)
+    if _clustered_slots is not None:
+        return _clustered_list, _clustered_slots
 
     # Determine which games show as wide (2-cell) tiles, then pack the grid
     # row by row so normal games fill in around them with zero gaps (see
@@ -332,20 +506,16 @@ def compute_grid_layout(game_state_data, team_data, config):
 #             return None
 
 
-def _free_grid_slot(slots):
-    """Return the first free (col, row) slot-unit in the 5x3 grid given the
-    already-occupied slots (wide slots consume 2 horizontal units), or None
-    if all 15 are taken."""
+def _free_grid_slots(slots):
+    """Return every free (col, row) slot-unit in the 5x3 grid, in slot order,
+    given the already-occupied slots (wide slots consume 2 horizontal
+    units)."""
     occupied = set()
     for slot_type, col, row in slots:
         occupied.add((col, row))
         if slot_type == 'wide':
             occupied.add((col + 1, row))
-    for _idx in range(15):
-        _col, _row = _idx % 5, _idx // 5
-        if (_col, _row) not in occupied:
-            return (_col, _row)
-    return None
+    return [(_idx % 5, _idx // 5) for _idx in range(15) if (_idx % 5, _idx // 5) not in occupied]
 
 
 # def _draw_config_qr_cell(Himage, sx, sy, url):
@@ -457,17 +627,26 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             )
 
     if config.get('show_leaders_panel', False):
-        _free = _free_grid_slot(_slots)
-        if _free is not None:
+        _free_slots = _free_grid_slots(_slots)
+        if _free_slots:
             _leaders_data = load_json_file('leaders.json').get('leaders', {})
             _rotation_min = config.get('leaders_rotation_minutes', 5)
-            _lx = _free[0] * 150 + x_start
-            _ly = _free[1] * 150 + y_start
-            Himage = draw_leaders_cell(
-                Himage, _lx, _ly, _leaders_data, team_data,
-                rotation_minutes=_rotation_min,
-                use_logos=use_logos,
+            # One tile per category when there's room for all of them; with
+            # fewer free slots than categories, the subset shown slides over
+            # time (via rotating_categories) so every category still appears.
+            _n = min(len(_free_slots), len(_LEADER_CATEGORIES))
+            _cats = (
+                list(_LEADER_CATEGORIES) if _n == len(_LEADER_CATEGORIES)
+                else rotating_categories(_n, _rotation_min)
             )
+            for (_col, _row), _cat in zip(_free_slots, _cats):
+                _lx = _col * 150 + x_start
+                _ly = _row * 150 + y_start
+                Himage = draw_leaders_cell(
+                    Himage, _lx, _ly, _leaders_data, team_data,
+                    category=_cat,
+                    use_logos=use_logos,
+                )
 
     Himage.save('score_board.bmp')
     return Himage

@@ -6,44 +6,47 @@ This file covers the still-active helpers.
 """
 import pytest
 
-from image_grid import _free_grid_slot, compute_grid_layout, _find_wide_games, _move_non_live_to_fillers
+from image_grid import (
+    _free_grid_slots, compute_grid_layout, _find_wide_games, _move_non_live_to_fillers,
+    _lay_out_row_major, _pack_grid,
+)
 
 
 # ---------------------------------------------------------------------------
-# _free_grid_slot
+# _free_grid_slots
 # ---------------------------------------------------------------------------
 
 class TestFreeGridSlot:
     def test_empty_grid_returns_first_slot(self):
         """Empty grid returns first slot."""
-        assert _free_grid_slot([]) == (0, 0)
+        assert _free_grid_slots([])[0] == (0, 0)
 
     def test_skips_occupied_normal_cells(self):
         """Skips occupied normal cells."""
         slots = [('normal', 0, 0), ('normal', 1, 0), ('normal', 2, 0)]
-        assert _free_grid_slot(slots) == (3, 0)
+        assert _free_grid_slots(slots)[0] == (3, 0)
 
     def test_accounts_for_wide_cell_consuming_two_columns(self):
         """Accounts for wide cell consuming two columns."""
         # A wide cell at col=0 occupies both col=0 and col=1 of row 0.
         slots = [('wide', 0, 0)]
-        assert _free_grid_slot(slots) == (2, 0)
+        assert _free_grid_slots(slots)[0] == (2, 0)
 
-    def test_returns_none_when_full_grid(self):
-        """Returns none when full grid."""
+    def test_returns_empty_when_full_grid(self):
+        """Returns empty when full grid."""
         slots = [('normal', i % 5, i // 5) for i in range(15)]
-        assert _free_grid_slot(slots) is None
+        assert _free_grid_slots(slots) == []
 
     def test_wraps_to_second_row(self):
         """Wraps to second row."""
         slots = [('normal', c, 0) for c in range(5)]
-        assert _free_grid_slot(slots) == (0, 1)
+        assert _free_grid_slots(slots)[0] == (0, 1)
 
     def test_wide_cell_at_col3_blocks_col4_too(self):
         """Wide cell at col3 blocks col4 too."""
         slots = [('normal', 0, 0), ('normal', 1, 0), ('normal', 2, 0),
                  ('wide', 3, 0)]   # occupies col 3 and 4
-        assert _free_grid_slot(slots) == (0, 1)
+        assert _free_grid_slots(slots)[0] == (0, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -151,10 +154,12 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert len(ordered) == len(slots)
 
-    def test_filler_slot_in_wide_row_is_non_live(self):
-        """Filler slot in wide row is non live."""
-        # 13 games, 3 live → budget=2, 2 wide per row leaves 1 filler each.
-        # The filler must not be a live game.
+    def test_live_games_all_cluster_into_one_bottom_row(self):
+        """Live games all cluster into one bottom row."""
+        # 13 games, 3 live spread among finals → all 3 must land together in
+        # the same (bottom) row, widening exactly enough (2) to fill it
+        # (2+2+1=5) rather than leaving one live game behind as a filler
+        # among earlier finished games.
         games = (
             [_game(i) for i in range(5)]
             + [_game(10, state='In Progress')]
@@ -166,16 +171,18 @@ class TestComputeGridLayout:
         )
         assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        wide_rows = {row for (stype, col, row) in slots if stype == 'wide'}
-        for i, (stype, col, row) in enumerate(slots):
-            if stype == 'normal' and row in wide_rows:
-                assert ordered[i].get('detailed_state') not in ('In Progress', 'Player challenge', 'Manager challenge'), \
-                    f"Live game found in filler slot at row {row}, col {col}"
+        live_rows = {row for (g, (stype, col, row)) in zip(ordered, slots)
+                     if g.get('detailed_state') == 'In Progress'}
+        assert len(live_rows) == 1, f"Live games split across rows: {live_rows}"
+        wide_count = sum(1 for s in slots if s[0] == 'wide')
+        assert wide_count == 2
 
-    def test_four_live_games_all_wide_when_spaced_with_normal(self):
-        """Four live games all wide when spaced with normal."""
-        # 11 games, 4 live spaced with a normal between pairs so no col=4 conflict.
-        # budget=4, all 4 live can be wide, no filler-swap needed.
+    def test_four_live_games_widen_as_many_as_the_grid_budget_allows(self):
+        """Four live games widen as many as the grid budget allows."""
+        # 11 games, 4 live. The grid's overall wide budget (15-11=4) allows
+        # widening all 4, which takes priority over keeping every live game
+        # in a single row — 3 fit as wide before a row boundary forces one
+        # to fall back to normal (no dead gap is ever left).
         games = (
             [_game(0, state='In Progress'), _game(1, state='In Progress')]
             + [_game(2)]
@@ -184,8 +191,10 @@ class TestComputeGridLayout:
         )
         assert len(games) == 11
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        live_count = sum(1 for g in ordered if g.get('detailed_state') == 'In Progress')
+        assert live_count == 4
         wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 4
+        assert wide_count == 3
 
     def test_filler_swap_leaves_all_games_rendered(self):
         """Filler swap leaves all games rendered."""
@@ -196,6 +205,146 @@ class TestComputeGridLayout:
         assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert len(ordered) == len(slots)
+
+    def test_all_live_all_wide_slate_has_no_invalid_or_overlapping_slots(self):
+        """All live all wide slate has no invalid or overlapping slots."""
+        # Regression test: a slate where every game is live (so every one
+        # becomes a wide tile, with zero normal games left over to fill a
+        # leftover single unit) used to leave a stale column/row offset
+        # between row buckets in _pack_grid, landing a wide tile at col 4
+        # (needing a nonexistent col 5) instead of starting a fresh row.
+        games = [_game(i, state='In Progress', inning=i + 1) for i in range(6)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        assert len(ordered) == len(slots)
+        occupied = set()
+        for slot_type, col, row in slots:
+            assert 0 <= col <= 4 and 0 <= row <= 2
+            if slot_type == 'wide':
+                assert col <= 3, f"wide tile at col {col} would need a nonexistent col {col + 1}"
+            cells = [(col, row)] + ([(col + 1, row)] if slot_type == 'wide' else [])
+            for c in cells:
+                assert c not in occupied, f"slot {c} used twice"
+                occupied.add(c)
+
+    def test_geometry_is_always_valid_across_random_slates(self):
+        """Geometry is always valid across random slates."""
+        # Broad regression sweep for the two bugs above (col-4 conflicts and
+        # cross-bucket column drift) across many random live/final mixes,
+        # game counts, and config combinations.
+        #
+        # n_live is capped at 5 (the live-clustering path's domain, see
+        # _cluster_live_games). Above that, clustering steps aside and
+        # _find_wide_games/_pack_grid's general path takes over — which has
+        # a separate, pre-existing bug where 6+ simultaneous live games with
+        # too few normal games left to fill the resulting odd row leftovers
+        # can silently strand (drop) a wide game. That's outside the scope
+        # of today's clustering work and not covered here.
+        import random
+        rng = random.Random(12345)
+        for _ in range(300):
+            n = rng.randint(1, 15)
+            n_live = rng.randint(0, min(n, 5))
+            states = ['In Progress'] * n_live + ['Final'] * (n - n_live)
+            rng.shuffle(states)
+            games = [_game(i, state=s, inning=rng.randint(1, 9)) for i, s in enumerate(states)]
+            cfg = dict(BASE_CONFIG)
+            cfg['favorite_team_first'] = rng.random() < 0.3
+            cfg['wide_cell_always'] = rng.random() < 0.3
+            cfg['wide_cell_featured'] = rng.random() < 0.3
+            ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+            assert len(ordered) == len(slots)
+            # At exactly 15 games, wide_cell_always/featured deliberately drop
+            # one game to make room for the forced wide cell (see
+            # _find_wide_games) — otherwise every game must still be present.
+            if not (n >= 15 and (cfg['wide_cell_always'] or cfg['wide_cell_featured'])):
+                assert len(ordered) == n
+            occupied = set()
+            for slot_type, col, row in slots:
+                assert 0 <= col <= 4 and 0 <= row <= 2, (n, n_live, cfg, slot_type, col, row)
+                if slot_type == 'wide':
+                    assert col <= 3, (n, n_live, cfg, col, row)
+                cells = [(col, row)] + ([(col + 1, row)] if slot_type == 'wide' else [])
+                for c in cells:
+                    assert c not in occupied, (n, n_live, cfg, c)
+                    occupied.add(c)
+
+
+class TestPackGridDirect:
+    def _g(self, pk):
+        """G."""
+        return {'game_pk': pk}
+
+    def test_lone_filler_leads_two_or_more_wide_tiles(self):
+        """Lone filler leads two or more wide tiles."""
+        # Index 0 pinned normal; indices 1-4 wide, index 5 normal. This
+        # capacity split (row0 leftover=4, row1=5) lands exactly 2 wide +
+        # 1 normal in row1 — the lone filler must lead ("1 2 2") since wide
+        # tiles are the majority in that row.
+        game_list = [self._g(i) for i in range(6)]
+        wide_set = {1, 2, 3, 4}
+        ordered, positions = _pack_grid(game_list, wide_set)
+        assert len(ordered) == len(positions) == 6
+        row1_tokens = [(g['game_pk'], s) for g, s in zip(ordered, positions) if s[2] == 1]
+        # First token in row 1 (lowest col) should be the lone normal filler.
+        row1_tokens.sort(key=lambda t: t[1][1])
+        assert row1_tokens[0][1][0] == 'normal'
+        assert sum(1 for _, s in row1_tokens if s[0] == 'wide') == 2
+
+    def test_empty_game_list_returns_empty(self):
+        """Empty game list returns empty."""
+        assert _pack_grid([], set()) == ([], [])
+
+    def test_overflow_falls_back_to_front_to_back_packing(self):
+        """Overflow falls back to front to back packing."""
+        # More wide-eligible games than the grid can hold even at 1 unit
+        # each — forces the front-to-back overflow branch, including its
+        # col=4-skip and its final break once nothing more fits.
+        game_list = [self._g(i) for i in range(20)]
+        wide_set = set(range(1, 12))  # far more wide than 15 slots can hold
+        ordered, positions = _pack_grid(game_list, wide_set)
+        assert len(ordered) == len(positions)
+        assert len(positions) <= 15
+        occupied = set()
+        for slot_type, col, row in positions:
+            cells = [(col, row)] + ([(col + 1, row)] if slot_type == 'wide' else [])
+            for c in cells:
+                assert c not in occupied
+                occupied.add(c)
+
+
+class TestLayOutRowMajor:
+    def _g(self, pk):
+        """G."""
+        return {'game_pk': pk}
+
+    def test_demotes_wide_to_normal_when_no_filler_available(self):
+        """Demotes wide to normal when no filler available."""
+        # 4 consecutive wide tokens starting at col 2: the first fits (cols
+        # 2-3), the second would need to start at col 4 with no later normal
+        # token to pull forward as filler, so it's demoted to normal instead
+        # of leaving col 4 unfilled or landing an invalid wide tile there.
+        tokens = [('wide', self._g(i)) for i in range(4)]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=2)
+        assert len(ordered) == len(positions) == 4
+        for slot_type, col, _row in positions:
+            assert 0 <= col <= 4
+            if slot_type == 'wide':
+                assert col <= 3
+        wide_count = sum(1 for s in positions if s[0] == 'wide')
+        assert wide_count == 3  # one demoted to normal to fill the col-4 gap
+
+    def test_pulls_later_normal_token_forward_to_fill_gap(self):
+        """Pulls later normal token forward to fill gap."""
+        # wide, wide, normal: second wide would land at col 4; the trailing
+        # normal token gets pulled forward to fill that slot instead, and the
+        # wide token is placed right after on the next row.
+        tokens = [('wide', self._g(0)), ('wide', self._g(1)), ('normal', self._g(2))]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=2)
+        # The normal game (pk=2) should have been pulled forward, ahead of
+        # the second wide game (pk=1), in the returned order.
+        pks = [g['game_pk'] for g in ordered]
+        assert pks.index(2) < pks.index(1)
+        assert sum(1 for s in positions if s[0] == 'wide') == 2
 
 
 # ---------------------------------------------------------------------------
