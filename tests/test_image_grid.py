@@ -269,6 +269,49 @@ class TestComputeGridLayout:
                     occupied.add(c)
 
 
+class TestPackGridDirect:
+    def _g(self, pk):
+        """G."""
+        return {'game_pk': pk}
+
+    def test_lone_filler_leads_two_or_more_wide_tiles(self):
+        """Lone filler leads two or more wide tiles."""
+        # Index 0 pinned normal; indices 1-4 wide, index 5 normal. This
+        # capacity split (row0 leftover=4, row1=5) lands exactly 2 wide +
+        # 1 normal in row1 — the lone filler must lead ("1 2 2") since wide
+        # tiles are the majority in that row.
+        game_list = [self._g(i) for i in range(6)]
+        wide_set = {1, 2, 3, 4}
+        ordered, positions = _pack_grid(game_list, wide_set)
+        assert len(ordered) == len(positions) == 6
+        row1_tokens = [(g['game_pk'], s) for g, s in zip(ordered, positions) if s[2] == 1]
+        # First token in row 1 (lowest col) should be the lone normal filler.
+        row1_tokens.sort(key=lambda t: t[1][1])
+        assert row1_tokens[0][1][0] == 'normal'
+        assert sum(1 for _, s in row1_tokens if s[0] == 'wide') == 2
+
+    def test_empty_game_list_returns_empty(self):
+        """Empty game list returns empty."""
+        assert _pack_grid([], set()) == ([], [])
+
+    def test_overflow_falls_back_to_front_to_back_packing(self):
+        """Overflow falls back to front to back packing."""
+        # More wide-eligible games than the grid can hold even at 1 unit
+        # each — forces the front-to-back overflow branch, including its
+        # col=4-skip and its final break once nothing more fits.
+        game_list = [self._g(i) for i in range(20)]
+        wide_set = set(range(1, 12))  # far more wide than 15 slots can hold
+        ordered, positions = _pack_grid(game_list, wide_set)
+        assert len(ordered) == len(positions)
+        assert len(positions) <= 15
+        occupied = set()
+        for slot_type, col, row in positions:
+            cells = [(col, row)] + ([(col + 1, row)] if slot_type == 'wide' else [])
+            for c in cells:
+                assert c not in occupied
+                occupied.add(c)
+
+
 class TestLayOutRowMajor:
     def _g(self, pk):
         """G."""

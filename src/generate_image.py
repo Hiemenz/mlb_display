@@ -126,7 +126,6 @@ def _draw_debug_overlay(Himage, config):
     last_fetch_iso = sched.get('last_game_fetch', '')
 
     fetch_age_hours = None
-    last_fetch_str = ''
     if last_fetch_iso:
         try:
             dt = datetime.fromisoformat(last_fetch_iso)
@@ -136,20 +135,6 @@ def _draw_debug_overlay(Himage, config):
         except Exception:
             pass
 
-        if fetch_age_hours is not None and fetch_age_hours >= _DEBUG_STALE_HOURS:
-            h = int(fetch_age_hours)
-            m = int((fetch_age_hours % 1) * 60)
-            last_fetch_str = f"stale {h}h {m}m"
-        else:
-            try:
-                tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
-                dt = datetime.fromisoformat(last_fetch_iso)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc).astimezone(tz)
-                last_fetch_str = dt.strftime('%-I:%M%p').lower()
-            except Exception:
-                last_fetch_str = last_fetch_iso[11:16]
-
     stale = (
         fetch_age_hours is not None
         and fetch_age_hours >= _DEBUG_STALE_HOURS
@@ -158,14 +143,13 @@ def _draw_debug_overlay(Himage, config):
     if not stale:
         return Himage
 
+    h = int(fetch_age_hours)
+    m = int((fetch_age_hours % 1) * 60)
     parts = []
     if uptime:
         parts.append(f"up {uptime}")
-    if last_fetch_str:
-        parts.append(last_fetch_str)
+    parts.append(f"stale {h}h {m}m")
     text = '  '.join(parts)
-    if not text:
-        return Himage
 
     W, H = Himage.size
     tw = int(font.getlength(text))

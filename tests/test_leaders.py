@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from PIL import Image
 
 from fetch_leaders import fetch_leaders, _CACHE_TTL_HOURS, _CATEGORIES
-from image_leaders import _current_category, _FORMAT, draw_leaders_cell
+from image_leaders import _current_category, _FORMAT, draw_leaders_cell, rotating_categories
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +82,41 @@ class TestCurrentCategory:
         """Negative rotation minutes does not crash."""
         cat = _current_category(rotation_minutes=-3)
         assert cat in _CATEGORIES
+
+
+# ---------------------------------------------------------------------------
+# rotating_categories
+# ---------------------------------------------------------------------------
+
+class TestRotatingCategories:
+    def test_returns_requested_count(self):
+        """Returns requested count."""
+        with patch('image_leaders.datetime') as mock_dt:
+            mock_dt.now.return_value.hour = 0
+            mock_dt.now.return_value.minute = 0
+            assert len(rotating_categories(2)) == 2
+            assert len(rotating_categories(1)) == 1
+
+    def test_clamps_n_to_category_count(self):
+        """Clamps n to category count."""
+        with patch('image_leaders.datetime') as mock_dt:
+            mock_dt.now.return_value.hour = 0
+            mock_dt.now.return_value.minute = 0
+            assert len(rotating_categories(999)) == len(_CATEGORIES)
+            assert rotating_categories(0) == []
+            assert rotating_categories(-5) == []
+
+    def test_window_slides_over_time(self):
+        """Window slides over time."""
+        # With a 2-slot window, different rotation offsets should show
+        # different (wrapping) subsets of categories over time.
+        with patch('image_leaders.datetime') as mock_dt:
+            seen = set()
+            for step in range(len(_CATEGORIES)):
+                mock_dt.now.return_value.hour = 0
+                mock_dt.now.return_value.minute = step * 5
+                seen.update(rotating_categories(2, rotation_minutes=5))
+            assert seen == set(_CATEGORIES)
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +200,41 @@ def test_draw_leaders_cell_very_long_name_truncated():
     }
     with patch('image_leaders._current_category', return_value='homeRuns'):
         result = draw_leaders_cell(img, 32, 30, long_name_leaders, SAMPLE_TEAM_DATA)
+    assert result is not None
+
+
+def test_draw_leaders_cell_with_logos_pastes_logo():
+    """Draw leaders cell with logos pastes logo."""
+    img = _make_image()
+    fake_logo = Image.new('1', (18, 18), 0)
+    with patch('image_leaders._current_category', return_value='homeRuns'), \
+         patch('image_leaders._logo_small', return_value=fake_logo) as mock_logo:
+        result = draw_leaders_cell(img, 32, 30, SAMPLE_LEADERS, SAMPLE_TEAM_DATA, use_logos=True)
+    assert result is not None
+    assert mock_logo.called
+
+
+def test_draw_leaders_cell_logo_lookup_failure_falls_back():
+    """Draw leaders cell logo lookup failure falls back."""
+    # _logo_small raising must not crash the cell — falls back to no logo.
+    img = _make_image()
+    with patch('image_leaders._current_category', return_value='homeRuns'), \
+         patch('image_leaders._logo_small', side_effect=OSError('missing')):
+        result = draw_leaders_cell(img, 32, 30, SAMPLE_LEADERS, SAMPLE_TEAM_DATA, use_logos=True)
+    assert result is not None
+
+
+def test_draw_leaders_cell_top_10_entries_all_fit():
+    """Draw leaders cell top 10 entries all fit."""
+    img = _make_image()
+    ten_entries = {
+        'homeRuns': [
+            {'rank': i + 1, 'value': str(30 - i), 'name': f'Player{i} Lastname{i}', 'team_id': '147'}
+            for i in range(10)
+        ]
+    }
+    with patch('image_leaders._current_category', return_value='homeRuns'):
+        result = draw_leaders_cell(img, 32, 30, ten_entries, SAMPLE_TEAM_DATA)
     assert result is not None
 
 
