@@ -653,6 +653,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
     """Render a single game score box onto Himage at (start_x, start_y)."""
     s = scale
+    _is_walkoff = bool(game_data.get('walk_off'))
     # Normalize early-completion states (e.g. spring training games called after 6 innings)
     if game_data.get('detailed_state', '').startswith('Completed Early'):
         game_data = dict(game_data)
@@ -865,19 +866,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             wp_name = _format_player_name(winner_name or '')
             lp_name = _format_player_name(loser_name or '')
             wp_str = f'WP: {wp_name} ({winner_record})' if winner_record else f'WP: {wp_name}'
-            _is_walkoff = bool(game_data.get('walk_off'))
             lp_str = f'LP: {lp_name} ({loser_record})' if loser_record else f'LP: {lp_name}'
-            if _is_walkoff:
-                lines.append(('Walk-off', font14, True))
-                lines.append((lp_str, font14, False))
-                lines.append((wp_str, font14, False))
-            else:
-                lines.append((lp_str, font14, False))
-                lines.append((wp_str, font14, False))
-                if saver:
-                    sv_name = _format_player_name(saver)
-                    sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
-                    lines.append((sv_str, font14, False))
+            lines.append((lp_str, font14, False))
+            lines.append((wp_str, font14, False))
+            if saver and not _is_walkoff:
+                sv_name = _format_player_name(saver)
+                sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
+                lines.append((sv_str, font14, False))
 
             _wpname_max_w = horizonta_len - 2 * s
 
@@ -1119,6 +1114,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _sw_y    = (20 * s - 18 * s) // 2
         draw.text((start_x + _sw_x,         start_y + _sw_y), _sw_text, font=font18, fill=0)
         draw.text((start_x + _sw_x + 1 * s, start_y + _sw_y), _sw_text, font=font18, fill=0)
+    elif _is_walkoff:
+        # Walkoff replaces the header duration (which moves between the team
+        # rows below, mirroring the SWEEP layout) — font14 (not font18, like
+        # SWEEP) so the wider word doesn't collide with the "Final" label.
+        _wo_text = 'WALKOFF'
+        _wo_w    = int(font14.getlength(_wo_text))
+        _wo_x    = (horizonta_len - _wo_w) // 2
+        _wo_y    = 3 * s
+        draw.text((start_x + _wo_x,         start_y + _wo_y), _wo_text, font=font14, fill=0)
+        draw.text((start_x + _wo_x + 1 * s, start_y + _wo_y), _wo_text, font=font14, fill=0)
 
     # game state — bold via double draw; for pre-game times render AM/PM smaller + bold
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
@@ -1636,15 +1641,16 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _gnum  = game_data.get('game_number')
     _dh_is_active = _dh in ('Y', 'S') and _gnum
 
-    # Game duration — header for non-sweep finals (GM+duration centred together for DH);
-    # between team rows for sweep (GM placed immediately right of duration).
-    _sweep_dur_right_x  = None   # right edge of sweep duration; GM uses this for x
+    # Game duration — header for non-sweep/non-walkoff finals (GM+duration centred
+    # together for DH); between team rows for sweep or walkoff (GM placed immediately
+    # right of duration), since the header text slot is occupied by SWEEP/WALKOFF.
+    _sweep_dur_right_x  = None   # right edge of sweep/walkoff duration; GM uses this for x
     _gm_drawn_in_header = False  # True once GM was already rendered inside this block
     if _game_is_final and not game_data.get('perfect_game') and not game_data.get('no_hitter'):
         _dur_mins = game_data.get('game_duration_minutes')
         if _dur_mins:
             _dur_str = f'{_dur_mins // 60}:{_dur_mins % 60:02d}'
-            if _is_sweep:
+            if _is_sweep or _is_walkoff:
                 _dur_font = font9
                 _dur_x = start_x + logo_x_offset + 28 * s + 2 * s + 3 * s if use_logos else start_x + 8 * s
                 _dur_y = start_y + 50 * s
@@ -1694,13 +1700,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         except Exception:  # pragma: no cover
             pass
 
-    # Doubleheader game number — in header for non-sweep; beside sweep duration for sweeps
+    # Doubleheader game number — in header for non-sweep/non-walkoff; beside the
+    # moved duration for sweeps/walkoffs
     _dh_state = game_data['detailed_state'] in (
         'Scheduled', 'Pre-Game', 'Warmup', 'Final', 'Game Over', 'Final: Tied', 'Postponed')
     if _dh_is_active and _dh_state:
         _gn_str = f'GM{_gnum}'
-        if _is_sweep and _sweep_dur_right_x is not None:
-            # Sweep Final: GM immediately right of sweep duration (font9, +50 row)
+        if (_is_sweep or _is_walkoff) and _sweep_dur_right_x is not None:
+            # Sweep/Walkoff Final: GM immediately right of the moved duration (font9, +50 row)
             _gn_x = _sweep_dur_right_x + 3 * s
             _gn_y = start_y + 50 * s
             draw.text((_gn_x,         _gn_y), _gn_str, font=font9, fill=0)

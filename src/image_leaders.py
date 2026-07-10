@@ -113,7 +113,7 @@ def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, category=None, ro
         if use_logos and abbr:
             try:
                 logo_size = min(18, row_h - 2)
-                logo = _logo_small(abbr, size=logo_size)
+                logo = _logo_small(abbr, team_id, size=logo_size)
                 if logo:
                     Himage.paste(logo, (sx + 20, ry + row_pad))
                     logo_drawn = True
