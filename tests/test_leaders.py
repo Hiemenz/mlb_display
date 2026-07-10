@@ -62,12 +62,13 @@ class TestCurrentCategory:
 
     def test_rotation_cycles_all_categories(self):
         """Rotation cycles all categories."""
-        # minute_block = 0 → idx 0; 5 → idx 1; 10 → idx 2; 15 → idx 0 again
+        # minute_block = 0 → idx 0; 5 → idx 1; 10 → idx 2; ...; wraps after
+        # len(_CATEGORIES) steps of `rotation_minutes` each.
         with patch('image_leaders.datetime') as mock_dt:
             seen = set()
-            for minute in (0, 5, 10):
+            for step in range(len(_CATEGORIES)):
                 mock_dt.now.return_value.hour = 0
-                mock_dt.now.return_value.minute = minute
+                mock_dt.now.return_value.minute = step * 5
                 seen.add(_current_category(rotation_minutes=5))
             assert seen == set(_CATEGORIES)
 

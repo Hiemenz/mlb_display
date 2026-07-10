@@ -17,8 +17,8 @@ from util import save_off_results, load_json_file
 
 _BASE_URL = 'https://statsapi.mlb.com/api/v1'
 _CACHE_TTL_HOURS = 20
-_TOP_N = 5
-_CATEGORIES = ['homeRuns', 'battingAverage', 'earnedRunAverage']
+_TOP_N = 10
+_CATEGORIES = ['homeRuns', 'battingAverage', 'earnedRunAverage', 'saves', 'hits']
 
 
 def fetch_leaders(season=None, sport_id=1):

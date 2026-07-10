@@ -7,17 +7,21 @@ from datetime import datetime
 
 from image_assets import _get_font, ImageDraw, _logo_small, Image
 
-_CATEGORIES = ['homeRuns', 'battingAverage', 'earnedRunAverage']
+_CATEGORIES = ['homeRuns', 'battingAverage', 'earnedRunAverage', 'saves', 'hits']
 _LABELS = {
     'homeRuns':         'HOME RUNS',
     'battingAverage':   'BATTING AVG',
     'earnedRunAverage': 'ERA',
+    'saves':            'SAVES',
+    'hits':             'HITS',
 }
 _FORMAT = {
     'homeRuns':         lambda v: v,
     # Strip only the leading zero, not any dots — "0.345" → ".345", "0.000" → ".000"
     'battingAverage':   lambda v: v.lstrip('0') if v and '.' in v else v,
     'earnedRunAverage': lambda v: v,
+    'saves':            lambda v: v,
+    'hits':             lambda v: v,
 }
 
 _CELL_W = 150
@@ -70,8 +74,11 @@ def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, category=None, ro
     abbr_map = (team_data or {}).get('team_abbreviation', {})
 
     font_hdr = _get_font(11)
-    font_row = _get_font(11)
-    font_val = _get_font(11)
+    # More entries (up to 10) need a smaller row font to all fit without
+    # clipping against the cell's bottom border.
+    row_font_size = 11 if len(entries) <= 6 else (10 if len(entries) <= 8 else 9)
+    font_row = _get_font(row_font_size)
+    font_val = font_row
 
     # Header bar
     draw.rectangle([sx, sy, sx + _CELL_W - 1, sy + 18], fill=0)
@@ -86,6 +93,7 @@ def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, category=None, ro
         return Himage
 
     row_h = (_CELL_H - 20) // max(len(entries), 1)
+    row_pad = 2 if row_h >= 13 else 1
     for i, entry in enumerate(entries):
         ry = sy + 20 + i * row_h
 
@@ -98,15 +106,16 @@ def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, category=None, ro
         val = fmt_fn(raw_val)
 
         # rank number
-        draw.text((sx + _PAD, ry + 2), rank + '.', font=font_row, fill=0)
+        draw.text((sx + _PAD, ry + row_pad), rank + '.', font=font_row, fill=0)
 
         # small logo or abbreviation
         logo_drawn = False
         if use_logos and abbr:
             try:
-                logo = _logo_small(abbr, size=18)
+                logo_size = min(18, row_h - 2)
+                logo = _logo_small(abbr, size=logo_size)
                 if logo:
-                    Himage.paste(logo, (sx + 20, ry + 2))
+                    Himage.paste(logo, (sx + 20, ry + row_pad))
                     logo_drawn = True
             except Exception:
                 pass
@@ -117,10 +126,10 @@ def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, category=None, ro
         while name and int(font_row.getlength(name)) > max_name_w:
             name = name[:-1]
 
-        draw.text((name_x, ry + 2), name, font=font_row, fill=0)
+        draw.text((name_x, ry + row_pad), name, font=font_row, fill=0)
 
         # value right-aligned
         val_w = int(font_val.getlength(val))
-        draw.text((sx + _CELL_W - val_w - _PAD, ry + 2), val, font=font_val, fill=0)
+        draw.text((sx + _CELL_W - val_w - _PAD, ry + row_pad), val, font=font_val, fill=0)
 
     return Himage
