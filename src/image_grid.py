@@ -8,7 +8,7 @@ from util import load_json_file, load_yaml_file
 from image_assets import _get_font, ImageDraw, Image
 from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box
-from image_leaders import draw_leaders_cell
+from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
 
 
 # Live game states that qualify for a wide (2-cell) tile. Challenge/review states
@@ -461,20 +461,16 @@ def compute_grid_layout(game_state_data, team_data, config):
 #             return None
 
 
-def _free_grid_slot(slots):
-    """Return the first free (col, row) slot-unit in the 5x3 grid given the
-    already-occupied slots (wide slots consume 2 horizontal units), or None
-    if all 15 are taken."""
+def _free_grid_slots(slots):
+    """Return every free (col, row) slot-unit in the 5x3 grid, in slot order,
+    given the already-occupied slots (wide slots consume 2 horizontal
+    units)."""
     occupied = set()
     for slot_type, col, row in slots:
         occupied.add((col, row))
         if slot_type == 'wide':
             occupied.add((col + 1, row))
-    for _idx in range(15):
-        _col, _row = _idx % 5, _idx // 5
-        if (_col, _row) not in occupied:
-            return (_col, _row)
-    return None
+    return [(_idx % 5, _idx // 5) for _idx in range(15) if (_idx % 5, _idx // 5) not in occupied]
 
 
 # def _draw_config_qr_cell(Himage, sx, sy, url):
@@ -586,17 +582,26 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             )
 
     if config.get('show_leaders_panel', False):
-        _free = _free_grid_slot(_slots)
-        if _free is not None:
+        _free_slots = _free_grid_slots(_slots)
+        if _free_slots:
             _leaders_data = load_json_file('leaders.json').get('leaders', {})
             _rotation_min = config.get('leaders_rotation_minutes', 5)
-            _lx = _free[0] * 150 + x_start
-            _ly = _free[1] * 150 + y_start
-            Himage = draw_leaders_cell(
-                Himage, _lx, _ly, _leaders_data, team_data,
-                rotation_minutes=_rotation_min,
-                use_logos=use_logos,
+            # One tile per category when there's room for all of them; with
+            # fewer free slots than categories, the subset shown slides over
+            # time (via rotating_categories) so every category still appears.
+            _n = min(len(_free_slots), len(_LEADER_CATEGORIES))
+            _cats = (
+                list(_LEADER_CATEGORIES) if _n == len(_LEADER_CATEGORIES)
+                else rotating_categories(_n, _rotation_min)
             )
+            for (_col, _row), _cat in zip(_free_slots, _cats):
+                _lx = _col * 150 + x_start
+                _ly = _row * 150 + y_start
+                Himage = draw_leaders_cell(
+                    Himage, _lx, _ly, _leaders_data, team_data,
+                    category=_cat,
+                    use_logos=use_logos,
+                )
 
     Himage.save('score_board.bmp')
     return Himage

@@ -38,14 +38,32 @@ def _current_category(rotation_minutes=5):
     return _CATEGORIES[idx]
 
 
-def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, rotation_minutes=5, use_logos=False):
-    """Draw the season leaders panel into the cell at pixel position (sx, sy).
+def rotating_categories(n, rotation_minutes=5):
+    """Return ``n`` categories (wrapping) starting from a time-rotated offset.
+
+    Used when there are fewer free grid slots than categories: instead of
+    always showing the same subset, the window of categories on display
+    slides over time so every category eventually gets shown.
+    """
+    n = max(0, min(n, len(_CATEGORIES)))
+    rotation_minutes = max(rotation_minutes, 1)
+    minute_block = datetime.now().hour * 60 + datetime.now().minute
+    offset = (minute_block // rotation_minutes) % len(_CATEGORIES)
+    return [_CATEGORIES[(offset + i) % len(_CATEGORIES)] for i in range(n)]
+
+
+def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, category=None, rotation_minutes=5, use_logos=False):
+    """Draw a season-leaders panel for one category into the cell at pixel
+    position (sx, sy), the same 150x150 footprint as a normal single-game
+    grid cell.
 
     leaders_data: the 'leaders' dict from leaders.json
     team_data: the teams dict (for team_abbreviation lookup)
+    category: which _CATEGORIES entry to show; defaults to the
+        time-rotated category (single-slot fallback) when not given.
     """
     draw = ImageDraw.Draw(Himage)
-    cat = _current_category(rotation_minutes)
+    cat = category if category is not None else _current_category(rotation_minutes)
     entries = (leaders_data or {}).get(cat, [])
     label = _LABELS.get(cat, cat)
 

@@ -6,44 +6,44 @@ This file covers the still-active helpers.
 """
 import pytest
 
-from image_grid import _free_grid_slot, compute_grid_layout, _find_wide_games, _move_non_live_to_fillers
+from image_grid import _free_grid_slots, compute_grid_layout, _find_wide_games, _move_non_live_to_fillers
 
 
 # ---------------------------------------------------------------------------
-# _free_grid_slot
+# _free_grid_slots
 # ---------------------------------------------------------------------------
 
 class TestFreeGridSlot:
     def test_empty_grid_returns_first_slot(self):
         """Empty grid returns first slot."""
-        assert _free_grid_slot([]) == (0, 0)
+        assert _free_grid_slots([])[0] == (0, 0)
 
     def test_skips_occupied_normal_cells(self):
         """Skips occupied normal cells."""
         slots = [('normal', 0, 0), ('normal', 1, 0), ('normal', 2, 0)]
-        assert _free_grid_slot(slots) == (3, 0)
+        assert _free_grid_slots(slots)[0] == (3, 0)
 
     def test_accounts_for_wide_cell_consuming_two_columns(self):
         """Accounts for wide cell consuming two columns."""
         # A wide cell at col=0 occupies both col=0 and col=1 of row 0.
         slots = [('wide', 0, 0)]
-        assert _free_grid_slot(slots) == (2, 0)
+        assert _free_grid_slots(slots)[0] == (2, 0)
 
-    def test_returns_none_when_full_grid(self):
-        """Returns none when full grid."""
+    def test_returns_empty_when_full_grid(self):
+        """Returns empty when full grid."""
         slots = [('normal', i % 5, i // 5) for i in range(15)]
-        assert _free_grid_slot(slots) is None
+        assert _free_grid_slots(slots) == []
 
     def test_wraps_to_second_row(self):
         """Wraps to second row."""
         slots = [('normal', c, 0) for c in range(5)]
-        assert _free_grid_slot(slots) == (0, 1)
+        assert _free_grid_slots(slots)[0] == (0, 1)
 
     def test_wide_cell_at_col3_blocks_col4_too(self):
         """Wide cell at col3 blocks col4 too."""
         slots = [('normal', 0, 0), ('normal', 1, 0), ('normal', 2, 0),
                  ('wide', 3, 0)]   # occupies col 3 and 4
-        assert _free_grid_slot(slots) == (0, 1)
+        assert _free_grid_slots(slots)[0] == (0, 1)
 
 
 # ---------------------------------------------------------------------------
