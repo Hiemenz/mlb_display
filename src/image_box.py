@@ -2546,14 +2546,18 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     _k_glyph_h = _k_bbox[3] - _k_bbox[1]
     _k_tmp_w = max(_k_bbox[2] - _k_bbox[0] + 3, 4)
-    _k_tmp_h = max(_k_glyph_h + 2, 4)
+    _k_tmp_h = max(_k_glyph_h + 3, 4)
     # Center the glyphs vertically in the 20px gap below the tile border.
     _k_strip_y = rp_y + rp_h + (20 * s - _k_glyph_h) // 2 - 1 * s
+    # Individual Ks sit 1px lower than a plain baseline within their temp
+    # tile (see _k_top below) — the milestone badge must use the same
+    # vertical offset so "10K" lands on the same plane as the loose Ks.
+    _k_top = 2
     _k_x = rp_x + 2 * s
 
     # Draw milestone badge ("10K", "20K", …)
     if _milestone_label:
-        _bl_y = _k_strip_y - _k_bbox[1]
+        _bl_y = _k_strip_y + _k_top - _k_bbox[1]
         draw.text((_k_x,         _bl_y), _milestone_label, font=_k_font, fill=0)
         draw.text((_k_x + 1 * s, _bl_y), _milestone_label, font=_k_font, fill=0)
         _k_x += int(_k_font.getlength(_milestone_label)) + 3
@@ -2567,8 +2571,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             break
         _k_tmp = Image.new('1', (_k_tmp_w, _k_tmp_h), 1)
         _ktd = ImageDraw.Draw(_k_tmp)
-        _ktd.text((1 - _k_bbox[0], 1 - _k_bbox[1]), 'K', font=_k_font, fill=0)
-        _ktd.text((2 - _k_bbox[0], 1 - _k_bbox[1]), 'K', font=_k_font, fill=0)  # bold strike
+        _ktd.text((1 - _k_bbox[0], _k_top - _k_bbox[1]), 'K', font=_k_font, fill=0)
+        _ktd.text((2 - _k_bbox[0], _k_top - _k_bbox[1]), 'K', font=_k_font, fill=0)  # bold strike
         if _k == 'L':
             _k_tmp = _k_tmp.transpose(Image.FLIP_LEFT_RIGHT)
         Himage.paste(_k_tmp, (int(_k_x), int(_k_strip_y)))

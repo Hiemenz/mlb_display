@@ -15,6 +15,19 @@ from image_leaders import draw_leaders_cell
 # are still an active game, so they must keep the wide slot they already had.
 _LIVE_WIDE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
 
+_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
+
+
+def _overflow_priority(g):
+    """Sort key used when there are more games than grid slots: live games
+    first, Final games last, everything else in between."""
+    state = g.get('detailed_state')
+    if state in _LIVE_WIDE_STATES:
+        return 0
+    if state in _FINAL_STATES:
+        return 2
+    return 1
+
 
 def _find_wide_games(game_list, config, team_data):
     """Return the set of game_list indices to show as wide (2-cell) tiles.
@@ -290,6 +303,18 @@ def compute_grid_layout(game_state_data, team_data, config):
                 if primary in (away_abbr, home_abbr):
                     game_list.insert(0, game_list.pop(i))
                     break
+
+    # More games than the 15-slot grid can hold: games still In Progress must
+    # not be bumped off (or drawn past the visible rows) in favor of games
+    # that have already finished. Stable-sort everyone after the pinned slot
+    # so live games sort first, Final games sort last, and every other state
+    # (scheduled/warmup/postponed) keeps its original relative order between
+    # them — only priority changes, not the underlying data.
+    if len(game_list) > 15:
+        _pinned = game_list[:1] if config.get('favorite_team_first', False) else []
+        _rest = game_list[1:] if _pinned else game_list
+        _rest = sorted(_rest, key=_overflow_priority)
+        game_list = _pinned + _rest if _pinned else _rest
 
     # With 16+ games, a doubleheader, and a rainout, push postponed/cancelled games
     # off the 5×3 grid (to position 16+) so the doubleheader pair stays visible
