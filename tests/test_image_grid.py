@@ -151,10 +151,12 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert len(ordered) == len(slots)
 
-    def test_filler_slot_in_wide_row_is_non_live(self):
-        """Filler slot in wide row is non live."""
-        # 13 games, 3 live → budget=2, 2 wide per row leaves 1 filler each.
-        # The filler must not be a live game.
+    def test_live_games_all_cluster_into_one_bottom_row(self):
+        """Live games all cluster into one bottom row."""
+        # 13 games, 3 live spread among finals → all 3 must land together in
+        # the same (bottom) row, widening exactly enough (2) to fill it
+        # (2+2+1=5) rather than leaving one live game behind as a filler
+        # among earlier finished games.
         games = (
             [_game(i) for i in range(5)]
             + [_game(10, state='In Progress')]
@@ -166,16 +168,18 @@ class TestComputeGridLayout:
         )
         assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        wide_rows = {row for (stype, col, row) in slots if stype == 'wide'}
-        for i, (stype, col, row) in enumerate(slots):
-            if stype == 'normal' and row in wide_rows:
-                assert ordered[i].get('detailed_state') not in ('In Progress', 'Player challenge', 'Manager challenge'), \
-                    f"Live game found in filler slot at row {row}, col {col}"
+        live_rows = {row for (g, (stype, col, row)) in zip(ordered, slots)
+                     if g.get('detailed_state') == 'In Progress'}
+        assert len(live_rows) == 1, f"Live games split across rows: {live_rows}"
+        wide_count = sum(1 for s in slots if s[0] == 'wide')
+        assert wide_count == 2
 
-    def test_four_live_games_all_wide_when_spaced_with_normal(self):
-        """Four live games all wide when spaced with normal."""
-        # 11 games, 4 live spaced with a normal between pairs so no col=4 conflict.
-        # budget=4, all 4 live can be wide, no filler-swap needed.
+    def test_four_live_games_cluster_with_one_wide_to_fit_row(self):
+        """Four live games cluster with one wide to fit row."""
+        # 11 games, 4 live spaced with a normal between pairs. Widening all 4
+        # would take 8 units — more than one row holds — so only 1 (farthest
+        # along) is widened, filling the row exactly (2+1+1+1=5) with every
+        # live game grouped together in it.
         games = (
             [_game(0, state='In Progress'), _game(1, state='In Progress')]
             + [_game(2)]
@@ -184,8 +188,11 @@ class TestComputeGridLayout:
         )
         assert len(games) == 11
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        live_rows = {row for (g, (stype, col, row)) in zip(ordered, slots)
+                     if g.get('detailed_state') == 'In Progress'}
+        assert len(live_rows) == 1, f"Live games split across rows: {live_rows}"
         wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 4
+        assert wide_count == 1
 
     def test_filler_swap_leaves_all_games_rendered(self):
         """Filler swap leaves all games rendered."""
