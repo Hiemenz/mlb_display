@@ -208,10 +208,17 @@ def _pack_grid(game_list, wide_set):
             cap -= 1
         # Each pop() took the highest-index (latest) remaining game for this
         # row; reverse each group back to ascending order, wide tiles first
-        # (leading columns) so they read left-to-right like a normal row.
+        # (leading columns) so they read left-to-right like a normal row —
+        # except when a single lone filler cell shares the row with two or
+        # more wide tiles (e.g. 2+2+1): with the wide tiles as the majority,
+        # the lone filler leads instead (1+2+2) rather than trailing as an
+        # odd single cell after two full-width blocks.
         wide_tokens.reverse()
         normal_tokens.reverse()
-        bucket_tokens[bi] = wide_tokens + normal_tokens
+        if len(normal_tokens) == 1 and len(wide_tokens) >= 2:
+            bucket_tokens[bi] = normal_tokens + wide_tokens
+        else:
+            bucket_tokens[bi] = wide_tokens + normal_tokens
 
     slot_idx = pinned_cost
     for tokens in bucket_tokens:
