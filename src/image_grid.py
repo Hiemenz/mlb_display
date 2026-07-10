@@ -62,25 +62,60 @@ def _featured_live_index(games, indices, config, team_data):
     return None
 
 
+def _lay_out_row_major(tokens, start_slot):
+    """Place (slot_type, game) tokens row-major from ``start_slot`` (5 units
+    per row: 2 for 'wide', 1 for 'normal'), never leaving a dead gap.
+
+    A wide tile can't start in a row's last column (only 1 unit left). When
+    that happens, a later 'normal' token is pulled forward to fill that one
+    unit; if none remains later in ``tokens``, the wide tile is demoted to
+    normal instead — filling the gap with itself rather than wasting the
+    slot. (Widening is a best-effort preference, not a hard requirement.)
+
+    Returns (ordered_games, positions, next_slot_idx).
+    """
+    tokens = list(tokens)
+    ordered = []
+    positions = []
+    slot_idx = start_slot
+    i = 0
+    while i < len(tokens):
+        slot_type, g = tokens[i]
+        if slot_type == 'wide' and slot_idx % 5 == 4:
+            j = next((k for k in range(i + 1, len(tokens)) if tokens[k][0] == 'normal'), None)
+            if j is not None:
+                tokens[i], tokens[j] = tokens[j], tokens[i]
+                slot_type, g = tokens[i]
+            else:
+                slot_type = 'normal'
+        ordered.append(g)
+        positions.append((slot_type, slot_idx % 5, slot_idx // 5))
+        slot_idx += 2 if slot_type == 'wide' else 1
+        i += 1
+    return ordered, positions, slot_idx
+
+
 def _cluster_live_games(game_list, config, team_data):
     """When there are 2-5 live games (and no grid overflow), group them all
-    into their own row at the bottom instead of leaving some behind in
+    into their own block at the bottom instead of leaving some behind in
     earlier rows next to finished games. A single live game has nothing to
     be split from, so it's left for _find_wide_games/_pack_grid as before.
 
     Places every non-live game first, row-major from the top (right after a
     pinned favorite-team game, if any), then starts the live games fresh at
     the next row boundary so they can never be split across a row shared
-    with a finished game. Just enough of them are widened — farthest-along
-    first, featured team preferred when wide_cell_featured is set — to fill
-    that row exactly (2 units per wide tile, 1 per normal tile, 5 units per
-    row) without exceeding the grid's overall wide budget. If the non-live
-    games don't end on a row boundary, the row before the live row is left
+    with a finished game. As many of them as the grid's overall wide budget
+    allows are widened — farthest-along first, featured team preferred when
+    wide_cell_featured is set — even if that spills the live block across
+    more than one row: filling that room with live games takes priority over
+    leaving slots free for other panels (e.g. the leaders tiles), which only
+    ever claim whatever grid slots end up genuinely unused. If the non-live
+    games don't end on a row boundary, the row before the live block is left
     short instead (the tradeoff that keeps every live game together).
 
     This bypasses _pack_grid entirely: that function always reserves slot
     (0, 0) for whatever sits at game_list[0], which throws off the row-unit
-    math needed to land the live cluster exactly on a full final row.
+    math needed to land the live block exactly on a full final row.
 
     Returns (new_game_list, positions) with positions already computed, or
     (game_list, None) if clustering doesn't apply (fewer than 2 or more than
@@ -105,8 +140,7 @@ def _cluster_live_games(game_list, config, team_data):
     lives = [rest[i] for i in live_idxs]
 
     global_max_wide = max(0, 15 - len(game_list))
-    row_fit_wide = max(0, 5 - len(lives))
-    w = min(len(lives), global_max_wide, row_fit_wide)
+    w = min(len(lives), global_max_wide)
 
     chosen = set()
     if w > 0:
@@ -134,12 +168,17 @@ def _cluster_live_games(game_list, config, team_data):
         new_game_list.append(g)
         positions.append(('normal', slot_idx % 5, slot_idx // 5))
         slot_idx += 1
-    if slot_idx % 5 != 0:
-        slot_idx += 5 - (slot_idx % 5)  # start the live row at a fresh row boundary
-    for slot_type, g in live_row:
-        new_game_list.append(g)
-        positions.append((slot_type, slot_idx % 5, slot_idx // 5))
-        slot_idx += 2 if slot_type == 'wide' else 1
+    # Start the live block at a fresh row boundary — but only if there's
+    # still room left for it there; rounding up unconditionally can push it
+    # past the 15-slot grid (e.g. 11 others + 2 wide live = 15 units exactly,
+    # with no room to spare for the row-alignment gap).
+    _live_units = len(lives) + len(wide_lives)
+    _rounded = slot_idx + (5 - slot_idx % 5) % 5
+    if _rounded + _live_units <= 15:
+        slot_idx = _rounded
+    _live_ordered, _live_positions, _ = _lay_out_row_major(live_row, slot_idx)
+    new_game_list.extend(_live_ordered)
+    positions.extend(_live_positions)
 
     return new_game_list, positions
 
@@ -310,15 +349,21 @@ def _pack_grid(game_list, wide_set):
             bucket_tokens[bi] = wide_tokens + normal_tokens
 
     slot_idx = pinned_cost
-    for tokens in bucket_tokens:
+    for bi, tokens in enumerate(bucket_tokens):
         row = slot_idx // 5
         col = slot_idx % 5
+        row_start = slot_idx
         for slot_type, gi in tokens:
             new_order.append(gi)
             positions.append((slot_type, col, row))
             step = 2 if slot_type == 'wide' else 1
             col += step
             slot_idx += step
+        # Always advance to this row's intended capacity, even if the bucket
+        # left some of it unfilled (e.g. no normal games remained to plug a
+        # lone leftover unit) — otherwise the next bucket's column arithmetic
+        # drifts into the row above and can land a wide tile at col 4.
+        slot_idx = row_start + row_caps[bi]
 
     return [game_list[i] for i in new_order], positions
 
