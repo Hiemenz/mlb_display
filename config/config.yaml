@@ -62,9 +62,14 @@ morning_end: 9          # weekday cutoff (Mon–Fri)
 morning_end_weekend: 11 # weekend cutoff (Sat–Sun)
 
 
-# Auto dark/light mode: display is dark (inverted) during the night window
-# (night_start → night_end) and light during the day. No manual dark_mode toggle needed.
+# Auto dark/light mode: display is dark (inverted) between dark_start and dark_end,
+# light the rest of the day. No manual dark_mode toggle needed.
+# Kept separate from night_start/night_end (the refresh-skip window above) — if they
+# were the same, dark mode would only ever be true while refreshes are being skipped,
+# so the display would never actually be seen in dark mode.
 # A full e-ink refresh is forced on the day↔night transition to prevent ghosting.
+dark_start: 20  # 8pm
+dark_end: 7     # 7am
 
 # Team logos: display PNG logos instead of 3-letter abbreviations
 # Requires logo files in pic/logos/{ABBR}.png — run src/download_logos.py to fetch them
