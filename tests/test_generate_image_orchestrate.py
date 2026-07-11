@@ -44,6 +44,7 @@ FIXED_CONFIG = {
     'final_linescore_minutes': 60,
     'show_wildcard_standings': False,
     'show_standings_sidebar': False,
+    'show_playoff_bracket': False,
     'primary': '',
     'league_mode': 'mlb',
     'dark_mode': False,
@@ -923,10 +924,12 @@ def test_playoff_bracket_header_drawn_when_bracket_data_present():
     draw_playoff_bracket_header (generate_image.py lines 261-264)."""
     import generate_image
 
+    from datetime import datetime
     bracket_cfg = dict(FIXED_CONFIG, show_playoff_bracket=True, league_mode='mlb')
     stub_img = MagicMock()
     stub_img.size = (800, 480)
-    bracket_data = {'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'LAD',
+    bracket_data = {'season': datetime.now().year,
+                     'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'LAD',
                                 'away_wins': 2, 'home_wins': 3, 'complete': False}]}
 
     def fake_load(filename, *a, **kw):

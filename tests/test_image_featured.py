@@ -775,8 +775,10 @@ def test_featured_fullscreen_winner_ghost_logo_away_winner():
 def test_featured_fullscreen_playoff_bracket_header_branch():
     """show_playoff_bracket=True exercises the playoff-bracket header path."""
     from image_featured import draw_featured_game_fullscreen
+    from datetime import datetime
     bracket_cfg = dict(CONFIG, show_playoff_bracket=True, league_mode='mlb')
-    bracket_data = {'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+    bracket_data = {'season': datetime.now().year,
+                     'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
                                 'away_wins': 2, 'home_wins': 1, 'complete': False}]}
     with patch('image_featured.load_json_file', return_value=bracket_data), \
          patch('image_featured.draw_playoff_bracket_header',

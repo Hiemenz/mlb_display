@@ -777,10 +777,16 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
 
     # Overlay wildcard/bracket header and standings sidebars (skipped for live games)
     if not _is_live:
-        if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
-            _bracket = load_json_file('playoff_bracket.json')
-            if _bracket and _bracket.get('series'):
-                canvas = draw_playoff_bracket_header(canvas, _bracket)
+        # See generate_image.py for why this checks actual bracket content
+        # rather than just the (now default-True) config flag.
+        _bracket = None
+        if config.get('show_playoff_bracket', True) and league_mode != 'aaa':
+            _candidate = load_json_file('playoff_bracket.json')
+            if _candidate and _candidate.get('series') and _candidate.get('season') == datetime.now().year:
+                _bracket = _candidate
+
+        if _bracket:
+            canvas = draw_playoff_bracket_header(canvas, _bracket)
         elif standings_data and 'standings' in standings_data and \
                 config.get('show_wildcard_standings', False) and league_mode != 'aaa':
             wildcard_data = derive_wildcard_from_standings(standings_data)

@@ -215,6 +215,26 @@ def fetch_wildcard_standings(season=None, date=None):
     return result
 
 
+def is_postseason_window(now=None):
+    """True during the rough calendar window postseason games can occur in
+    (mid-September through mid-November), so callers can skip the schedule
+    API entirely outside that window instead of fetching/checking a
+    guaranteed-empty bracket every poll for ~10 months of the year.
+
+    This is deliberately coarse — the actual "is the bracket non-empty"
+    decision is made from real schedule data by the caller, this just
+    avoids the wasted network call the rest of the year.
+    """
+    now = now or datetime.now()
+    if now.month == 10:
+        return True
+    if now.month == 9:
+        return now.day >= 15
+    if now.month == 11:
+        return now.day <= 10
+    return False
+
+
 def fetch_playoff_bracket(season=None):
     """Fetch current postseason series data and save to data/playoff_bracket.json.
 
