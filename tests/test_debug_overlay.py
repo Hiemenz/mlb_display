@@ -134,6 +134,61 @@ def test_skip_not_expected_when_next_game_date_is_today():
     assert result is False
 
 
+def test_skip_expected_during_morning_alternating_window():
+    """Skip expected during morning alternating window."""
+    sched = _make_sched()
+    cfg = dict(BASE_CONFIG, night_mode=False, morning_end=9)
+    import pytz
+    tz = pytz.timezone('America/Chicago')
+    # Wednesday 8am — inside the 7am-9am morning-alternating window
+    fake_now = datetime(2026, 7, 8, 8, 0, 0, tzinfo=tz)
+    with patch('generate_image.datetime') as mock_dt:
+        mock_dt.now.return_value = fake_now
+        mock_dt.now.side_effect = lambda *a, **kw: fake_now
+        mock_dt.fromisoformat = datetime.fromisoformat
+        assert _fetch_skip_is_expected(cfg, sched) is True
+
+
+def test_skip_expected_during_weekend_morning_window_extended_end():
+    """Skip expected during weekend morning window extended end."""
+    sched = _make_sched()
+    cfg = dict(BASE_CONFIG, night_mode=False, morning_end=9, morning_end_weekend=11)
+    import pytz
+    tz = pytz.timezone('America/Chicago')
+    # Saturday 10am — past weekday morning_end (9) but still within the
+    # weekend-extended morning_end_weekend (11) window
+    fake_now = datetime(2026, 7, 11, 10, 0, 0, tzinfo=tz)
+    with patch('generate_image.datetime') as mock_dt:
+        mock_dt.now.return_value = fake_now
+        mock_dt.now.side_effect = lambda *a, **kw: fake_now
+        mock_dt.fromisoformat = datetime.fromisoformat
+        assert _fetch_skip_is_expected(cfg, sched) is True
+
+
+def test_skip_morning_window_check_handles_exception_gracefully():
+    """Skip morning window check handles exception gracefully."""
+    sched = _make_sched()
+    cfg = dict(BASE_CONFIG, night_mode=False, morning_end=9)
+    with patch('generate_image.pytz.timezone', side_effect=Exception('boom')):
+        result = _fetch_skip_is_expected(cfg, sched)
+    assert result is False
+
+
+def test_skip_not_expected_after_morning_window_ends():
+    """Skip not expected after morning window ends."""
+    sched = _make_sched()
+    cfg = dict(BASE_CONFIG, night_mode=False, morning_end=9)
+    import pytz
+    tz = pytz.timezone('America/Chicago')
+    # Wednesday 9am — at the morning_end boundary, window has closed
+    fake_now = datetime(2026, 7, 8, 9, 0, 0, tzinfo=tz)
+    with patch('generate_image.datetime') as mock_dt:
+        mock_dt.now.return_value = fake_now
+        mock_dt.now.side_effect = lambda *a, **kw: fake_now
+        mock_dt.fromisoformat = datetime.fromisoformat
+        assert _fetch_skip_is_expected(cfg, sched) is False
+
+
 def test_skip_not_expected_when_night_mode_disabled():
     """Skip not expected when night mode disabled."""
     cfg = dict(BASE_CONFIG, night_mode=False)
