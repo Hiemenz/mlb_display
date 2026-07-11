@@ -1,6 +1,6 @@
 {
   "_comment_non_dark": "non_dark: use mlb/500/ URL instead of mlb/500-dark/ — dark variant has white elements that disappear on white e-ink",
-  "non_dark": ["ATH", "BAL", "BOS", "CLE", "COL", "MIL", "MIN", "NYM"],
+  "non_dark": ["ATH", "BAL", "BOS", "CLE", "COL", "DET", "MIL", "MIN", "NYM"],
   "_comment_darken_white": "darken_white: turn near-white visible pixels black before compositing — logos with white outlines or text on colored backgrounds that vanish on white",
   "darken_white": ["LAA", "CIN", "ATH", "TEX", "STL", "NYM"],
   "ATH": false,

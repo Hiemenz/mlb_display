@@ -70,9 +70,13 @@ _DEBUG_STALE_HOURS = 2  # fetch age threshold before overlay turns inverted/alar
 def _fetch_skip_is_expected(config, sched):
     """Return True when a long gap since the last fetch is normal and expected.
 
-    Two cases suppress the stale alarm:
+    Three cases suppress the stale alarm:
     - Night mode is enabled and we are currently inside the night window, so
       fetching is intentionally paused.
+    - We're in the morning alternating window (night_end - morning_end):
+      main.py intentionally re-shows yesterday's already-final results on
+      alternating cycles here, so a fetch gap inherited from the overnight
+      quiet period is expected, not a sign anything is broken.
     - Smart polling determined there are no games until a future date, so
       the display is legitimately sitting out until then.
     """
@@ -92,6 +96,19 @@ def _fetch_skip_is_expected(config, sched):
                 return True
         except Exception:
             pass
+
+    # Morning alternating window check (mirrors main.py's date-selection logic)
+    try:
+        tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
+        now = datetime.now(tz)
+        is_weekend = now.weekday() >= 5
+        morning_end = (config.get('morning_end_weekend', 11) if is_weekend
+                       else config.get('morning_end', 9))
+        morning_start = config.get('night_end', 7)
+        if morning_start <= now.hour < morning_end:
+            return True
+    except Exception:
+        pass
 
     # Off-day / between-season skip
     next_game_date = sched.get('next_game_date')
