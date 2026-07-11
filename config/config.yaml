@@ -124,6 +124,13 @@ wide_cell_featured: false
 show_leaders_panel: true
 leaders_rotation_minutes: 5
 
+# Transactions ticker: show recent MLB transactions (IL moves, call-ups, signings)
+# in an empty grid cell when fewer than 15 games are on the slate. Claims the
+# first free slot, ahead of the leaders panel. Refreshed periodically from the
+# MLB Stats API.
+show_transactions_ticker: false
+transactions_lookback_days: 2
+
 # Debug overlay: show system uptime and last successful game-data fetch time
 # in the bottom-right corner. Useful when the Pi loses network connectivity.
 show_debug_overlay: true

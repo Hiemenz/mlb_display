@@ -1,7 +1,7 @@
 import requests
 import json
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 from util import save_off_results, load_json_file
@@ -310,6 +310,58 @@ def fetch_playoff_bracket(season=None):
     }
     save_off_results(bracket_data, 'playoff_bracket')
     return bracket_data
+
+
+def fetch_transactions(lookback_days=2):
+    """Fetch recent MLB transactions (IL moves, call-ups/demotions, signings, etc.)
+    and save to data/transactions.json.
+
+    Queries the transactions API for the window [today - lookback_days, today],
+    newest first.
+
+    Returns the transactions dict, or None on failure.
+    """
+    import time as _t
+    end = datetime.now()
+    start = end - timedelta(days=lookback_days)
+
+    url = (
+        f'https://statsapi.mlb.com/api/v1/transactions'
+        f'?sportId=1'
+        f'&startDate={start.strftime("%Y-%m-%d")}&endDate={end.strftime("%Y-%m-%d")}'
+    )
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code != 200:
+            print(f'Warning: transactions fetch returned {resp.status_code}')
+            return None
+        data = resp.json()
+    except Exception as e:
+        print(f'Error fetching transactions: {e}')
+        return None
+
+    entries = []
+    for tx in data.get('transactions', []):
+        team = tx.get('toTeam') or tx.get('fromTeam') or {}
+        entries.append({
+            'date':        tx.get('date', ''),
+            'player_name': (tx.get('person') or {}).get('fullName', ''),
+            'team_abbr':   team.get('abbreviation', ''),
+            'team_id':     str(team.get('id', '')),
+            'type_desc':   tx.get('typeDesc', ''),
+            'description': tx.get('description', ''),
+        })
+
+    # Newest first
+    entries.sort(key=lambda e: e['date'], reverse=True)
+
+    transactions_data = {
+        'fetched_at':    _t.time(),
+        'lookback_days': lookback_days,
+        'transactions':  entries,
+    }
+    save_off_results(transactions_data, 'transactions')
+    return transactions_data
 
 
 def main():
