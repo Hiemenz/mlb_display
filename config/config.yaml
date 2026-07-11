@@ -86,8 +86,11 @@ show_wildcard_standings: true
 
 # Show postseason bracket in the top header strip instead of wildcard standings.
 # Fetches series win totals via the MLB schedule API (gameType F/D/L/W).
-# Set to true during October; mutually exclusive with show_wildcard_standings.
-show_playoff_bracket: false
+# Auto-toggles on during the postseason calendar window (mid-Sept to mid-Nov)
+# once real bracket data exists — no manual flip needed each October. Falls
+# back to wildcard standings the rest of the year. Set to false to disable
+# the bracket entirely (always shows wildcard standings instead, if enabled).
+show_playoff_bracket: true
 
 # Small logo X offset: pixels from the left edge of each score box where the small logo is placed.
 # Set to 2 to align with the box edge. Increase to shift the logo right.

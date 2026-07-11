@@ -376,10 +376,19 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
         standings_data = load_json_file('standings.json')
 
-    if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
-        _bracket = load_json_file('playoff_bracket.json')
-        if _bracket and _bracket.get('series'):
-            Himage = draw_playoff_bracket_header(Himage, _bracket)
+    # Playoff bracket auto-toggles on: it takes over the header strip only
+    # when there's an actual current-season bracket to show (fetched by
+    # main.py during the postseason calendar window), not just because the
+    # config flag defaults to True — otherwise wildcard standings would
+    # never render for the ~10 months a year there's no bracket data yet.
+    _bracket = None
+    if config.get('show_playoff_bracket', True) and league_mode != 'aaa':
+        _candidate = load_json_file('playoff_bracket.json')
+        if _candidate and _candidate.get('series') and _candidate.get('season') == datetime.now().year:
+            _bracket = _candidate
+
+    if _bracket:
+        Himage = draw_playoff_bracket_header(Himage, _bracket)
     elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
         if standings_data and 'standings' in standings_data:
             wildcard_data = derive_wildcard_from_standings(standings_data)

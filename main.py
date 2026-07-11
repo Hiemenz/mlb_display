@@ -22,7 +22,7 @@ from fetch_leaders import fetch_leaders
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
-from standings import get_standings, fetch_playoff_bracket, fetch_transactions
+from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
 
 
@@ -168,6 +168,7 @@ def _maybe_generate_video(date_str, config):
 _STANDINGS_MAX_AGE_HOURS = 20  # refresh if standings.json is older than this
 _LEADERS_MAX_AGE_HOURS = 24    # refresh if leaders.json is older than this
 _TRANSACTIONS_MAX_AGE_HOURS = 3  # refresh if transactions.json is older than this
+_PLAYOFF_BRACKET_MAX_AGE_HOURS = 1  # refresh cadence during an active postseason
 
 
 def _should_refresh_leaders(sched):
@@ -214,6 +215,24 @@ def _should_refresh_transactions():
     age_hours = (_t.time() - os.path.getmtime(transactions_path)) / 3600
     if age_hours >= _TRANSACTIONS_MAX_AGE_HOURS:
         print(f"Transactions stale ({age_hours:.1f}h old) — refreshing")
+        return True
+    return False
+
+
+def _should_refresh_playoff_bracket():
+    """Return True if playoff_bracket.json needs a refresh.
+
+    Simple age check — series win counts only change once per completed
+    game, so hourly is frequent enough even during an active series.
+    """
+    bracket_path = _data_path('playoff_bracket.json')
+    if not os.path.exists(bracket_path):
+        return True
+
+    import time as _t
+    age_hours = (_t.time() - os.path.getmtime(bracket_path)) / 3600
+    if age_hours >= _PLAYOFF_BRACKET_MAX_AGE_HOURS:
+        print(f"Playoff bracket stale ({age_hours:.1f}h old) — refreshing")
         return True
     return False
 
@@ -528,7 +547,8 @@ Examples:
                                       date=_sl_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
                     except Exception as _sl_e:
                         print(f"Warning: standings refresh on poll-skip: {_sl_e}")
-                if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
+                if config.get('show_playoff_bracket', True) and league_mode != 'aaa' \
+                        and is_postseason_window() and _should_refresh_playoff_bracket():
                     try:
                         fetch_playoff_bracket()
                     except Exception as _bp_e:
@@ -614,8 +634,12 @@ Examples:
             except Exception as e:
                 print(f"Warning: standings refresh failed: {e}")
 
-    # 7c. Playoff bracket refresh (postseason only)
-    if config.get('show_playoff_bracket', False) and league_mode != 'aaa':
+    # 7c. Playoff bracket refresh — auto-detects postseason via the calendar
+    # window (mid-Sept to mid-Nov) rather than requiring a manual config
+    # toggle each year; show_playoff_bracket now just lets a user force it
+    # off entirely if they never want the header taken over.
+    if config.get('show_playoff_bracket', True) and league_mode != 'aaa' \
+            and is_postseason_window() and _should_refresh_playoff_bracket():
         try:
             fetch_playoff_bracket()
         except Exception as e:
