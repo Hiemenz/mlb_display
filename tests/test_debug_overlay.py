@@ -165,6 +165,15 @@ def test_skip_expected_during_weekend_morning_window_extended_end():
         assert _fetch_skip_is_expected(cfg, sched) is True
 
 
+def test_skip_morning_window_check_handles_exception_gracefully():
+    """Skip morning window check handles exception gracefully."""
+    sched = _make_sched()
+    cfg = dict(BASE_CONFIG, night_mode=False, morning_end=9)
+    with patch('generate_image.pytz.timezone', side_effect=Exception('boom')):
+        result = _fetch_skip_is_expected(cfg, sched)
+    assert result is False
+
+
 def test_skip_not_expected_after_morning_window_ends():
     """Skip not expected after morning window ends."""
     sched = _make_sched()
