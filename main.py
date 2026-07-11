@@ -22,7 +22,7 @@ from fetch_leaders import fetch_leaders
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
-from standings import get_standings, fetch_playoff_bracket
+from standings import get_standings, fetch_playoff_bracket, fetch_transactions
 from image_box import set_historical_mode
 
 
@@ -167,6 +167,7 @@ def _maybe_generate_video(date_str, config):
 
 _STANDINGS_MAX_AGE_HOURS = 20  # refresh if standings.json is older than this
 _LEADERS_MAX_AGE_HOURS = 24    # refresh if leaders.json is older than this
+_TRANSACTIONS_MAX_AGE_HOURS = 3  # refresh if transactions.json is older than this
 
 
 def _should_refresh_leaders(sched):
@@ -197,6 +198,24 @@ def _should_refresh_leaders(sched):
     }
     known_finals = set(sched.get('leaders_final_pks', []))
     return bool(current_finals - known_finals)
+
+
+def _should_refresh_transactions():
+    """Return True if transactions.json needs a refresh.
+
+    Unlike standings/leaders, transactions aren't tied to games going Final —
+    just a simple age check (missing or older than _TRANSACTIONS_MAX_AGE_HOURS).
+    """
+    transactions_path = _data_path('transactions.json')
+    if not os.path.exists(transactions_path):
+        return True
+
+    import time as _t
+    age_hours = (_t.time() - os.path.getmtime(transactions_path)) / 3600
+    if age_hours >= _TRANSACTIONS_MAX_AGE_HOURS:
+        print(f"Transactions stale ({age_hours:.1f}h old) — refreshing")
+        return True
+    return False
 
 
 def _should_refresh_standings(sched):
@@ -514,6 +533,11 @@ Examples:
                         fetch_playoff_bracket()
                     except Exception as _bp_e:
                         print(f"Warning: playoff bracket fetch on poll-skip: {_bp_e}")
+                if config.get('show_transactions_ticker', False) and _should_refresh_transactions():
+                    try:
+                        fetch_transactions(config.get('transactions_lookback_days', 2))
+                    except Exception as _tx_e:
+                        print(f"Warning: transactions fetch on poll-skip: {_tx_e}")
                 return
 
     # 6. Fetch
@@ -596,6 +620,15 @@ Examples:
             fetch_playoff_bracket()
         except Exception as e:
             print(f"Warning: playoff bracket fetch failed: {e}")
+
+    # 7c2. Transactions ticker refresh — recent IL moves/call-ups/signings,
+    # only when the panel is enabled, and only when the cache is stale
+    # (transactions don't change fast enough to warrant fetching every poll).
+    if config.get('show_transactions_ticker', False) and _should_refresh_transactions():
+        try:
+            fetch_transactions(config.get('transactions_lookback_days', 2))
+        except Exception as e:
+            print(f"Warning: transactions fetch failed: {e}")
 
     # 7d. Season leaders refresh (HR/AVG/ERA/Saves/Hits) — only when panel is
     # enabled, and only once games have gone Final (or cache is stale/missing),

@@ -39,6 +39,7 @@ FIELD_SPECS = [
     {'key': 'league_mode', 'source': 'yaml', 'type': 'select',
      'label': 'League Mode', 'options': ['mlb', 'aaa']},
     {'key': 'show_leaders_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Season Leaders Panel'},
+    {'key': 'show_transactions_ticker', 'source': 'yaml', 'type': 'bool', 'label': 'Transactions Ticker'},
     {'key': 'show_debug_overlay', 'source': 'yaml', 'type': 'bool', 'label': 'Debug Overlay'},
     {'key': 'use_team_logos', 'source': 'yaml', 'type': 'bool', 'label': 'Team Logos'},
     {'key': 'show_standings_sidebar', 'source': 'yaml', 'type': 'bool', 'label': 'Standings Sidebar'},
