@@ -695,8 +695,18 @@ Examples:
         _save_schedule_state(sched)
 
     # 9. Render
+    # On a dark-mode transition the rendered image inverts even when the game
+    # data is byte-identical, but render()'s unchanged-data cache only compares
+    # game JSON — it would return None and the forced full refresh below would
+    # be silently skipped (with last_dark_mode already saved above, no later
+    # run re-detects the flip). Cells whose games never change again that
+    # night (e.g. long-final games) would then keep the old polarity until the
+    # hourly full-refresh timer fired, leaving a washed-out light-mode band on
+    # an otherwise dark screen. Bypass the cache so the transition always
+    # renders and reaches the display.
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
-    result = render(config, date_str=date_str, output_path=output_path, bypass_cache=_no_throttle)
+    result = render(config, date_str=date_str, output_path=output_path,
+                    bypass_cache=_no_throttle or _dark_transitioned)
 
     if not result:
         print("No display update needed - image unchanged")
