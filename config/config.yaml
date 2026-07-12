@@ -2,11 +2,14 @@
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
 scoreboard: true
 
-# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch"
+# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch" | "derby"
 # If set, overrides the scoreboard: true/false flag above.
 # "field"     = single-game field diagram with runners, hit location, strike zone overlay
 # "scorecard" = official scorer-style per-batter at-bat grid for both teams
 # "pitch"     = full strike zone with pitch locations for current at-bat
+# "derby"     = Home Run Derby single-elimination bracket, read from data/derby_bracket.json.
+#               There's no MLB API for derby brackets, so edit that file by hand with the
+#               real 8 participants before the event and flip winner/hr/complete as rounds finish.
 display_mode: "scoreboard"
 
 primary: NYY

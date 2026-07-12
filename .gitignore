@@ -28,6 +28,8 @@ data/*.json
 !data/mlbam_walls.json
 # Exception: static stadium weather coordinates (lat/lon + roof type)
 !data/stadium_weather.json
+# Exception: hand-maintained Home Run Derby bracket (no API source; edited by hand)
+!data/derby_bracket.json
 
 # Environment
 .env

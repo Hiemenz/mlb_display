@@ -1,0 +1,39 @@
+{
+  "event_date": "2026-07-13",
+  "round_status": "Round 1 - In Progress",
+  "matchups": {
+    "qf": [
+      {"complete": true,  "players": [
+        {"name": "J. Judge",    "abbr": "NYY", "hr": 23, "winner": true},
+        {"name": "P. Alonso",   "abbr": "NYM", "hr": 17, "winner": false}
+      ]},
+      {"complete": false, "players": [
+        {"name": "S. Ohtani",   "abbr": "LAD", "hr": 14, "winner": false},
+        {"name": "K. Schwarber","abbr": "PHI", "hr": 11, "winner": false}
+      ]},
+      {"complete": false, "players": [
+        {"name": "TBD", "abbr": "", "hr": null, "winner": false},
+        {"name": "TBD", "abbr": "", "hr": null, "winner": false}
+      ]},
+      {"complete": false, "players": [
+        {"name": "TBD", "abbr": "", "hr": null, "winner": false},
+        {"name": "TBD", "abbr": "", "hr": null, "winner": false}
+      ]}
+    ],
+    "sf": [
+      {"complete": false, "players": [
+        {"name": "J. Judge", "abbr": "NYY", "hr": null, "winner": false},
+        {"name": "TBD",      "abbr": "",    "hr": null, "winner": false}
+      ]},
+      {"complete": false, "players": [
+        {"name": "TBD", "abbr": "", "hr": null, "winner": false},
+        {"name": "TBD", "abbr": "", "hr": null, "winner": false}
+      ]}
+    ],
+    "final": {"complete": false, "players": [
+      {"name": "TBD", "abbr": "", "hr": null, "winner": false},
+      {"name": "TBD", "abbr": "", "hr": null, "winner": false}
+    ]}
+  },
+  "champion": null
+}
