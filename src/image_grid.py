@@ -239,29 +239,12 @@ def _find_wide_games(game_list, config, team_data):
 
 
 def _pack_grid(game_list, wide_set):
-    """Pack games into 5-unit-wide rows, filling every row completely (no
-    blank gap columns) while pushing wide (2-cell) tiles into the lowest
-    rows the zero-gap constraint allows.
+    """Pack games into 5-unit-wide rows. With <15 games, uses complex bottom-up
+    packing to efficiently place wide (2-cell) tiles. With 15+ games, uses
+    simple row-major layout to preserve game order while staying within 15-slot limit.
 
     Index 0 (the favorite team's game when favorite_team_first is set) is
-    always placed first, in row 0 col 0 — it must stay the most prominent
-    tile regardless of wide-cell placement.
-
-    Everything else is allocated row-by-row from the BOTTOM of the grid
-    upward: the last row is filled first (as many wide tiles as fit, 2 units
-    each, then normal games as filler), then the row above it, and so on,
-    ending with whatever capacity is left in row 0 after the pinned game.
-    Filling bottom-up like this means a row only takes fewer wide tiles than
-    it could when there simply aren't enough left — the densest wide rows
-    always end up lowest. Within each row, later-queued wide/normal games
-    are preferred for lower rows so original relative order still reads
-    top-to-bottom.
-
-    Only the very last row may end up short (fewer than 5 units) since
-    there's nothing left to place there — that's a normal grid edge, not a
-    gap. If there are more games than the 15-slot grid can hold, this falls
-    back to simple front-to-back packing for the overflow, since some games
-    won't be shown regardless of arrangement.
+    always placed first, in row 0 col 0.
 
     Returns (new_game_list, positions) where positions is a list of
     (slot_type, grid_col, grid_row) parallel to new_game_list.
@@ -269,6 +252,24 @@ def _pack_grid(game_list, wide_set):
     if not game_list:
         return [], []
 
+    # With 15+ games, use simple row-major layout to preserve order
+    if len(game_list) >= 15:
+        tokens = [('wide' if i in wide_set else 'normal', game_list[i]) for i in range(len(game_list))]
+        ordered, positions, slot_idx = _lay_out_row_major(tokens, 0)
+        # Trim to 15-slot grid if overflow
+        if slot_idx > 15:
+            trim_count = 0
+            for i in range(len(positions)):
+                col, row = positions[i][1], positions[i][2]
+                slot_num = row * 5 + col
+                if slot_num >= 15:
+                    break
+                trim_count = i + 1
+            ordered = ordered[:trim_count]
+            positions = positions[:trim_count]
+        return ordered, positions
+
+    # With <15 games, use complex packing for efficient wide game placement
     pinned_wide = 0 in wide_set
     pinned_cost = 2 if pinned_wide else 1
 
