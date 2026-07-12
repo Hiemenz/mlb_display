@@ -24,7 +24,6 @@ from display import send_to_display
 from util import load_json_file
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
-from image_assets import refresh_stale_logos
 
 
 # ---------------------------------------------------------------------------
@@ -437,9 +436,6 @@ Examples:
     print(f"Throttle bypass: {_no_throttle} (local={args.local}, platform={system_platform}, env_test={_is_test})")
 
     config = load_config(args.config)
-
-    if config.get('use_team_logos', False):
-        refresh_stale_logos()
 
     # 3. Night mode gate
     if config.get('night_mode', False) and not _no_throttle:

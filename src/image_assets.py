@@ -53,31 +53,6 @@ def _get_logo_invert_config():
     return _logo_invert_config
 
 
-def refresh_stale_logos(max_age_days=30):
-    """Delete any cached logo PNG older than max_age_days.
-
-    Lazy re-download in _load_logo_gray only fires when a file is missing, so
-    a corrupted or outdated cached logo never gets refreshed on its own. This
-    forces periodic re-download (e.g. to pick up CDN artwork updates) without
-    needing an external cron job — safe to call every run since a freshly
-    re-downloaded logo's mtime won't clear the cutoff again for another
-    max_age_days.
-    """
-    import time
-    if not os.path.isdir(logodir):
-        return
-    cutoff = time.time() - max_age_days * 86400
-    for fname in os.listdir(logodir):
-        if not fname.endswith('.png'):
-            continue
-        fpath = os.path.join(logodir, fname)
-        try:
-            if os.path.getmtime(fpath) < cutoff:
-                os.remove(fpath)
-        except OSError:
-            pass
-
-
 def _try_download_logo(abbr, team_id=None):
     """Download a missing team logo from ESPN CDN using stdlib only (no pip needed).
 
