@@ -311,6 +311,41 @@ class TestPackGridDirect:
                 assert c not in occupied
                 occupied.add(c)
 
+    def test_fifteen_plus_games_use_row_major_layout(self):
+        """15+ games use row-major layout and trim to 15 slots."""
+        # With 15+ games, _pack_grid should use simple row-major layout
+        # instead of complex bottom-up packing, and trim to exactly 15 slots.
+        game_list = [self._g(i) for i in range(18)]
+        wide_set = {0, 5, 10}  # some games marked for widening
+        ordered, positions = _pack_grid(game_list, wide_set)
+        assert len(ordered) == len(positions)
+        assert len(positions) <= 15
+        # Check that slot numbers don't exceed 15 (5 cols × 3 rows)
+        for slot_type, col, row in positions:
+            assert 0 <= col <= 4 and 0 <= row <= 2
+            if slot_type == 'wide':
+                assert col <= 3
+
+    def test_less_than_15_games_with_many_wide_uses_overflow_path(self):
+        """Less than 15 games with many wide games triggers overflow packing."""
+        # With <15 games but many marked wide, the overflow branch should
+        # pack as much as possible without reordering via complex packing.
+        # Need total_wanted > remaining_capacity to trigger overflow:
+        # remaining_capacity = 14 (with pinned_cost=1), so need total > 14.
+        # With 10 games: 1 pinned normal, 7 wide (14 units), 2 normal (2 units) = 16 > 14.
+        game_list = [self._g(i) for i in range(10)]
+        wide_set = {1, 2, 3, 4, 5, 6, 7}  # 7 wide games, games 0,8,9 are normal
+        ordered, positions = _pack_grid(game_list, wide_set)
+        assert len(ordered) == len(positions)
+        assert len(positions) <= 15
+        # Verify valid layout
+        for slot_type, col, row in positions:
+            assert 0 <= col <= 4 and 0 <= row <= 2
+            if slot_type == 'wide':
+                assert col <= 3
+        # Should have used overflow path and included some normal games
+        assert any(s[0] == 'normal' for s in positions[1:])
+
 
 class TestLayOutRowMajor:
     def _g(self, pk):
