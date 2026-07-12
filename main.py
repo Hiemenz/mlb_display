@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
+from fetch_derby import fetch_and_save_derby_bracket
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
@@ -444,6 +445,26 @@ Examples:
             now_str = datetime.now(pytz.timezone(tz)).strftime('%H:%M')
             print(f"Night mode: skipping refresh ({now_str})")
             return
+
+    # Home Run Derby bracket mode bypasses the normal game-schedule pipeline
+    # entirely (there's no "game" to fetch/poll for — it's a standalone event).
+    if config.get('display_mode') == 'derby':
+        try:
+            fetch_and_save_derby_bracket()
+        except Exception as _derby_e:
+            print(f"Warning: derby bracket fetch failed: {_derby_e}")
+        output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
+        result = render(config, output_path=output_path, bypass_cache=_no_throttle)
+        if not result:
+            print("No display update needed - image unchanged")
+            return
+        image, changed_regions = result
+        refresh_mode = send_to_display(output_path, changed_regions, force_full=_no_throttle)
+        print(f"Derby: {refresh_mode} refresh ({len(changed_regions)} region(s))")
+        if args.local and system_platform == 'Darwin':
+            import subprocess
+            subprocess.run(['open', output_path], check=False)
+        return
 
     league_mode = (os.environ.get('LEAGUE_MODE', '').lower().strip()
                    or config.get('league_mode', 'mlb'))
