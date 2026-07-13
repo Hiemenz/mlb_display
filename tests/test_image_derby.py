@@ -66,6 +66,13 @@ class TestRenderDerbyBracket:
         assert isinstance(img, Image.Image)
         assert img.size == (800, 480)
 
+    def test_champion_derived_from_final_winner_when_not_set_explicitly(self):
+        data = _completed_bracket()
+        data['champion'] = None  # not pre-computed; renderer must derive it from final['players']
+        img = render_derby_bracket(data)
+        assert isinstance(img, Image.Image)
+        assert img.size == (800, 480)
+
     def test_dark_mode_inverts_without_error(self):
         img = render_derby_bracket(_completed_bracket(), dark_mode=True)
         assert isinstance(img, Image.Image)

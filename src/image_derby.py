@@ -140,10 +140,7 @@ def render_derby_bracket(derby_data, dark_mode=False):
     draw.rectangle([cx, cy - 30, EPD_WIDTH - 10, cy + 30], outline=0, width=2)
     star = "★"
     if champion:
-        try:
-            sw = draw.textlength(star, font=f14)
-        except Exception:
-            sw = 0
+        sw = draw.textlength(star, font=f14)
         draw.text((cx + (EPD_WIDTH - 10 - cx - sw) / 2, cy - 24), star, font=f14, fill=0)
         cw = draw.textlength(champion, font=f14)
         draw.text((cx + (EPD_WIDTH - 10 - cx - cw) / 2, cy + 2), champion, font=f14, fill=0)

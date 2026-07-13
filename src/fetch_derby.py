@@ -227,7 +227,7 @@ def fetch_and_save_derby_bracket(season=None, event_id=None):
     return result
 
 
-def main():
+def main():  # pragma: no cover
     parser = argparse.ArgumentParser(description='Fetch live Home Run Derby bracket data')
     parser.add_argument('--season', type=int, default=None, help='Season year (default: current year)')
     parser.add_argument('--event-id', type=int, default=None, help='Derby event id override (skip lookup)')

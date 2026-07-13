@@ -147,10 +147,11 @@ def test_render_single_game_mode_handles_exception():
 # 3. render() — dispatch + save-to-disk logic
 # ---------------------------------------------------------------------------
 
-def _loader(games_payload=None, teams_payload=None):
+def _loader(games_payload=None, teams_payload=None, derby_payload=None):
     """Build a load_json_file side_effect that never touches real data/ files."""
     games_payload = games_payload if games_payload is not None else {'games': []}
     teams_payload = teams_payload if teams_payload is not None else {'team_abbreviation': {}}
+    derby_payload = derby_payload if derby_payload is not None else {}
 
     def _fn(filename, file_path=None):
         """Fn."""
@@ -158,6 +159,8 @@ def _loader(games_payload=None, teams_payload=None):
             return games_payload
         if filename == 'teams.json':
             return teams_payload
+        if filename == 'derby_bracket.json':
+            return derby_payload
         return {}
     return _fn
 
@@ -173,6 +176,31 @@ def test_render_dispatches_single_game_mode(tmp_path):
         result = render_scoreboard.render(config, output_path=str(tmp_path / 'out.bmp'))
     assert result == (fake_image, [(0, 0, 800, 480)])
     m_single.assert_called_once()
+
+
+def test_render_derby_mode_no_data_returns_none():
+    """render() in derby mode with no cached derby_bracket.json data returns None."""
+    config = {'display_mode': 'derby'}
+    with patch('render_scoreboard.load_json_file', side_effect=_loader(derby_payload={})):
+        result = render_scoreboard.render(config, output_path='/nonexistent/should/not/write.bmp')
+    assert result is None
+
+
+@needs_pil
+def test_render_derby_mode_dispatches_and_saves(tmp_path):
+    """render() in derby mode renders the bracket via render_derby_bracket and saves it."""
+    derby_data = {
+        'event_date': '2026-07-13', 'round_status': 'Round 1 - In Progress', 'state': 'In Progress',
+        'matchups': {'qf': [], 'sf': [], 'final': {'complete': False, 'players': []}}, 'champion': None,
+    }
+    fake_image = Image.new('1', (800, 480), 255)
+    out_path = tmp_path / 'derby.bmp'
+    with patch('render_scoreboard.load_json_file', side_effect=_loader(derby_payload=derby_data)), \
+         patch('render_scoreboard.render_derby_bracket', return_value=fake_image) as m_derby:
+        result = render_scoreboard.render(config={'display_mode': 'derby'}, output_path=str(out_path))
+    assert result == (fake_image, [(0, 0, 800, 480)])
+    m_derby.assert_called_once_with(derby_data, dark_mode=False)
+    assert out_path.exists()
 
 
 def test_render_single_game_mode_returns_none_propagates():

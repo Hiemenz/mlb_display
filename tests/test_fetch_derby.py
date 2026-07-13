@@ -3,12 +3,15 @@
 Mocks all network access (fetch_derby.requests.get) and file I/O
 (fetch_derby.save_off_results) following the pattern in test_fetch_playoff_bracket.py.
 """
+import time as time_mod
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 
 import fetch_derby
 from fetch_derby import (
     _find_asg_date, find_derby_event_id, fetch_derby_bracket_raw,
     transform_bracket, fetch_and_save_derby_bracket, _short_name,
+    get_derby_date, _seed_to_player,
 )
 
 
@@ -133,7 +136,69 @@ class TestTransformBracket:
         assert result['champion'] is None
 
 
+class TestSeedToPlayer:
+    def test_missing_seed_returns_tbd(self):
+        assert _seed_to_player(None, {}) == {'name': 'TBD', 'abbr': '', 'hr': None, 'winner': False}
+
+    def test_seed_without_player_returns_tbd(self):
+        assert _seed_to_player({'started': True}, {}) == {'name': 'TBD', 'abbr': '', 'hr': None, 'winner': False}
+
+
+class TestGetDerbyDate:
+    def test_cache_miss_calls_lookup_and_saves(self):
+        with patch('fetch_derby.load_json_file', return_value={}), \
+             patch('fetch_derby.find_derby_event_id', return_value=(838655, '2026-07-13')) as mock_find, \
+             patch('fetch_derby.save_off_results') as mock_save:
+            event_date, event_id = get_derby_date(season=2026)
+        assert (event_date, event_id) == ('2026-07-13', 838655)
+        mock_find.assert_called_once_with(2026)
+        mock_save.assert_called_once()
+        assert mock_save.call_args.args[1] == 'derby_event_cache'
+
+    def test_fresh_cache_skips_lookup(self):
+        cache = {'season': 2026, 'event_id': 838655, 'event_date': '2026-07-13', 'fetched_at': time_mod.time()}
+        with patch('fetch_derby.load_json_file', return_value=cache), \
+             patch('fetch_derby.find_derby_event_id') as mock_find:
+            event_date, event_id = get_derby_date(season=2026)
+        assert (event_date, event_id) == ('2026-07-13', 838655)
+        mock_find.assert_not_called()
+
+    def test_stale_cache_triggers_refresh(self):
+        cache = {'season': 2026, 'event_id': 1, 'event_date': 'old', 'fetched_at': 0}
+        with patch('fetch_derby.load_json_file', return_value=cache), \
+             patch('fetch_derby.find_derby_event_id', return_value=(838655, '2026-07-13')) as mock_find, \
+             patch('fetch_derby.save_off_results'):
+            event_date, event_id = get_derby_date(season=2026)
+        assert (event_date, event_id) == ('2026-07-13', 838655)
+        mock_find.assert_called_once()
+
+    def test_force_refresh_bypasses_fresh_cache(self):
+        cache = {'season': 2026, 'event_id': 1, 'event_date': 'old', 'fetched_at': time_mod.time()}
+        with patch('fetch_derby.load_json_file', return_value=cache), \
+             patch('fetch_derby.find_derby_event_id', return_value=(838655, '2026-07-13')) as mock_find, \
+             patch('fetch_derby.save_off_results'):
+            event_date, event_id = get_derby_date(season=2026, force_refresh=True)
+        assert (event_date, event_id) == ('2026-07-13', 838655)
+        mock_find.assert_called_once()
+
+    def test_default_season_uses_current_year(self):
+        with patch('fetch_derby.load_json_file', return_value={}), \
+             patch('fetch_derby.find_derby_event_id', return_value=(None, None)) as mock_find, \
+             patch('fetch_derby.save_off_results'):
+            get_derby_date()
+        mock_find.assert_called_once_with(datetime.now().year)
+
+
 class TestFetchAndSaveDerbyBracket:
+    def test_default_season_uses_current_year(self):
+        with patch('fetch_derby.find_derby_event_id', return_value=(None, None)) as mock_find, \
+             patch('fetch_derby.save_off_results') as mock_save:
+            result = fetch_and_save_derby_bracket()
+        assert result is None
+        mock_find.assert_called_once_with(datetime.now().year)
+        mock_save.assert_not_called()
+
+
     def test_no_event_found_returns_none(self):
         with patch('fetch_derby.find_derby_event_id', return_value=(None, None)), \
              patch('fetch_derby.save_off_results') as mock_save:
