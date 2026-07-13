@@ -10,7 +10,14 @@ scoreboard: true
 # "derby"     = Home Run Derby single-elimination bracket. Auto-fetched from MLB's Stats API
 #               (src/fetch_derby.py) each run and cached to data/derby_bracket.json; falls back
 #               to the last cached file if the event hasn't started yet or the fetch fails.
+#               Setting display_mode to "derby" here forces it on unconditionally. You normally
+#               don't need to — see auto_derby_mode below.
 display_mode: "scoreboard"
+
+# Automatically switch to the Home Run Derby bracket (see "derby" above) on the actual Derby
+# date, but only on days with no games to show (e.g. the All-Star break) — days with real games
+# always take priority. Set to false to disable and rely solely on display_mode above.
+auto_derby_mode: true
 
 primary: NYY
 primary_backup: BOS

@@ -14,15 +14,17 @@ import argparse
 import re
 import sys
 import os
+import time
 from datetime import datetime, timedelta
 
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from util import save_off_results
+from util import save_off_results, load_json_file
 from config_loader import load_config, add_config_arg
 
 _STATS_API = 'https://statsapi.mlb.com/api/v1'
+_EVENT_CACHE_TTL = 86400  # re-resolve the event id/date at most once a day
 _DERBY_NAME_RE = re.compile(r'All-Star Workout Day: Home Run Derby', re.IGNORECASE)
 
 
@@ -62,6 +64,34 @@ def find_derby_event_id(season):
                 if _DERBY_NAME_RE.search(event.get('name', '')):
                     return event.get('id'), candidate
     return None, None
+
+
+def get_derby_date(season=None, force_refresh=False):
+    """Return (event_date, event_id) for this season's Derby, cached for a day.
+
+    Cheap enough to call on every main.py run to check "is today Derby day?"
+    without hitting the schedule API each time — the event date/id can't
+    change once MLB publishes the schedule, so a daily refresh is plenty.
+    """
+    current_season = season or datetime.now().year
+    cache = load_json_file('derby_event_cache.json') or {}
+    fresh = (
+        not force_refresh
+        and cache.get('season') == current_season
+        and cache.get('event_date')
+        and time.time() - cache.get('fetched_at', 0) < _EVENT_CACHE_TTL
+    )
+    if fresh:
+        return cache['event_date'], cache.get('event_id')
+
+    event_id, event_date = find_derby_event_id(current_season)
+    save_off_results({
+        'season': current_season,
+        'event_id': event_id,
+        'event_date': event_date,
+        'fetched_at': time.time(),
+    }, 'derby_event_cache')
+    return event_date, event_id
 
 
 def fetch_derby_bracket_raw(event_id):
@@ -165,6 +195,7 @@ def transform_bracket(raw, event_date):
     return {
         'event_date': event_date,
         'round_status': round_status,
+        'state': state,  # raw MLB status.state: 'Preview' | 'In Progress' | 'Final' — used to pace polling
         'matchups': {'qf': qf, 'sf': sf, 'final': final},
         'champion': champion,
     }
