@@ -247,6 +247,47 @@ def test_logo_small_returns_1bit_image(monkeypatch):
     assert result.mode == '1'
 
 
+@needs_pil
+def test_logo_small_never_disappears_for_very_light_logo(monkeypatch):
+    """A pale logo that would otherwise dither to an all-white (invisible) '1'-mode
+    image must still show at least some black pixels instead of vanishing on e-ink."""
+    fake = Image.new('L', (60, 60), 250)  # near-white, no internal variance
+    monkeypatch.setattr(image_assets, '_load_logo_gray', lambda abbr, team_id: fake)
+    result = image_assets._logo_small('ZZ', 1, size=28)
+    assert result is not None
+    assert result.mode == '1'
+    assert result.getextrema()[0] == 0, "logo has no black pixels — would be invisible on the display"
+
+
+# ---------------------------------------------------------------------------
+# _ensure_visible_1bit
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_ensure_visible_1bit_passes_through_when_already_visible():
+    """Normal contrast image already has black pixels after dithering — unchanged."""
+    img = Image.new('L', (28, 28), 90)
+    result = image_assets._ensure_visible_1bit(img)
+    assert result.getextrema()[0] == 0
+
+
+@needs_pil
+def test_ensure_visible_1bit_forces_black_pixels_for_near_white_image():
+    """An image that dithers to all-white gets an adaptive threshold instead."""
+    img = Image.new('L', (28, 28))
+    img.putdata([250 if i % 2 == 0 else 255 for i in range(28 * 28)])
+    assert img.convert('1').getextrema() == (255, 255)  # sanity check: would vanish untreated
+    result = image_assets._ensure_visible_1bit(img)
+    assert result.getextrema()[0] == 0
+
+
+@needs_pil
+def test_ensure_visible_1bit_returns_none_for_perfectly_flat_image():
+    """A genuinely uniform image (no variance at all) has nothing to threshold — None."""
+    img = Image.new('L', (10, 10), 255)
+    assert image_assets._ensure_visible_1bit(img) is None
+
+
 # ---------------------------------------------------------------------------
 # _paste_logo
 # ---------------------------------------------------------------------------
@@ -284,6 +325,20 @@ def test_logo_ghost_returns_1bit_watermark(monkeypatch):
     result = image_assets._logo_ghost('ZZ', 1, size=50)
     assert result is not None
     assert result.mode == '1'
+
+
+@needs_pil
+def test_logo_ghost_routes_through_visibility_guard(monkeypatch):
+    """_logo_ghost must run its output through the same all-white-dither guard as
+    _logo_small — verified by checking it's actually called, since LANCZOS thumbnail
+    smoothing makes reliably engineering an end-to-end near-white fixture brittle."""
+    fake = Image.new('L', (200, 200), 100)
+    monkeypatch.setattr(image_assets, '_load_logo_gray', lambda abbr, team_id: fake)
+    sentinel = Image.new('1', (50, 50), 255)
+    with patch.object(image_assets, '_ensure_visible_1bit', return_value=sentinel) as mock_guard:
+        result = image_assets._logo_ghost('ZZ', 1, size=50)
+    mock_guard.assert_called_once()
+    assert result is sentinel
 
 
 # ---------------------------------------------------------------------------

@@ -196,6 +196,26 @@ def _paste_logo(image, logo, pos):
     image.paste(logo, pos, mask=ImageOps.invert(logo.convert('L')))
 
 
+def _ensure_visible_1bit(gray):
+    """Convert an L-mode image to '1', guaranteeing at least some black pixels survive.
+
+    A logo that's very light overall (e.g. a pale color that a team's config doesn't
+    flag for inversion) can dither down to an all-white '1'-mode image — invisible on
+    the white e-ink background, since only dark pixels get pasted. When that happens,
+    fall back to an adaptive threshold keyed off the image's own darkest pixels so its
+    outline stays visible instead of silently vanishing. Returns None only when the
+    source has no variance at all (a single flat color — nothing to show either way).
+    """
+    result = gray.convert('1')
+    if result.getextrema() != (255, 255):
+        return result
+    lo, hi = gray.getextrema()
+    if lo >= hi:
+        return None
+    threshold = lo + max(1, (hi - lo) // 4)  # darkest quartile becomes visible
+    return gray.point(lambda p: 0 if p <= threshold else 255).convert('1')
+
+
 def _logo_small(abbr, team_id, size=28):
     """Small 1-bit logo for the team name row. Returns a '1'-mode image or None."""
     gray = _load_logo_gray(abbr, team_id)
@@ -207,7 +227,7 @@ def _logo_small(abbr, team_id, size=28):
     # to a visible range before dithering, preserving internal detail.
     gray = ImageOps.autocontrast(gray, cutoff=2)
     gray = ImageEnhance.Contrast(gray).enhance(3.0)
-    return gray.convert('1')
+    return _ensure_visible_1bit(gray)
 
 
 def _logo_ghost(abbr, team_id, size=110, lightness=140):
@@ -224,7 +244,7 @@ def _logo_ghost(abbr, team_id, size=110, lightness=140):
     gray = gray.copy()
     gray.thumbnail((size, size), Image.LANCZOS)
     gray = gray.point(lambda p: 255 if p > 180 else min(255, int(p * 0.3 + lightness)))
-    return gray.convert('1')
+    return _ensure_visible_1bit(gray)
 
 
 _emoji_cache: dict = {}       # abbr -> grayscale PIL Image or None
