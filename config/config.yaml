@@ -2,12 +2,22 @@
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
 scoreboard: true
 
-# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch"
+# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch" | "derby"
 # If set, overrides the scoreboard: true/false flag above.
 # "field"     = single-game field diagram with runners, hit location, strike zone overlay
 # "scorecard" = official scorer-style per-batter at-bat grid for both teams
 # "pitch"     = full strike zone with pitch locations for current at-bat
+# "derby"     = Home Run Derby single-elimination bracket. Auto-fetched from MLB's Stats API
+#               (src/fetch_derby.py) each run and cached to data/derby_bracket.json; falls back
+#               to the last cached file if the event hasn't started yet or the fetch fails.
+#               Setting display_mode to "derby" here forces it on unconditionally. You normally
+#               don't need to — see auto_derby_mode below.
 display_mode: "scoreboard"
+
+# Automatically switch to the Home Run Derby bracket (see "derby" above) on the actual Derby
+# date, but only on days with no games to show (e.g. the All-Star break) — days with real games
+# always take priority. Set to false to disable and rely solely on display_mode above.
+auto_derby_mode: true
 
 primary: NYY
 primary_backup: BOS

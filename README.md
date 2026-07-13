@@ -262,6 +262,12 @@ FEATURED_TEAM_FULLSCREEN=true poetry run python main.py
 */14 * * * * cd /home/pi/mlb_display && poetry run python main.py >> logs/display.log 2>&1
 ```
 
+On the Home Run Derby's actual date, if there are no games to show, main.py automatically
+switches to the Derby bracket (see `auto_derby_mode` in config.yaml) instead of exiting quietly.
+Once the event goes live, that run blocks and polls MLB every 60 seconds until the derby ends
+(capped at 3 hours) rather than waiting for the next 14-minute cron tick — so a concurrent cron
+invocation firing mid-derby is expected and harmless (it just re-fetches/re-renders the same data).
+
 **systemd** — recommended for auto-start on boot:
 
 ```ini

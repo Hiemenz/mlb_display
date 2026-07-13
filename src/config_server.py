@@ -35,7 +35,7 @@ FIELD_SPECS = [
     {'key': 'primary', 'source': 'yaml', 'type': 'text',
      'label': 'Primary Team', 'help': 'Abbreviation shown first / highlighted, e.g. NYY'},
     {'key': 'display_mode', 'source': 'yaml', 'type': 'select',
-     'label': 'Display Mode', 'options': ['scoreboard', 'linescore', 'field', 'scorecard', 'pitch']},
+     'label': 'Display Mode', 'options': ['scoreboard', 'linescore', 'field', 'scorecard', 'pitch', 'derby']},
     {'key': 'league_mode', 'source': 'yaml', 'type': 'select',
      'label': 'League Mode', 'options': ['mlb', 'aaa']},
     {'key': 'show_leaders_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Season Leaders Panel'},

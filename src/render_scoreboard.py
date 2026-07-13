@@ -21,6 +21,7 @@ from game_detail_fetch import select_game, fetch_field_view_data, fetch_scorecar
 from field_view import render_field_view
 from scorecard_view import render_scorecard_view
 from pitch_view import render_pitch_view
+from image_derby import render_derby_bracket
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
@@ -29,7 +30,7 @@ _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 def _get_display_mode(config):
     """Determine display mode from config."""
     mode = config.get('display_mode')
-    if mode and mode in ('scoreboard', 'linescore', 'field', 'scorecard', 'pitch'):
+    if mode and mode in ('scoreboard', 'linescore', 'field', 'scorecard', 'pitch', 'derby'):
         return mode
     if config.get('scoreboard', True):
         return 'scoreboard'
@@ -176,6 +177,18 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
             return (image, [(0, 0, image.width, image.height)])
         return None
 
+    if mode == 'derby':
+        derby_data = load_json_file('derby_bracket.json')
+        if not derby_data:
+            print("No derby_bracket.json data found")
+            return None
+        dark_mode = config.get('dark_mode', False)
+        image = render_derby_bracket(derby_data, dark_mode=dark_mode)
+        if output_path:
+            image.save(output_path)
+            print(f"Image saved to {output_path}")
+        return (image, [(0, 0, image.width, image.height)])
+
     # Snapshot the current saved image before overwriting so we can pixel-diff it.
     # Only used for the fullscreen single-game display where partial updates are
     # most valuable; the multi-game scoreboard already uses per-cell regions.
@@ -224,7 +237,7 @@ Examples:
     )
     parser.add_argument('--date', type=str, help='Date string for scoreboard header')
     parser.add_argument('--mode', type=str,
-                        choices=['scoreboard', 'linescore', 'field', 'scorecard', 'pitch'],
+                        choices=['scoreboard', 'linescore', 'field', 'scorecard', 'pitch', 'derby'],
                         help='Display mode override')
     parser.add_argument('--output', type=str, default=None,
                         help=f'Output image path (default: {_DEFAULT_OUTPUT})')

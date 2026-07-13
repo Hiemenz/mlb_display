@@ -9,6 +9,7 @@ import os
 import json
 import platform
 import argparse
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytz
@@ -19,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
+from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from render_scoreboard import render
 from display import send_to_display
 from util import load_json_file
@@ -352,6 +354,74 @@ def _should_skip_poll(date_str, config, sched):
     return False, ""
 
 
+_DERBY_LIVE_POLL_SECONDS = 60          # re-check every minute while the derby is actually in progress
+_DERBY_LIVE_POLL_MAX_SECONDS = 3 * 60 * 60  # safety cap in case the API never reports "Final"
+
+
+def _run_derby_mode(config, event_id=None, no_throttle=False, auto_open=False):
+    """Fetch the live Derby bracket and render/display it, overriding display_mode.
+
+    The rest of the day this runs once per invocation like every other mode
+    (paced by cron, e.g. every 14 min — see README). But once the event's
+    status flips to "In Progress" it blocks in a minute-by-minute poll loop
+    right here so the display tracks the live bracket without waiting for
+    the next cron tick, exiting once the derby is no longer in progress (or
+    after a safety cap in case the API never reports "Final").
+    """
+    start = time.monotonic()
+    while True:
+        try:
+            bracket = fetch_and_save_derby_bracket(event_id=event_id)
+        except Exception as _derby_e:
+            print(f"Warning: derby bracket fetch failed: {_derby_e}")
+            bracket = None
+
+        derby_config = dict(config, display_mode='derby')
+        output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
+        result = render(derby_config, output_path=output_path, bypass_cache=no_throttle)
+        if result:
+            image, changed_regions = result
+            refresh_mode = send_to_display(output_path, changed_regions, force_full=no_throttle)
+            print(f"Derby: {refresh_mode} refresh ({len(changed_regions)} region(s))")
+            if auto_open:
+                import subprocess
+                subprocess.run(['open', output_path], check=False)
+        else:
+            print("No display update needed - image unchanged")
+
+        if not bracket or bracket.get('state') != 'In Progress':
+            break
+        if time.monotonic() - start > _DERBY_LIVE_POLL_MAX_SECONDS:
+            print("Derby live-poll safety cap reached — stopping (next cron tick will resume)")
+            break
+        print(f"Derby in progress — checking again in {_DERBY_LIVE_POLL_SECONDS}s")
+        time.sleep(_DERBY_LIVE_POLL_SECONDS)
+
+
+def _maybe_show_derby_bracket(config, no_throttle=False, auto_open=False):
+    """When there are no games, check whether today is actually Derby day and show it.
+
+    Returns True if today is Derby day (bracket fetched/rendered/displayed, or
+    already up to date) so the caller can skip its normal "no games" handling.
+    Returns False otherwise (auto_derby_mode disabled, lookup failed, or it's
+    just not Derby day) so the caller falls back to normal no-game behavior.
+    """
+    if not config.get('auto_derby_mode', True):
+        return False
+    try:
+        tz = config.get('timezone', 'America/Chicago')
+        today_str = datetime.now(pytz.timezone(tz)).strftime('%Y-%m-%d')
+        derby_date, derby_event_id = get_derby_date()
+    except Exception as _derby_lookup_e:
+        print(f"Warning: derby day auto-detection failed: {_derby_lookup_e}")
+        return False
+    if derby_date != today_str:
+        return False
+    print(f"No games today, but it's Derby day ({today_str}) — showing Home Run Derby bracket")
+    _run_derby_mode(config, event_id=derby_event_id, no_throttle=no_throttle, auto_open=auto_open)
+    return True
+
+
 def _update_schedule_state(game_state_data, date_str, config, sched):
     """Update schedule state."""
     sched['last_game_fetch'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -445,6 +515,13 @@ Examples:
             print(f"Night mode: skipping refresh ({now_str})")
             return
 
+    # Home Run Derby bracket mode: explicit manual override. Bypasses the normal
+    # game-schedule pipeline entirely (there's no "game" to fetch/poll for).
+    if config.get('display_mode') == 'derby':
+        _run_derby_mode(config, event_id=None, no_throttle=_no_throttle,
+                        auto_open=args.local and system_platform == 'Darwin')
+        return
+
     league_mode = (os.environ.get('LEAGUE_MODE', '').lower().strip()
                    or config.get('league_mode', 'mlb'))
 
@@ -530,6 +607,9 @@ Examples:
             skip, reason = _should_skip_poll(date_str, config, sched)
             if skip:
                 print(reason)
+                if reason.startswith("No games until") and _maybe_show_derby_bracket(
+                        config, no_throttle=_no_throttle, auto_open=args.local and system_platform == 'Darwin'):
+                    return
                 # Still refresh standings if needed — sidebar/fullscreen must stay current
                 # even when the game-data poll is throttled.
                 _sl_needs = (
@@ -594,6 +674,8 @@ Examples:
             game_state_data = load_json_file('games.json').get('games', [])
             no_games = _update_schedule_state(game_state_data, date_str, config, sched)
             if no_games:
+                _maybe_show_derby_bracket(config, no_throttle=_no_throttle,
+                                          auto_open=args.local and system_platform == 'Darwin')
                 return
 
     # 7b. Standings refresh
