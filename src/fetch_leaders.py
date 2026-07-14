@@ -35,6 +35,22 @@ _HIGHER_IS_BETTER = {
     'stolenBases':       True,
 }
 
+# The API returns duplicate leaderCategory groups across statGroups (e.g.
+# "homeRuns" exists for both hitting and pitching, "hits"/"stolenBases" for
+# hitting and catching), so without a statGroup filter it's ambiguous which
+# group's numbers land in the response for a given category. Pin each
+# category to the group we actually want (all hitting except the two
+# pitching-only categories).
+_STAT_GROUP = {
+    'homeRuns':         'hitting',
+    'battingAverage':   'hitting',
+    'earnedRunAverage': 'pitching',
+    'saves':            'pitching',
+    'hits':              'hitting',
+    'runsBattedIn':      'hitting',
+    'stolenBases':       'hitting',
+}
+
 
 def _sort_and_rank(entries, higher_is_better):
     """Sort leader entries by value (best first) and re-derive rank, so a
@@ -93,6 +109,8 @@ def fetch_leaders(season=None, sport_id=1):
         for group in data.get('leagueLeaders', []):
             cat = group.get('leaderCategory')
             if cat not in _CATEGORIES:
+                continue
+            if group.get('statGroup') != _STAT_GROUP.get(cat):
                 continue
             entries = []
             for leader in group.get('leaders', [])[:_TOP_N]:
