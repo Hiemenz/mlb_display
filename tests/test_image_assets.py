@@ -109,6 +109,26 @@ def test_try_download_logo_wbc_countries_fallback_success(monkeypatch, tmp_path)
 
 
 @needs_pil
+def test_try_download_logo_international_countries_fallback_success(monkeypatch, tmp_path):
+    """Sport_id 51 "International Baseball" abbreviations (e.g. Croatia) that
+    aren't on the ESPN MLB CDN or mlbstatic-by-team_id still resolve via the
+    ESPN countries CDN, same as WBC abbreviations."""
+    monkeypatch.setattr(image_assets, 'logodir', str(tmp_path))
+
+    def fake_urlopen(url, timeout=5):
+        """Fake urlopen."""
+        if 'countries' in url:
+            return _fake_ctx_response()
+        raise OSError('espn mlb down')
+
+    with patch('urllib.request.urlopen', side_effect=fake_urlopen):
+        result = image_assets._try_download_logo('CRO')
+
+    assert result is True
+    assert (tmp_path / 'CRO.png').exists()
+
+
+@needs_pil
 def test_try_download_logo_all_sources_fail_returns_false(monkeypatch, tmp_path):
     """A WBC abbreviation whose ESPN MLB CDN and countries CDN calls both
     fail exercises the countries-CDN except branch and the final `return

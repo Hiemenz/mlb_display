@@ -19,11 +19,16 @@ _ESPN_ABBR_MAP = {'AZ': 'ari', 'CWS': 'chw', 'WSH': 'wsh'}
 _COUNTRY_ESPN_MAP = {'CLM': 'col'}  # Colombia WBC uses 'col' on ESPN countries CDN
 # Team IDs whose cached abbreviation must be overridden (WBC teams that collide with MLB)
 _TEAM_ID_ABBR_OVERRIDE = {'792': 'CLM'}  # Colombia WBC team ID → CLM
-# Only try ESPN countries CDN for known WBC team abbreviations (prevents false positives
-# where AAA team abbreviations like CHA/POR/SOM accidentally match country codes)
+# Only try ESPN countries CDN for known national-team abbreviations (WBC, sport_id 8,
+# plus other international/Olympic-style entries under sport_id 51). This prevents false
+# positives where AAA team abbreviations like CHA/POR/SOM accidentally match country codes.
+# Most sport_id 51 national teams already resolve via the mlbstatic-by-team_id fallback
+# above, so this list only needs to cover the ones that don't (verified against ESPN's
+# countries CDN and the live MLB Stats API team list for sport_id 51).
 _WBC_ABBRS = {
     'USA', 'DOM', 'JPN', 'MEX', 'KOR', 'PUR', 'CUB', 'AUS', 'NED',
     'ITA', 'CAN', 'VEN', 'PAN', 'CLM', 'GBR', 'ISR', 'CZE', 'NIC', 'TPE', 'CHN',
+    'CRO', 'LTU', 'GUA',
 }
 
 # Font cache — avoids re-parsing Font.ttc on every draw_box() call (called once per game cell)
