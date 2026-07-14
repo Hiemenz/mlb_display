@@ -528,6 +528,15 @@ def parse_games(data, sport_id=None, config=None):
         away_abbreviation = away_team_info.get('abbreviation')
         home_abbreviation = home_team_info.get('abbreviation')
 
+        # The schedule endpoint omits 'abbreviation' for some teams (e.g. the
+        # All-Star Game's "American/National League All-Stars", team ids 159/160).
+        # Fall back to a per-team lookup rather than caching nothing, which would
+        # otherwise leave the renderer displaying "T159"/"T160" with no logo.
+        if away_team_id and not away_abbreviation:
+            away_abbreviation = team_abbreviations.get(str(away_team_id)) or get_team_abbreviation(away_team_id)
+        if home_team_id and not home_abbreviation:
+            home_abbreviation = team_abbreviations.get(str(home_team_id)) or get_team_abbreviation(home_team_id)
+
         if sport_id == 8:
             away_abbreviation = _WBC_ABBR_OVERRIDES.get(away_abbreviation, away_abbreviation)
             home_abbreviation = _WBC_ABBR_OVERRIDES.get(home_abbreviation, home_abbreviation)
