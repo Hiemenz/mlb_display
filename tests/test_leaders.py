@@ -285,6 +285,7 @@ def test_fetch_leaders_refetches_when_stale(tmp_path, monkeypatch):
         'leagueLeaders': [
             {
                 'leaderCategory': 'homeRuns',
+                'statGroup': 'hitting',
                 'leaders': [
                     {'rank': 1, 'value': '30', 'person': {'fullName': 'Aaron Judge'},
                      'team': {'id': 147}}
