@@ -26,6 +26,7 @@ from display import send_to_display
 from util import load_json_file
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
+from image_idle import draw_idle_screen
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +443,43 @@ def _maybe_show_derby_bracket(config, no_throttle=False, auto_open=False):
     return True
 
 
+def _show_idle_screen(config, sched, auto_open=False):
+    """Render and display the idle 'no games today' screen with recent transactions."""
+    _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
+    idle_config = dict(config, dark_mode=_is_dark)
+
+    team_data = load_json_file('teams.json')
+    if not team_data or 'team_abbreviation' not in team_data:
+        team_data = {'team_abbreviation': {}}
+
+    # Load transactions — fetch fresh if missing or older than 1 hour
+    tx_data = load_json_file('transactions.json') or {}
+    tx_age  = time.time() - tx_data.get('fetched_at', 0)
+    if not tx_data.get('transactions') or tx_age > 3600:
+        try:
+            from standings import fetch_transactions
+            tx_data = fetch_transactions(lookback_days=config.get('transactions_lookback_days', 3)) or tx_data
+        except Exception as _e:
+            print(f"Warning: idle transactions fetch failed: {_e}")
+    transactions = tx_data.get('transactions', [])
+
+    # Render
+    image = draw_idle_screen(transactions, team_data, {}, idle_config)
+
+    output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
+    image.save(output_path)
+    print(f"Idle screen saved → {output_path}")
+
+    try:
+        send_to_display(output_path, force_full=True)
+    except Exception as _disp_e:
+        print(f"Warning: display send failed: {_disp_e}")
+
+    if auto_open:
+        import subprocess
+        subprocess.run(['open', output_path], check=False)
+
+
 def _update_schedule_state(game_state_data, date_str, config, sched):
     """Update schedule state."""
     sched['last_game_fetch'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -631,8 +669,12 @@ Examples:
             skip, reason = _should_skip_poll(date_str, config, sched)
             if skip:
                 print(reason)
-                if reason.startswith("No games until") and _maybe_show_derby_bracket(
-                        config, no_throttle=_no_throttle, auto_open=args.local and system_platform == 'Darwin'):
+                if reason.startswith("No games until"):
+                    if not _maybe_show_derby_bracket(
+                            config, no_throttle=_no_throttle,
+                            auto_open=args.local and system_platform == 'Darwin'):
+                        _show_idle_screen(config, sched,
+                                          auto_open=args.local and system_platform == 'Darwin')
                     return
                 # Still refresh standings if needed — sidebar/fullscreen must stay current
                 # even when the game-data poll is throttled.
@@ -698,8 +740,10 @@ Examples:
             game_state_data = load_json_file('games.json').get('games', [])
             no_games = _update_schedule_state(game_state_data, date_str, config, sched)
             if no_games:
-                _maybe_show_derby_bracket(config, no_throttle=_no_throttle,
-                                          auto_open=args.local and system_platform == 'Darwin')
+                if not _maybe_show_derby_bracket(config, no_throttle=_no_throttle,
+                                                 auto_open=args.local and system_platform == 'Darwin'):
+                    _show_idle_screen(config, sched,
+                                      auto_open=args.local and system_platform == 'Darwin')
                 return
 
     # 7a. Auto dark/light mode: day = light, night = dark.
