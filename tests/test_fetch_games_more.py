@@ -776,15 +776,20 @@ class TestFindNextGameDate:
         assert result == '2026-07-03'
         assert mock_get.call_count == 1
 
-    def test_games_on_from_date_itself_are_skipped(self):
-        """Games on from date itself are skipped."""
+    def test_games_on_from_date_itself_are_found(self):
+        """Games on from_date itself count as the next game date.
+
+        The caller always passes "tomorrow" relative to a confirmed no-games
+        day, so from_date_str is never itself already-known-empty — skipping
+        it caused real games that day (e.g. the All-Star Game) to be missed.
+        """
         payload = {'dates': [
             {'date': '2026-07-01', 'games': [{'gameType': 'R'}]},
             {'date': '2026-07-02', 'games': []},
         ]}
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             result = find_next_game_date([1], '2026-07-01')
-        assert result is None
+        assert result == '2026-07-01'
 
     def test_falls_through_sport_priority_list(self):
         """Falls through sport priority list."""

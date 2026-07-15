@@ -462,9 +462,8 @@ def find_next_game_date(sport_id_priority, from_date_str):
                             games = regular
                     if games:
                         found = date_entry['date']
-                        if found != from_date_str:
-                            print(f"Next game date: {found} (sport_id={sid})")
-                            return found
+                        print(f"Next game date: {found} (sport_id={sid})")
+                        return found
         except Exception as e:
             print(f"Error searching for next game date: {e}")
     return None
