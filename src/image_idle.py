@@ -158,7 +158,7 @@ def draw_idle_screen(transactions, team_data, idle_state, config):
 
     # ── Two transaction columns ───────────────────────────────────────────
     entries  = list(transactions or [])
-    abbr_map = team_data.get('team_abbreviation', {})
+    abbr_map = (team_data or {}).get('team_abbreviation', {})
 
     _PAD      = 4
     _AVAIL_H  = 480 - _HEADER_H - 2
