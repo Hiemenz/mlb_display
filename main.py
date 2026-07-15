@@ -173,14 +173,19 @@ _TRANSACTIONS_MAX_AGE_HOURS = 3  # refresh if transactions.json is older than th
 _PLAYOFF_BRACKET_MAX_AGE_HOURS = 1  # refresh cadence during an active postseason
 
 
-def _should_refresh_leaders(sched):
+def _should_refresh_leaders(sched, force=False):
     """Return True if leaders.json needs a refresh.
 
     Mirrors _should_refresh_standings: season stat leaders barely move
     mid-game, so we only refetch when the cache is missing/stale (catches
     the once-a-day / offline-for-a-day cases) or a game that is now Final
     wasn't Final during the last leaders refresh — i.e. once games wrap up.
+
+    force=True (--full-refresh) always refreshes regardless of cache state.
     """
+    if force:
+        return True
+
     leaders_path = _data_path('leaders.json')
     if not os.path.exists(leaders_path):
         return True
@@ -203,12 +208,17 @@ def _should_refresh_leaders(sched):
     return bool(current_finals - known_finals)
 
 
-def _should_refresh_transactions():
+def _should_refresh_transactions(force=False):
     """Return True if transactions.json needs a refresh.
 
     Unlike standings/leaders, transactions aren't tied to games going Final —
     just a simple age check (missing or older than _TRANSACTIONS_MAX_AGE_HOURS).
+
+    force=True (--full-refresh) always refreshes regardless of cache state.
     """
+    if force:
+        return True
+
     transactions_path = _data_path('transactions.json')
     if not os.path.exists(transactions_path):
         return True
@@ -221,12 +231,17 @@ def _should_refresh_transactions():
     return False
 
 
-def _should_refresh_playoff_bracket():
+def _should_refresh_playoff_bracket(force=False):
     """Return True if playoff_bracket.json needs a refresh.
 
     Simple age check — series win counts only change once per completed
     game, so hourly is frequent enough even during an active series.
+
+    force=True (--full-refresh) always refreshes regardless of cache state.
     """
+    if force:
+        return True
+
     bracket_path = _data_path('playoff_bracket.json')
     if not os.path.exists(bracket_path):
         return True
@@ -239,13 +254,18 @@ def _should_refresh_playoff_bracket():
     return False
 
 
-def _should_refresh_standings(sched):
+def _should_refresh_standings(sched, force=False):
     """Return True if standings.json needs a refresh.
 
     Triggers when: the file is missing, the file is older than 20 hours
     (catches the case where the program was offline for a day or more),
     or a game that is now Final was not Final during the last standings refresh.
+
+    force=True (--full-refresh) always refreshes regardless of cache state.
     """
+    if force:
+        return True
+
     standings_path = _data_path('standings.json')
     if not os.path.exists(standings_path):
         return True
@@ -471,6 +491,7 @@ Examples:
   python main.py --date 2025-04-01
   python main.py --sport-id 8 --date 2023-03-21
   python main.py --local
+  python main.py --full-refresh
         ''',
     )
     parser.add_argument('--date', type=str, help='Date (YYYY-MM-DD). Default: today')
@@ -479,6 +500,9 @@ Examples:
                         help='Fetch and cache all team abbreviations, then exit')
     parser.add_argument('--local', action='store_true',
                         help='Local dev mode: bypass night mode and smart polling, auto-open output')
+    parser.add_argument('--full-refresh', action='store_true',
+                        help='Bypass all throttling/staleness caches and force a fresh fetch of '
+                             'games, standings, leaders, transactions, and the playoff bracket')
     add_config_arg(parser)
     args = parser.parse_args()
 
@@ -502,7 +526,7 @@ Examples:
         return False
 
     _is_test = _env_is_test()
-    _no_throttle = args.local or system_platform == 'Darwin' or _is_test
+    _no_throttle = args.local or args.full_refresh or system_platform == 'Darwin' or _is_test
     print(f"Throttle bypass: {_no_throttle} (local={args.local}, platform={system_platform}, env_test={_is_test})")
 
     config = load_config(args.config)
@@ -655,7 +679,7 @@ Examples:
         _tmrw_target = _today_str if _pre9am else _tmrw_str
         _for_date_arg = _today_str if _pre9am else None   # None → fetch_tomorrow_games uses tomorrow
         _tmrw_age = _tm_mod.time() - _tmrw_cache.get('fetched_at', 0)
-        if _tmrw_cache.get('date') != _tmrw_target or _tmrw_age > 3600:
+        if _tmrw_cache.get('date') != _tmrw_target or _tmrw_age > 3600 or args.full_refresh:
             try:
                 fetch_tomorrow_games(config, for_date=_for_date_arg)
             except Exception as _e:
@@ -678,6 +702,29 @@ Examples:
                                           auto_open=args.local and system_platform == 'Darwin')
                 return
 
+    # 7a. Auto dark/light mode: day = light, night = dark.
+    # Uses dark_start / dark_end config keys (defaults: 20 → 7) so the display
+    # dark window is independent of the refresh-suppression night window.
+    # Detect day↔night transitions and force a full refresh — of the render/
+    # display (below) *and* of standings/leaders/transactions/bracket data
+    # (7b-7d) — since a mode flip is exactly the kind of moment stale data
+    # would be most visible (e.g. a fresh light-mode morning screen showing
+    # last night's leaders).
+    _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
+    config['dark_mode'] = _is_dark
+    _dark_transitioned = False
+    if not _no_throttle and not args.date:
+        _last_dark = sched.get('last_dark_mode')
+        if _last_dark is None or _last_dark != _is_dark:
+            # None = first run after Pi boot/state reset — force a full refresh so the
+            # display is guaranteed to start in the correct mode without ghosting.
+            label = 'first-run' if _last_dark is None else ('light→dark' if _is_dark else 'dark→light')
+            print(f"Dark mode transition: {label} — forcing full refresh")
+            _dark_transitioned = True
+        sched['last_dark_mode'] = _is_dark
+        _save_schedule_state(sched)
+    _force_data_refresh = args.full_refresh or _dark_transitioned
+
     # 7b. Standings refresh
     _needs_standings = (
         config.get('show_standings_sidebar', False) or
@@ -699,7 +746,7 @@ Examples:
                               date=_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
             except Exception as e:
                 print(f"Warning: historical standings fetch failed: {e}")
-        elif _should_refresh_standings(sched):
+        elif _should_refresh_standings(sched, force=_force_data_refresh):
             print("Refreshing standings (new Finals detected or no cache)...")
             try:
                 today = datetime.now()
@@ -721,7 +768,7 @@ Examples:
     # toggle each year; show_playoff_bracket now just lets a user force it
     # off entirely if they never want the header taken over.
     if config.get('show_playoff_bracket', True) and league_mode != 'aaa' \
-            and is_postseason_window() and _should_refresh_playoff_bracket():
+            and is_postseason_window() and _should_refresh_playoff_bracket(force=_force_data_refresh):
         try:
             fetch_playoff_bracket()
         except Exception as e:
@@ -730,7 +777,7 @@ Examples:
     # 7c2. Transactions ticker refresh — recent IL moves/call-ups/signings,
     # only when the panel is enabled, and only when the cache is stale
     # (transactions don't change fast enough to warrant fetching every poll).
-    if config.get('show_transactions_ticker', False) and _should_refresh_transactions():
+    if config.get('show_transactions_ticker', False) and _should_refresh_transactions(force=_force_data_refresh):
         try:
             fetch_transactions(config.get('transactions_lookback_days', 2))
         except Exception as e:
@@ -739,11 +786,12 @@ Examples:
     # 7d. Season leaders refresh (HR/AVG/ERA/Saves/Hits) — only when panel is
     # enabled, and only once games have gone Final (or cache is stale/missing),
     # not on every poll — leaders barely move mid-game.
-    if config.get('show_leaders_panel', False) and league_mode != 'aaa' and _should_refresh_leaders(sched):
+    if config.get('show_leaders_panel', False) and league_mode != 'aaa' \
+            and _should_refresh_leaders(sched, force=_force_data_refresh):
         print("Refreshing leaders (new Finals detected or no cache)...")
         try:
             _leaders_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
-            fetch_leaders(sport_id=_leaders_sport)
+            fetch_leaders(sport_id=_leaders_sport, force=_force_data_refresh)
             games = load_json_file('games.json').get('games', [])
             sched['leaders_final_pks'] = [
                 str(g['game_pk']) for g in games
@@ -752,25 +800,6 @@ Examples:
             _save_schedule_state(sched)
         except Exception as e:
             print(f"Warning: leaders fetch failed: {e}")
-
-    # 8. Auto dark/light mode: day = light, night = dark.
-    # Uses dark_start / dark_end config keys (defaults: 20 → 7) so the display
-    # dark window is independent of the refresh-suppression night window.
-    # Detect day↔night transitions and force a full e-ink refresh to prevent
-    # ghosting when the polarity of the entire image flips.
-    _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
-    config['dark_mode'] = _is_dark
-    _dark_transitioned = False
-    if not _no_throttle and not args.date:
-        _last_dark = sched.get('last_dark_mode')
-        if _last_dark is None or _last_dark != _is_dark:
-            # None = first run after Pi boot/state reset — force a full refresh so the
-            # display is guaranteed to start in the correct mode without ghosting.
-            label = 'first-run' if _last_dark is None else ('light→dark' if _is_dark else 'dark→light')
-            print(f"Dark mode transition: {label} — forcing full refresh")
-            _dark_transitioned = True
-        sched['last_dark_mode'] = _is_dark
-        _save_schedule_state(sched)
 
     # 9. Render
     # On a dark-mode transition the rendered image inverts even when the game

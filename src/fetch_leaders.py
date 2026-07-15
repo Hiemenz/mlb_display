@@ -78,8 +78,12 @@ def _sort_and_rank(entries, higher_is_better):
     return ranked
 
 
-def fetch_leaders(season=None, sport_id=1):
+def fetch_leaders(season=None, sport_id=1, force=False):
     """Fetch HR/AVG/ERA leaders and cache to data/leaders.json.
+
+    force=True bypasses this function's own TTL cache — needed because the
+    caller (main.py) makes its own refresh-worthiness decision upstream, and
+    that decision would otherwise be silently overridden by this cache check.
 
     Returns the cached dict (possibly stale) or {} on total failure.
     """
@@ -87,7 +91,7 @@ def fetch_leaders(season=None, sport_id=1):
         season = datetime.now().year
 
     cached = load_json_file('leaders.json')
-    if cached:
+    if cached and not force:
         age_h = (time.time() - cached.get('fetched_at', 0)) / 3600
         if age_h < _CACHE_TTL_HOURS and cached.get('season') == season:
             print(f"Leaders cache fresh ({age_h:.1f}h old) — skipping fetch")

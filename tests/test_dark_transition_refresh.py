@@ -31,7 +31,7 @@ BASE_CONFIG = {
 }
 
 
-def _run_main(monkeypatch, tmp_path, sched, render_mock):
+def _run_main(monkeypatch, tmp_path, sched, render_mock, config=None):
     """Drive main.main() down the on-Pi path (throttling active) with all
     network/display side effects stubbed out."""
     # Point _REPO_ROOT away from the repo so the real .env (ENV=test) doesn't
@@ -41,7 +41,7 @@ def _run_main(monkeypatch, tmp_path, sched, render_mock):
     monkeypatch.setattr(main_mod.platform, 'system', lambda: 'Linux')
     monkeypatch.setattr(sys, 'argv', ['main.py'])
 
-    monkeypatch.setattr(main_mod, 'load_config', lambda *a, **k: dict(BASE_CONFIG))
+    monkeypatch.setattr(main_mod, 'load_config', lambda *a, **k: dict(config or BASE_CONFIG))
     monkeypatch.setattr(main_mod, '_load_schedule_state', lambda: sched)
     monkeypatch.setattr(main_mod, '_save_schedule_state', lambda s: None)
     monkeypatch.setattr(main_mod, '_should_skip_poll', lambda *a, **k: (False, ''))
@@ -82,3 +82,34 @@ def test_no_transition_keeps_render_cache(monkeypatch, tmp_path):
 
     render_mock.assert_called_once()
     assert render_mock.call_args.kwargs['bypass_cache'] is False
+
+
+def test_dark_transition_forces_leaders_refresh(monkeypatch, tmp_path):
+    """A polarity flip must also force stale data (e.g. leaders) to refresh,
+    not just bypass the render cache — a mode flip is exactly the moment a
+    frozen leaders panel from hours ago would be most visible."""
+    render_mock = MagicMock(return_value=None)
+    config = dict(BASE_CONFIG, show_leaders_panel=True)
+    fetch_leaders_mock = MagicMock(return_value={})
+    monkeypatch.setattr(main_mod, 'fetch_leaders', fetch_leaders_mock)
+    monkeypatch.setattr(main_mod, 'load_json_file', lambda *a, **k: {})
+
+    # last run was dark, config now evaluates light → transition detected
+    _run_main(monkeypatch, tmp_path, {'last_dark_mode': True}, render_mock, config=config)
+
+    fetch_leaders_mock.assert_called_once()
+    assert fetch_leaders_mock.call_args.kwargs['force'] is True
+
+
+def test_no_transition_does_not_force_leaders_refresh(monkeypatch, tmp_path):
+    """Steady state (no polarity change) must not force a leaders refetch —
+    the normal staleness/Finals-based check still gates it."""
+    render_mock = MagicMock(return_value=None)
+    config = dict(BASE_CONFIG, show_leaders_panel=True)
+    fetch_leaders_mock = MagicMock(return_value={})
+    monkeypatch.setattr(main_mod, 'fetch_leaders', fetch_leaders_mock)
+    monkeypatch.setattr(main_mod, '_should_refresh_leaders', lambda *a, **k: False)
+
+    _run_main(monkeypatch, tmp_path, {'last_dark_mode': False}, render_mock, config=config)
+
+    fetch_leaders_mock.assert_not_called()
