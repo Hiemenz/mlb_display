@@ -944,6 +944,23 @@ class TestDrawBoxInProgress:
         result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
         assert isinstance(result, Image.Image)
 
+    def test_at_bat_pitch_count_fallback_with_speed(self, white_image, team_data):
+        """at_bat_pitch_count renders when pitch_count (game-level) is absent —
+        timelapse frames only have the per-at-bat count."""
+        game = _live_game(at_bat_pitch_count=3)
+        game.pop('pitch_count', None)
+        from image_box import draw_box
+        result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
+        assert isinstance(result, Image.Image)
+
+    def test_at_bat_pitch_count_fallback_no_speed(self, white_image, team_data):
+        """at_bat_pitch_count fallback also works when last_pitch_speed is absent."""
+        game = _live_game(at_bat_pitch_count=5, last_pitch_speed=None)
+        game.pop('pitch_count', None)
+        from image_box import draw_box
+        result = draw_box(white_image, 32, 30, game, team_data, use_logos=False)
+        assert isinstance(result, Image.Image)
+
     def test_ab_done_shows_next_batter(self, white_image, team_data):
         """Ab done shows next batter."""
         game = _live_game(

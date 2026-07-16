@@ -301,10 +301,27 @@ def test_fetch_game_timeline_first_actual_pitch_fallback_to_first_completed_play
 # _inning_runs_at_time
 # ---------------------------------------------------------------------------
 
-def _completed_play(inning, half, away_score, home_score, end_time):
+def _completed_play(inning, half, away_score, home_score, end_time, **extra):
     """Completed play."""
-    return {'end_time': end_time, 'inning': inning, 'half_inning': half,
+    base = {'end_time': end_time, 'inning': inning, 'half_inning': half,
             'away_score': away_score, 'home_score': home_score}
+    base.update(extra)
+    return base
+
+
+def _stat_play(inning, half, away_score, home_score, end_time, *,
+               batter_id=1, is_hit=False, counts_as_ab=True,
+               away_hits_so_far=0, home_hits_so_far=0,
+               home_pg_intact=True, away_pg_intact=True, **extra):
+    """Completed play pre-loaded with the stats fields produced by _fetch_game_timeline."""
+    base = _completed_play(inning, half, away_score, home_score, end_time)
+    base.update({
+        'batter_id': batter_id, 'is_hit': is_hit, 'counts_as_ab': counts_as_ab,
+        'away_hits_so_far': away_hits_so_far, 'home_hits_so_far': home_hits_so_far,
+        'home_pg_intact': home_pg_intact, 'away_pg_intact': away_pg_intact,
+    })
+    base.update(extra)
+    return base
 
 
 def test_inning_runs_at_time_empty_plays():
@@ -495,6 +512,110 @@ def test_game_state_abs_challenges_reflect_usage():
     tl = _tl(pitch_events=pitch_events, challenge_events=challenge_events, last_play_utc=_dt(23, 30))
     state = _game_state_at_time(_base_game(), tl, _dt(23, 11))
     assert state['away_challenges_remaining'] == 1
+
+
+def test_game_state_walk_off_cleared_for_in_progress_frames():
+    """walk_off bleeds from base_game's Final state; _game_state_at_time must
+    clear it so live frames don't show 'WALKOFF' in the header before the game ends."""
+    pitch_events = [{'time': _dt(23, 11), 'balls': 1, 'strikes': 0, 'outs': 0,
+                      'inning': 1, 'half_inning': 'top', 'away_score': 0, 'home_score': 0,
+                      'pitcher': '', 'batter': '', 'runner_on_first': None,
+                      'runner_on_second': None, 'runner_on_third': None,
+                      'at_bat_pitch_count': 1, 'last_pitch_speed': None,
+                      'last_pitch_type': '', 'last_strike_call': '', 'strike_calls': []}]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    base = _base_game(walk_off=True)  # simulates a base_game from a completed walk-off
+    state = _game_state_at_time(base, tl, _dt(23, 11))
+    assert state['detailed_state'] == 'In Progress'
+    assert state['walk_off'] is False
+
+
+def test_game_state_walk_off_cleared_for_pre_game_frames():
+    """walk_off is also cleared when the reconstructed state is Scheduled
+    (before the first pitch)."""
+    tl = _tl(first_actual_pitch_utc=_dt(23, 5))
+    base = _base_game(walk_off=True)
+    state = _game_state_at_time(base, tl, _dt(22, 50))
+    assert state['detailed_state'] == 'Scheduled'
+    assert state['walk_off'] is False
+
+
+def test_game_state_save_situation_computed_from_reconstructed_scores():
+    """save_situation must be recomputed from the reconstructed inning/scores,
+    not inherited from base_game (which always has it False for Final games)."""
+    pitch_events = [{'time': _dt(23, 11), 'balls': 1, 'strikes': 0, 'outs': 0,
+                      'inning': 8, 'half_inning': 'top', 'away_score': 3, 'home_score': 5,
+                      'pitcher': '', 'batter': '', 'runner_on_first': None,
+                      'runner_on_second': None, 'runner_on_third': None,
+                      'at_bat_pitch_count': 1, 'last_pitch_speed': None,
+                      'last_pitch_type': '', 'last_strike_call': '', 'strike_calls': []}]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(save_situation=False), tl, _dt(23, 11))
+    assert state['detailed_state'] == 'In Progress'
+    # inning 8, |5 - 3| = 2 → save situation
+    assert state['save_situation'] is True
+
+
+def test_game_state_save_situation_false_when_run_diff_too_large():
+    """save_situation stays False when the run differential is outside 1-3."""
+    pitch_events = [{'time': _dt(23, 11), 'balls': 0, 'strikes': 0, 'outs': 0,
+                      'inning': 8, 'half_inning': 'top', 'away_score': 0, 'home_score': 5,
+                      'pitcher': '', 'batter': '', 'runner_on_first': None,
+                      'runner_on_second': None, 'runner_on_third': None,
+                      'at_bat_pitch_count': 0, 'last_pitch_speed': None,
+                      'last_pitch_type': '', 'last_strike_call': '', 'strike_calls': []}]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 11))
+    assert state['save_situation'] is False
+
+
+def test_game_state_pitch_details_copied_from_last_pitch_event():
+    """Pitch speed, type, at-bat count, and strike calls are copied from the
+    most recent pitch event so the wide box can display them."""
+    pitch_events = [{'time': _dt(23, 11), 'balls': 1, 'strikes': 1, 'outs': 0,
+                      'inning': 5, 'half_inning': 'top', 'away_score': 2, 'home_score': 1,
+                      'pitcher': 'A', 'batter': 'B',
+                      'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+                      'at_bat_pitch_count': 3,
+                      'last_pitch_speed': 94.5,
+                      'last_pitch_type': 'SL',
+                      'last_strike_call': 'S',
+                      'strike_calls': ['C', 'S']}]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 11))
+    assert state['at_bat_pitch_count'] == 3
+    assert state['last_pitch_speed'] == 94.5
+    assert state['last_pitch_type'] == 'SL'
+    assert state['last_strike_call'] == 'S'
+    assert state['strike_calls'] == ['C', 'S']
+
+
+def test_game_state_pitch_details_cleared_between_plays():
+    """Between at-bats the pitch detail fields are reset to empty/zero."""
+    play = _completed_play(3, 'top', 1, 0, _dt(23, 10))
+    play['outs_after'] = 2
+    play['pitcher'] = 'Pitcher'
+    tl = _tl(plays=[play], last_play_utc=_dt(23, 10))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 12))
+    assert state['at_bat_pitch_count'] == 0
+    assert state['last_pitch_speed'] is None
+    assert state['last_pitch_type'] == ''
+    assert state['strike_calls'] == []
+
+
+def test_game_state_abs_challenge_max_scales_for_extra_innings():
+    """ABS challenge max grows by 1 per extra inning (10th=3, 11th=4, …)."""
+    pitch_events = [{'time': _dt(23, 11), 'balls': 0, 'strikes': 0, 'outs': 0,
+                      'inning': 10, 'half_inning': 'top', 'away_score': 3, 'home_score': 3,
+                      'pitcher': '', 'batter': '', 'runner_on_first': None,
+                      'runner_on_second': None, 'runner_on_third': None,
+                      'at_bat_pitch_count': 0, 'last_pitch_speed': None,
+                      'last_pitch_type': '', 'last_strike_call': '', 'strike_calls': []}]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 11))
+    assert state['current_inning'] == 10
+    assert state['away_challenges_remaining'] == 3   # 2 base + 1 extra inning
+    assert state['home_challenges_remaining'] == 3
 
 
 def test_game_state_next_batters_shown_during_break():
@@ -1155,3 +1276,474 @@ def test_generate_gif_imageio_missing_is_reported(monkeypatch, tmp_path, capsys)
         generate_gif('2026-06-20', '23:00', '23:01', output, 1, 300, 1, {'timezone': 'America/Chicago'})
 
     assert 'imageio not installed' in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# _fetch_game_timeline pitch-detail extraction
+# ---------------------------------------------------------------------------
+
+def test_fetch_game_timeline_extracts_pitch_speed_type_and_strike_call():
+    """_fetch_game_timeline must extract last_pitch_speed, last_pitch_type,
+    at_bat_pitch_count, last_strike_call, and strike_calls from isPitch events
+    so _game_state_at_time can populate the wide-box pitch-detail fields."""
+    pitch_ev = {
+        'type': 'pitch',
+        'isPitch': True,
+        'startTime': '2026-06-20T23:05:00Z',
+        'count': {'balls': 0, 'strikes': 1, 'outs': 0},
+        'pitchData': {'startSpeed': 95.2},
+        'details': {
+            'type': {'code': 'FF'},               # Four-seam fastball → 'FB'
+            'call': {'code': 'C'},                 # Called strike → 'L'
+        },
+    }
+    play = _play(
+        inning=1, half='top', complete=False,
+        start='2026-06-20T23:04:00Z', end='2026-06-20T23:09:00Z',
+        events=[pitch_ev],
+    )
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+
+    assert tl['pitch_events'], "Expected at least one pitch event"
+    ev = tl['pitch_events'][0]
+    assert ev['last_pitch_speed'] == 95.2
+    assert ev['last_pitch_type'] == 'FB'     # mapped from 'FF'
+    assert ev['at_bat_pitch_count'] == 1
+    assert ev['last_strike_call'] == 'L'     # called strike
+    assert ev['strike_calls'] == ['C']
+
+
+def test_fetch_game_timeline_non_pitch_events_carry_last_pitch_data():
+    """A non-pitch event (action, mound visit) in the same at-bat carries over
+    the last pitch's speed/type so _game_state_at_time always has fresh data."""
+    pitch_ev = {
+        'type': 'pitch', 'isPitch': True,
+        'startTime': '2026-06-20T23:05:00Z',
+        'count': {'balls': 0, 'strikes': 1, 'outs': 0},
+        'pitchData': {'startSpeed': 88.0},
+        'details': {'type': {'code': 'SL'}, 'call': {'code': 'S'}},
+    }
+    action_ev = {
+        'type': 'action', 'isPitch': False,
+        'startTime': '2026-06-20T23:06:00Z',
+        'count': {'balls': 0, 'strikes': 1, 'outs': 0},
+        'pitchData': {},
+        'details': {'description': 'Mound visit'},
+    }
+    play = _play(
+        inning=1, half='top', complete=False,
+        start='2026-06-20T23:04:00Z', end='2026-06-20T23:09:00Z',
+        events=[pitch_ev, action_ev],
+    )
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+
+    # The second event (action) should carry over the pitch's speed and type
+    pitch_events_with_time = [e for e in tl['pitch_events'] if e.get('last_pitch_speed')]
+    assert any(e['last_pitch_speed'] == 88.0 for e in pitch_events_with_time)
+
+
+# ---------------------------------------------------------------------------
+# _fetch_game_timeline hit / perfect-game tracking in timeline entries
+# ---------------------------------------------------------------------------
+
+def _isPitch_ev(time, call_code='C', pitch_type='FF', speed=92.0, px=0.1, pz=2.5,
+                sz_top=3.4, sz_bot=1.6, balls=0, strikes=1, outs=0):
+    """Minimal isPitch=True play event with coordinates."""
+    return {
+        'isPitch': True,
+        'startTime': time,
+        'count': {'balls': balls, 'strikes': strikes, 'outs': outs},
+        'pitchData': {
+            'startSpeed': speed,
+            'coordinates': {'pX': px, 'pZ': pz},
+            'strikeZoneTop': sz_top,
+            'strikeZoneBottom': sz_bot,
+        },
+        'details': {
+            'call': {'code': call_code},
+            'type': {'code': pitch_type},
+        },
+    }
+
+
+def test_fetch_game_timeline_hit_increments_away_hits_so_far():
+    """A Single by the away team (top half) increments away_hits_so_far in the
+    corresponding timeline entry and leaves home_hits_so_far unchanged."""
+    play = _play(inning=1, half='top', away_score=1, home_score=0, outs_after=0,
+                 event='Single', event_type='single')
+    play['result']['isOut'] = False
+    play['matchup']['postOnFirst'] = {'fullName': 'Mookie Betts'}
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert tl['plays'][0]['away_hits_so_far'] == 1
+    assert tl['plays'][0]['home_hits_so_far'] == 0
+    assert tl['plays'][0]['is_hit'] is True
+
+
+def test_fetch_game_timeline_hit_in_bottom_half_increments_home_hits():
+    """A hit in the bottom half (home team batting) increments home_hits_so_far."""
+    play = _play(inning=1, half='bottom', away_score=0, home_score=1, outs_after=0,
+                 event='Double', event_type='double')
+    play['result']['isOut'] = False
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert tl['plays'][0]['home_hits_so_far'] == 1
+    assert tl['plays'][0]['away_hits_so_far'] == 0
+
+
+def test_fetch_game_timeline_strikeout_does_not_increment_hits():
+    """A strikeout leaves both hit counters at 0 and keeps pg_intact=True."""
+    play = _play(inning=1, half='top', outs_after=1, event='Strikeout', event_type='strikeout')
+    play['result']['isOut'] = True
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert tl['plays'][0]['away_hits_so_far'] == 0
+    assert tl['plays'][0]['home_pg_intact'] is True
+
+
+def test_fetch_game_timeline_walk_breaks_home_pg_intact():
+    """A walk in the top half (away batter reaches) sets home_pg_intact=False
+    because the home pitcher allowed a baserunner."""
+    play = _play(inning=1, half='top', outs_after=0, event='Walk', event_type='walk')
+    play['result']['isOut'] = False
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert tl['plays'][0]['away_hits_so_far'] == 0   # walk is not a hit
+    assert tl['plays'][0]['home_pg_intact'] is False  # but PG is broken
+
+
+def test_fetch_game_timeline_pitch_event_stores_coordinates():
+    """Pitch events with isPitch=True must store px/pz/sz_top/sz_bot/call_code/pt_abbr
+    so _game_state_at_time can build ab_pitches for the strike-zone visualization."""
+    pitch_ev = _isPitch_ev('2026-06-20T23:05:00Z', call_code='C', pitch_type='FF',
+                           speed=95.0, px=0.2, pz=2.7, sz_top=3.5, sz_bot=1.5)
+    play = _play(inning=1, half='top', complete=False,
+                 start='2026-06-20T23:04:00Z', end='2026-06-20T23:09:00Z',
+                 events=[pitch_ev])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+
+    ev = tl['pitch_events'][0]
+    assert ev['is_pitch'] is True
+    assert ev['px'] == pytest.approx(0.2)
+    assert ev['pz'] == pytest.approx(2.7)
+    assert ev['sz_top'] == pytest.approx(3.5)
+    assert ev['sz_bot'] == pytest.approx(1.5)
+    assert ev['call_code'] == 'C'
+    assert ev['pt_abbr'] == 'FB'   # FF maps to 'FB' via _PITCH_TYPE_ABBR
+
+
+def test_fetch_game_timeline_non_pitch_event_has_null_coordinates():
+    """A non-isPitch event (action, mound visit) must have px=None, pz=None
+    so _build_ab_pitches correctly skips it."""
+    action_ev = {
+        'isPitch': False, 'startTime': '2026-06-20T23:05:00Z',
+        'count': {'balls': 0, 'strikes': 0, 'outs': 0},
+        'details': {'description': 'Mound visit'},
+    }
+    play = _play(inning=1, half='top', complete=False,
+                 start='2026-06-20T23:04:00Z', end='2026-06-20T23:09:00Z',
+                 events=[action_ev])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+
+    ev = tl['pitch_events'][0]
+    assert ev['is_pitch'] is False
+    assert ev['px'] is None
+    assert ev['pz'] is None
+
+
+# ---------------------------------------------------------------------------
+# _game_state_at_time — reconstructed hits, no-hitter, ab_pitches, pitch_count
+# ---------------------------------------------------------------------------
+
+def _pitch_ev_entry(t, pitcher='P', batter='B', batter_id=99,
+                    inning=5, half='top', balls=0, strikes=1, outs=0,
+                    away_score=0, home_score=0,
+                    px=0.1, pz=2.5, sz_top=3.4, sz_bot=1.6,
+                    call_code='C', pt_abbr='FB'):
+    """Build a pitch_events entry in the shape _fetch_game_timeline produces."""
+    return {
+        'time': t, 'is_pitch': True,
+        'pitcher': pitcher, 'batter': batter, 'batter_id': batter_id,
+        'inning': inning, 'half_inning': half,
+        'balls': balls, 'strikes': strikes, 'outs': outs,
+        'away_score': away_score, 'home_score': home_score,
+        'at_bat_pitch_count': 1, 'last_pitch_speed': 94.0,
+        'last_pitch_type': pt_abbr, 'last_strike_call': 'L', 'strike_calls': ['C'],
+        'px': px, 'pz': pz, 'sz_top': sz_top, 'sz_bot': sz_bot,
+        'call_code': call_code, 'pt_abbr': pt_abbr, 'ab_seq': 1,
+        'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+    }
+
+
+def test_game_state_reconstructs_away_hits_from_plays():
+    """away_hits is the cumulative away-team hit count at target_utc,
+    not the final game total inherited from base_game."""
+    plays = [
+        _stat_play(5, 'top', 1, 0, _dt(23, 5), away_hits_so_far=1, home_hits_so_far=0,
+                   is_hit=True, batter_id=1),
+        _stat_play(5, 'top', 2, 0, _dt(23, 10), away_hits_so_far=2, home_hits_so_far=0,
+                   is_hit=True, batter_id=2),
+    ]
+    tl = _tl(plays=plays, last_play_utc=_dt(23, 30))
+    # base_game might have stale final totals — must not bleed through
+    state = _game_state_at_time(_base_game(away_hits=9, home_hits=7), tl, _dt(23, 12))
+    assert state['detailed_state'] == 'In Progress'
+    assert state['away_hits'] == 2
+    assert state['home_hits'] == 0
+
+
+def test_game_state_reconstructs_home_hits_from_plays():
+    """home_hits is the cumulative home-team hit count at target_utc."""
+    plays = [
+        _stat_play(5, 'bottom', 0, 1, _dt(23, 5), away_hits_so_far=0, home_hits_so_far=1,
+                   is_hit=True, batter_id=10),
+    ]
+    tl = _tl(plays=plays, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 10))
+    assert state['home_hits'] == 1
+    assert state['away_hits'] == 0
+
+
+def test_game_state_no_hitter_set_when_away_has_zero_hits_inning_5_plus():
+    """no_hitter is True when the away team has 0 hits and we are past inning 5
+    (home pitcher has a no-hitter going)."""
+    plays = [
+        _stat_play(5, 'top', 0, 0, _dt(23, 5), away_hits_so_far=0, home_hits_so_far=2,
+                   is_hit=False, home_pg_intact=False, away_pg_intact=False),
+    ]
+    pitch_events = [_pitch_ev_entry(_dt(23, 11), inning=5)]
+    tl = _tl(plays=plays, pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(no_hitter=False), tl, _dt(23, 11))
+    assert state['no_hitter'] is True
+    assert state['perfect_game'] is False   # PG broken (home_pg_intact was set False)
+
+
+def test_game_state_no_hitter_false_when_both_teams_have_hits():
+    """no_hitter is False once both teams have recorded hits (neither pitcher
+    has a no-hitter going)."""
+    plays = [
+        _stat_play(6, 'top', 1, 0, _dt(23, 5), away_hits_so_far=1, home_hits_so_far=0,
+                   home_pg_intact=False, away_pg_intact=True),
+        _stat_play(6, 'bottom', 1, 1, _dt(23, 8), away_hits_so_far=1, home_hits_so_far=1,
+                   home_pg_intact=False, away_pg_intact=False),
+    ]
+    pitch_events = [_pitch_ev_entry(_dt(23, 11), inning=6)]
+    tl = _tl(plays=plays, pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(no_hitter=True), tl, _dt(23, 11))
+    assert state['no_hitter'] is False
+
+
+def test_game_state_no_hitter_suppressed_before_inning_5():
+    """no_hitter stays False even if both hit counts are 0 in early innings,
+    because the flag is not shown until inning >= 5."""
+    pitch_events = [_pitch_ev_entry(_dt(23, 11), inning=2)]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(no_hitter=True), tl, _dt(23, 11))
+    assert state['no_hitter'] is False
+
+
+def test_game_state_perfect_game_when_pg_intact_and_inning_5_plus():
+    """perfect_game and no_hitter are both True when the pitching team's
+    perfect game is still intact past inning 5."""
+    plays = [
+        _stat_play(5, 'top', 0, 0, _dt(23, 5), away_hits_so_far=0, home_hits_so_far=0,
+                   home_pg_intact=True, away_pg_intact=True),
+    ]
+    pitch_events = [_pitch_ev_entry(_dt(23, 11), inning=5)]
+    tl = _tl(plays=plays, pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(perfect_game=False), tl, _dt(23, 11))
+    assert state['perfect_game'] is True
+    assert state['no_hitter'] is True
+
+
+def test_game_state_pre_game_clears_no_hitter_and_hits():
+    """Pre-game frames must clear no_hitter, perfect_game, away_hits, home_hits
+    even when the base_game (Final) has them set."""
+    tl = _tl(first_actual_pitch_utc=_dt(23, 5))
+    base = _base_game(no_hitter=True, perfect_game=True, away_hits=7, home_hits=0)
+    state = _game_state_at_time(base, tl, _dt(22, 50))
+    assert state['detailed_state'] == 'Scheduled'
+    assert state['no_hitter'] is False
+    assert state['perfect_game'] is False
+    assert state['away_hits'] == 0
+    assert state['home_hits'] == 0
+
+
+def test_game_state_ab_pitches_built_from_pitch_coordinates():
+    """ab_pitches for the current at-bat is assembled from the pitch events
+    that have coordinates, enabling the strike-zone visualization."""
+    last_play = _stat_play(4, 'top', 0, 0, _dt(23, 5))
+    pitch_events = [
+        _pitch_ev_entry(_dt(23, 11), px=0.1, pz=2.5, call_code='B', pt_abbr='FB'),
+        _pitch_ev_entry(_dt(23, 12), px=-0.3, pz=3.0, call_code='C', pt_abbr='SL'),
+    ]
+    tl = _tl(plays=[last_play], pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 13))
+    ab = state['ab_pitches']
+    assert len(ab) == 2
+    assert ab[0]['px'] == pytest.approx(0.1)
+    assert ab[0]['call'] == 'B'
+    assert ab[0]['pt_abbr'] == 'FB'
+    assert ab[1]['call'] == 'C'
+    assert ab[1]['sz_top'] == pytest.approx(3.4)
+
+
+def test_game_state_ab_pitches_only_from_current_at_bat():
+    """Pitches from before the last completed play are excluded from ab_pitches;
+    only the current at-bat's pitches appear."""
+    last_play = _stat_play(4, 'top', 0, 0, _dt(23, 10))
+    pitch_events = [
+        _pitch_ev_entry(_dt(23, 5), px=0.9, pz=1.0, call_code='X', pt_abbr='CH'),  # before last play
+        _pitch_ev_entry(_dt(23, 11), px=0.1, pz=2.5, call_code='C', pt_abbr='FB'),  # current AB
+    ]
+    tl = _tl(plays=[last_play], pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 12))
+    assert len(state['ab_pitches']) == 1
+    assert state['ab_pitches'][0]['call'] == 'C'
+
+
+def test_game_state_pitch_count_counted_for_current_pitcher():
+    """pitch_count is the number of pitches the current pitcher has thrown
+    in the game (reconstructed from pitch_events), not inherited from base_game."""
+    pitcher = 'Logan Webb'
+    pitch_events = [
+        _pitch_ev_entry(_dt(23, 5), pitcher=pitcher),
+        _pitch_ev_entry(_dt(23, 6), pitcher=pitcher),
+        _pitch_ev_entry(_dt(23, 7), pitcher=pitcher),
+    ]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    # Query at 23:08 — current_pitcher is Logan Webb (last pitch event at 23:07)
+    state = _game_state_at_time(
+        _base_game(pitch_count=99),  # stale final value must not be used
+        tl, _dt(23, 8),
+    )
+    assert state['current_pitcher'] == pitcher
+    assert state['pitch_count'] == 3
+
+
+def test_game_state_batter_hits_and_at_bats_from_play_history():
+    """batter_hits and batter_at_bats reflect the current batter's game stats
+    reconstructed from completed plays, not inherited from base_game."""
+    batter_id = 42
+    plays = [
+        _stat_play(3, 'top', 0, 0, _dt(23, 3), batter_id=batter_id,
+                   is_hit=True, counts_as_ab=True,
+                   away_hits_so_far=1, home_hits_so_far=0),
+        _stat_play(5, 'top', 1, 0, _dt(23, 10), batter_id=batter_id,
+                   is_hit=False, counts_as_ab=True,
+                   away_hits_so_far=1, home_hits_so_far=0),
+        _stat_play(5, 'top', 1, 0, _dt(23, 11), batter_id=99,  # different batter
+                   is_hit=True, counts_as_ab=True,
+                   away_hits_so_far=2, home_hits_so_far=0),
+    ]
+    pitch_events = [_pitch_ev_entry(_dt(23, 15), batter_id=batter_id, inning=7)]
+    tl = _tl(plays=plays, pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    state = _game_state_at_time(_base_game(batter_hits=9, batter_at_bats=3), tl, _dt(23, 15))
+    assert state['batter_hits'] == 1       # only batter 42's hits
+    assert state['batter_at_bats'] == 2   # only batter 42's ABs
+
+
+def test_game_state_sub_event_and_at_bat_complete_cleared():
+    """sub_event and current_at_bat_complete are cleared for in-progress frames
+    so pitching-change detection and next-batter display don't misfire."""
+    pitch_events = [_pitch_ev_entry(_dt(23, 11), inning=3)]
+    tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
+    base = _base_game(sub_event='PC: Somebody', current_at_bat_complete=True)
+    state = _game_state_at_time(base, tl, _dt(23, 11))
+    assert state['sub_event'] is None
+    assert state['current_at_bat_complete'] is False
+
+
+# ---------------------------------------------------------------------------
+# Wide (2-cell) slot allocation in rendered frames
+# ---------------------------------------------------------------------------
+
+def test_generate_gif_live_games_get_wide_slots_in_frames(monkeypatch, tmp_path):
+    """When games are in progress during the timelapse window the frames passed
+    to orchestrate_score_board contain 'In Progress' states, and those states
+    cause compute_grid_layout to allocate wide (2-cell) slots for the live games.
+
+    This test keeps the full compute_grid_layout→_cluster_live_games path real
+    (no mocking), using a spy on orchestrate_score_board to capture what game
+    data the timelapse actually hands to the renderer at each frame.
+    """
+    from image_grid import compute_grid_layout
+
+    game1 = {'game_pk': 1001, 'away_team_id': 147, 'home_team_id': 111,
+              'venue': None, 'game_date': None}
+    game2 = {'game_pk': 1002, 'away_team_id': 119, 'home_team_id': 136,
+              'venue': None, 'game_date': None}
+
+    # Both games are live across the whole window (23:03–23:07 UTC).
+    window_start = _dt(23, 0)
+    window_end = _dt(23, 10)
+    live_tl = _tl(
+        first_actual_pitch_utc=window_start,
+        first_pitch_utc=window_start,
+        scheduled_start_utc=window_start,
+        last_play_utc=window_end,
+        plays=[_completed_play(5, 'top', 3, 2, _dt(23, 5))],
+        pitch_events=[{
+            'time': _dt(23, 3),
+            'balls': 1, 'strikes': 0, 'outs': 0,
+            'inning': 5, 'half_inning': 'top',
+            'away_score': 3, 'home_score': 2,
+            'pitcher': 'Pitcher A', 'batter': 'Batter B',
+            'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+        }],
+    )
+
+    monkeypatch.setattr(tl_mod, 'fetch_scoreboard_for_date', MagicMock())
+    monkeypatch.setattr(tl_mod, 'load_json_file',
+                        lambda f: {'games': [game1, game2]} if 'games' in f
+                        else {'team_abbreviation': {}})
+    monkeypatch.setattr(tl_mod, '_lookup_stadium', lambda *a, **k: None)
+    monkeypatch.setattr(tl_mod, '_fetch_game_timeline', lambda pk: live_tl)
+
+    captured_frames = []
+    from PIL import Image
+    fake_image = Image.new('1', (800, 480), 255)
+
+    def _spy(frame_games, *args, **kwargs):
+        captured_frames.append(list(frame_games))
+        return (fake_image, [])
+
+    with patch('generate_image.orchestrate_score_board', side_effect=_spy), \
+         patch('standings.get_standings'):
+        generate_gif('2026-06-20', '23:03', '23:07', str(tmp_path / 'out.gif'),
+                     2, 300, 1, {'timezone': 'UTC'})
+
+    assert captured_frames, "Expected at least one frame rendered during the live window"
+
+    # Every frame should have both games reconstructed as 'In Progress'.
+    first_frame = captured_frames[0]
+    states = [g.get('detailed_state') for g in first_frame]
+    assert all(s == 'In Progress' for s in states), (
+        f"All games should be 'In Progress' during live window, got: {states}"
+    )
+
+    # compute_grid_layout must allocate wide slots for those live games.
+    cfg = {
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'favorite_team_first': False,
+        'primary': '',
+    }
+    team_data = {'team_abbreviation': {}}
+    _, slots = compute_grid_layout(first_frame, team_data, cfg)
+    wide_count = sum(1 for s in slots if s[0] == 'wide')
+    assert wide_count >= 1, (
+        f"Expected wide slots for live games in timelapse frame, got slots: {slots}"
+    )
