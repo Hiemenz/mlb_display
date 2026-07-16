@@ -1,3 +1,4 @@
+import math as _math
 import re as _re
 import time as _time
 import pytz
@@ -15,6 +16,7 @@ from image_utils import (
     _is_game_effectively_over,
 )
 from util import load_json_file, load_yaml_file, save_off_results
+from stadium_polygons import get_polygon as _field_get_polygon
 
 _final_time_cache: dict = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
@@ -2674,6 +2676,212 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
     )
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
        (_wide_is_final or _wide_active_no_no) and \
+       not (score_changed or _run_scored):
+        header_box = Himage.crop((start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+
+    return Himage
+
+
+# Generic outfield wall used when venue is unknown (symmetric 330-400-330 park).
+_FIELD_FALLBACK_POLY = [
+    (-233.3,  233.3),
+    (-127.3,  307.3),
+    (   0.0,  400.0),
+    ( 127.3,  307.3),
+    ( 233.3,  233.3),
+]
+
+
+def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
+    """Draw compact field diagram in a 150×130 px tile cell.
+
+    Draws the venue outfield wall with LF/CF/RF distance labels, the infield
+    diamond with mound and home plate, and fills occupied bases.  Does NOT
+    draw batted-ball markers (that data is not in games.json).
+    """
+    s = scale
+    # 0.28 px/ft fits any MLB park in 150px: 355ft foul pole → ±70px from centre → x ≈ 5-145px.
+    FSCALE = 0.28 * s
+    HX = int(fx + 75 * s)
+    HY = int(fy + 126 * s)
+
+    # Base positions (90ft diamond rotated 45°)
+    _b = round(63.64 * FSCALE)   # 90 * cos45 ≈ 63.64 ft
+    FIRST  = (HX + _b, HY - _b)
+    SECOND = (HX,      HY - 2 * _b)
+    THIRD  = (HX - _b, HY - _b)
+
+    venue     = game_data.get('venue', '')
+    wall_poly = _field_get_polygon(venue) or _FIELD_FALLBACK_POLY
+
+    _cx0 = fx + 1
+    _cx1 = fx + fw * s - 2
+    _cy0 = fy + 1
+    _cy1 = fy + fh * s - 2
+
+    def _fpt(x_ft, y_ft):
+        px = int(HX + x_ft * FSCALE)
+        py = int(HY - y_ft * FSCALE)
+        return (max(_cx0, min(_cx1, px)), max(_cy0, min(_cy1, py)))
+
+    wall_pts = [_fpt(x, y) for x, y in wall_poly]
+    lf_pole  = wall_pts[0]
+    rf_pole  = wall_pts[-1]
+
+    # Warning track: scale each wall point 10 ft closer to home
+    for idx in range(len(wall_poly) - 1):
+        x_ft, y_ft = wall_poly[idx]
+        d  = _math.sqrt(x_ft**2 + y_ft**2)
+        f  = max(d - 10, 40) / d if d > 0 else 1.0
+        x2, y2 = wall_poly[idx + 1]
+        d2 = _math.sqrt(x2**2 + y2**2)
+        f2 = max(d2 - 10, 40) / d2 if d2 > 0 else 1.0
+        draw.line([_fpt(x_ft * f, y_ft * f), _fpt(x2 * f2, y2 * f2)], fill=0, width=1)
+
+    # Outfield fence
+    for idx in range(len(wall_pts) - 1):
+        draw.line([wall_pts[idx], wall_pts[idx + 1]], fill=0, width=1)
+
+    # Foul lines from home to the poles
+    draw.line([(HX, HY), lf_pole], fill=0, width=1)
+    draw.line([(HX, HY), rf_pole], fill=0, width=1)
+
+    # Infield grass arc
+    r_arc = round(2.25 * _b)
+    draw.arc([HX - r_arc, HY - r_arc, HX + r_arc, HY + r_arc], start=225, end=315, fill=0, width=1)
+
+    # Base paths
+    draw.line([(HX, HY), FIRST],  fill=0, width=1)
+    draw.line([FIRST,  SECOND],   fill=0, width=1)
+    draw.line([SECOND, THIRD],    fill=0, width=1)
+    draw.line([THIRD, (HX, HY)], fill=0, width=1)
+
+    # Home plate (small pentagon)
+    hp = max(round(3 * s), 3)
+    draw.polygon([
+        (HX,          HY + hp),
+        (HX - hp,     HY),
+        (HX - hp + 1, HY - hp),
+        (HX + hp - 1, HY - hp),
+        (HX + hp,     HY),
+    ], outline=0)
+
+    # Pitcher's mound
+    mr = max(round(3 * s), 3)
+    mx = int(HX)
+    my = int(HY - round(60.5 * FSCALE))
+    draw.ellipse([mx - mr, my - mr, mx + mr, my + mr], outline=0)
+
+    # Bases: filled diamond if runner present, outline-only if empty
+    bsz = max(round(4 * s), 4)
+    for runner_key, (bx, by) in [
+        ('runner_on_first',  FIRST),
+        ('runner_on_second', SECOND),
+        ('runner_on_third',  THIRD),
+    ]:
+        occ = isinstance(game_data.get(runner_key), str)
+        pts = [(bx, by - bsz), (bx + bsz, by), (bx, by + bsz), (bx - bsz, by)]
+        if occ:
+            draw.polygon(pts, fill=0, outline=0)
+        else:
+            draw.polygon(pts, outline=0)
+
+    # Distance labels at LF pole, deepest CF point, RF pole
+    font_tiny = _get_font(max(round(7 * s), 7))
+    deepest_i = min(range(len(wall_pts)), key=lambda i: wall_pts[i][1])
+    cf_pt   = wall_pts[deepest_i]
+    lf_dist = round(_math.sqrt(wall_poly[0][0]**2    + wall_poly[0][1]**2))
+    cf_dist = round(_math.sqrt(wall_poly[deepest_i][0]**2 + wall_poly[deepest_i][1]**2))
+    rf_dist = round(_math.sqrt(wall_poly[-1][0]**2   + wall_poly[-1][1]**2))
+    draw.text((cf_pt[0] - 8,    cf_pt[1] - 9),  str(cf_dist), font=font_tiny, fill=0)
+    draw.text((lf_pole[0] + 1,  lf_pole[1]),     str(lf_dist), font=font_tiny, fill=0)
+    draw.text((rf_pole[0] - 16, rf_pole[1]),      str(rf_dist), font=font_tiny, fill=0)
+
+    return Himage
+
+
+def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
+                    score_changed=False, use_logos=False, logo_x_offset=2,
+                    show_win_prob=False, streak_map=None, scale=1):
+    """Featured 3-cell (435×130 px) game tile.
+
+    Cell 1 (left, 135 px):  standard game box — score, linescore, logo.
+    Cell 2 (middle, 150 px): pitch zone + bases/outs/count + pitcher/batter.
+    Cell 3 (right, 150 px):  venue field diagram with outfield wall,
+                              infield diamond, and runner positions.
+    """
+    s = scale
+    CELL_W  = 135 * s
+    RIGHT_W = 150 * s
+    FIELD_W = 150 * s
+    TOTAL_W = CELL_W + RIGHT_W + FIELD_W   # 435 px
+    HEADER_H = 20 * s
+    TOTAL_H  = 130 * s
+
+    Himage = draw_box(
+        Himage, start_x, start_y, game_data, team_data,
+        score_changed=score_changed,
+        use_logos=use_logos,
+        logo_x_offset=logo_x_offset,
+        show_win_prob=show_win_prob,
+        streak_map=streak_map,
+        show_winner_logo=True,
+        scale=scale,
+        force_linescore=True,
+        always_show_hits=True,
+        hide_last_play=True,
+        skip_header_invert=True,
+    )
+
+    draw = ImageDraw.Draw(Himage)
+    rp_x        = start_x + CELL_W
+    fp_x        = rp_x + RIGHT_W
+    total_right = start_x + TOTAL_W
+
+    # Extend borders across the two right panels
+    draw.line((rp_x, start_y,              total_right, start_y),              fill=0)
+    draw.line((rp_x, start_y + HEADER_H,   total_right, start_y + HEADER_H),   fill=0)
+    draw.line((rp_x, start_y + TOTAL_H,    total_right, start_y + TOTAL_H),    fill=0)
+    # Divider between panel 2 and panel 3
+    draw.line((fp_x, start_y, fp_x, start_y + TOTAL_H), fill=0)
+
+    # Cell 2: pitch zone / situation
+    _draw_wide_right_panel(
+        draw, Himage,
+        rp_x=rp_x, rp_y=start_y,
+        rp_w=RIGHT_W, rp_h=TOTAL_H,
+        header_h=HEADER_H,
+        game_data=game_data,
+        team_data=team_data,
+        use_logos=use_logos,
+        scale=scale,
+    )
+
+    # Cell 3: field diagram
+    draw = ImageDraw.Draw(Himage)
+    _draw_field_cell(draw, Himage, fp_x, start_y, 150, 130, game_data, scale=scale)
+
+    # Invert spanning header when a run scored or score changed
+    _between   = game_data.get('inningState') in ('Middle', 'End')
+    _run_scored = (
+        game_data.get('detailed_state') == 'In Progress'
+        and int(game_data.get('last_play_rbi') or 0) > 0
+    )
+    if (score_changed or _run_scored) and not _between:
+        header_box = Himage.crop((start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H))
+        Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
+        draw = ImageDraw.Draw(Himage)
+
+    # No-hitter / perfect game header inversion
+    _triple_is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
+    _triple_active_no_no = (
+        game_data.get('detailed_state') == 'In Progress' and
+        (game_data.get('no_hitter') or game_data.get('perfect_game')) and
+        (game_data.get('current_inning') or 0) >= 6
+    )
+    if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
+       (_triple_is_final or _triple_active_no_no) and \
        not (score_changed or _run_scored):
         header_box = Himage.crop((start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
