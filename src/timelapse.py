@@ -35,6 +35,16 @@ _WP_SKIP_TYPES = ('substitution', 'timeout', 'advisory')
 _GIF_ABS_CHALLENGE_MAX = 2
 _TERMINAL_GAME_STATES = {'Postponed', 'Cancelled', 'Suspended'}
 
+_HIT_EVENTS = frozenset({'Single', 'Double', 'Triple', 'Home Run'})
+# Plate appearances that don't count as official at-bats
+_NOT_AB_EVENTS = frozenset({
+    'Walk', 'Intent Walk', 'Hit By Pitch',
+    'Sacrifice Fly', 'Sacrifice Fly Double Play',
+    'Sacrifice Bunt', "Catcher's Interference", 'Fan Interference',
+})
+# Inning threshold before displaying no-hitter / perfect game banner
+_NO_HITTER_INNING_THRESHOLD = 5
+
 
 def _ordinal(n):
     """Ordinal."""
@@ -146,6 +156,14 @@ def _fetch_game_timeline(game_pk):
     cumulative_last_play_top  = None  # True if top half, False if bottom
     cumulative_last_play_desc = None  # full description (for fielder notation)
 
+    # Running hit counts and perfect-game state for no-hitter reconstruction.
+    # away_hits/home_hits = hits BY that team.  pg_intact = pitching team's
+    # perfect game is still alive (no opposing batter has reached base).
+    running_away_hits   = 0
+    running_home_hits   = 0
+    home_pg_intact      = True   # home pitcher's PG (away team has no baserunners)
+    away_pg_intact      = True   # away pitcher's PG (home team has no baserunners)
+
     for i, play in enumerate(all_plays):
         about  = play.get('about', {})
         result = play.get('result', {})
@@ -178,6 +196,7 @@ def _fetch_game_timeline(game_pk):
         ab_last_pitch_spd  = None
         ab_last_pitch_type = None
         ab_last_strike     = ''
+        ab_last_call_code  = ''
 
         for ev in play.get('playEvents', []):
             # ABS challenge tracking
@@ -192,13 +211,18 @@ def _fetch_game_timeline(game_pk):
 
             # Per-at-bat pitch details — only for actual pitch deliveries
             is_pitch = ev.get('isPitch', False)
+            pitch_data = ev.get('pitchData', {}) if is_pitch else {}
+            coords     = pitch_data.get('coordinates', {})
+            ab_px = coords.get('pX') if is_pitch else None
+            ab_pz = coords.get('pZ') if is_pitch else None
             if is_pitch:
                 ab_pitch_num += 1
                 details   = ev.get('details', {})
                 call_code = (details.get('call', {}).get('code', '') or '').upper()
                 raw_type  = details.get('type', {}).get('code', '') or ''
                 ab_last_pitch_type = _PITCH_TYPE_ABBR.get(raw_type, raw_type) if raw_type else None
-                ab_last_pitch_spd  = ev.get('pitchData', {}).get('startSpeed')
+                ab_last_pitch_spd  = pitch_data.get('startSpeed')
+                ab_last_call_code  = call_code
                 ab_last_strike = ''
                 if call_code in ('S', 'W', 'T', 'O', 'M'):   # swinging / missed bunt
                     ab_last_strike = 'S'
@@ -232,16 +256,27 @@ def _fetch_game_timeline(game_pk):
                 'home_score':         at_bat_home,
                 'pitcher':            at_bat_pitcher,
                 'batter':             at_bat_batter,
+                'batter_id':          at_bat_batter_id,
                 'runner_on_first':    at_bat_runners['first'],
                 'runner_on_second':   at_bat_runners['second'],
                 'runner_on_third':    at_bat_runners['third'],
                 # Pitch detail fields — populated for pitch events; non-pitch
                 # events carry over the last pitch values so they're always fresh.
+                'is_pitch':           is_pitch,
                 'at_bat_pitch_count': ab_pitch_num,
                 'last_pitch_speed':   ab_last_pitch_spd,
                 'last_pitch_type':    ab_last_pitch_type or '',
                 'last_strike_call':   ab_last_strike,
                 'strike_calls':       list(ab_strike_calls),
+                # Pitch location + call code — only meaningful for isPitch events;
+                # None/'' for action/substitution events in the same at-bat.
+                'px':         ab_px,
+                'pz':         ab_pz,
+                'sz_top':     pitch_data.get('strikeZoneTop') if is_pitch else None,
+                'sz_bot':     pitch_data.get('strikeZoneBottom') if is_pitch else None,
+                'call_code':  ab_last_call_code if is_pitch else '',
+                'pt_abbr':    ab_last_pitch_type or '' if is_pitch else '',
+                'ab_seq':     ab_pitch_num if is_pitch else 0,
             })
 
         # --- Completed-play timeline (for score/inning snapshots) ---
@@ -263,20 +298,44 @@ def _fetch_game_timeline(game_pk):
         post_third  = (matchup.get('postOnThird')  or {}).get('fullName') or None
         running_runners = {'first': post_first, 'second': post_second, 'third': post_third}
 
+        # Track hits and perfect-game state for no-hitter reconstruction.
+        play_event = result.get('event', '')
+        _is_hit = play_event in _HIT_EVENTS
+        _counts_as_ab = bool(play_event) and play_event not in _NOT_AB_EVENTS
+        # result.isOut=False → batter reached base → breaks the pitching team's PG.
+        _batter_reached = not result.get('isOut', True)
+        if half_inning == 'top':     # away team batting
+            if _is_hit:
+                running_away_hits += 1
+            if _batter_reached:
+                home_pg_intact = False  # home pitcher's PG is broken
+        else:                        # home team batting
+            if _is_hit:
+                running_home_hits += 1
+            if _batter_reached:
+                away_pg_intact = False  # away pitcher's PG is broken
+
         timeline.append({
-            'end_time':         end_time,
-            'away_score':       away_score,
-            'home_score':       home_score,
-            'inning':           inning,
-            'half_inning':      half_inning,
-            'outs':             about.get('outs', 0),
-            'outs_after':       play.get('count', {}).get('outs', 0) or 0,
-            'pitcher':          at_bat_pitcher,
-            'batter':           at_bat_batter,
-            'batter_id':        at_bat_batter_id,
-            'runner_on_first':  post_first,
-            'runner_on_second': post_second,
-            'runner_on_third':  post_third,
+            'end_time':           end_time,
+            'away_score':         away_score,
+            'home_score':         home_score,
+            'inning':             inning,
+            'half_inning':        half_inning,
+            'outs':               about.get('outs', 0),
+            'outs_after':         play.get('count', {}).get('outs', 0) or 0,
+            'pitcher':            at_bat_pitcher,
+            'batter':             at_bat_batter,
+            'batter_id':          at_bat_batter_id,
+            'runner_on_first':    post_first,
+            'runner_on_second':   post_second,
+            'runner_on_third':    post_third,
+            # Cumulative hit counts and PG state as of this play's completion.
+            'away_hits_so_far':   running_away_hits,
+            'home_hits_so_far':   running_home_hits,
+            'home_pg_intact':     home_pg_intact,
+            'away_pg_intact':     away_pg_intact,
+            'is_hit':             _is_hit,
+            'counts_as_ab':       _counts_as_ab,
         })
 
         if away_chal_used > 0 or home_chal_used > 0:
@@ -444,6 +503,40 @@ def _inning_runs_at_time(plays, target_utc):
     return away_runs, home_runs
 
 
+def _build_ab_pitches(pitch_events, last_play, target_utc):
+    """Assemble ab_pitches for the current at-bat from stored pitch coordinates.
+
+    Includes only is_pitch events that happened after the last completed play
+    and on or before target_utc and have recorded coordinates (pX/pZ).
+    Returns a list in the same format consumed by _draw_wide_right_panel.
+    """
+    cutoff = last_play['end_time'] if last_play else None
+    result = []
+    seq = 0
+    for ev in pitch_events:
+        if ev['time'] > target_utc:
+            break
+        if cutoff and ev['time'] <= cutoff:
+            continue
+        if not ev.get('is_pitch'):
+            continue
+        px = ev.get('px')
+        pz = ev.get('pz')
+        if px is None or pz is None:
+            continue
+        seq += 1
+        result.append({
+            'seq':     seq,
+            'px':      px,
+            'pz':      pz,
+            'sz_top':  ev.get('sz_top'),
+            'sz_bot':  ev.get('sz_bot'),
+            'call':    ev.get('call_code', ''),
+            'pt_abbr': ev.get('pt_abbr', ''),
+        })
+    return result
+
+
 def _game_state_at_time(base_game, tl, target_utc):
     """Return a copy of base_game with dynamic fields set to game state at target_utc."""
     state = dict(base_game)
@@ -471,8 +564,13 @@ def _game_state_at_time(base_game, tl, target_utc):
             'away_win_probability': None, 'home_win_probability': None, 'last_play': None,
             'last_play_inning': None, 'last_play_is_top': None, 'last_play_description': '',
             'away_team_is_winner': False, 'home_team_is_winner': False,
-            # walk_off is a final-game attribute; clear it for pre-game frames
+            # Final-game attributes; clear them for pre-game frames
             'walk_off': False, 'save_situation': False,
+            'no_hitter': False, 'perfect_game': False,
+            'away_hits': 0, 'home_hits': 0,
+            'sub_event': None, 'ab_pitches': [],
+            'batter_hits': None, 'batter_at_bats': None,
+            'current_at_bat_complete': False, 'pitch_count': None,
         })
         return state
 
@@ -501,9 +599,16 @@ def _game_state_at_time(base_game, tl, target_utc):
 
     # --- In Progress: reconstruct detailed state from pitch events and completed plays ---
     state['detailed_state'] = 'In Progress'
-    # walk_off is a final-game attribute and must not show during in-progress frames
-    # (it would otherwise bleed from the base_game final state into every frame).
-    state['walk_off'] = False
+    # Clear all fields that carry Final-game semantics and would bleed into
+    # reconstructed in-progress frames if inherited from base_game unchanged.
+    state['walk_off']              = False
+    state['no_hitter']             = False
+    state['perfect_game']          = False
+    state['sub_event']             = None
+    state['current_at_bat_complete'] = False
+    state['batter_hits']           = None
+    state['batter_at_bats']        = None
+    state['ab_pitches']            = []
     pitch_events = tl.get('pitch_events', [])
 
     # Last pitch event before target_utc
@@ -604,6 +709,63 @@ def _game_state_at_time(base_game, tl, target_utc):
     away_inn, home_inn = _inning_runs_at_time(plays, target_utc)
     state['away_inning_runs'] = away_inn
     state['home_inning_runs'] = home_inn
+
+    # --- Reconstruct fields normally provided by game_detail_fetch ---
+
+    # Hit counts and no-hitter / perfect-game state from play history.
+    # These must be derived from plays to target_utc, not inherited from the
+    # Final base_game (which would show the final totals from pitch 1).
+    _away_hits = 0
+    _home_hits = 0
+    _home_pg   = True   # home pitcher's perfect game still intact
+    _away_pg   = True   # away pitcher's perfect game still intact
+    for _p in plays:
+        if _p['end_time'] > target_utc:
+            break
+        _away_hits = _p.get('away_hits_so_far', _away_hits)
+        _home_hits = _p.get('home_hits_so_far', _home_hits)
+        _home_pg   = _p.get('home_pg_intact', _home_pg)
+        _away_pg   = _p.get('away_pg_intact', _away_pg)
+    state['away_hits'] = _away_hits
+    state['home_hits'] = _home_hits
+    # Show no-hitter / perfect-game banner only once the game is past inning 5
+    # (mirrors when the MLB API starts setting the flags during a live game).
+    if _inn >= _NO_HITTER_INNING_THRESHOLD:
+        if _home_pg or _away_pg:
+            state['perfect_game'] = True
+            state['no_hitter']    = True
+        elif _away_hits == 0 or _home_hits == 0:
+            state['no_hitter'] = True
+
+    # Strike-zone pitch visualization for the current at-bat.
+    state['ab_pitches'] = _build_ab_pitches(pitch_events, last_play, target_utc)
+
+    # Game-level pitch count for the current pitcher, counted from pitch_events.
+    _cur_pitcher = state.get('current_pitcher') or ''
+    if _cur_pitcher:
+        state['pitch_count'] = sum(
+            1 for _e in pitch_events
+            if _e.get('is_pitch') and _e['time'] <= target_utc
+            and _e.get('pitcher') == _cur_pitcher
+        )
+    else:
+        state['pitch_count'] = None
+
+    # Batter game stats (hits / at-bats) for the current batter.
+    _cur_batter_id = (
+        (last_event.get('batter_id') if last_event else None)
+        or (last_play.get('batter_id') if last_play else None)
+    )
+    if _cur_batter_id:
+        _b_hits = sum(1 for _p in plays if _p['end_time'] <= target_utc
+                      and _p.get('batter_id') == _cur_batter_id
+                      and _p.get('is_hit'))
+        _b_abs  = sum(1 for _p in plays if _p['end_time'] <= target_utc
+                      and _p.get('batter_id') == _cur_batter_id
+                      and _p.get('counts_as_ab'))
+        state['batter_hits']     = _b_hits
+        state['batter_at_bats']  = _b_abs
+        state['current_play_batter'] = state.get('current_hitter') or ''
 
     # --- Win probability and last-play: find last wp_event before target_utc ---
     wp_events = tl.get('wp_events', [])
