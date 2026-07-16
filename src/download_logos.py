@@ -74,7 +74,8 @@ def _load_render_config(root):
         return {}
 
 
-MLBSTATIC_SVG_URL = 'https://www.mlbstatic.com/team-logos/{team_id}.svg'
+MLBSTATIC_SVG_URL    = 'https://www.mlbstatic.com/team-logos/{team_id}.svg'
+MIDFIELD_PNG_URL     = 'https://midfield.mlbstatic.com/v1/team/{team_id}/spots/96'
 
 
 def _svg_to_png(svg_bytes, dest, size=500):
@@ -99,10 +100,17 @@ def download_logos(abbr_map, logodir, render_config=None, sport_id=1):
     is_wbc = sport_id == 8
     is_milb = sport_id not in (1, 8)  # MiLB sports: AAA=11, AA=12, etc.
 
+    milb_subdir = os.path.join(logodir, str(sport_id)) if is_milb else None
+    if milb_subdir:
+        os.makedirs(milb_subdir, exist_ok=True)
+
     for team_id, abbr in sorted(abbr_map.items(), key=lambda x: x[1]):
-        # MiLB logos saved as {team_id}.png to avoid abbr collisions with MLB teams
-        # (e.g. COL = Colorado Rockies AND Columbus Clippers).
-        dest = os.path.join(logodir, f'{team_id}.png' if is_milb else f'{abbr}.png')
+        # MiLB logos stored in pic/logos/{sport_id}/{team_id}.png to keep leagues
+        # separate and avoid ID collisions between sports.
+        if is_milb:
+            dest = os.path.join(milb_subdir, f'{team_id}.png')
+        else:
+            dest = os.path.join(logodir, f'{abbr}.png')
 
         if os.path.exists(dest):
             print(f'  {abbr:<4} already exists — skipping')
@@ -128,7 +136,23 @@ def download_logos(abbr_map, logodir, render_config=None, sport_id=1):
                 print(f'  {abbr:<4} try failed: {url} — {e}')
 
         if not saved and is_milb:
-            # MiLB/AAA: download SVG from mlbstatic and convert to PNG
+            # MiLB: try midfield PNG CDN first (no cairosvg needed)
+            png_url = MIDFIELD_PNG_URL.format(team_id=team_id)
+            try:
+                req = urllib.request.Request(png_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data_bytes = resp.read()
+                with open(dest, 'wb') as f:
+                    f.write(data_bytes)
+                size_kb = len(data_bytes) // 1024
+                print(f'  {abbr:<4} saved  ({size_kb} KB)  [{png_url}]')
+                success += 1
+                saved = True
+            except Exception as e:
+                print(f'  {abbr:<4} midfield PNG failed: {e}')
+
+        if not saved and is_milb:
+            # MiLB fallback: SVG from mlbstatic (requires cairosvg + libcairo2)
             svg_url = MLBSTATIC_SVG_URL.format(team_id=team_id)
             try:
                 req = urllib.request.Request(svg_url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -186,12 +210,17 @@ def main():
                         help='Shortcut for --sport-id 8 --fetch-teams (download WBC logos)')
     parser.add_argument('--aaa', action='store_true',
                         help='Shortcut for --sport-id 11 --fetch-teams (download Triple-A logos)')
+    parser.add_argument('--intl', action='store_true',
+                        help='Shortcut for --sport-id 51 --fetch-teams (download DSL/FCL/ACL logos)')
     args = parser.parse_args()
 
     if args.wbc:
         args.sport_id = 8
     if args.aaa:
         args.sport_id = 11
+        args.fetch_teams = True
+    if getattr(args, 'intl', False):
+        args.sport_id = 51
         args.fetch_teams = True
 
     root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
