@@ -23,6 +23,7 @@ import requests
 
 from fetch_games import fetch_scoreboard_for_date, _lookup_stadium
 from util import load_json_file, load_yaml_file
+from game_detail_fetch import _PITCH_TYPE_ABBR
 
 _INNING_ORDINALS = {
     1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', 6: '6th',
@@ -171,6 +172,13 @@ def _fetch_game_timeline(game_pk):
         # Runners at START of this at-bat = running_runners before the play completes
         at_bat_runners = dict(running_runners)
 
+        # Per-at-bat pitch detail state (reset for each play/at-bat)
+        ab_pitch_num       = 0
+        ab_strike_calls    = []
+        ab_last_pitch_spd  = None
+        ab_last_pitch_type = None
+        ab_last_strike     = ''
+
         for ev in play.get('playEvents', []):
             # ABS challenge tracking
             rd = ev.get('reviewDetails')
@@ -182,6 +190,29 @@ def _fetch_game_timeline(game_pk):
                     elif ch_team == home_id:
                         home_chal_used += 1
 
+            # Per-at-bat pitch details — only for actual pitch deliveries
+            is_pitch = ev.get('isPitch', False)
+            if is_pitch:
+                ab_pitch_num += 1
+                details   = ev.get('details', {})
+                call_code = (details.get('call', {}).get('code', '') or '').upper()
+                raw_type  = details.get('type', {}).get('code', '') or ''
+                ab_last_pitch_type = _PITCH_TYPE_ABBR.get(raw_type, raw_type) if raw_type else None
+                ab_last_pitch_spd  = ev.get('pitchData', {}).get('startSpeed')
+                ab_last_strike = ''
+                if call_code in ('S', 'W', 'T', 'O', 'M'):   # swinging / missed bunt
+                    ab_last_strike = 'S'
+                    if len(ab_strike_calls) < 2:
+                        ab_strike_calls.append('S')
+                elif call_code == 'C':                          # called strike
+                    ab_last_strike = 'L'
+                    if len(ab_strike_calls) < 2:
+                        ab_strike_calls.append('C')
+                elif call_code in ('F', 'L', 'R'):             # foul
+                    ab_last_strike = 'F'
+                    if len(ab_strike_calls) < 2:
+                        ab_strike_calls.append('F')
+
             ev_time_str = ev.get('startTime', '')
             if not ev_time_str:
                 continue
@@ -191,19 +222,26 @@ def _fetch_game_timeline(game_pk):
                 continue
             count = ev.get('count', {})
             pitch_events.append({
-                'time':             ev_time,
-                'balls':            count.get('balls', 0) or 0,
-                'strikes':          count.get('strikes', 0) or 0,
-                'outs':             count.get('outs', about.get('outs', 0)) or 0,
-                'inning':           inning,
-                'half_inning':      half_inning,
-                'away_score':       at_bat_away,
-                'home_score':       at_bat_home,
-                'pitcher':          at_bat_pitcher,
-                'batter':           at_bat_batter,
-                'runner_on_first':  at_bat_runners['first'],
-                'runner_on_second': at_bat_runners['second'],
-                'runner_on_third':  at_bat_runners['third'],
+                'time':               ev_time,
+                'balls':              count.get('balls', 0) or 0,
+                'strikes':            count.get('strikes', 0) or 0,
+                'outs':               count.get('outs', about.get('outs', 0)) or 0,
+                'inning':             inning,
+                'half_inning':        half_inning,
+                'away_score':         at_bat_away,
+                'home_score':         at_bat_home,
+                'pitcher':            at_bat_pitcher,
+                'batter':             at_bat_batter,
+                'runner_on_first':    at_bat_runners['first'],
+                'runner_on_second':   at_bat_runners['second'],
+                'runner_on_third':    at_bat_runners['third'],
+                # Pitch detail fields — populated for pitch events; non-pitch
+                # events carry over the last pitch values so they're always fresh.
+                'at_bat_pitch_count': ab_pitch_num,
+                'last_pitch_speed':   ab_last_pitch_spd,
+                'last_pitch_type':    ab_last_pitch_type or '',
+                'last_strike_call':   ab_last_strike,
+                'strike_calls':       list(ab_strike_calls),
             })
 
         # --- Completed-play timeline (for score/inning snapshots) ---
@@ -433,6 +471,8 @@ def _game_state_at_time(base_game, tl, target_utc):
             'away_win_probability': None, 'home_win_probability': None, 'last_play': None,
             'last_play_inning': None, 'last_play_is_top': None, 'last_play_description': '',
             'away_team_is_winner': False, 'home_team_is_winner': False,
+            # walk_off is a final-game attribute; clear it for pre-game frames
+            'walk_off': False, 'save_situation': False,
         })
         return state
 
@@ -461,6 +501,9 @@ def _game_state_at_time(base_game, tl, target_utc):
 
     # --- In Progress: reconstruct detailed state from pitch events and completed plays ---
     state['detailed_state'] = 'In Progress'
+    # walk_off is a final-game attribute and must not show during in-progress frames
+    # (it would otherwise bleed from the base_game final state into every frame).
+    state['walk_off'] = False
     pitch_events = tl.get('pitch_events', [])
 
     # Last pitch event before target_utc
@@ -508,6 +551,12 @@ def _game_state_at_time(base_game, tl, target_utc):
             state['inningState'] = 'Middle' if half == 'top' else 'End'
         else:
             state['inningState'] = 'Top' if half == 'top' else 'Bottom'
+        # No active at-bat during a between-plays gap — clear pitch detail fields.
+        state['at_bat_pitch_count'] = 0
+        state['last_pitch_speed']   = None
+        state['last_pitch_type']    = ''
+        state['last_strike_call']   = ''
+        state['strike_calls']       = []
     elif last_event:
         # Mid-at-bat: pitch events are more recent than the last play completion
         state['away_runs']            = last_event['away_score']
@@ -521,6 +570,13 @@ def _game_state_at_time(base_game, tl, target_utc):
         state['current_hitter']       = last_event.get('batter') or None
         half = last_event.get('half_inning', 'top')
         state['inningState']          = 'Top' if half == 'top' else 'Bottom'
+        # Copy pitch detail fields from the most recent pitch event so the wide
+        # box can display pitch speed, type, per-at-bat count, and strike calls.
+        state['at_bat_pitch_count'] = last_event.get('at_bat_pitch_count') or 0
+        state['last_pitch_speed']   = last_event.get('last_pitch_speed')
+        state['last_pitch_type']    = last_event.get('last_pitch_type') or ''
+        state['last_strike_call']   = last_event.get('last_strike_call') or ''
+        state['strike_calls']       = list(last_event.get('strike_calls') or [])
     else:
         # No pitch events and no completed plays at this timestamp —
         # the game hasn't officially started yet (no first pitch thrown).
@@ -532,6 +588,17 @@ def _game_state_at_time(base_game, tl, target_utc):
             'balls': None, 'strikes': None,
             'current_pitcher': None, 'current_hitter': None,
         })
+
+    # Compute save_situation from the reconstructed inning and run differential.
+    # base_game always has save_situation=False (Final games have no save situation),
+    # so we must recompute it rather than inheriting.
+    _inn  = state.get('current_inning') or 0
+    _diff = abs((state.get('away_runs') or 0) - (state.get('home_runs') or 0))
+    state['save_situation'] = (
+        state.get('detailed_state') == 'In Progress'
+        and _inn >= 7
+        and 1 <= _diff <= 3
+    )
 
     # Reconstruct per-inning run lists from play history so linescore grid shows correct data.
     away_inn, home_inn = _inning_runs_at_time(plays, target_utc)
@@ -587,12 +654,15 @@ def _game_state_at_time(base_game, tl, target_utc):
                 last_challenge = ce
             else:
                 break
+        # ABS challenge max grows by 1 per extra inning (10th = 3, 11th = 4, …)
+        _cur_inn = state.get('current_inning') or 9
+        _abs_max = _GIF_ABS_CHALLENGE_MAX + max(0, int(_cur_inn) - 9)
         if last_challenge:
             state['away_challenges_remaining'] = last_challenge['away_remaining']
             state['home_challenges_remaining'] = last_challenge['home_remaining']
         else:
-            state['away_challenges_remaining'] = _GIF_ABS_CHALLENGE_MAX
-            state['home_challenges_remaining'] = _GIF_ABS_CHALLENGE_MAX
+            state['away_challenges_remaining'] = _abs_max
+            state['home_challenges_remaining'] = _abs_max
 
     # Next 3 batters + pitcher: shown during inning breaks (Middle/End)
     if state.get('inningState') in ('Middle', 'End'):

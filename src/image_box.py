@@ -981,8 +981,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         if not _show_grid:
             # Active play: pitch/pitcher/batter info
             _pc = game_data.get('pitch_count')
+            _ab_pc = game_data.get('at_bat_pitch_count') or 0
             _pt = game_data.get('last_pitch_type', '')   # e.g. "FB", "SL", "CH"
             _lps = game_data.get('last_pitch_speed')
+            # Game-level pitch count when available; fall back to per-at-bat for timelapse.
+            _pc_disp = f'{_pc}P' if _pc is not None else (f'AB{_ab_pc}' if _ab_pc else None)
 
             # Pitcher line — full width, no right badge (type moves to speed line)
             _pitcher_name = _format_player_name(game_data.get("current_pitcher") or "")
@@ -1002,13 +1005,12 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _speed_x = start_x + horizonta_len - _speed_w
                 draw.text((_speed_x,         _speed_y), _speed_str, font=font11, fill=0)
                 draw.text((_speed_x + 1 * s, _speed_y), _speed_str, font=font11, fill=0)
-                if _pc is not None:
-                    _pc_disp = f'{_pc}P'
+                if _pc_disp:
                     _pc_w = int(font11.getlength(_pc_disp))
                     draw.text((_speed_x - _pc_w - 3 * s, _speed_y), _pc_disp, font=font11, fill=0)
-            elif _pt or _pc is not None:
-                # No speed: show "FB 47P" or just "47P"
-                _no_speed_str = f'{_pt} {_pc}P' if _pt and _pc is not None else (_pt or f'{_pc}P')
+            elif _pt or _pc_disp:
+                # No speed: show "FB 47P", "FB AB3", "47P", or "AB3"
+                _no_speed_str = f'{_pt} {_pc_disp}' if _pt and _pc_disp else (_pt or _pc_disp or '')
                 _ns_w = int(font11.getlength(_no_speed_str)) + 2 * s
                 draw.text((start_x + horizonta_len - _ns_w, _speed_y), _no_speed_str, font=font11, fill=0)
 
@@ -2462,14 +2464,18 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _py = rp_y + 107 * s
     _max_w = rp_w - 7 * s
     _pc = game_data.get('pitch_count')
+    _ab_pc = game_data.get('at_bat_pitch_count') or 0
     _pt_last = game_data.get('last_pitch_type', '') or ''
     _lps = game_data.get('last_pitch_speed')
     _pitcher_name = _format_player_name(game_data.get('current_pitcher') or '')
 
+    # Game-level pitch count when available (live); fall back to per-at-bat count
+    # for timelapse frames where only at_bat_pitch_count is reconstructed.
+    _pc_badge = f'{_pc}P' if _pc is not None else (f'AB{_ab_pc}' if _ab_pc else '')
     _rb_parts = [p for p in [
         _pt_last,
         str(int(_lps)) if _lps else '',
-        f'{_pc}P' if _pc is not None else '',
+        _pc_badge,
     ] if p]
     _right_badge = ' '.join(_rb_parts)
     _rb_w = int(font9.getlength(_right_badge)) + 2 * s if _right_badge else 0

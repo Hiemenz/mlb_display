@@ -775,3 +775,25 @@ def test_wide_box_perfectgame_inverts_header(white_image, team_data):
     )
     result = draw_wide_box(white_image, 0, 0, game, team_data)
     assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_at_bat_pitch_count_fallback(white_image, team_data):
+    """When pitch_count (game-level) is absent but at_bat_pitch_count is set,
+    the wide panel should render without error — used for timelapse frames where
+    only the per-at-bat count is reconstructed from play-by-play data."""
+    from image_box import draw_wide_box
+    game = _live_game(ab_pitches=[], at_bat_pitch_count=4)
+    game.pop('pitch_count', None)
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_at_bat_pitch_count_fallback_no_speed(white_image, team_data):
+    """at_bat_pitch_count fallback also works when last_pitch_speed is absent."""
+    from image_box import draw_wide_box
+    game = _live_game(ab_pitches=[], at_bat_pitch_count=2, last_pitch_speed=None)
+    game.pop('pitch_count', None)
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
