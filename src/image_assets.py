@@ -58,12 +58,23 @@ def _get_logo_invert_config():
     return _logo_invert_config
 
 
-def _try_download_logo(abbr, team_id=None):
+def _milb_logo_dir(sport_id):
+    """Return the per-sport logo subdirectory for MiLB teams (created on demand)."""
+    d = os.path.join(logodir, str(sport_id))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _try_download_logo(abbr, team_id=None, sport_id=None):
     """Download a missing team logo from ESPN CDN using stdlib only (no pip needed).
 
-    Tries MLB CDN first, then mlbstatic SVG (for MiLB/AAA teams, requires cairosvg),
+    Tries MLB CDN first, then midfield PNG CDN for MiLB (no cairosvg required),
+    then mlbstatic SVG fallback (requires cairosvg + libcairo2),
     then ESPN countries CDN only for known WBC abbreviations.
     Skips numeric or T{id} fallback abbreviations.
+
+    MiLB logos are stored in pic/logos/{sport_id}/{team_id}.png to keep leagues
+    separate and avoid ID collisions between sports.
     """
     if abbr.isdigit() or (abbr.startswith('T') and abbr[1:].isdigit()):
         return False
@@ -86,16 +97,38 @@ def _try_download_logo(abbr, team_id=None):
     except Exception:
         pass
 
-    # Try mlbstatic SVG CDN (covers MiLB/AAA teams not on ESPN) — requires cairosvg
-    # Save as {team_id}.png (not {abbr}.png) to avoid collisions with MLB team abbreviations
+    # MiLB teams: validate via mlbstatic SVG (404s for non-existent teams), then download
+    # PNG from midfield CDN (no cairosvg required).
+    # Stored in pic/logos/{sport_id}/{team_id}.png; sport_id defaults to 0 when unknown.
     if team_id and str(team_id).isdigit():
+        sid = sport_id if sport_id is not None else 0
+        id_path = os.path.join(_milb_logo_dir(sid), f'{team_id}.png')
+        try:
+            # HEAD the SVG first — mlbstatic returns 404 for invalid/non-existent teams
+            # while midfield CDN returns 200 with a generic placeholder for any ID.
+            svg_url = f'https://www.mlbstatic.com/team-logos/{team_id}.svg'
+            head_req = urllib.request.Request(svg_url, method='HEAD',
+                                              headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(head_req, timeout=5):
+                pass  # 200 = team exists; 404 raises HTTPError → skip download
+
+            png_url = f'https://midfield.mlbstatic.com/v1/team/{team_id}/spots/96'
+            req = urllib.request.Request(png_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = resp.read()
+            with open(id_path, 'wb') as f:
+                f.write(data)
+            print(f'Auto-downloaded MiLB logo: {abbr}')
+            return True
+        except Exception:
+            pass
+
+        # Fallback: convert SVG to PNG via cairosvg (requires libcairo2 system lib)
         try:
             import cairosvg
-            svg_url = f'https://www.mlbstatic.com/team-logos/{team_id}.svg'
             svg_data = urllib.request.urlopen(svg_url, timeout=5).read()
-            id_path = os.path.join(logodir, f'{team_id}.png')
             cairosvg.svg2png(bytestring=svg_data, write_to=id_path, output_width=500)
-            print(f'Auto-downloaded MiLB logo: {abbr}')
+            print(f'Auto-downloaded MiLB logo (SVG): {abbr}')
             return True
         except Exception:
             pass
@@ -136,16 +169,30 @@ def _load_logo_gray(abbr, team_id):
     abbr_path = os.path.join(logodir, f'{abbr}.png')
     id_path   = os.path.join(logodir, f'{str(team_id)}.png')
 
-    # Auto-download once if neither file exists yet
-    if not os.path.exists(abbr_path) and not os.path.exists(id_path):
-        _try_download_logo(abbr, team_id=team_id)
+    # MiLB logos live in pic/logos/{sport_id}/{team_id}.png subdirs.
+    # Scan all numeric subdirs to find one that has this team_id.
+    subdir_id_path = None
+    if team_id and str(team_id).isdigit() and not os.path.exists(id_path):
+        import glob as _glob
+        matches = _glob.glob(os.path.join(logodir, '*', f'{team_id}.png'))
+        if matches:
+            subdir_id_path = matches[0]
 
-    # Prefer {team_id}.png — avoids collisions where a MiLB team shares an abbreviation
-    # with an MLB team (e.g. COL = Colorado Rockies AND Columbus Clippers).
-    # MLB logos are only saved as {abbr}.png, so they fall through naturally.
+    # Auto-download once if no logo file exists anywhere
+    if not os.path.exists(abbr_path) and not os.path.exists(id_path) and not subdir_id_path:
+        _try_download_logo(abbr, team_id=team_id)
+        # Re-check subdir after download
+        if team_id and str(team_id).isdigit():
+            import glob as _glob
+            matches = _glob.glob(os.path.join(logodir, '*', f'{team_id}.png'))
+            if matches:
+                subdir_id_path = matches[0]
+
+    # Prefer team_id path (subdir or flat) over abbr — avoids collisions where a MiLB
+    # team shares an abbreviation with an MLB team (e.g. COL = Rockies AND Clippers).
     result = None
-    for path in (id_path, abbr_path):
-        if os.path.exists(path):
+    for path in (subdir_id_path, id_path, abbr_path):
+        if path and os.path.exists(path):
             try:
                 img = Image.open(path).convert('RGBA')
                 _alpha_bbox = img.split()[3].getbbox()
