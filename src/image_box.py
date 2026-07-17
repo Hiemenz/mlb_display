@@ -17,6 +17,7 @@ from image_utils import (
 )
 from util import load_json_file, load_yaml_file, save_off_results
 from stadium_polygons import get_polygon as _field_get_polygon
+from stadium_polygons import get_infield_polygon as _field_get_infield_polygon
 
 _final_time_cache: dict = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
@@ -2696,15 +2697,32 @@ _FIELD_FALLBACK_POLY = [
 def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
     """Draw compact field diagram in a 150×130 px tile cell.
 
-    Draws the venue outfield wall with LF/CF/RF distance labels, the infield
-    diamond with mound and home plate, and fills occupied bases.  Does NOT
-    draw batted-ball markers (that data is not in games.json).
+    Draws the venue outfield wall with 5 fence distance markers, the infield
+    diamond with mound and home plate, fills occupied bases, and plots the
+    last batted ball in play (circle=hit, X=out, HR gets a trajectory line)
+    when last_hit_x/last_hit_y are present in game_data.
     """
     s = scale
     # 0.28 px/ft fits any MLB park in 150px: 355ft foul pole → ±70px from centre → x ≈ 5-145px.
     FSCALE = 0.28 * s
     HX = int(fx + 75 * s)
-    HY = int(fy + 126 * s)
+
+    venue     = game_data.get('venue', '')
+    wall_poly = _field_get_polygon(venue) or _FIELD_FALLBACK_POLY
+    infield_poly = (_field_get_infield_polygon(venue)
+                     or _field_get_infield_polygon('Yankee Stadium'))
+
+    _cx0 = fx + 1
+    _cx1 = fx + fw * s - 2
+    _cy0 = fy + 1
+    _cy1 = fy + fh * s - 2
+
+    # The real infield dirt outline loops behind home plate (negative y, i.e.
+    # foul territory). Nudge home plate's anchor up just enough that this
+    # bottom loop stays fully inside the tile instead of getting clipped
+    # flat against the bottom edge.
+    _bottom_extent_ft = max([-y for _, y in infield_poly] + [0]) if infield_poly else 0
+    HY = int(min(fy + 126 * s, _cy1 - _bottom_extent_ft * FSCALE))
 
     # Base positions (90ft diamond rotated 45°)
     _b = round(63.64 * FSCALE)   # 90 * cos45 ≈ 63.64 ft
@@ -2712,17 +2730,32 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
     SECOND = (HX,      HY - 2 * _b)
     THIRD  = (HX - _b, HY - _b)
 
-    venue     = game_data.get('venue', '')
-    wall_poly = _field_get_polygon(venue) or _FIELD_FALLBACK_POLY
-
-    _cx0 = fx + 1
-    _cx1 = fx + fw * s - 2
-    _cy0 = fy + 1
-    _cy1 = fy + fh * s - 2
-
     def _fpt(x_ft, y_ft):
         px = int(HX + x_ft * FSCALE)
         py = int(HY - y_ft * FSCALE)
+        return (max(_cx0, min(_cx1, px)), max(_cy0, min(_cy1, py)))
+
+    def _ray_end(x_ft, y_ft):
+        """Pixel where the ray from home plate toward (x_ft, y_ft) exits the cell.
+
+        _fpt() clips x and y independently, which misplaces the endpoint when
+        the pole is outside the cell (e.g. 325ft RF pole at 0.28px/ft = 91px,
+        but the cell is only ~73px wide from centre). Independent clipping
+        produces an endpoint that is off the foul-line direction. This function
+        instead finds the t at which the ray first hits a cell wall and uses
+        that single t for both axes, keeping the direction correct.
+        """
+        dx = x_ft * FSCALE
+        dy = -y_ft * FSCALE
+        ts = []
+        if dx > 0:  ts.append((_cx1 - HX) / dx)
+        elif dx < 0: ts.append((_cx0 - HX) / dx)
+        if dy > 0:  ts.append((_cy1 - HY) / dy)
+        elif dy < 0: ts.append((_cy0 - HY) / dy)
+        t = min((v for v in ts if v > 0), default=1.0)
+        t = min(t, 1.0)
+        px = round(HX + t * dx)
+        py = round(HY + t * dy)
         return (max(_cx0, min(_cx1, px)), max(_cy0, min(_cy1, py)))
 
     wall_pts = [_fpt(x, y) for x, y in wall_poly]
@@ -2743,38 +2776,164 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
     for idx in range(len(wall_pts) - 1):
         draw.line([wall_pts[idx], wall_pts[idx + 1]], fill=0, width=1)
 
-    # Foul lines from home to the poles
-    draw.line([(HX, HY), lf_pole], fill=0, width=1)
-    draw.line([(HX, HY), rf_pole], fill=0, width=1)
+    # Infield dirt cutout: real per-park boundary when available (see
+    # src/extract_infield_polygons.py). Yankee Stadium's shape is the
+    # default for any venue without its own data; a hand-drawn arc is the
+    # last-resort fallback if even that lookup somehow comes up empty.
+    #
+    # The polygon also traces the baseline sides (from the outfield arc down
+    # toward home plate along the 1B/3B lines) and the home plate arc. We:
+    #   - Draw the home plate arc unconditionally (min y < 5 ft behind plate)
+    #   - Clip all other segments to fair territory via Liang-Barsky so that
+    #     baseline-side segments are skipped and crossing segments don't bleed
+    #     into foul territory (which would create a visual kink on the foul line).
+    lf_x_ft, lf_y_ft = wall_poly[0]
+    rf_x_ft, rf_y_ft = wall_poly[-1]
 
-    # Infield grass arc
-    r_arc = round(2.25 * _b)
-    draw.arc([HX - r_arc, HY - r_arc, HX + r_arc, HY + r_arc], start=225, end=315, fill=0, width=1)
+    def _rf_foul(x, y): return rf_x_ft * y - rf_y_ft * x < 0
+    def _lf_foul(x, y): return lf_x_ft * y - lf_y_ft * x > 0
 
-    # Base paths
-    draw.line([(HX, HY), FIRST],  fill=0, width=1)
-    draw.line([FIRST,  SECOND],   fill=0, width=1)
-    draw.line([SECOND, THIRD],    fill=0, width=1)
-    draw.line([THIRD, (HX, HY)], fill=0, width=1)
+    def _clip_to_fair(x0, y0, x1, y1):
+        """Liang-Barsky clip of foot-coord segment to fair territory.
 
-    # Home plate (small pentagon)
-    hp = max(round(3 * s), 3)
-    draw.polygon([
-        (HX,          HY + hp),
-        (HX - hp,     HY),
-        (HX - hp + 1, HY - hp),
-        (HX + hp - 1, HY - hp),
-        (HX + hp,     HY),
-    ], outline=0)
+        Returns (xa, ya, xb, yb) of the clipped portion, or None if the
+        segment lies entirely in foul territory.
+        """
+        t0, t1 = 0.0, 1.0
+        dx, dy = x1 - x0, y1 - y0
+        # RF boundary: keep rf_x_ft*y - rf_y_ft*x >= 0
+        c0 = rf_x_ft * y0 - rf_y_ft * x0
+        c1 = rf_x_ft * y1 - rf_y_ft * x1
+        if c0 < 0 and c1 < 0:
+            return None
+        if c0 != c1:
+            tc = c0 / (c0 - c1)
+            if c0 < 0:
+                t0 = max(t0, tc)
+            elif c1 < 0:
+                t1 = min(t1, tc)
+        # LF boundary: keep lf_x_ft*y - lf_y_ft*x <= 0
+        c0 = lf_x_ft * y0 - lf_y_ft * x0
+        c1 = lf_x_ft * y1 - lf_y_ft * x1
+        if c0 > 0 and c1 > 0:
+            return None
+        if c0 != c1:
+            tc = c0 / (c0 - c1)
+            if c0 > 0:
+                t0 = max(t0, tc)
+            elif c1 > 0:
+                t1 = min(t1, tc)
+        if t0 >= t1:
+            return None
+        return (x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy)
 
-    # Pitcher's mound
-    mr = max(round(3 * s), 3)
+    if infield_poly:
+        for idx in range(len(infield_poly) - 1):
+            x0, y0 = infield_poly[idx]
+            x1, y1 = infield_poly[idx + 1]
+            rf0, rf1 = _rf_foul(x0, y0), _rf_foul(x1, y1)
+            lf0, lf1 = _lf_foul(x0, y0), _lf_foul(x1, y1)
+            if min(y0, y1) < 5.0 or not (rf0 != rf1 or lf0 != lf1):
+                # Home plate arc or segment entirely on one side of the foul
+                # lines — draw in full. This preserves the complete D-shape
+                # including the 1B/3B baseline sides (which are in foul
+                # territory but are needed to show the full infield boundary).
+                draw.line([_fpt(x0, y0), _fpt(x1, y1)], fill=0, width=1)
+            else:
+                # Segment crosses a foul line: clip to the fair-territory
+                # portion only so stray pixels don't appear on the foul line.
+                clipped = _clip_to_fair(x0, y0, x1, y1)
+                if clipped is not None:
+                    xa, ya, xb, yb = clipped
+                    draw.line([_fpt(xa, ya), _fpt(xb, yb)], fill=0, width=1)
+    else:
+        r_2b  = 2 * _b  # home-to-second distance
+        r_arc = round(r_2b * 1.9)  # top bulge, behind second base
+
+        _d_arc = round(r_arc / _math.sqrt(2))
+        arc_end_1b_side = (HX + _d_arc, HY - _d_arc)
+        arc_end_3b_side = (HX - _d_arc, HY - _d_arc)
+
+        draw.line([FIRST, arc_end_1b_side], fill=0, width=1)
+        draw.arc([HX - r_arc, HY - r_arc, HX + r_arc, HY + r_arc], start=225, end=315, fill=0, width=1)
+        draw.line([arc_end_3b_side, THIRD], fill=0, width=1)
+
+    # Foul lines: drawn after infield so they paint over any residual crossing
+    # segments near the boundary between fair and foul territory.
+    draw.line([(HX, HY), _ray_end(lf_x_ft, lf_y_ft)], fill=0, width=1)
+    draw.line([(HX, HY), _ray_end(rf_x_ft, rf_y_ft)], fill=0, width=1)
+
+    # Pitcher's mound dirt circle (~9ft radius) — drawn before the home
+    # plate circle so the latter, which is larger at every scale, reads as
+    # the more prominent of the two.
+    mr = max(round(9 * FSCALE), 3)
     mx = int(HX)
     my = int(HY - round(60.5 * FSCALE))
     draw.ellipse([mx - mr, my - mr, mx + mr, my + mr], outline=0)
 
+    # Home plate (small pentagon) half-width, needed up front to size the
+    # baseline clearance radius below.
+    hp = max(round(3 * s), 3)
+
+    # Home plate sits close to the tile's bottom edge, so its centre is
+    # nudged up as needed to keep the pentagon fully inside the tile instead
+    # of clipped flat by the boundary. `hr` is a clearance radius (not drawn)
+    # used to keep the baselines from cutting into the plate — it must clear
+    # the pentagon's corners, which sit farther out than its half-width.
+    hr = max(round(13 * FSCALE), mr + 2, round(_math.hypot(hp - 1, hp)) + 1)
+    hcy = HY - max(0, (HY + hr) - _cy1)
+
+    def _circle_exit(ax, ay, bx, by):
+        """Point where segment a->b leaves the home plate clearance radius."""
+        dx, dy = bx - ax, by - ay
+        fx, fy = ax - HX, ay - hcy
+        a = dx * dx + dy * dy
+        b = 2 * (fx * dx + fy * dy)
+        c = fx * fx + fy * fy - hr * hr
+        disc = b * b - 4 * a * c
+        if disc < 0 or a == 0:
+            return (ax, ay)
+        t = (-b + disc ** 0.5) / (2 * a)
+        t = min(max(t, 0), 1)
+        return (ax + t * dx, ay + t * dy)
+
+    def _diamond_exit(ax, ay, bx, by, half):
+        """Point where segment a->b enters the diamond of half-size `half`
+        centred at b, so lines stop at a base's outline instead of its middle."""
+        dx, dy = bx - ax, by - ay
+
+        def _dist(t):
+            x, y = ax + t * dx, ay + t * dy
+            return abs(x - bx) + abs(y - by)
+
+        if _dist(0) <= half:
+            return (ax, ay)
+        lo, hi = 0.0, 1.0
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            if _dist(mid) > half:
+                lo = mid
+            else:
+                hi = mid
+        return (ax + hi * dx, ay + hi * dy)
+
     # Bases: filled diamond if runner present, outline-only if empty
     bsz = max(round(4 * s), 4)
+
+    # Baselines: home→1st and home→3rd are already drawn by the foul lines to the
+    # outfield poles, so only the top two sides of the diamond need explicit lines.
+    draw.line([_diamond_exit(*FIRST,  *SECOND, bsz), _diamond_exit(*SECOND, *FIRST,  bsz)], fill=0, width=1)
+    draw.line([_diamond_exit(*SECOND, *THIRD,  bsz), _diamond_exit(*THIRD,  *SECOND, bsz)], fill=0, width=1)
+
+    # Home plate — white interior with black outline, matching the base style.
+    draw.polygon([
+        (HX,          hcy + hp),
+        (HX - hp,     hcy),
+        (HX - hp + 1, hcy - hp),
+        (HX + hp - 1, hcy - hp),
+        (HX + hp,     hcy),
+    ], fill=255, outline=0)
+
     for runner_key, (bx, by) in [
         ('runner_on_first',  FIRST),
         ('runner_on_second', SECOND),
@@ -2785,18 +2944,78 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
         if occ:
             draw.polygon(pts, fill=0, outline=0)
         else:
-            draw.polygon(pts, outline=0)
+            draw.polygon(pts, fill=255, outline=0)
 
-    # Distance labels at LF pole, deepest CF point, RF pole
+    # Fence distance markers: 5 points evenly spaced by angle from home plate
+    # (mirrors real outfield wall signage — LF pole, two power-alley gaps, CF, RF pole)
     font_tiny = _get_font(max(round(7 * s), 7))
-    deepest_i = min(range(len(wall_pts)), key=lambda i: wall_pts[i][1])
-    cf_pt   = wall_pts[deepest_i]
-    lf_dist = round(_math.sqrt(wall_poly[0][0]**2    + wall_poly[0][1]**2))
-    cf_dist = round(_math.sqrt(wall_poly[deepest_i][0]**2 + wall_poly[deepest_i][1]**2))
-    rf_dist = round(_math.sqrt(wall_poly[-1][0]**2   + wall_poly[-1][1]**2))
-    draw.text((cf_pt[0] - 8,    cf_pt[1] - 9),  str(cf_dist), font=font_tiny, fill=0)
-    draw.text((lf_pole[0] + 1,  lf_pole[1]),     str(lf_dist), font=font_tiny, fill=0)
-    draw.text((rf_pole[0] - 16, rf_pole[1]),      str(rf_dist), font=font_tiny, fill=0)
+    thetas = [_math.atan2(x_ft, y_ft) for x_ft, y_ft in wall_poly]
+    theta_lo, theta_hi = thetas[0], thetas[-1]
+    n_markers = 5
+    for k in range(n_markers):
+        target = theta_lo + (k / (n_markers - 1)) * (theta_hi - theta_lo)
+        idx = min(range(len(thetas)), key=lambda i: abs(thetas[i] - target))
+        x_ft, y_ft = wall_poly[idx]
+        pt = wall_pts[idx]
+        dist = round(_math.sqrt(x_ft**2 + y_ft**2))
+
+        # Short tick mark straddling the fence line, pointing along the radial direction
+        norm = _math.sqrt(x_ft**2 + y_ft**2) or 1
+        ux, uy = x_ft / norm, y_ft / norm
+        tick_in  = _fpt(x_ft - ux * 6, y_ft - uy * 6)
+        tick_out = _fpt(x_ft + ux * 6, y_ft + uy * 6)
+        draw.line([tick_in, tick_out], fill=0, width=1)
+
+        # Keep label text inside the cell: hug the side it's on
+        if pt[0] < HX - 10:
+            lx = pt[0] + 2
+        elif pt[0] > HX + 10:
+            lx = pt[0] - 18
+        else:
+            lx = pt[0] - 8
+        draw.text((lx, pt[1] - 9), str(dist), font=font_tiny, fill=0)
+
+    # Batted-ball marker for the last play, if it was hit into play.
+    # API hit coordinates -> field feet: derived from field_view.py's calibration
+    # (home plate at api (125, 200), 2 ft per api-coordinate unit).
+    hit_x = game_data.get('last_hit_x')
+    hit_y = game_data.get('last_hit_y')
+    if hit_x is not None and hit_y is not None:
+        hx_ft = (hit_x - 125) * 2.0
+        hy_ft = (200 - hit_y) * 2.0
+        land_pt = _fpt(hx_ft, hy_ft)
+        notation = game_data.get('last_play') or ''
+        is_out = bool(game_data.get('last_hit_is_out'))
+
+        # Bowed trajectory line (quadratic bezier) from home plate to the landing
+        # spot, to read as a fly ball's arc rather than a line-drive straight shot.
+        p0x, p0y = HX, HY
+        p1x, p1y = land_pt
+        mx_, my_ = (p0x + p1x) / 2, (p0y + p1y) / 2
+        dx_, dy_ = p1x - p0x, p1y - p0y
+        dist_ = _math.sqrt(dx_ ** 2 + dy_ ** 2) or 1
+        # Perpendicular offset, bowed toward the left (arbitrary consistent side)
+        ctrl_x = mx_ - dy_ / dist_ * dist_ * 0.15
+        ctrl_y = my_ + dx_ / dist_ * dist_ * 0.15
+        n_seg = 12
+        arc_pts = []
+        for i in range(n_seg + 1):
+            t = i / n_seg
+            bx = (1 - t) ** 2 * p0x + 2 * (1 - t) * t * ctrl_x + t ** 2 * p1x
+            by = (1 - t) ** 2 * p0y + 2 * (1 - t) * t * ctrl_y + t ** 2 * p1y
+            arc_pts.append((bx, by))
+        for i in range(len(arc_pts) - 1):
+            draw.line([arc_pts[i], arc_pts[i + 1]], fill=0, width=1)
+
+        mr = max(round(3 * s), 3)
+        if is_out:
+            draw.line([land_pt[0] - mr, land_pt[1] - mr, land_pt[0] + mr, land_pt[1] + mr], fill=0, width=1)
+            draw.line([land_pt[0] + mr, land_pt[1] - mr, land_pt[0] - mr, land_pt[1] + mr], fill=0, width=1)
+        else:
+            draw.ellipse([land_pt[0] - mr, land_pt[1] - mr, land_pt[0] + mr, land_pt[1] + mr], outline=0)
+
+        if notation:
+            draw.text((land_pt[0] + mr + 1, land_pt[1] - 4), notation, font=font_tiny, fill=0)
 
     return Himage
 
@@ -2839,12 +3058,11 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     fp_x        = rp_x + RIGHT_W
     total_right = start_x + TOTAL_W
 
-    # Extend borders across the two right panels
+    # Extend outer top/bottom borders across the two right panels
     draw.line((rp_x, start_y,              total_right, start_y),              fill=0)
-    draw.line((rp_x, start_y + HEADER_H,   total_right, start_y + HEADER_H),   fill=0)
     draw.line((rp_x, start_y + TOTAL_H,    total_right, start_y + TOTAL_H),    fill=0)
-    # Divider between panel 2 and panel 3
-    draw.line((fp_x, start_y, fp_x, start_y + TOTAL_H), fill=0)
+    # Header divider only under panel 2 — panel 3 (field diagram) has no header row
+    draw.line((rp_x, start_y + HEADER_H,   fp_x,        start_y + HEADER_H),   fill=0)
 
     # Cell 2: pitch zone / situation
     _draw_wide_right_panel(

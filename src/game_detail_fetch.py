@@ -437,6 +437,28 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             live_last_play_rbi = int(_lp.get('result', {}).get('rbi') or 0)
             break
 
+        # Batted-ball landing spot for the last completed play, if it was hit into play.
+        last_hit_x = None
+        last_hit_y = None
+        last_hit_is_out = None
+        if live_last_play is not None:
+            _lp_result = _lp.get('result', {})
+            _lp_event = _lp_result.get('event', '')
+            _lp_hit_data = _lp.get('hitData', {})
+            _hx = _lp_hit_data.get('coordinates', {}).get('coordX')
+            _hy = _lp_hit_data.get('coordinates', {}).get('coordY')
+            if _hx is None or _hy is None:
+                for _pe in _lp.get('playEvents', []):
+                    _pe_hit_data = _pe.get('hitData', {})
+                    _hx = _pe_hit_data.get('coordinates', {}).get('coordX')
+                    _hy = _pe_hit_data.get('coordinates', {}).get('coordY')
+                    if _hx is not None and _hy is not None:
+                        break
+            if _hx is not None and _hy is not None:
+                last_hit_x = _hx
+                last_hit_y = _hy
+                last_hit_is_out = _lp_event not in _HIT_EVENTS
+
         # Wide-cell extras: current AB pitches (locations + type) and the last 5 game events.
         ab_pitches = _extract_pitches_detailed(plays)
         for _p in ab_pitches:
@@ -579,6 +601,9 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_play_rbi': live_last_play_rbi,
             'last_play_inning': live_last_play_inning,
             'last_play_is_top': live_last_play_is_top,
+            'last_hit_x': last_hit_x,
+            'last_hit_y': last_hit_y,
+            'last_hit_is_out': last_hit_is_out,
             'ab_pitches': ab_pitches,
             'half_inning_plays': half_inning_plays,
             'away_pitcher_ks': away_pitcher_ks,

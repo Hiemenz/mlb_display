@@ -667,7 +667,8 @@ def parse_games(data, sport_id=None, config=None):
                 # Don't clobber a valid last_play from the win-probability endpoint with None
                 # (can happen in the brief window between a play completing and allPlays updating).
                 if extras.get('last_play') is None:
-                    for _k in ('last_play', 'last_play_inning', 'last_play_is_top', 'last_play_rbi'):
+                    for _k in ('last_play', 'last_play_inning', 'last_play_is_top', 'last_play_rbi',
+                               'last_hit_x', 'last_hit_y', 'last_hit_is_out'):
                         extras.pop(_k, None)
                 game_dict.update(extras)
                 # Between-innings PC: inningState may flip to Top/Bottom before the first pitch.
