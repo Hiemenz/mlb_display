@@ -2759,8 +2759,6 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
         return (max(_cx0, min(_cx1, px)), max(_cy0, min(_cy1, py)))
 
     wall_pts = [_fpt(x, y) for x, y in wall_poly]
-    lf_pole  = wall_pts[0]
-    rf_pole  = wall_pts[-1]
 
     # Warning track: scale each wall point 10 ft closer to home
     for idx in range(len(wall_poly) - 1):
