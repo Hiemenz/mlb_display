@@ -797,3 +797,37 @@ def test_wide_box_at_bat_pitch_count_fallback_no_speed(white_image, team_data):
     game.pop('pitch_count', None)
     result = draw_wide_box(white_image, 0, 0, game, team_data)
     assert isinstance(result, Image.Image)
+
+
+# ---------------------------------------------------------------------------
+# Triple-cell tile via draw_out_of_town_score_board
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_grid_with_triple_cell_tile(white_image, team_data):
+    """triple_cell_live=True renders a draw_triple_box tile without crash."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(5)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'triple_cell_live': True,
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_triple_cell_15_plus_games(white_image, team_data):
+    """triple_cell_live=True with 15+ games assigns triple to the best game."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(14)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'triple_cell_live': True,
+        'wide_cell_always': True,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)

@@ -1253,6 +1253,20 @@ class TestParseGamesOddsAttachment:
                         config={'timezone': 'America/Chicago'})
         mock_odds.assert_not_called()
 
+    def test_missing_team_abbreviation_falls_back_to_lookup(self):
+        """When the schedule API omits 'abbreviation' for a team (e.g. All-Star
+        Game), parse_games falls back to get_team_abbreviation() (lines 535, 537)."""
+        api_game = _minimal_game_api(state='Scheduled')
+        # Remove abbreviations from both teams to trigger the fallback path
+        del api_game['teams']['away']['team']['abbreviation']
+        del api_game['teams']['home']['team']['abbreviation']
+        with patch('fetch_games.save_off_results'), \
+             patch('fetch_games.load_json_file', return_value={'team_abbreviation': {}}), \
+             patch('fetch_games.get_team_abbreviation', return_value='ASG') as mock_abbr:
+            parse_games({'dates': [{'games': [api_game]}]}, sport_id=1,
+                        config={'timezone': 'America/Chicago'})
+        assert mock_abbr.call_count == 2  # called for both away and home
+
     def test_config_defaults_when_none_passed(self):
         """Config defaults when none passed."""
         api_game = _minimal_game_api(state='Scheduled')

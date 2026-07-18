@@ -86,6 +86,7 @@ omit = [
     "src/download_logos.py",
     "src/download_mascots.py",
     "src/fetch_idle.py",
+    "src/extract_infield_polygons.py",
     "src/waveshare_epd/*",
 ]
 

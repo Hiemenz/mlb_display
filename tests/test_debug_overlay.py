@@ -174,6 +174,16 @@ def test_skip_morning_window_check_handles_exception_gracefully():
     assert result is False
 
 
+def test_skip_night_window_exception_gracefully():
+    """When pytz.timezone raises inside the night-window try-block, the
+    exception is swallowed and the function continues (lines 97-98)."""
+    sched = _make_sched()
+    cfg = dict(BASE_CONFIG, night_mode=True)  # ensures the night-window try is entered
+    with patch('generate_image.pytz.timezone', side_effect=Exception('boom')):
+        result = _fetch_skip_is_expected(cfg, sched)
+    assert result is False
+
+
 def test_skip_not_expected_after_morning_window_ends():
     """Skip not expected after morning window ends."""
     sched = _make_sched()
@@ -229,6 +239,18 @@ def test_draw_debug_overlay_no_uptime_no_fetch_returns_image():
     img = _blank_image()
     config = {'timezone': 'America/Chicago'}
     with patch('generate_image.load_json_file', return_value={}):
+        with patch('generate_image._get_system_uptime', return_value=''):
+            result = _draw_debug_overlay(img, config)
+    assert result is not None
+
+
+def test_draw_debug_overlay_naive_last_fetch_iso_adds_utc_tz():
+    """A naive ISO datetime string (no timezone) is assumed UTC (line 150)."""
+    img = _blank_image()
+    config = {'timezone': 'America/Chicago', 'night_mode': False}
+    # '2026-07-17T10:00:00' has no timezone — fromisoformat returns naive datetime
+    sched = {'last_game_fetch': '2026-07-17T10:00:00'}
+    with patch('generate_image.load_json_file', return_value=sched):
         with patch('generate_image._get_system_uptime', return_value=''):
             result = _draw_debug_overlay(img, config)
     assert result is not None

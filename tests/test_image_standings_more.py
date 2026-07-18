@@ -330,6 +330,20 @@ class TestDrawStandingsSidebarClinch:
         assert img_streak.tobytes() != img_plain.tobytes(), \
             "Streak badge must add visible pixels not present without it"
 
+    def test_losing_streak_reformatted_and_right_sidebar_x(self):
+        """A losing streak string 'L3' is reformatted to 'L 3' (line 433) and
+        the right-sidebar badge uses _bx = 800-32 (line 443), not the left formula.
+        Right sidebar renders NL divisions, so data must be in a NL division."""
+        team_with_loss = dict(_team(1, 1, wins=60, losses=90))
+        team_with_loss['streak'] = 'L3'
+        data = _standings({'National League East': [team_with_loss]})
+        img = _blank()
+        with patch('image_standings.load_json_file', return_value={}), \
+             patch('image_standings.save_off_results'), \
+             patch('image_standings._logo_small', return_value=None):
+            result = draw_standings_sidebar(img, data, {}, side='right')
+        assert result is img
+
 
 # ===========================================================================
 # 6. draw_standings_sidebar_fullscreen() — previously ~0% covered
@@ -385,6 +399,16 @@ class TestDrawStandingsSidebarFullscreen:
         """Basic right render no crash returns canvas."""
         canvas, result = self._render('right', {
             'National League East': [_team(1, 1, wins=90, losses=60)],
+        })
+        assert result is canvas
+
+    def test_right_side_streak_badge_uses_col_x(self):
+        """Right-side fullscreen render with a streak triggers the col_x
+        badge-positioning branch (image_standings.py line 645)."""
+        team_with_streak = dict(_team(1, 1, wins=90, losses=60))
+        team_with_streak['streak'] = 'W3'
+        canvas, result = self._render('right', {
+            'National League East': [team_with_streak],
         })
         assert result is canvas
 

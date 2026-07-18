@@ -33,14 +33,15 @@ class TestFoulLineStraightness:
 
     # American Family Field has an exactly 45° RF pole (244, 244).
     # With round() in _ray_end the endpoint is (143, 51), giving dx=dy=68.
-    # At scale=1: HX=75, HY=119. Foul line pixel at x is at y=HY-(x-HX)=194-x.
+    # At scale=1 with FSCALE=0.30: HX=75, HY=118. Foul line pixel at x is at
+    # y=HY-(x-HX)=193-x.
     #
     # Two regions are legitimately absent from the foul-line path:
     #   x=75-78  — home plate pentagon drawn fill=255 (white) to show interior
     #   x=89-95  — first-base diamond drawn fill=255 for the same reason
     # Both elements intentionally blank the foul line beneath them.
 
-    _HX, _HY = 75, 119
+    _HX, _HY = 75, 118
 
     def _foul_y(self, x):
         return self._HY - (x - self._HX)
@@ -145,7 +146,7 @@ class TestInfieldDirt:
         """The home plate arc (bottom of the D) must have dark pixels below HY."""
         img = _make_cell('American Family Field', scale=2)
         pixels = img.load()
-        # HY at scale=2 is ~238. The home plate arc extends below it.
+        # HY at scale=2 is ~239. The home plate arc extends below it.
         arc_pixels = sum(
             1 for x in range(120, 180) for y in range(235, 260)
             if pixels[x, y] == 0
@@ -200,6 +201,41 @@ class TestInfieldDirt:
         )
         assert dark > 5, "infield arc missing — too few dark pixels in outfield-arc region"
 
+    @needs_pil
+    def test_y_offset_no_crash(self):
+        """y_offset parameter must be accepted without error."""
+        import image_box
+        for offset in (0, 10, 20):
+            img = Image.new('1', (150, 130), 1)
+            draw = ImageDraw.Draw(img)
+            image_box._draw_field_cell(
+                draw, img, 0, 0, 150, 130,
+                {'venue': 'American Family Field'}, scale=1, y_offset=offset
+            )
+
+    @needs_pil
+    def test_y_offset_shifts_mound_up(self):
+        """y_offset=20 moves the pitcher's mound ~20px higher than y_offset=0."""
+        import image_box
+        # Mound centre pixel: HX=75, my = HY - round(60.5 * 0.30).
+        # HY(offset=0)=118 → my=118-18=100. HY(offset=20)=98 → my=98-18=80.
+        # Check column x=75 for the first dark pixel from the top in each cell.
+        img0 = Image.new('1', (150, 130), 1)
+        img20 = Image.new('1', (150, 130), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img0),  img0,  0, 0, 150, 130, {'venue': 'American Family Field'}, scale=1, y_offset=0)
+        image_box._draw_field_cell(ImageDraw.Draw(img20), img20, 0, 0, 150, 130, {'venue': 'American Family Field'}, scale=1, y_offset=20)
+        px0  = img0.load()
+        px20 = img20.load()
+        # Scan column x=75 bottom-up for the mound ellipse (skip outfield wall at top).
+        # The mound is the lowest cluster of dark pixels below second base.
+        mound_rows_0  = [y for y in range(60, 128) if px0[75,  y] == 0]
+        mound_rows_20 = [y for y in range(40, 108) if px20[75, y] == 0]
+        assert mound_rows_0,  "offset=0: no dark pixels in mound search range"
+        assert mound_rows_20, "offset=20: no dark pixels in mound search range"
+        assert max(mound_rows_20) < max(mound_rows_0), (
+            "y_offset=20 should place mound higher (lower y) than y_offset=0"
+        )
+
 
 # ---------------------------------------------------------------------------
 # get_infield_polygon helper
@@ -236,3 +272,238 @@ class TestGetInfieldPolygon:
             if v not in STADIUM_INFIELD_POLYGONS and v not in allowed_missing
         }
         assert not missing, f"Parks unexpectedly missing infield polygon: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# draw_triple_box smoke tests
+# ---------------------------------------------------------------------------
+
+def _base_game(**overrides):
+    g = {
+        'game_pk': 1001,
+        'away_team_id': 133,
+        'home_team_id': 144,
+        'away_team_name': 'OAK',
+        'home_team_name': 'ATL',
+        'detailed_state': 'Final',
+        'away_runs': 3,
+        'home_runs': 5,
+        'away_hits': 8,
+        'home_hits': 10,
+        'away_errors': 0,
+        'home_errors': 1,
+        'away_team_is_winner': False,
+        'home_team_is_winner': True,
+        'winner_name': 'Max Fried',
+        'loser_name': 'Chris Bassitt',
+        'saver_name': None,
+        'winner_record': '3-1',
+        'loser_record': '2-2',
+        'saver_saves': None,
+        'current_inning': 9,
+        'inningState': 'End',
+        'away_inning_runs': [0, 1, 0, 0, 0, 2, 0, 0, 0],
+        'home_inning_runs': [1, 0, 2, 0, 0, 0, 1, 0, 1],
+        'away_team_record_wins': 10,
+        'away_team_record_losses': 5,
+        'home_team_record_wins': 12,
+        'home_team_record_losses': 3,
+        'num_of_outs': 3,
+        'balls': None,
+        'strikes': None,
+        'runner_on_first': None,
+        'runner_on_second': None,
+        'runner_on_third': None,
+        'game_start': '7:05 PM',
+        'away_probable': None,
+        'home_probable': None,
+        'away_probable_note': None,
+        'home_probable_note': None,
+        'no_hitter': False,
+        'perfect_game': False,
+        'save_situation': False,
+        'walk_off': False,
+        'last_play': None,
+        'venue': 'Truist Park',
+        'current_hitter': None,
+        'current_pitcher': None,
+        'due_up': None,
+        'in_hole': None,
+        'game_duration_minutes': None,
+        'series_result': '',
+        'series_game_number': 1,
+        'series_total_games': 3,
+        'series_wins': 0,
+        'series_losses': 0,
+        'series_is_tied': False,
+        'series_is_over': False,
+        'last_play_rbi': None,
+    }
+    g.update(overrides)
+    return g
+
+
+_MINIMAL_TEAM_DATA = {
+    'team_abbreviation': {'133': 'OAK', '144': 'ATL'},
+}
+
+
+class TestTripleBox:
+    """Smoke tests for draw_triple_box — verify it renders without crashing."""
+
+    @needs_pil
+    def test_final_game_no_crash(self):
+        """draw_triple_box must not raise on a Final game."""
+        from image_box import draw_triple_box
+        img = Image.new('1', (800, 480), 1)
+        draw_triple_box(img, 0, 0, _base_game(), _MINIMAL_TEAM_DATA, use_logos=False)
+
+    @needs_pil
+    def test_in_progress_game_no_crash(self):
+        """draw_triple_box must not raise on an In Progress game."""
+        from image_box import draw_triple_box
+        img = Image.new('1', (800, 480), 1)
+        game = _base_game(
+            detailed_state='In Progress',
+            inningState='Top',
+            current_inning=5,
+            num_of_outs=1,
+            balls=2,
+            strikes=1,
+            current_pitcher='Sandy Koufax',
+            current_hitter='Pete Rose',
+            last_play='Single by Pete Rose',
+            away_hits=None,
+            home_hits=None,
+            away_errors=None,
+            home_errors=None,
+            away_team_is_winner=None,
+            home_team_is_winner=None,
+            winner_name=None,
+            loser_name=None,
+            winner_record=None,
+            loser_record=None,
+        )
+        draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA, use_logos=False)
+
+    @needs_pil
+    def test_score_changed_inverts_header(self):
+        """score_changed=True must not raise and should produce dark header pixels."""
+        from image_box import draw_triple_box
+        img = Image.new('1', (800, 480), 1)
+        game = _base_game(
+            detailed_state='In Progress',
+            inningState='Top',
+            current_inning=7,
+            num_of_outs=0,
+            balls=0,
+            strikes=0,
+            last_play_rbi=1,
+            away_hits=None,
+            home_hits=None,
+            away_errors=None,
+            home_errors=None,
+            away_team_is_winner=None,
+            home_team_is_winner=None,
+            winner_name=None,
+            loser_name=None,
+            winner_record=None,
+            loser_record=None,
+        )
+        draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA,
+                        use_logos=False, score_changed=True)
+
+    @needs_pil
+    def test_no_hitter_active_inverts_header(self):
+        """Active no-hitter with no score change must invert the header."""
+        from image_box import draw_triple_box
+        img = Image.new('1', (800, 480), 1)
+        game = _base_game(
+            detailed_state='In Progress',
+            inningState='Top',
+            current_inning=7,
+            num_of_outs=0,
+            balls=0,
+            strikes=0,
+            no_hitter=True,
+            away_hits=None,
+            home_hits=None,
+            away_errors=None,
+            home_errors=None,
+            away_team_is_winner=None,
+            home_team_is_winner=None,
+            winner_name=None,
+            loser_name=None,
+            winner_record=None,
+            loser_record=None,
+        )
+        draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA, use_logos=False)
+
+
+# ---------------------------------------------------------------------------
+# Runner-on-base and last-hit rendering
+# ---------------------------------------------------------------------------
+
+class TestFieldCellRunners:
+    """Tests for runner-on-base and last-hit rendering in _draw_field_cell."""
+
+    @needs_pil
+    def test_runners_on_base_render(self):
+        """Filled bases appear when runner keys hold player name strings."""
+        import image_box
+        game = {
+            'venue': 'American Family Field',
+            'runner_on_first': 'Jose Altuve',
+            'runner_on_second': 'Alex Bregman',
+            'runner_on_third': None,
+        }
+        img = Image.new('1', (150, 130), 1)
+        draw = ImageDraw.Draw(img)
+        image_box._draw_field_cell(draw, img, 0, 0, 150, 130, game, scale=1)
+        px = img.load()
+        # First base at (HX+_b, HY-_b) = (75+19, 118-19) = (94, 99).
+        dark_near_first = sum(1 for dx in range(-4, 5) for dy in range(-4, 5)
+                              if 0 < 94+dx < 150 and 0 < 99+dy < 130 and px[94+dx, 99+dy] == 0)
+        assert dark_near_first > 0, "runner on first — expected filled diamond pixels"
+
+    @needs_pil
+    def test_last_hit_in_play_renders_circle(self):
+        """A hit-in-play marker (circle) appears when last_hit_x/y are present."""
+        import image_box
+        game = {
+            'venue': 'American Family Field',
+            'last_hit_x': 150,
+            'last_hit_y': 140,
+            'last_hit_is_out': False,
+            'last_play': '',
+            'runner_on_first': None,
+            'runner_on_second': None,
+            'runner_on_third': None,
+        }
+        img = Image.new('1', (150, 130), 1)
+        draw = ImageDraw.Draw(img)
+        image_box._draw_field_cell(draw, img, 0, 0, 150, 130, game, scale=1)
+        px = img.load()
+        dark = sum(1 for x in range(1, 149) for y in range(1, 129) if px[x, y] == 0)
+        assert dark > 0, "last hit in play — expected dark pixels from arc + circle"
+
+    @needs_pil
+    def test_last_hit_out_renders_x(self):
+        """A hit that resulted in an out renders an X marker."""
+        import image_box
+        game = {
+            'venue': 'American Family Field',
+            'last_hit_x': 150,
+            'last_hit_y': 140,
+            'last_hit_is_out': True,
+            'last_play': 'F8',
+            'runner_on_first': None,
+            'runner_on_second': None,
+            'runner_on_third': None,
+        }
+        img = Image.new('1', (150, 130), 1)
+        draw = ImageDraw.Draw(img)
+        image_box._draw_field_cell(draw, img, 0, 0, 150, 130, game, scale=1)
+        px = img.load()
+        dark = sum(1 for x in range(1, 149) for y in range(1, 129) if px[x, y] == 0)
+        assert dark > 0, "last hit out — expected dark pixels from arc + X marker"

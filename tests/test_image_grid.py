@@ -281,8 +281,8 @@ class TestPackGridDirect:
         # 1 normal in row1 — the lone filler must lead ("1 2 2") since wide
         # tiles are the majority in that row.
         game_list = [self._g(i) for i in range(6)]
-        wide_set = {1, 2, 3, 4}
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in (1, 2, 3, 4)}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions) == 6
         row1_tokens = [(g['game_pk'], s) for g, s in zip(ordered, positions) if s[2] == 1]
         # First token in row 1 (lowest col) should be the lone normal filler.
@@ -292,7 +292,7 @@ class TestPackGridDirect:
 
     def test_empty_game_list_returns_empty(self):
         """Empty game list returns empty."""
-        assert _pack_grid([], set()) == ([], [])
+        assert _pack_grid([], {}) == ([], [])
 
     def test_overflow_falls_back_to_front_to_back_packing(self):
         """Overflow falls back to front to back packing."""
@@ -300,8 +300,8 @@ class TestPackGridDirect:
         # each — forces the front-to-back overflow branch, including its
         # col=4-skip and its final break once nothing more fits.
         game_list = [self._g(i) for i in range(20)]
-        wide_set = set(range(1, 12))  # far more wide than 15 slots can hold
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in range(1, 12)}  # far more wide than 15 slots can hold
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions)
         assert len(positions) <= 15
         occupied = set()
@@ -316,8 +316,8 @@ class TestPackGridDirect:
         # With 15+ games, _pack_grid should use simple row-major layout
         # instead of complex bottom-up packing, and trim to exactly 15 slots.
         game_list = [self._g(i) for i in range(18)]
-        wide_set = {0, 5, 10}  # some games marked for widening
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in (0, 5, 10)}  # some games marked for widening
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions)
         assert len(positions) <= 15
         # Check that slot numbers don't exceed 15 (5 cols × 3 rows)
@@ -334,8 +334,8 @@ class TestPackGridDirect:
         # remaining_capacity = 14 (with pinned_cost=1), so need total > 14.
         # With 10 games: 1 pinned normal, 7 wide (14 units), 2 normal (2 units) = 16 > 14.
         game_list = [self._g(i) for i in range(10)]
-        wide_set = {1, 2, 3, 4, 5, 6, 7}  # 7 wide games, games 0,8,9 are normal
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in (1, 2, 3, 4, 5, 6, 7)}  # 7 wide games, games 0,8,9 are normal
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions)
         assert len(positions) <= 15
         # Verify valid layout
@@ -467,3 +467,88 @@ class TestMoveNonLiveToFillers:
         ]
         result = _move_non_live_to_fillers(games, positions)
         assert result[0]['game_pk'] == 0  # featured game stays first
+
+
+# ---------------------------------------------------------------------------
+# Triple tile handling in _pack_grid / _lay_out_row_major
+# ---------------------------------------------------------------------------
+
+class TestTripleTilePacking:
+    """Triple-tile (3-wide) slots in _pack_grid and _lay_out_row_major."""
+
+    def _g(self, pk):
+        return {'game_pk': pk}
+
+    def test_triple_tile_placed_at_col_0(self):
+        """A single triple tile placed at col 0 occupies 3 columns."""
+        game_list = [self._g(i) for i in range(3)]
+        tile_type_map = {0: 'triple'}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        assert len(ordered) == len(positions) == 3
+        triple_slots = [(t, c, r) for t, c, r in positions if t == 'triple']
+        assert triple_slots, "expected at least one triple slot"
+        assert triple_slots[0][1] in (0, 1, 2), "triple tile must start in col 0-2"
+
+    def test_triple_tile_demoted_when_at_col_3(self):
+        """Triple tile that would land at col>=3 is demoted to wide or swapped."""
+        # Place 3 normal tiles first (takes slots 0-2), then a triple at slot 3
+        # (col=3) — should either swap with a later normal or demote.
+        game_list = [self._g(i) for i in range(5)]
+        tile_type_map = {3: 'triple'}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        for slot_type, col, row in positions:
+            if slot_type == 'triple':
+                assert col <= 2, "triple tile must not start at col>=3"
+            if slot_type == 'wide':
+                assert col <= 3
+
+    def test_pack_grid_with_only_triple_tile(self):
+        """_pack_grid handles a tile_type_map with only a triple entry."""
+        game_list = [self._g(i) for i in range(4)]
+        tile_type_map = {1: 'triple'}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        assert len(ordered) == len(positions) == 4
+        for slot_type, col, row in positions:
+            assert 0 <= col <= 4 and 0 <= row <= 2
+
+    def test_lay_out_row_major_triple_tile_placed(self):
+        """_lay_out_row_major places a triple token without crash."""
+        tokens = [('triple', self._g(0)), ('normal', self._g(1))]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=0)
+        assert len(ordered) == 2
+        triple_pos = [p for p in positions if p[0] == 'triple']
+        assert triple_pos, "triple tile must appear in output"
+        assert triple_pos[0][1] <= 2  # col 0-2
+
+    def test_lay_out_row_major_triple_at_col3_demoted(self):
+        """Triple tile at col>=3 is demoted when no swap candidate is available."""
+        # Start at slot 3 (col=3): triple needs 3 cols from there, impossible.
+        tokens = [('triple', self._g(0))]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=3)
+        # Either demoted to wide or swapped — but must not be at col>=3 as triple.
+        for slot_type, col, row in positions:
+            if slot_type == 'triple':
+                assert col <= 2
+
+    def test_lay_out_row_major_triple_at_col3_swapped_with_normal(self):
+        """Triple tile at col>=3 is swapped forward with a later normal token."""
+        # Start at slot 3 (col=3): triple can't fit, but there's a normal later
+        # → the normal gets pulled forward, triple placed later when col resets.
+        tokens = [('triple', self._g(0)), ('normal', self._g(1))]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=3)
+        assert len(ordered) == 2
+        for slot_type, col, row in positions:
+            if slot_type == 'triple':
+                assert col <= 2
+
+    def test_pack_grid_overflow_with_triple_tiles(self):
+        """Overflow path places triple tiles when cap_left >= 3."""
+        # 6 games, 5 marked triple: total_wanted = 15 > remaining_capacity=14 → overflow.
+        game_list = [self._g(i) for i in range(6)]
+        tile_type_map = {i: 'triple' for i in range(1, 6)}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        assert len(ordered) == len(positions)
+        for slot_type, col, row in positions:
+            assert 0 <= col <= 4 and 0 <= row <= 2
+            if slot_type == 'triple':
+                assert col <= 2
