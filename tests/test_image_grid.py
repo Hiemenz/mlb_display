@@ -504,7 +504,7 @@ class TestTripleTilePacking:
         game_list = [self._g(i) for i in range(5)]
         tile_type_map = {3: 'triple'}
         ordered, positions = _pack_grid(game_list, tile_type_map)
-        for slot_type, col, row in positions:
+        for slot_type, col, _row in positions:
             if slot_type == 'triple':
                 assert col <= 2, "triple tile must not start at col>=3"
             if slot_type == 'wide':
@@ -516,7 +516,7 @@ class TestTripleTilePacking:
         tile_type_map = {1: 'triple'}
         ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions) == 4
-        for slot_type, col, row in positions:
+        for _slot_type, col, row in positions:
             assert 0 <= col <= 4 and 0 <= row <= 2
 
     def test_lay_out_row_major_triple_tile_placed(self):
@@ -534,7 +534,7 @@ class TestTripleTilePacking:
         tokens = [('triple', self._g(0))]
         ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=3)
         # Either demoted to wide or swapped — but must not be at col>=3 as triple.
-        for slot_type, col, row in positions:
+        for slot_type, col, _row in positions:
             if slot_type == 'triple':
                 assert col <= 2
 
@@ -545,7 +545,7 @@ class TestTripleTilePacking:
         tokens = [('triple', self._g(0)), ('normal', self._g(1))]
         ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=3)
         assert len(ordered) == 2
-        for slot_type, col, row in positions:
+        for slot_type, col, _row in positions:
             if slot_type == 'triple':
                 assert col <= 2
 
