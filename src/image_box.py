@@ -2703,8 +2703,10 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
     when last_hit_x/last_hit_y are present in game_data.
     """
     s = scale
-    # 0.28 px/ft fits any MLB park in 150px: 355ft foul pole → ±70px from centre → x ≈ 5-145px.
-    FSCALE = 0.28 * s
+    # 0.30 px/ft keeps the diamond at approximately the original height while
+    # still fitting the outfield wall.  HY is 1px below _cy1 so home plate
+    # is off-screen but the bases land near their original positions.
+    FSCALE = 0.30 * s
     HX = int(fx + 75 * s)
 
     venue     = game_data.get('venue', '')
@@ -2717,12 +2719,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
     _cy0 = fy + 1
     _cy1 = fy + fh * s - 2
 
-    # The real infield dirt outline loops behind home plate (negative y, i.e.
-    # foul territory). Nudge home plate's anchor up just enough that this
-    # bottom loop stays fully inside the tile instead of getting clipped
-    # flat against the bottom edge.
-    _bottom_extent_ft = max([-y for _, y in infield_poly] + [0]) if infield_poly else 0
-    HY = int(min(fy + 126 * s, _cy1 - _bottom_extent_ft * FSCALE))
+    HY = int(_cy1 + 1 * s - 20 * s)
 
     # Base positions (90ft diamond rotated 45°)
     _b = round(63.64 * FSCALE)   # 90 * cos45 ≈ 63.64 ft
@@ -2829,6 +2826,14 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
         for idx in range(len(infield_poly) - 1):
             x0, y0 = infield_poly[idx]
             x1, y1 = infield_poly[idx + 1]
+            # Skip segments where both endpoints are below the visible cell (e.g.
+            # home-plate arc when HY is pushed off-screen). Using raw pixel y so
+            # we detect off-screen coords before _fpt clamps them to _cy1, which
+            # would otherwise collapse multiple segments into a line at the bottom.
+            raw_py0 = HY - y0 * FSCALE
+            raw_py1 = HY - y1 * FSCALE
+            if raw_py0 > _cy1 and raw_py1 > _cy1:
+                continue
             rf0, rf1 = _rf_foul(x0, y0), _rf_foul(x1, y1)
             lf0, lf1 = _lf_foul(x0, y0), _lf_foul(x1, y1)
             if min(y0, y1) < 5.0 or not (rf0 != rf1 or lf0 != lf1):
@@ -2858,8 +2863,11 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
 
     # Foul lines: drawn after infield so they paint over any residual crossing
     # segments near the boundary between fair and foul territory.
-    draw.line([(HX, HY), _ray_end(lf_x_ft, lf_y_ft)], fill=0, width=1)
-    draw.line([(HX, HY), _ray_end(rf_x_ft, rf_y_ft)], fill=0, width=1)
+    # Anchor clamped to _cy1 so lines don't bleed below the cell when HY is
+    # pushed off-screen.
+    _hy_anchor = (HX, int(min(HY, _cy1)))
+    draw.line([_hy_anchor, _ray_end(lf_x_ft, lf_y_ft)], fill=0, width=1)
+    draw.line([_hy_anchor, _ray_end(rf_x_ft, rf_y_ft)], fill=0, width=1)
 
     # Pitcher's mound dirt circle (~9ft radius) — drawn before the home
     # plate circle so the latter, which is larger at every scale, reads as
@@ -2879,7 +2887,8 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
     # used to keep the baselines from cutting into the plate — it must clear
     # the pentagon's corners, which sit farther out than its half-width.
     hr = max(round(13 * FSCALE), mr + 2, round(_math.hypot(hp - 1, hp)) + 1)
-    hcy = HY - max(0, (HY + hr) - _cy1)
+    # Keep hcy at HY (off-screen) so home plate is not drawn when HY > _cy1.
+    hcy = HY
 
     def _circle_exit(ax, ay, bx, by):
         """Point where segment a->b leaves the home plate clearance radius."""
@@ -2923,14 +2932,15 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1):
     draw.line([_diamond_exit(*FIRST,  *SECOND, bsz), _diamond_exit(*SECOND, *FIRST,  bsz)], fill=0, width=1)
     draw.line([_diamond_exit(*SECOND, *THIRD,  bsz), _diamond_exit(*THIRD,  *SECOND, bsz)], fill=0, width=1)
 
-    # Home plate — white interior with black outline, matching the base style.
-    draw.polygon([
-        (HX,          hcy + hp),
-        (HX - hp,     hcy),
-        (HX - hp + 1, hcy - hp),
-        (HX + hp - 1, hcy - hp),
-        (HX + hp,     hcy),
-    ], fill=255, outline=0)
+    # Home plate — only drawn when it falls inside the visible cell.
+    if hcy <= _cy1:
+        draw.polygon([
+            (HX,          hcy + hp),
+            (HX - hp,     hcy),
+            (HX - hp + 1, hcy - hp),
+            (HX + hp - 1, hcy - hp),
+            (HX + hp,     hcy),
+        ], fill=255, outline=0)
 
     for runner_key, (bx, by) in [
         ('runner_on_first',  FIRST),
@@ -3056,9 +3066,9 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     fp_x        = rp_x + RIGHT_W
     total_right = start_x + TOTAL_W
 
-    # Extend outer top/bottom borders across the two right panels
+    # Extend outer top border across all right panels; bottom only through cells 1+2
     draw.line((rp_x, start_y,              total_right, start_y),              fill=0)
-    draw.line((rp_x, start_y + TOTAL_H,    total_right, start_y + TOTAL_H),    fill=0)
+    draw.line((rp_x, start_y + TOTAL_H,    fp_x,        start_y + TOTAL_H),    fill=0)
     # Header divider only under panel 2 — panel 3 (field diagram) has no header row
     draw.line((rp_x, start_y + HEADER_H,   fp_x,        start_y + HEADER_H),   fill=0)
 
@@ -3074,9 +3084,10 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         scale=scale,
     )
 
-    # Cell 3: field diagram
+    # Cell 3: field diagram — rendered 150px tall (full grid slot) so the
+    # 20px footer gap below the 130px tile is hidden by field content.
     draw = ImageDraw.Draw(Himage)
-    _draw_field_cell(draw, Himage, fp_x, start_y, 150, 130, game_data, scale=scale)
+    _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale)
 
     # Invert spanning header when a run scored or score changed
     _between   = game_data.get('inningState') in ('Middle', 'End')
