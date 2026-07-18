@@ -143,7 +143,7 @@ def draw_leaders_cell(Himage, sx, sy, leaders_data, team_data, category=None, ro
                 logo = _logo_small(abbr, team_id, size=logo_size)
                 if logo:
                     logo_x = logo_col_x + (logo_size - logo.width) // 2
-                    logo_y = ry + (row_h - logo.height) // 2
+                    logo_y = ry + (row_h - logo.height) // 2 + 2
                     Himage.paste(logo, (logo_x, logo_y))
             except Exception:
                 pass
