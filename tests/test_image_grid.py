@@ -8,7 +8,7 @@ import pytest
 
 from image_grid import (
     _free_grid_slots, compute_grid_layout, _find_wide_games, _move_non_live_to_fillers,
-    _lay_out_row_major, _pack_grid,
+    _lay_out_row_major, _pack_grid, _cluster_live_games,
 )
 
 
@@ -112,6 +112,20 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
         triple_count = sum(1 for s in slots if s[0] == 'triple')
         assert triple_count == 1
+
+    def test_postponed_evicted_to_make_room_for_triple(self):
+        """Postponed games are removed when they block triple expansion."""
+        # 14 games (1 live + 1 postponed + 12 final) → normally only 1 free slot (wide).
+        # Postponed eviction removes the postponed game → 13 games → 2 free slots → triple.
+        games = ([_game(0, state='In Progress')]
+                 + [_game(i + 1) for i in range(12)]
+                 + [_game(99, state='Postponed')])
+        assert len(games) == 14
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
+        # Postponed game was evicted to make room.
+        assert all(g['game_pk'] != 99 for g in ordered)
 
     def test_postponed_pushed_to_back_with_dh_and_16_games(self):
         """Postponed pushed to back with dh and 16 games."""
@@ -551,3 +565,45 @@ class TestTripleTilePacking:
             assert 0 <= col <= 4 and 0 <= row <= 2
             if slot_type == 'triple':
                 assert col <= 2
+
+
+class TestClusterLiveGames:
+    """Direct tests for _cluster_live_games to cover its internal layout logic."""
+
+    def _g(self, pk=1, state='Final'):
+        return {'game_pk': pk, 'detailed_state': state, 'away_team_id': 119,
+                'home_team_id': 137, 'away_runs': 3, 'home_runs': 5}
+
+    def test_two_live_games_cluster_into_wide_slots(self):
+        """With 10 games and 2 live, cluster produces wide slots for live games."""
+        games = [self._g(i + 1) for i in range(8)]
+        games += [self._g(9, 'In Progress'), self._g(10, 'In Progress')]
+        result, positions = _cluster_live_games(games, {}, {})
+        assert positions is not None
+        slot_types = [s for s, _c, _r in positions]
+        assert 'wide' in slot_types
+
+    def test_single_live_game_returns_none(self):
+        """With only 1 live game, cluster returns None (not 2-5 live)."""
+        games = [self._g(i + 1) for i in range(9)] + [self._g(10, 'In Progress')]
+        _list, positions = _cluster_live_games(games, {}, {})
+        assert positions is None
+
+    def test_15_or_more_games_returns_none(self):
+        """With 15 games, cluster defers immediately."""
+        games = [self._g(i + 1) for i in range(13)]
+        games += [self._g(14, 'In Progress'), self._g(15, 'In Progress')]
+        _list, positions = _cluster_live_games(games, {}, {})
+        assert positions is None
+
+    def test_pinned_game_first_with_cluster(self):
+        """When favorite_team_first is set, pinned game goes to slot 0."""
+        pinned = {'game_pk': 99, 'detailed_state': 'Final', 'away_team_id': 147,
+                  'home_team_id': 111, 'away_runs': 1, 'home_runs': 2}
+        games = [pinned] + [self._g(i + 1) for i in range(7)]
+        games += [self._g(9, 'In Progress'), self._g(10, 'In Progress')]
+        cfg = {'favorite_team_first': True}
+        result, positions = _cluster_live_games(games, cfg, {})
+        assert positions is not None
+        assert result[0]['game_pk'] == 99
+        assert positions[0] == ('normal', 0, 0)

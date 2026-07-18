@@ -577,6 +577,28 @@ class TestFieldCellRecentHits:
         assert dark_top > 0, "HR to CF must place a filled-diamond marker near the top of the cell"
 
     @needs_pil
+    def test_hr_distance_label_appended(self):
+        """HR with distance renders 'HR 412' not just 'HR'."""
+        import image_box
+        game_with_dist = {
+            'venue': 'American Family Field',
+            'recent_hits': [{'x': 125, 'y': 0, 'is_hr': True, 'is_out': False,
+                             'is_hit': True, 'abbr': 'HR', 'distance': 412}],
+        }
+        game_no_dist = {
+            'venue': 'American Family Field',
+            'recent_hits': [{'x': 125, 'y': 0, 'is_hr': True, 'is_out': False,
+                             'is_hit': True, 'abbr': 'HR', 'distance': None}],
+        }
+        img1 = Image.new('1', (150, 150), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img1), img1, 0, 0, 150, 150, game_with_dist, scale=1, vis_h=150)
+        img2 = Image.new('1', (150, 150), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img2), img2, 0, 0, 150, 150, game_no_dist, scale=1, vis_h=150)
+        # 'HR 412' is wider than 'HR', so the distance version must differ
+        assert list(img1.getdata()) != list(img2.getdata()), \
+            "HR with distance should render more pixels than HR without distance"
+
+    @needs_pil
     def test_two_hits_more_pixels_than_one(self):
         """Two recent hits must produce more dark pixels than one (each gets an arc + label)."""
         import image_box

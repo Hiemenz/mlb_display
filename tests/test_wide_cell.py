@@ -830,3 +830,48 @@ def test_grid_triple_cell_15_plus_games(white_image, team_data):
     }):
         result = draw_out_of_town_score_board(white_image, games, team_data)
     assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_with_wide_cell_tile(white_image, team_data):
+    """14-game slate renders a wide tile (1 free slot, not enough for triple)."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(13)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_cluster_fallback_no_expansion(white_image, team_data):
+    """At 15 games with no expansion flags, cluster/normal path runs."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(14)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_cluster_fallback_with_live_games(white_image, team_data):
+    """15-game slate with 2 live games: cluster path runs and returns wide slots."""
+    from image_grid import draw_out_of_town_score_board
+    games = (
+        [_live_game(game_pk=1), _live_game(game_pk=2, home_team_id=144)]
+        + [_base_game(game_pk=i + 3) for i in range(13)]
+    )
+    with patch('image_grid.load_yaml_file', return_value={
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)

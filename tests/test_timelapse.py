@@ -1747,3 +1747,39 @@ def test_generate_gif_live_games_get_wide_slots_in_frames(monkeypatch, tmp_path)
     assert wide_count >= 1, (
         f"Expected wide slots for live games in timelapse frame, got slots: {slots}"
     )
+
+
+def test_fetch_game_timeline_foul_pitch_appends_F_to_strike_calls():
+    """A foul pitch (call_code 'F') hits the elif branch (timelapse.py:235-238),
+    setting ab_last_strike='F' and appending 'F' to strike_calls (when < 2)."""
+    foul_ev = _isPitch_ev('2026-06-20T23:05:00Z', call_code='F', balls=0, strikes=0, outs=0)
+    play = _play(
+        inning=1, half='top', complete=False,
+        start='2026-06-20T23:04:00Z', end='2026-06-20T23:09:00Z',
+        events=[foul_ev],
+    )
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+
+    assert tl['pitch_events'], "Expected at least one pitch event"
+    ev = tl['pitch_events'][0]
+    assert ev['last_strike_call'] == 'F'
+    assert 'F' in ev['strike_calls']
+
+
+def test_build_ab_pitches_skips_is_pitch_event_without_coordinates():
+    """A pitch event with is_pitch=True but px=None is skipped by _build_ab_pitches
+    (timelapse.py line 526: if px is None or pz is None: continue)."""
+    from timelapse import _build_ab_pitches
+    import datetime
+    target = datetime.datetime(2026, 6, 20, 23, 30, tzinfo=datetime.timezone.utc)
+    pitch_events = [
+        # is_pitch=True but no coordinates → should be skipped at line 526
+        {'time': datetime.datetime(2026, 6, 20, 23, 10, tzinfo=datetime.timezone.utc),
+         'is_pitch': True, 'px': None, 'pz': None,
+         'sz_top': 3.4, 'sz_bot': 1.6,
+         'call_code': 'C', 'pt_abbr': 'FB'},
+    ]
+    result = _build_ab_pitches(pitch_events, last_play=None, target_utc=target)
+    assert result == []

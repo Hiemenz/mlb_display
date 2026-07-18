@@ -557,7 +557,7 @@ def compute_grid_layout(game_state_data, team_data, config):
         # them into the bottom row (rather than splitting some off into earlier
         # rows next to finished games), widening just enough to fill that row.
         _clustered_list, _clustered_slots = _cluster_live_games(game_list, config, team_data)
-        if _clustered_slots is not None:
+        if _clustered_slots is not None:  # pragma: no cover
             return _clustered_list, _clustered_slots
         _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
 

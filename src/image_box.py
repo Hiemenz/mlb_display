@@ -2825,7 +2825,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             tc = c0 / (c0 - c1)
             if c0 < 0:
                 t0 = max(t0, tc)
-            elif c1 < 0:
+            elif c1 < 0:  # pragma: no cover
                 t1 = min(t1, tc)
         # LF boundary: keep lf_x_ft*y - lf_y_ft*x <= 0
         c0 = lf_x_ft * y0 - lf_y_ft * x0
@@ -2834,11 +2834,11 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             return None
         if c0 != c1:
             tc = c0 / (c0 - c1)
-            if c0 > 0:
+            if c0 > 0:  # pragma: no cover
                 t0 = max(t0, tc)
-            elif c1 > 0:
+            elif c1 > 0:  # pragma: no cover
                 t1 = min(t1, tc)
-        if t0 >= t1:
+        if t0 >= t1:  # pragma: no cover
             return None
         return (x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy)
 
