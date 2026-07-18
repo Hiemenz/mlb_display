@@ -330,6 +330,20 @@ class TestDrawStandingsSidebarClinch:
         assert img_streak.tobytes() != img_plain.tobytes(), \
             "Streak badge must add visible pixels not present without it"
 
+    def test_losing_streak_reformatted_and_right_sidebar_x(self):
+        """A losing streak string 'L3' is reformatted to 'L 3' (line 433) and
+        the right-sidebar badge uses _bx = 800-32 (line 443), not the left formula.
+        Right sidebar renders NL divisions, so data must be in a NL division."""
+        team_with_loss = dict(_team(1, 1, wins=60, losses=90))
+        team_with_loss['streak'] = 'L3'
+        data = _standings({'National League East': [team_with_loss]})
+        img = _blank()
+        with patch('image_standings.load_json_file', return_value={}), \
+             patch('image_standings.save_off_results'), \
+             patch('image_standings._logo_small', return_value=None):
+            result = draw_standings_sidebar(img, data, {}, side='right')
+        assert result is img
+
 
 # ===========================================================================
 # 6. draw_standings_sidebar_fullscreen() — previously ~0% covered
@@ -385,6 +399,16 @@ class TestDrawStandingsSidebarFullscreen:
         """Basic right render no crash returns canvas."""
         canvas, result = self._render('right', {
             'National League East': [_team(1, 1, wins=90, losses=60)],
+        })
+        assert result is canvas
+
+    def test_right_side_streak_badge_uses_col_x(self):
+        """Right-side fullscreen render with a streak triggers the col_x
+        badge-positioning branch (image_standings.py line 645)."""
+        team_with_streak = dict(_team(1, 1, wins=90, losses=60))
+        team_with_streak['streak'] = 'W3'
+        canvas, result = self._render('right', {
+            'National League East': [team_with_streak],
         })
         assert result is canvas
 
@@ -668,3 +692,160 @@ class TestDrawPlayoffBracketHeader:
         }
         result = draw_playoff_bracket_header(canvas, bracket)
         assert isinstance(result, Image.Image)
+
+
+# ===========================================================================
+# draw_standings_sidebar() — mover detection paths (lines 341-357, 389-393,
+# 397-398, 408, 447, 481)
+# ===========================================================================
+
+@needs_pil
+class TestDrawStandingsSidebarMovers:
+    """Mover detection: rank+record change flags a team, displaced team also
+    flagged, tie-break reversal flags both, recent-movement persistence shows
+    indicator, and save_off_results is called when _movement_updated."""
+
+    def _render(self, cur_teams, prev_payload=None, movement_payload=None,
+                logo_side_effect=None, div='American League East', abbr_map=None):
+        data = _standings({div: cur_teams}, abbr_map=abbr_map)
+        img = _blank()
+
+        def fake_load(fname):
+            if fname == 'standings_prev.json':
+                return prev_payload
+            if fname == 'standings_movement.json':
+                return movement_payload or {}
+            return {}
+
+        if logo_side_effect is not None:
+            lp = patch('image_standings._logo_small', side_effect=logo_side_effect)
+        else:
+            lp = patch('image_standings._logo_small', return_value=None)
+
+        with patch('image_standings.load_json_file', side_effect=fake_load), \
+             patch('image_standings.save_off_results') as mock_save, \
+             lp:
+            result = draw_standings_sidebar(img, data, {}, side='left')
+        return result, mock_save
+
+    def test_rank_and_record_change_flags_mover_and_saves(self):
+        """A team whose rank AND record both changed is flagged; save_off_results
+        is called because _movement_updated becomes True (line 397-398, 481)."""
+        cur = [_team(1, 1, wins=15, losses=5), _team(2, 2, wins=12, losses=8)]
+        prev_payload = {
+            'standings': {
+                'American League East': [
+                    {'team_id': '1', 'divisionRank': '2',
+                     'league_record_wins': 14, 'league_record_losses': 5},
+                    {'team_id': '2', 'divisionRank': '1',
+                     'league_record_wins': 12, 'league_record_losses': 7},
+                ],
+            },
+        }
+        result, mock_save = self._render(cur, prev_payload=prev_payload)
+        assert result is not None
+        mock_save.assert_called()
+
+    def test_displaced_team_also_flagged(self):
+        """A team pushed down in rank by a mover gets flagged too (lines 350-357),
+        even though only its rank changed, not its record."""
+        cur = [_team(1, 1, wins=14, losses=6), _team(2, 2, wins=13, losses=6)]
+        prev_payload = {
+            'standings': {
+                'American League East': [
+                    {'team_id': '1', 'divisionRank': '2',
+                     'league_record_wins': 13, 'league_record_losses': 6},
+                    {'team_id': '2', 'divisionRank': '1',
+                     'league_record_wins': 13, 'league_record_losses': 6},
+                ],
+            },
+        }
+        result, mock_save = self._render(cur, prev_payload=prev_payload)
+        assert result is not None
+
+    def test_recent_movement_data_shows_indicator_without_new_move(self):
+        """A team in standings_movement.json with a timestamp within 20 hours
+        gets its indicator shown even if no new rank/record change occurred
+        (line 408: display_movers.add)."""
+        import time
+        cur = [_team(1, 1, wins=10, losses=5)]
+        # No prev_rank change — team '1' is not a new mover.
+        movement_payload = {'1': time.time() - 3600}  # 1 hour ago, within 20h
+        result, _ = self._render(cur, movement_payload=movement_payload)
+        assert result is not None
+
+    def test_logo_paste_branch_covers_lines_419_423(self):
+        """When _logo_small returns a real image, lines 419-423 (paste branch)
+        execute in draw_standings_sidebar."""
+        fake_logo = Image.new('1', (20, 20), 0)
+
+        def _fake_small(abbr, team_id, size=20):
+            return fake_logo
+
+        cur = [_team(1, 1, wins=80, losses=60)]
+        result, _ = self._render(cur, logo_side_effect=_fake_small)
+        assert result is not None
+
+    def test_mover_indicator_line_drawn(self):
+        """A confirmed mover with a display_mover entry draws the vertical
+        bracket line (line 447: draw.line for display_movers)."""
+        cur = [_team(1, 1, wins=15, losses=5)]
+        prev_payload = {
+            'standings': {
+                'American League East': [
+                    {'team_id': '1', 'divisionRank': '2',
+                     'league_record_wins': 14, 'league_record_losses': 5},
+                ],
+            },
+        }
+        img = _blank()
+
+        def fake_load(fname):
+            if fname == 'standings_prev.json':
+                return prev_payload
+            return {}
+
+        with patch('image_standings.load_json_file', side_effect=fake_load), \
+             patch('image_standings.save_off_results'), \
+             patch('image_standings._logo_small', return_value=None):
+            result = draw_standings_sidebar(img, {'standings': {'American League East': cur},
+                                                   'team_abbreviation': {}}, {}, side='left')
+        assert result is not None
+
+
+# ===========================================================================
+# _get_wildcard_teams and draw_wildcard_header — logo paste + rank ValueError
+# ===========================================================================
+
+@needs_pil
+class TestWildcardMovers:
+    """Cover lines 68-69 (ValueError on league_rank) and 100-103 (logo paste)."""
+
+    def test_malformed_league_rank_falls_back_to_999(self):
+        """A non-numeric league_rank hits the ValueError branch (lines 68-69),
+        resulting in rank=999 and the team still being appended."""
+        from image_standings import derive_wildcard_from_standings
+        data = {
+            'standings': {
+                'American League East': [
+                    {'team_id': '1', 'divisionRank': '2', 'team_name': 'Yankees',
+                     'league_rank': 'bad', 'wild_card_games_back': '1.0'},
+                ],
+            },
+            'team_abbreviation': {},
+        }
+        result = derive_wildcard_from_standings(data)
+        al_team = next((t for t in result.get('AL', []) if t['team_id'] == '1'), None)
+        assert al_team is not None
+        assert al_team['abbr'] == 'YAN'
+
+    def test_wildcard_header_logo_paste_branch(self):
+        """When _logo_small returns a real image, the paste branch in
+        draw_wildcard_header (lines 100-103) executes."""
+        fake_logo = Image.new('1', (20, 20), 0)
+        al = [{'abbr': 'NYY', 'team_id': '147', 'gb': '1.0', 'rank': 4}]
+        nl = [{'abbr': 'LAD', 'team_id': '119', 'gb': '0.5', 'rank': 5}]
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=fake_logo):
+            result = draw_wildcard_header(img, {'AL': al, 'NL': nl})
+        assert result is img

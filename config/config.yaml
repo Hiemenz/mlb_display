@@ -136,6 +136,15 @@ wide_cell_always: false
 # wide_cell_always, this shows a wide cell even with 15+ games on the slate.
 wide_cell_featured: false
 
+# Triple-cell live game: when true, the featured live game gets a 3-cell (435px)
+# tile — left cell (score/linescore), middle cell (pitch zone/situation), and a
+# third cell showing the venue outfield wall with distance markers, the infield
+# diamond, and live runner positions. Falls back to a standard wide (2-cell) tile
+# when the 3-cell layout cannot fit (e.g. the game would land in the last column).
+# Enabling this bypasses the live-game clustering pass so the featured game can
+# always be placed at column 0 or 2 where a 3-unit tile fits.
+triple_cell_live: false
+
 # Season leaders panel: show HR / AVG / ERA leaders in an empty grid cell when
 # fewer than 15 games are on the slate. Rotates categories every 5 minutes.
 # Refreshed once per day from the MLB Stats API.

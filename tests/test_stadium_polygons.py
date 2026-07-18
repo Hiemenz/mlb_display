@@ -180,10 +180,10 @@ class TestExportJson:
 
 class TestLoadMlbamWalls:
     def test_missing_file_returns_empty_dict(self):
-        """When mlbam_walls.json doesn't exist, _load_mlbam_walls returns {}."""
+        """When the JSON file doesn't exist, _load_polygon_json returns {}."""
         from unittest.mock import patch
         with patch('os.path.exists', return_value=False):
-            result = sp._load_mlbam_walls()
+            result = sp._load_polygon_json(sp._MLBAM_WALLS_PATH)
         assert result == {}
 
 

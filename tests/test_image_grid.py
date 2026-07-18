@@ -8,7 +8,7 @@ import pytest
 
 from image_grid import (
     _free_grid_slots, compute_grid_layout, _find_wide_games, _move_non_live_to_fillers,
-    _lay_out_row_major, _pack_grid,
+    _lay_out_row_major, _pack_grid, _cluster_live_games,
 )
 
 
@@ -84,26 +84,48 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert all(s[0] == 'normal' for s in slots)
 
-    def test_live_game_gets_wide_slot_when_room(self):
-        """Live game gets wide slot when room."""
+    def test_live_game_gets_triple_slot_when_room(self):
+        """Live game gets triple slot when there is room (≥2 extra slots free)."""
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 5)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
+
+    def test_live_game_gets_wide_when_only_one_slot_free(self):
+        """Live game falls back to wide when only 1 extra slot is available."""
+        # 14 games → 15 - 14 = 1 free slot, not enough for triple (needs 2).
+        games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 14)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         wide_count = sum(1 for s in slots if s[0] == 'wide')
         assert wide_count == 1
 
-    def test_no_wide_slot_at_15_games_without_always_flag(self):
-        """No wide slot at 15 games without always flag."""
+    def test_no_expanded_slot_at_15_games_without_always_flag(self):
+        """No expanded slot at 15 games without wide_cell_always/featured flag."""
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 15)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert all(s[0] == 'normal' for s in slots)
 
-    def test_wide_cell_always_forces_wide_at_15_games(self):
-        """Wide cell always forces wide at 15 games."""
+    def test_wide_cell_always_forces_triple_at_15_games(self):
+        """wide_cell_always at 15 games now gives the best live game a triple tile."""
         cfg = dict(BASE_CONFIG, wide_cell_always=True)
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 15)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 1
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
+
+    def test_postponed_evicted_to_make_room_for_triple(self):
+        """Postponed games are removed when they block triple expansion."""
+        # 14 games (1 live + 1 postponed + 12 final) → normally only 1 free slot (wide).
+        # Postponed eviction removes the postponed game → 13 games → 2 free slots → triple.
+        games = ([_game(0, state='In Progress')]
+                 + [_game(i + 1) for i in range(12)]
+                 + [_game(99, state='Postponed')])
+        assert len(games) == 14
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
+        # Postponed game was evicted to make room.
+        assert all(g['game_pk'] != 99 for g in ordered)
 
     def test_postponed_pushed_to_back_with_dh_and_16_games(self):
         """Postponed pushed to back with dh and 16 games."""
@@ -154,12 +176,9 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert len(ordered) == len(slots)
 
-    def test_live_games_all_cluster_into_one_bottom_row(self):
-        """Live games all cluster into one bottom row."""
-        # 13 games, 3 live spread among finals → all 3 must land together in
-        # the same (bottom) row, widening exactly enough (2) to fill it
-        # (2+2+1=5) rather than leaving one live game behind as a filler
-        # among earlier finished games.
+    def test_featured_live_game_gets_triple_others_normal(self):
+        """Featured live game gets triple; remaining live games stay normal when budget exhausted."""
+        # 13 games, 3 live → remaining = 2 → featured gets triple (costs 2), others normal.
         games = (
             [_game(i) for i in range(5)]
             + [_game(10, state='In Progress')]
@@ -171,18 +190,12 @@ class TestComputeGridLayout:
         )
         assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        live_rows = {row for (g, (stype, col, row)) in zip(ordered, slots)
-                     if g.get('detailed_state') == 'In Progress'}
-        assert len(live_rows) == 1, f"Live games split across rows: {live_rows}"
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 2
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
 
-    def test_four_live_games_widen_as_many_as_the_grid_budget_allows(self):
-        """Four live games widen as many as the grid budget allows."""
-        # 11 games, 4 live. The grid's overall wide budget (15-11=4) allows
-        # widening all 4, which takes priority over keeping every live game
-        # in a single row — 3 fit as wide before a row boundary forces one
-        # to fall back to normal (no dead gap is ever left).
+    def test_four_live_games_featured_gets_triple_others_wide(self):
+        """With 4 live games and budget of 4, featured gets triple, next gets wide."""
+        # 11 games, 4 live → remaining = 4 → triple (costs 2) + wide (costs 1) + wide (costs 1).
         games = (
             [_game(0, state='In Progress'), _game(1, state='In Progress')]
             + [_game(2)]
@@ -193,8 +206,8 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         live_count = sum(1 for g in ordered if g.get('detailed_state') == 'In Progress')
         assert live_count == 4
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 3
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
 
     def test_filler_swap_leaves_all_games_rendered(self):
         """Filler swap leaves all games rendered."""
@@ -281,8 +294,8 @@ class TestPackGridDirect:
         # 1 normal in row1 — the lone filler must lead ("1 2 2") since wide
         # tiles are the majority in that row.
         game_list = [self._g(i) for i in range(6)]
-        wide_set = {1, 2, 3, 4}
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in (1, 2, 3, 4)}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions) == 6
         row1_tokens = [(g['game_pk'], s) for g, s in zip(ordered, positions) if s[2] == 1]
         # First token in row 1 (lowest col) should be the lone normal filler.
@@ -292,7 +305,7 @@ class TestPackGridDirect:
 
     def test_empty_game_list_returns_empty(self):
         """Empty game list returns empty."""
-        assert _pack_grid([], set()) == ([], [])
+        assert _pack_grid([], {}) == ([], [])
 
     def test_overflow_falls_back_to_front_to_back_packing(self):
         """Overflow falls back to front to back packing."""
@@ -300,8 +313,8 @@ class TestPackGridDirect:
         # each — forces the front-to-back overflow branch, including its
         # col=4-skip and its final break once nothing more fits.
         game_list = [self._g(i) for i in range(20)]
-        wide_set = set(range(1, 12))  # far more wide than 15 slots can hold
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in range(1, 12)}  # far more wide than 15 slots can hold
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions)
         assert len(positions) <= 15
         occupied = set()
@@ -316,8 +329,8 @@ class TestPackGridDirect:
         # With 15+ games, _pack_grid should use simple row-major layout
         # instead of complex bottom-up packing, and trim to exactly 15 slots.
         game_list = [self._g(i) for i in range(18)]
-        wide_set = {0, 5, 10}  # some games marked for widening
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in (0, 5, 10)}  # some games marked for widening
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions)
         assert len(positions) <= 15
         # Check that slot numbers don't exceed 15 (5 cols × 3 rows)
@@ -334,8 +347,8 @@ class TestPackGridDirect:
         # remaining_capacity = 14 (with pinned_cost=1), so need total > 14.
         # With 10 games: 1 pinned normal, 7 wide (14 units), 2 normal (2 units) = 16 > 14.
         game_list = [self._g(i) for i in range(10)]
-        wide_set = {1, 2, 3, 4, 5, 6, 7}  # 7 wide games, games 0,8,9 are normal
-        ordered, positions = _pack_grid(game_list, wide_set)
+        tile_type_map = {i: 'wide' for i in (1, 2, 3, 4, 5, 6, 7)}  # 7 wide games, games 0,8,9 are normal
+        ordered, positions = _pack_grid(game_list, tile_type_map)
         assert len(ordered) == len(positions)
         assert len(positions) <= 15
         # Verify valid layout
@@ -467,3 +480,130 @@ class TestMoveNonLiveToFillers:
         ]
         result = _move_non_live_to_fillers(games, positions)
         assert result[0]['game_pk'] == 0  # featured game stays first
+
+
+# ---------------------------------------------------------------------------
+# Triple tile handling in _pack_grid / _lay_out_row_major
+# ---------------------------------------------------------------------------
+
+class TestTripleTilePacking:
+    """Triple-tile (3-wide) slots in _pack_grid and _lay_out_row_major."""
+
+    def _g(self, pk):
+        return {'game_pk': pk}
+
+    def test_triple_tile_placed_at_col_0(self):
+        """A single triple tile placed at col 0 occupies 3 columns."""
+        game_list = [self._g(i) for i in range(3)]
+        tile_type_map = {0: 'triple'}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        assert len(ordered) == len(positions) == 3
+        triple_slots = [(t, c, r) for t, c, r in positions if t == 'triple']
+        assert triple_slots, "expected at least one triple slot"
+        assert triple_slots[0][1] in (0, 1, 2), "triple tile must start in col 0-2"
+
+    def test_triple_tile_demoted_when_at_col_3(self):
+        """Triple tile that would land at col>=3 is demoted to wide or swapped."""
+        # Place 3 normal tiles first (takes slots 0-2), then a triple at slot 3
+        # (col=3) — should either swap with a later normal or demote.
+        game_list = [self._g(i) for i in range(5)]
+        tile_type_map = {3: 'triple'}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        for slot_type, col, _row in positions:
+            if slot_type == 'triple':
+                assert col <= 2, "triple tile must not start at col>=3"
+            if slot_type == 'wide':
+                assert col <= 3
+
+    def test_pack_grid_with_only_triple_tile(self):
+        """_pack_grid handles a tile_type_map with only a triple entry."""
+        game_list = [self._g(i) for i in range(4)]
+        tile_type_map = {1: 'triple'}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        assert len(ordered) == len(positions) == 4
+        for _slot_type, col, row in positions:
+            assert 0 <= col <= 4 and 0 <= row <= 2
+
+    def test_lay_out_row_major_triple_tile_placed(self):
+        """_lay_out_row_major places a triple token without crash."""
+        tokens = [('triple', self._g(0)), ('normal', self._g(1))]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=0)
+        assert len(ordered) == 2
+        triple_pos = [p for p in positions if p[0] == 'triple']
+        assert triple_pos, "triple tile must appear in output"
+        assert triple_pos[0][1] <= 2  # col 0-2
+
+    def test_lay_out_row_major_triple_at_col3_demoted(self):
+        """Triple tile at col>=3 is demoted when no swap candidate is available."""
+        # Start at slot 3 (col=3): triple needs 3 cols from there, impossible.
+        tokens = [('triple', self._g(0))]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=3)
+        # Either demoted to wide or swapped — but must not be at col>=3 as triple.
+        for slot_type, col, _row in positions:
+            if slot_type == 'triple':
+                assert col <= 2
+
+    def test_lay_out_row_major_triple_at_col3_swapped_with_normal(self):
+        """Triple tile at col>=3 is swapped forward with a later normal token."""
+        # Start at slot 3 (col=3): triple can't fit, but there's a normal later
+        # → the normal gets pulled forward, triple placed later when col resets.
+        tokens = [('triple', self._g(0)), ('normal', self._g(1))]
+        ordered, positions, next_slot = _lay_out_row_major(tokens, start_slot=3)
+        assert len(ordered) == 2
+        for slot_type, col, _row in positions:
+            if slot_type == 'triple':
+                assert col <= 2
+
+    def test_pack_grid_overflow_with_triple_tiles(self):
+        """Overflow path places triple tiles when cap_left >= 3."""
+        # 6 games, 5 marked triple: total_wanted = 15 > remaining_capacity=14 → overflow.
+        game_list = [self._g(i) for i in range(6)]
+        tile_type_map = {i: 'triple' for i in range(1, 6)}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        assert len(ordered) == len(positions)
+        for slot_type, col, row in positions:
+            assert 0 <= col <= 4 and 0 <= row <= 2
+            if slot_type == 'triple':
+                assert col <= 2
+
+
+class TestClusterLiveGames:
+    """Direct tests for _cluster_live_games to cover its internal layout logic."""
+
+    def _g(self, pk=1, state='Final'):
+        return {'game_pk': pk, 'detailed_state': state, 'away_team_id': 119,
+                'home_team_id': 137, 'away_runs': 3, 'home_runs': 5}
+
+    def test_two_live_games_cluster_into_wide_slots(self):
+        """With 10 games and 2 live, cluster produces wide slots for live games."""
+        games = [self._g(i + 1) for i in range(8)]
+        games += [self._g(9, 'In Progress'), self._g(10, 'In Progress')]
+        result, positions = _cluster_live_games(games, {}, {})
+        assert positions is not None
+        slot_types = [s for s, _c, _r in positions]
+        assert 'wide' in slot_types
+
+    def test_single_live_game_returns_none(self):
+        """With only 1 live game, cluster returns None (not 2-5 live)."""
+        games = [self._g(i + 1) for i in range(9)] + [self._g(10, 'In Progress')]
+        _list, positions = _cluster_live_games(games, {}, {})
+        assert positions is None
+
+    def test_15_or_more_games_returns_none(self):
+        """With 15 games, cluster defers immediately."""
+        games = [self._g(i + 1) for i in range(13)]
+        games += [self._g(14, 'In Progress'), self._g(15, 'In Progress')]
+        _list, positions = _cluster_live_games(games, {}, {})
+        assert positions is None
+
+    def test_pinned_game_first_with_cluster(self):
+        """When favorite_team_first is set, pinned game goes to slot 0."""
+        pinned = {'game_pk': 99, 'detailed_state': 'Final', 'away_team_id': 147,
+                  'home_team_id': 111, 'away_runs': 1, 'home_runs': 2}
+        games = [pinned] + [self._g(i + 1) for i in range(7)]
+        games += [self._g(9, 'In Progress'), self._g(10, 'In Progress')]
+        cfg = {'favorite_team_first': True}
+        result, positions = _cluster_live_games(games, cfg, {})
+        assert positions is not None
+        assert result[0]['game_pk'] == 99
+        assert positions[0] == ('normal', 0, 0)

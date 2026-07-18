@@ -437,9 +437,14 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             # Align x to 8-pixel boundary
             rx = (gx * 150 + x_start) // 8 * 8
             ry = gy * 150 + y_start
-            # Wide tiles span 2 columns (≈300px); normal tiles span 1 (150px).
+            # Triple tiles span 3 columns (≈435px); wide 2 (≈300px); normal 1 (150px).
             # Pad to cover 8px alignment rounding and keep width divisible by 8.
-            rw = 304 if slot_type == 'wide' else 152
+            if slot_type == 'triple':
+                rw = 440
+            elif slot_type == 'wide':
+                rw = 304
+            else:
+                rw = 152
             rh = 150
             changed_regions.append((rx, ry, rw, rh))
 

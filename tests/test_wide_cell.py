@@ -617,27 +617,22 @@ def test_grid_15_games_wide_cell_always(white_image, team_data):
 # ---------------------------------------------------------------------------
 
 @needs_pil
-def test_compute_grid_layout_two_wide_at_col0():
-    """Two in-progress games on a 13-game slate both become wide tiles,
-    grouped together in the same (bottom) row rather than split across
-    separate rows — the live-game clustering groups every live game into
-    one row, widening as many as the grid's overall wide budget allows
-    (here both)."""
+def test_compute_grid_layout_featured_live_gets_triple_on_13_game_slate():
+    """On a 13-game slate with 2 free slots, the featured live game gets a
+    triple tile (uses both slots); the other live game stays normal."""
     from image_grid import compute_grid_layout
     games = _make_game_list(
-        [('In Progress', 7, 'Top'),                       # 0
+        [('In Progress', 7, 'Top'),                       # 0 — farther along
          ('Final', 9, 'End'), ('Final', 9, 'End'),         # 1, 2
          ('In Progress', 5, 'Top')]                        # 3
         + [('Final', 9, 'End')] * 9                         # pad to 13
     )
     game_list, slots = compute_grid_layout(games, {}, {})
-    wide_slots = [(gl.get('game_pk'), s) for gl, s in zip(game_list, slots)
-                  if s[0] == 'wide']
-    assert len(wide_slots) == 2
-    # Both wide tiles land in the same row, non-overlapping (2 units apart).
-    cols = sorted(s[1] for _, s in wide_slots)
-    assert cols[1] - cols[0] >= 2
-    assert len({s[2] for _, s in wide_slots}) == 1
+    triple_count = sum(1 for s in slots if s[0] == 'triple')
+    assert triple_count == 1
+    # Second live game has no remaining expansion budget → stays normal.
+    wide_count = sum(1 for s in slots if s[0] == 'wide')
+    assert wide_count == 0
 
 
 def test_compute_grid_layout_favorite_team_first_moves_game_to_front():
@@ -669,10 +664,10 @@ def test_compute_grid_layout_pushes_rainout_past_doubleheader():
 
 
 def test_compute_grid_layout_slot_building_stops_at_capacity():
-    """With 16 games and one forced wide cell, the wide tile consumes 2 slot
-    units, so total slot demand (17) exceeds the 15-unit grid — the packer
-    must stop placing games once 15 slot units are used rather than indexing
-    past the grid. The excluded game(s) simply aren't rendered."""
+    """With 16 games and one forced expanded tile, the expanded tile consumes 3
+    slot units (triple), so total slot demand (18) exceeds the 15-unit grid —
+    the packer must stop placing games once 15 slot units are used rather than
+    indexing past the grid. The excluded game(s) simply aren't rendered."""
     from image_grid import compute_grid_layout
     games = _make_game_list(
         [('In Progress', 5, 'Top')] + [('Final', 9, 'End')] * 15
@@ -681,7 +676,7 @@ def test_compute_grid_layout_slot_building_stops_at_capacity():
     config = {'wide_cell_always': True}
     game_list, slots = compute_grid_layout(games, {}, config)
     assert len(slots) == len(game_list) < 16
-    assert any(s[0] == 'wide' for s in slots)
+    assert any(s[0] in ('wide', 'triple') for s in slots)
 
 
 @needs_pil
@@ -723,10 +718,14 @@ def test_grid_date_label_malformed_falls_back_and_never_fits(white_image, team_d
 
 @needs_pil
 def test_changed_region_covers_full_wide_tile():
-    """Partial-refresh region for a wide game must span the full 2-cell tile."""
+    """Partial-refresh region for a wide game must span the full 2-cell tile.
+
+    Use 14 games (only 1 extra slot free) so the live game is demoted to wide
+    rather than triple, which needs 2 extra slots.
+    """
     from image_grid import compute_grid_layout
     games = _make_game_list(
-        [('In Progress', 7, 'Top')] + [('Final', 9, 'End')] * 5
+        [('In Progress', 7, 'Top')] + [('Final', 9, 'End')] * 13
     )
     game_list, slots = compute_grid_layout(games, {}, {})
     x_start = 32
@@ -796,4 +795,83 @@ def test_wide_box_at_bat_pitch_count_fallback_no_speed(white_image, team_data):
     game = _live_game(ab_pitches=[], at_bat_pitch_count=2, last_pitch_speed=None)
     game.pop('pitch_count', None)
     result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+# ---------------------------------------------------------------------------
+# Triple-cell tile via draw_out_of_town_score_board
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_grid_with_triple_cell_tile(white_image, team_data):
+    """triple_cell_live=True renders a draw_triple_box tile without crash."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(5)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'triple_cell_live': True,
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_triple_cell_15_plus_games(white_image, team_data):
+    """triple_cell_live=True with 15+ games assigns triple to the best game."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(14)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'triple_cell_live': True,
+        'wide_cell_always': True,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_with_wide_cell_tile(white_image, team_data):
+    """14-game slate renders a wide tile (1 free slot, not enough for triple)."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(13)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_cluster_fallback_no_expansion(white_image, team_data):
+    """At 15 games with no expansion flags, cluster/normal path runs."""
+    from image_grid import draw_out_of_town_score_board
+    games = [_live_game(game_pk=1)] + [_base_game(game_pk=i + 2) for i in range(14)]
+    with patch('image_grid.load_yaml_file', return_value={
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_cluster_fallback_with_live_games(white_image, team_data):
+    """15-game slate with 2 live games: cluster path runs and returns wide slots."""
+    from image_grid import draw_out_of_town_score_board
+    games = (
+        [_live_game(game_pk=1), _live_game(game_pk=2, home_team_id=144)]
+        + [_base_game(game_pk=i + 3) for i in range(13)]
+    )
+    with patch('image_grid.load_yaml_file', return_value={
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
     assert isinstance(result, Image.Image)

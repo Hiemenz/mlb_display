@@ -454,11 +454,10 @@ def test_no_featured_fullscreen_env_uses_grid_path():
 
 @needs_pil
 def test_changed_region_for_wide_game_covers_full_wide_tile():
-    """A changed wide (2-cell) game must produce a region with width 304
-    (covering the whole tile), not the normal 152px single-cell width —
-    verifying orchestrate_score_board plumbs compute_grid_layout's slot math
-    through to its returned changed_regions, matching
-    tests/test_wide_cell.py::test_changed_region_covers_full_wide_tile."""
+    """A changed live game with room must produce a region wider than a normal
+    single cell — verifying orchestrate_score_board plumbs compute_grid_layout's
+    slot math through to its returned changed_regions.  With 6 games the live
+    game gets a triple tile (440px); with 14 games it falls back to wide (304px)."""
     import generate_image
     import image_box
 
@@ -480,6 +479,36 @@ def test_changed_region_for_wide_game_covers_full_wide_tile():
 
     assert result is not None
     _, regions = result
+    # 6 games → 9 free slots → triple (3-cell, 440px wide)
+    assert regions == [(32, 30, 440, 150)]
+
+
+@needs_pil
+def test_changed_region_for_wide_game_is_304px():
+    """A changed wide (2-cell) game produces a 304px region.  Use 14 games so the
+    live game falls back to wide (only 1 free slot, not enough for triple)."""
+    import generate_image
+    import image_box
+
+    old_games = [_live_game(game_pk=1, balls=1)] + [_base_game(game_pk=i + 2) for i in range(13)]
+    new_games = [_live_game(game_pk=1, balls=2)] + [_base_game(game_pk=i + 2) for i in range(13)]
+
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({'old_scoreboard_state.json': old_games})), \
+         patch('generate_image.save_off_results'), \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            result = generate_image.orchestrate_score_board(
+                new_games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=FIXED_CONFIG,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    assert result is not None
+    _, regions = result
+    # 14 games → 1 free slot → wide (304px)
     assert regions == [(32, 30, 304, 150)]
 
 
@@ -1087,3 +1116,84 @@ def test_bypass_cache_skips_force_full_refresh_bookkeeping():
     saved_files = {call.args[1] for call in mock_save.call_args_list if len(call.args) >= 2}
     assert 'force_full_refresh' not in saved_files
     assert 'old_grid_positions' not in saved_files
+
+
+@needs_pil
+def test_show_debug_overlay_renders_without_crash():
+    """show_debug_overlay=True calls _draw_debug_overlay on the final image."""
+    import generate_image
+    import image_box
+
+    config = dict(FIXED_CONFIG, show_debug_overlay=True)
+    games = [_base_game(game_pk=1)]
+
+    with patch('generate_image.load_json_file', return_value={}), \
+         patch('generate_image.save_off_results'), \
+         patch('image_grid.load_yaml_file', return_value=config), \
+         patch('image_box.load_yaml_file', return_value=config):
+        image_box.set_historical_mode(True)
+        try:
+            result = generate_image.orchestrate_score_board(
+                games, TEAM_DATA, date_str='2026-06-20', bypass_cache=True, config=config,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    assert result is not None
+    img, _regions = result
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_debug_overlay_malformed_fetch_time_swallowed():
+    """_draw_debug_overlay: a non-ISO last_game_fetch string hits lines 152-153
+    (except Exception: pass) and renders without crashing."""
+    import generate_image
+    import image_box
+
+    config = dict(FIXED_CONFIG, show_debug_overlay=True)
+    games = [_base_game(game_pk=1)]
+
+    def fake_load(fname, *a, **kw):
+        if fname == 'schedule_state.json':
+            return {'last_game_fetch': 'not-a-valid-iso-date'}
+        return {}
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('image_grid.load_yaml_file', return_value=config), \
+         patch('image_box.load_yaml_file', return_value=config):
+        image_box.set_historical_mode(True)
+        try:
+            result = generate_image.orchestrate_score_board(
+                games, TEAM_DATA, date_str='2026-06-20', bypass_cache=True, config=config,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    assert result is not None
+
+
+def test_fetch_skip_malformed_next_game_date_swallowed():
+    """_fetch_skip_is_expected: a non-comparable next_game_date raises TypeError
+    on > comparison, hitting lines 120-121 (except Exception: pass)."""
+    import generate_image
+    import datetime as dt_mod
+
+    # Build a fake now() that returns midnight (outside morning window) so the
+    # morning-window early return doesn't fire before we reach next_game_date.
+    class _FakeTz:
+        def utcoffset(self, _dt): return dt_mod.timedelta(0)
+        def tzname(self, _dt): return 'UTC'
+        def dst(self, _dt): return dt_mod.timedelta(0)
+
+    midnight = dt_mod.datetime(2026, 7, 18, 2, 0, tzinfo=dt_mod.timezone.utc)
+
+    with patch('generate_image.datetime', wraps=dt_mod.datetime) as mock_dt:
+        mock_dt.now.return_value = midnight
+        mock_dt.now.side_effect = None
+        # Use a dict as next_game_date: truthy, but dict > str raises TypeError
+        result = generate_image._fetch_skip_is_expected(
+            config={}, sched={'next_game_date': {'bad': 'type'}}
+        )
+    assert result is False

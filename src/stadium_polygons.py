@@ -23,19 +23,30 @@ import os
 # ---------------------------------------------------------------------------
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _MLBAM_WALLS_PATH = os.path.join(_ROOT, 'data', 'mlbam_walls.json')
+_MLBAM_INFIELD_PATH = os.path.join(_ROOT, 'data', 'mlbam_infield.json')
 
 
-def _load_mlbam_walls():
-    """Load wall polygons from data/mlbam_walls.json."""
-    if not os.path.exists(_MLBAM_WALLS_PATH):
+def _load_polygon_json(path):
+    """Load a {stadium_name: [[x, y], ...]} JSON file as tuples."""
+    if not os.path.exists(path):
         return {}
-    with open(_MLBAM_WALLS_PATH) as fh:
+    with open(path) as fh:
         raw = json.load(fh)
-    # Convert [[x, y], ...] lists to [(x, y), ...] tuples
     return {name: [tuple(pt) for pt in pts] for name, pts in raw.items()}
 
 
-STADIUM_POLYGONS = _load_mlbam_walls()
+STADIUM_POLYGONS = _load_polygon_json(_MLBAM_WALLS_PATH)
+
+# Infield dirt cutout boundary per park (data/mlbam_infield.json), extracted
+# from GeomMLBStadiums' infield_outer path segment — see
+# src/extract_infield_polygons.py. Comerica Park's shape here matches the
+# generic modern cutout: the pre-2025 "keyhole" strip (removed before the
+# 2025 season) only ever appeared in that dataset's infield_inner segment,
+# not infield_outer, so no override is needed. Rogers Centre has no entry:
+# its infield_outer path is a broken open arc in the source data (never
+# reaches the home-plate cutout), so extract_infield_polygons.py excludes
+# it and get_infield_polygon() falls back to the Yankee Stadium shape.
+STADIUM_INFIELD_POLYGONS = _load_polygon_json(_MLBAM_INFIELD_PATH)
 
 # Sutter Health Park — not in MLBAM dataset (A's temporary Sacramento stadium)
 if 'Sutter Health Park' not in STADIUM_POLYGONS:
@@ -145,6 +156,21 @@ def get_polygon(venue_name):
         return STADIUM_POLYGONS[venue_name]
     lower = venue_name.lower()
     for k, v in STADIUM_POLYGONS.items():
+        if lower in k.lower() or k.lower() in lower:
+            return v
+    return None
+
+
+def get_infield_polygon(venue_name):
+    """Return infield dirt cutout polygon for *venue_name*, fuzzy-matched.
+
+    Returns None if no match is found; callers should fall back to a
+    generic cutout shape.
+    """
+    if venue_name in STADIUM_INFIELD_POLYGONS:
+        return STADIUM_INFIELD_POLYGONS[venue_name]
+    lower = venue_name.lower()
+    for k, v in STADIUM_INFIELD_POLYGONS.items():
         if lower in k.lower() or k.lower() in lower:
             return v
     return None
