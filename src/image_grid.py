@@ -252,11 +252,10 @@ def _find_wide_games(game_list, config, team_data):
 def _find_tile_types(game_list, config, team_data):
     """Return {index: 'triple'|'wide'} for games that should get an expanded tile.
 
-    When ``triple_cell_live`` is enabled, the featured live game (or the game
-    farthest along when no featured team is live) becomes a 'triple' (3-cell)
-    tile; all other live games within the slot budget remain 'wide' (2-cell).
-
-    The dict is empty when no in-progress games exist or no slots are free.
+    The featured live game always tries triple (3-cell) first, falls back to
+    wide (2-cell) if the slot budget is tight, and lands on normal (1-cell) if
+    there is no room at all.  Other live games fill remaining budget as wide,
+    then normal.  The dict is empty when no in-progress games exist.
     """
     in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
     if not in_progress:
@@ -267,16 +266,14 @@ def _find_tile_types(game_list, config, team_data):
     def _rank(idx):
         return (1 if idx == featured_idx else 0,) + _game_progress(game_list[idx])
 
-    triple_on = config.get('triple_cell_live', False)
+    sorted_live = sorted(in_progress, key=_rank, reverse=True)
 
     if len(game_list) < 15:
-        max_slots = 15 - len(game_list)  # extra slot units available
+        # Extra slot units available beyond what normal tiles would consume.
+        remaining = 15 - len(game_list)
         tile_map = {}
-        remaining = max_slots
-        # Best game gets triple (costs 2 extra) if enabled and budget allows
-        sorted_live = sorted(in_progress, key=_rank, reverse=True)
         for idx in sorted_live:
-            if triple_on and not tile_map and remaining >= 2:
+            if not tile_map and remaining >= 2:
                 tile_map[idx] = 'triple'
                 remaining -= 2
             elif remaining >= 1:
@@ -284,13 +281,12 @@ def _find_tile_types(game_list, config, team_data):
                 remaining -= 1
         return tile_map
 
-    # 15+ games: at most 1 expanded tile allowed (forces a game off the grid)
+    # 15+ games: expanding forces a game off the grid — only do it if the
+    # config explicitly opts in (wide_cell_always or wide_cell_featured).
     if not (config.get('wide_cell_always', False) or config.get('wide_cell_featured', False)):
         return {}
     best = max(in_progress, key=_rank)
-    if triple_on:
-        return {best: 'triple'}
-    return {best: 'wide'}
+    return {best: 'triple'}
 
 
 def _pack_grid(game_list, tile_type_map):
@@ -539,6 +535,16 @@ def compute_grid_layout(game_state_data, team_data, config):
         _clustered_list, _clustered_slots = _cluster_live_games(game_list, config, team_data)
         if _clustered_slots is not None:
             return _clustered_list, _clustered_slots
+
+    # If live games exist and postponed/cancelled games are occupying slots that
+    # prevent expansion (triple needs 2 free slots, wide needs 1), evict the
+    # postponed games — they display no useful score — to make room.
+    _live_exists = any(g.get('detailed_state') in _LIVE_WIDE_STATES for g in game_list)
+    if _live_exists:
+        _ppd_evictable = [g for g in reversed(game_list)
+                          if g.get('detailed_state', '') in _RAINOUT_STATES]
+        while _ppd_evictable and len(game_list) > 13:  # >13 means <2 free slots
+            game_list.remove(_ppd_evictable.pop(0))
 
     # Determine which games get expanded tiles (triple or wide), then pack the
     # grid so normal games fill in around them with zero gaps.  Finally, move

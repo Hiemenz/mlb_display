@@ -669,10 +669,10 @@ def test_compute_grid_layout_pushes_rainout_past_doubleheader():
 
 
 def test_compute_grid_layout_slot_building_stops_at_capacity():
-    """With 16 games and one forced wide cell, the wide tile consumes 2 slot
-    units, so total slot demand (17) exceeds the 15-unit grid — the packer
-    must stop placing games once 15 slot units are used rather than indexing
-    past the grid. The excluded game(s) simply aren't rendered."""
+    """With 16 games and one forced expanded tile, the expanded tile consumes 3
+    slot units (triple), so total slot demand (18) exceeds the 15-unit grid —
+    the packer must stop placing games once 15 slot units are used rather than
+    indexing past the grid. The excluded game(s) simply aren't rendered."""
     from image_grid import compute_grid_layout
     games = _make_game_list(
         [('In Progress', 5, 'Top')] + [('Final', 9, 'End')] * 15
@@ -681,7 +681,7 @@ def test_compute_grid_layout_slot_building_stops_at_capacity():
     config = {'wide_cell_always': True}
     game_list, slots = compute_grid_layout(games, {}, config)
     assert len(slots) == len(game_list) < 16
-    assert any(s[0] == 'wide' for s in slots)
+    assert any(s[0] in ('wide', 'triple') for s in slots)
 
 
 @needs_pil
@@ -723,10 +723,14 @@ def test_grid_date_label_malformed_falls_back_and_never_fits(white_image, team_d
 
 @needs_pil
 def test_changed_region_covers_full_wide_tile():
-    """Partial-refresh region for a wide game must span the full 2-cell tile."""
+    """Partial-refresh region for a wide game must span the full 2-cell tile.
+
+    Use 14 games (only 1 extra slot free) so the live game is demoted to wide
+    rather than triple, which needs 2 extra slots.
+    """
     from image_grid import compute_grid_layout
     games = _make_game_list(
-        [('In Progress', 7, 'Top')] + [('Final', 9, 'End')] * 5
+        [('In Progress', 7, 'Top')] + [('Final', 9, 'End')] * 13
     )
     game_list, slots = compute_grid_layout(games, {}, {})
     x_start = 32

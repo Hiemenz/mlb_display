@@ -84,26 +84,34 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert all(s[0] == 'normal' for s in slots)
 
-    def test_live_game_gets_wide_slot_when_room(self):
-        """Live game gets wide slot when room."""
+    def test_live_game_gets_triple_slot_when_room(self):
+        """Live game gets triple slot when there is room (≥2 extra slots free)."""
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 5)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
+
+    def test_live_game_gets_wide_when_only_one_slot_free(self):
+        """Live game falls back to wide when only 1 extra slot is available."""
+        # 14 games → 15 - 14 = 1 free slot, not enough for triple (needs 2).
+        games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 14)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         wide_count = sum(1 for s in slots if s[0] == 'wide')
         assert wide_count == 1
 
-    def test_no_wide_slot_at_15_games_without_always_flag(self):
-        """No wide slot at 15 games without always flag."""
+    def test_no_expanded_slot_at_15_games_without_always_flag(self):
+        """No expanded slot at 15 games without wide_cell_always/featured flag."""
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 15)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert all(s[0] == 'normal' for s in slots)
 
-    def test_wide_cell_always_forces_wide_at_15_games(self):
-        """Wide cell always forces wide at 15 games."""
+    def test_wide_cell_always_forces_triple_at_15_games(self):
+        """wide_cell_always at 15 games now gives the best live game a triple tile."""
         cfg = dict(BASE_CONFIG, wide_cell_always=True)
         games = [_game(0, state='In Progress')] + [_game(i) for i in range(1, 15)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 1
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
 
     def test_postponed_pushed_to_back_with_dh_and_16_games(self):
         """Postponed pushed to back with dh and 16 games."""
