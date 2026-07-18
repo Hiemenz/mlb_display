@@ -1678,18 +1678,20 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw.text((_dur_x,         _dur_y), _dur_str, font=_dur_font, fill=0)
                 draw.text((_dur_x + 1 * s, _dur_y), _dur_str, font=_dur_font, fill=0)
             elif _dh_is_active:
-                # DH non-sweep: centre "GM1  3:12" as a single group in the header
-                _gn_str_h = f'GM{_gnum}'
+                # DH non-sweep/non-walkoff Final: duration moves to the same small
+                # corner spot a walkoff uses (freeing the header), and "Game N" is
+                # centered alone in the header, same as the walkoff/scheduled slot.
+                _dur_font = font9
+                _dur_x = start_x + logo_x_offset + 28 * s + 2 * s + 3 * s if use_logos else start_x + 8 * s
+                _dur_y = start_y + 50 * s
+                draw.text((_dur_x,         _dur_y), _dur_str, font=_dur_font, fill=0)
+                draw.text((_dur_x + 1 * s, _dur_y), _dur_str, font=_dur_font, fill=0)
+                _gn_str_h = f'Game {_gnum}'
                 _gn_w     = int(font14.getlength(_gn_str_h))
-                _gap_h    = 4 * s
-                _dur_w    = int(font14.getlength(_dur_str))
-                _group_x  = start_x + horizonta_len // 2 - (_gn_w + _gap_h + _dur_w) // 2
+                _gn_x     = start_x + horizonta_len // 2 - _gn_w // 2
                 _hdr_y    = start_y + 3 * s
-                draw.text((_group_x,         _hdr_y), _gn_str_h, font=font14, fill=0)
-                draw.text((_group_x + 1 * s, _hdr_y), _gn_str_h, font=font14, fill=0)
-                _dur_x = _group_x + _gn_w + _gap_h
-                draw.text((_dur_x,         _hdr_y), _dur_str, font=font14, fill=0)
-                draw.text((_dur_x + 1 * s, _hdr_y), _dur_str, font=font14, fill=0)
+                draw.text((_gn_x,         _hdr_y), _gn_str_h, font=font14, fill=0)
+                draw.text((_gn_x + 1 * s, _hdr_y), _gn_str_h, font=font14, fill=0)
                 _gm_drawn_in_header = True
             else:
                 # Non-DH: centre duration alone
