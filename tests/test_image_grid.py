@@ -162,12 +162,9 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert len(ordered) == len(slots)
 
-    def test_live_games_all_cluster_into_one_bottom_row(self):
-        """Live games all cluster into one bottom row."""
-        # 13 games, 3 live spread among finals → all 3 must land together in
-        # the same (bottom) row, widening exactly enough (2) to fill it
-        # (2+2+1=5) rather than leaving one live game behind as a filler
-        # among earlier finished games.
+    def test_featured_live_game_gets_triple_others_normal(self):
+        """Featured live game gets triple; remaining live games stay normal when budget exhausted."""
+        # 13 games, 3 live → remaining = 2 → featured gets triple (costs 2), others normal.
         games = (
             [_game(i) for i in range(5)]
             + [_game(10, state='In Progress')]
@@ -179,18 +176,12 @@ class TestComputeGridLayout:
         )
         assert len(games) == 13
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
-        live_rows = {row for (g, (stype, col, row)) in zip(ordered, slots)
-                     if g.get('detailed_state') == 'In Progress'}
-        assert len(live_rows) == 1, f"Live games split across rows: {live_rows}"
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 2
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
 
-    def test_four_live_games_widen_as_many_as_the_grid_budget_allows(self):
-        """Four live games widen as many as the grid budget allows."""
-        # 11 games, 4 live. The grid's overall wide budget (15-11=4) allows
-        # widening all 4, which takes priority over keeping every live game
-        # in a single row — 3 fit as wide before a row boundary forces one
-        # to fall back to normal (no dead gap is ever left).
+    def test_four_live_games_featured_gets_triple_others_wide(self):
+        """With 4 live games and budget of 4, featured gets triple, next gets wide."""
+        # 11 games, 4 live → remaining = 4 → triple (costs 2) + wide (costs 1) + wide (costs 1).
         games = (
             [_game(0, state='In Progress'), _game(1, state='In Progress')]
             + [_game(2)]
@@ -201,8 +192,8 @@ class TestComputeGridLayout:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         live_count = sum(1 for g in ordered if g.get('detailed_state') == 'In Progress')
         assert live_count == 4
-        wide_count = sum(1 for s in slots if s[0] == 'wide')
-        assert wide_count == 3
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 1
 
     def test_filler_swap_leaves_all_games_rendered(self):
         """Filler swap leaves all games rendered."""

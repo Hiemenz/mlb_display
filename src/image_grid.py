@@ -342,6 +342,12 @@ def _pack_grid(game_list, tile_type_map):
     new_order = [0]
     positions = [(pinned_type, 0, 0)]
 
+    # Without normal tiles to fill row remainders, bucket packing can orphan
+    # wide/triple games when row capacities don't align with tile sizes.
+    # Use the row-major overflow path instead in that case.
+    if not normal_queue and (triple_queue or wide_queue):
+        total_wanted = remaining_capacity + 1  # force overflow path
+
     if total_wanted > remaining_capacity:
         # More games than the grid can hold — pack front-to-back, largest first
         slot_idx = pinned_cost
@@ -526,16 +532,6 @@ def compute_grid_layout(game_state_data, team_data, config):
             game_list.remove(_ppd_g)
             game_list.append(_ppd_g)
 
-    # When 1-5 live games exist and everyone fits on the grid, group all of
-    # them into the bottom row (rather than splitting some off into earlier
-    # rows next to finished games), widening just enough to fill that row
-    # exactly.  Skip clustering when triple_cell_live is on — the triple tile
-    # needs the pack-grid path so it can place a 3-unit tile correctly.
-    if not config.get('triple_cell_live', False):
-        _clustered_list, _clustered_slots = _cluster_live_games(game_list, config, team_data)
-        if _clustered_slots is not None:
-            return _clustered_list, _clustered_slots
-
     # If live games exist and postponed/cancelled games are occupying slots that
     # prevent expansion (triple needs 2 free slots, wide needs 1), evict the
     # postponed games — they display no useful score — to make room.
@@ -556,6 +552,13 @@ def compute_grid_layout(game_state_data, team_data, config):
         game_list, _slots = _pack_grid(game_list, _tile_map)
         game_list = _move_non_live_to_fillers(game_list, _slots)
     else:
+        # No expansion — try clustering live games into the bottom row instead.
+        # When 1-5 live games exist and everyone fits on the grid, group all of
+        # them into the bottom row (rather than splitting some off into earlier
+        # rows next to finished games), widening just enough to fill that row.
+        _clustered_list, _clustered_slots = _cluster_live_games(game_list, config, team_data)
+        if _clustered_slots is not None:
+            return _clustered_list, _clustered_slots
         _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
 
     return game_list, _slots

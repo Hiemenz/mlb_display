@@ -617,27 +617,22 @@ def test_grid_15_games_wide_cell_always(white_image, team_data):
 # ---------------------------------------------------------------------------
 
 @needs_pil
-def test_compute_grid_layout_two_wide_at_col0():
-    """Two in-progress games on a 13-game slate both become wide tiles,
-    grouped together in the same (bottom) row rather than split across
-    separate rows — the live-game clustering groups every live game into
-    one row, widening as many as the grid's overall wide budget allows
-    (here both)."""
+def test_compute_grid_layout_featured_live_gets_triple_on_13_game_slate():
+    """On a 13-game slate with 2 free slots, the featured live game gets a
+    triple tile (uses both slots); the other live game stays normal."""
     from image_grid import compute_grid_layout
     games = _make_game_list(
-        [('In Progress', 7, 'Top'),                       # 0
+        [('In Progress', 7, 'Top'),                       # 0 — farther along
          ('Final', 9, 'End'), ('Final', 9, 'End'),         # 1, 2
          ('In Progress', 5, 'Top')]                        # 3
         + [('Final', 9, 'End')] * 9                         # pad to 13
     )
     game_list, slots = compute_grid_layout(games, {}, {})
-    wide_slots = [(gl.get('game_pk'), s) for gl, s in zip(game_list, slots)
-                  if s[0] == 'wide']
-    assert len(wide_slots) == 2
-    # Both wide tiles land in the same row, non-overlapping (2 units apart).
-    cols = sorted(s[1] for _, s in wide_slots)
-    assert cols[1] - cols[0] >= 2
-    assert len({s[2] for _, s in wide_slots}) == 1
+    triple_count = sum(1 for s in slots if s[0] == 'triple')
+    assert triple_count == 1
+    # Second live game has no remaining expansion budget → stays normal.
+    wide_count = sum(1 for s in slots if s[0] == 'wide')
+    assert wide_count == 0
 
 
 def test_compute_grid_layout_favorite_team_first_moves_game_to_front():

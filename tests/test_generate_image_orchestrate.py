@@ -454,11 +454,10 @@ def test_no_featured_fullscreen_env_uses_grid_path():
 
 @needs_pil
 def test_changed_region_for_wide_game_covers_full_wide_tile():
-    """A changed wide (2-cell) game must produce a region with width 304
-    (covering the whole tile), not the normal 152px single-cell width —
-    verifying orchestrate_score_board plumbs compute_grid_layout's slot math
-    through to its returned changed_regions, matching
-    tests/test_wide_cell.py::test_changed_region_covers_full_wide_tile."""
+    """A changed live game with room must produce a region wider than a normal
+    single cell — verifying orchestrate_score_board plumbs compute_grid_layout's
+    slot math through to its returned changed_regions.  With 6 games the live
+    game gets a triple tile (440px); with 14 games it falls back to wide (304px)."""
     import generate_image
     import image_box
 
@@ -480,7 +479,8 @@ def test_changed_region_for_wide_game_covers_full_wide_tile():
 
     assert result is not None
     _, regions = result
-    assert regions == [(32, 30, 304, 150)]
+    # 6 games → 9 free slots → triple (3-cell, 440px wide)
+    assert regions == [(32, 30, 440, 150)]
 
 
 @needs_pil
