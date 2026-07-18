@@ -441,6 +441,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         last_hit_x = None
         last_hit_y = None
         last_hit_is_out = None
+        last_hit_is_hr = False
         if live_last_play is not None:
             _lp_result = _lp.get('result', {})
             _lp_event = _lp_result.get('event', '')
@@ -458,6 +459,12 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                 last_hit_x = _hx
                 last_hit_y = _hy
                 last_hit_is_out = _lp_event not in _HIT_EVENTS
+                last_hit_is_hr = (_lp_event == 'Home Run')
+
+        # Last 7 batted balls in play (fair or foul) for the field diagram.
+        # Uses the same coord extraction as _extract_all_hit_coordinates but
+        # keeps only the most recent 7 and adds is_hr/is_out flags.
+        recent_hits = _extract_all_hit_coordinates(plays)[-7:]
 
         # Wide-cell extras: current AB pitches (locations + type) and the last 5 game events.
         ab_pitches = _extract_pitches_detailed(plays)
@@ -604,6 +611,8 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_hit_x': last_hit_x,
             'last_hit_y': last_hit_y,
             'last_hit_is_out': last_hit_is_out,
+            'last_hit_is_hr': last_hit_is_hr,
+            'recent_hits': recent_hits,
             'ab_pitches': ab_pitches,
             'half_inning_plays': half_inning_plays,
             'away_pitcher_ks': away_pitcher_ks,
@@ -813,6 +822,17 @@ def fetch_between_inning_info(game_pk, inning_state):
 
 _HIT_EVENTS = {'Single', 'Double', 'Triple', 'Home Run'}
 
+_EVENT_ABBR = {
+    'Single': '1B', 'Double': '2B', 'Triple': '3B', 'Home Run': 'HR',
+    'Flyout': 'F', 'Fly Out': 'F', 'Pop Out': 'PO', 'Foul Flyout': 'FF',
+    'Lineout': 'L', 'Line Out': 'L',
+    'Groundout': 'G', 'Ground Out': 'G', 'Bunt Groundout': 'BG',
+    'Double Play': 'DP', 'Grounded Into Double Play': 'DP',
+    "Fielder's Choice Out": 'FC', "Fielder's Choice": 'FC',
+    'Sacrifice Fly': 'SF', 'Sacrifice Bunt': 'SB', 'Bunt Pop Out': 'BPO',
+    'Field Error': 'E',
+}
+
 
 def _extract_all_hit_coordinates(plays):
     """Collect all hit coordinates from allPlays in chronological order.
@@ -838,9 +858,12 @@ def _extract_all_hit_coordinates(plays):
         hit_data = play.get('hitData', {})
         cx = hit_data.get('coordinates', {}).get('coordX')
         cy = hit_data.get('coordinates', {}).get('coordY')
+        abbr = _EVENT_ABBR.get(event, event[:2].upper() if event else '?')
         if cx is not None and cy is not None:
+            distance = hit_data.get('totalDistance')
             hits.append({'x': cx, 'y': cy, 'is_hr': is_hr, 'is_hit': is_hit, 'is_out': is_out,
-                         'player': last_name, 'inning': hit_inning, 'half': hit_half})
+                         'player': last_name, 'inning': hit_inning, 'half': hit_half,
+                         'abbr': abbr, 'distance': distance})
             continue
         # Fall back to playEvents
         for ev in play.get('playEvents', []):
@@ -848,8 +871,10 @@ def _extract_all_hit_coordinates(plays):
             cx = hit_data.get('coordinates', {}).get('coordX')
             cy = hit_data.get('coordinates', {}).get('coordY')
             if cx is not None and cy is not None:
+                distance = hit_data.get('totalDistance')
                 hits.append({'x': cx, 'y': cy, 'is_hr': is_hr, 'is_hit': is_hit, 'is_out': is_out,
-                             'player': last_name, 'inning': hit_inning, 'half': hit_half})
+                             'player': last_name, 'inning': hit_inning, 'half': hit_half,
+                             'abbr': abbr, 'distance': distance})
                 break
     return hits
 

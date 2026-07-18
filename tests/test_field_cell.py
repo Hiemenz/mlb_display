@@ -507,3 +507,141 @@ class TestFieldCellRunners:
         px = img.load()
         dark = sum(1 for x in range(1, 149) for y in range(1, 129) if px[x, y] == 0)
         assert dark > 0, "last hit out — expected dark pixels from arc + X marker"
+
+
+# ---------------------------------------------------------------------------
+# recent_hits multi-ball rendering
+# ---------------------------------------------------------------------------
+
+class TestFieldCellRecentHits:
+    """Tests for recent_hits list rendering in _draw_field_cell."""
+
+    def _make_hit(self, x, y, is_hr=False, is_out=False, is_hit=True):
+        return {'x': x, 'y': y, 'is_hr': is_hr, 'is_out': is_out, 'is_hit': is_hit}
+
+    @needs_pil
+    def test_recent_hits_renders_without_crash(self):
+        """recent_hits list must render without raising."""
+        import image_box
+        game = {
+            'venue': 'American Family Field',
+            'recent_hits': [
+                self._make_hit(150, 140),
+                self._make_hit(100, 150, is_out=True, is_hit=False),
+                self._make_hit(125, 80, is_hr=True),
+            ],
+        }
+        img = Image.new('1', (150, 130), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img), img, 0, 0, 150, 130, game, scale=1)
+
+    @needs_pil
+    def test_recent_hits_single_fallback(self):
+        """When recent_hits is absent, last_hit_x/y is used as a single entry."""
+        import image_box
+        game_with_recent = {
+            'venue': 'American Family Field',
+            'recent_hits': [self._make_hit(150, 140)],
+        }
+        game_legacy = {
+            'venue': 'American Family Field',
+            'last_hit_x': 150,
+            'last_hit_y': 140,
+            'last_hit_is_out': False,
+            'last_hit_is_hr': False,
+        }
+        img1 = Image.new('1', (150, 130), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img1), img1, 0, 0, 150, 130, game_with_recent, scale=1)
+        img2 = Image.new('1', (150, 130), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img2), img2, 0, 0, 150, 130, game_legacy, scale=1)
+        assert list(img1.getdata()) == list(img2.getdata()), (
+            "recent_hits single-entry must produce the same image as last_hit_x/y fallback"
+        )
+
+    @needs_pil
+    def test_hr_uses_ray_end_not_fpt(self):
+        """HR marker must appear at the cell edge (ray_end), not clipped by _fpt."""
+        import image_box
+        # 400 ft HR straight to CF: landing at api (125, 0) → hy_ft = 400 ft.
+        # _fpt clips to cy0=1 (top edge centre).  _ray_end also hits (75, 1) for this
+        # direction (straight up), so the real test is that the filled diamond IS there.
+        game = {
+            'venue': 'American Family Field',
+            'recent_hits': [{'x': 125, 'y': 0, 'is_hr': True, 'is_out': False, 'is_hit': True}],
+        }
+        img = Image.new('1', (150, 130), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img), img, 0, 0, 150, 150, game, scale=1, vis_h=130)
+        px = img.load()
+        # The filled diamond (mr=3) at roughly (75, 3) should produce dark pixels
+        # in the top rows of the cell.
+        dark_top = sum(1 for x in range(60, 91) for y in range(1, 10) if px[x, y] == 0)
+        assert dark_top > 0, "HR to CF must place a filled-diamond marker near the top of the cell"
+
+    @needs_pil
+    def test_two_hits_more_pixels_than_one(self):
+        """Two recent hits must produce more dark pixels than one (each gets an arc + label)."""
+        import image_box
+        # Two hits: older to shallow LF, newer to shallow RF.
+        game_two = {
+            'venue': 'American Family Field',
+            'recent_hits': [
+                {'x': 100, 'y': 165, 'is_hr': False, 'is_out': False, 'is_hit': True},  # older
+                {'x': 150, 'y': 165, 'is_hr': False, 'is_out': False, 'is_hit': True},  # newer
+            ],
+        }
+        game_one = {
+            'venue': 'American Family Field',
+            'recent_hits': [
+                {'x': 150, 'y': 165, 'is_hr': False, 'is_out': False, 'is_hit': True},
+            ],
+        }
+        img_two = Image.new('1', (150, 130), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img_two), img_two, 0, 0, 150, 130, game_two, scale=1)
+        img_one = Image.new('1', (150, 130), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img_one), img_one, 0, 0, 150, 130, game_one, scale=1)
+        dark_two = sum(1 for p in img_two.getdata() if p == 0)
+        dark_one = sum(1 for p in img_one.getdata() if p == 0)
+        assert dark_two > dark_one, (
+            "two-hit render must have more dark pixels than one-hit render "
+            "(each hit adds an arc and an abbreviation label)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# vis_h centering
+# ---------------------------------------------------------------------------
+
+class TestFieldCellCentering:
+    """Tests for the vis_h vertical-centering parameter."""
+
+    @needs_pil
+    def test_vis_h_centers_field(self):
+        """With vis_h=130, CF wall must be near the top and home plate near the bottom."""
+        import image_box
+        game = {'venue': 'American Family Field'}
+        img = Image.new('1', (150, 150), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img), img, 0, 0, 150, 150, game, scale=1, vis_h=130)
+        px = img.load()
+        # CF wall for American Family Field at FSCALE=0.30, HY≈124: CF is at y≈3.
+        # Expect at least one dark pixel in the top 8 rows (outfield wall/fence).
+        dark_top = sum(1 for x in range(1, 149) for y in range(1, 9) if px[x, y] == 0)
+        assert dark_top > 0, "CF wall must appear within 8px of the top edge when vis_h=130"
+
+    @needs_pil
+    def test_vis_h_home_plate_visible(self):
+        """Home plate pentagon must appear near the bottom of the visible tile."""
+        import image_box
+        game = {'venue': 'American Family Field'}
+        img = Image.new('1', (150, 150), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img), img, 0, 0, 150, 150, game, scale=1, vis_h=130)
+        px = img.load()
+        # Home plate centre at HY≈124; pentagon extends ≈3px each side → rows 121-127.
+        dark_bot = sum(1 for x in range(60, 91) for y in range(115, 130) if px[x, y] == 0)
+        assert dark_bot > 0, "Home plate must appear in the bottom quarter of the visible tile"
+
+    @needs_pil
+    def test_vis_h_deep_park_no_crash(self):
+        """vis_h centering must not raise for the deepest MLB park (Comerica)."""
+        import image_box
+        game = {'venue': 'Comerica Park'}
+        img = Image.new('1', (150, 150), 1)
+        image_box._draw_field_cell(ImageDraw.Draw(img), img, 0, 0, 150, 150, game, scale=1, vis_h=130)

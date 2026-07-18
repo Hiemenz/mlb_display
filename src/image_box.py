@@ -2694,7 +2694,7 @@ _FIELD_FALLBACK_POLY = [
 ]
 
 
-def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=0):
+def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=0, vis_h=None):
     """Draw compact field diagram in a 150×130 px tile cell.
 
     Draws the venue outfield wall with 5 fence distance markers, the infield
@@ -2702,8 +2702,14 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     last batted ball in play (circle=hit, X=out, HR gets a trajectory line)
     when last_hit_x/last_hit_y are present in game_data.
 
-    y_offset shifts the entire diagram up by that many pixels (positive = up),
-    allowing the caller to reveal more outfield while keeping home plate visible.
+    vis_h: visible tile height in unscaled pixels.  When provided, home plate
+    is positioned so the field (CF wall line to home plate tip) is centred
+    within [fy, fy + vis_h*s] with at least 3 px of white space above the
+    outfield wall and below the home plate pentagon.  For parks whose field
+    is taller than the tile (e.g. Comerica at 427 ft), the top margin is
+    preserved and home plate extends into the fh drawing gap below the tile.
+
+    y_offset (legacy): shifts the diagram up when vis_h is not supplied.
     """
     s = scale
     FSCALE = 0.30 * s
@@ -2719,8 +2725,21 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     _cy0 = fy + 1
     _cy1 = fy + fh * s - 2
 
-    _bottom_extent_ft = max([-y for _, y in infield_poly] + [0]) if infield_poly else 0
-    HY = int(min(fy + 126 * s, _cy1 - _bottom_extent_ft * FSCALE)) - round(y_offset * s)
+    # Home plate pentagon half-width — needed for HY centering below.
+    hp = max(round(3 * s), 3)
+
+    if vis_h is not None:
+        # Centre the field (CF arc → home plate bottom) in the visible tile.
+        cf_y_ft   = max(y for _, y in wall_poly)
+        tile_h_px = vis_h * s
+        margin_px = round(3 * s)
+        HY_ideal  = fy + (tile_h_px + cf_y_ft * FSCALE - hp) / 2
+        HY_lo     = fy + margin_px + cf_y_ft * FSCALE  # 3 px above CF wall
+        HY_hi     = fy + tile_h_px - margin_px - hp    # 3 px below home plate
+        HY        = int(max(HY_lo, min(HY_hi, HY_ideal)))
+    else:
+        _bottom_extent_ft = max([-y for _, y in infield_poly] + [0]) if infield_poly else 0
+        HY = int(min(fy + 126 * s, _cy1 - _bottom_extent_ft * FSCALE)) - round(y_offset * s)
 
     # Base positions (90ft diamond rotated 45°)
     _b = round(63.64 * FSCALE)   # 90 * cos45 ≈ 63.64 ft
@@ -2867,10 +2886,6 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     my = int(HY - round(60.5 * FSCALE))
     draw.ellipse([mx - mr, my - mr, mx + mr, my + mr], outline=0)
 
-    # Home plate (small pentagon) half-width, needed up front to size the
-    # baseline clearance radius below.
-    hp = max(round(3 * s), 3)
-
     # Home plate sits close to the tile's bottom edge, so its centre is
     # nudged up as needed to keep the pentagon fully inside the tile instead
     # of clipped flat by the boundary. `hr` is a clearance radius (not drawn)
@@ -2935,6 +2950,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     thetas = [_math.atan2(x_ft, y_ft) for x_ft, y_ft in wall_poly]
     theta_lo, theta_hi = thetas[0], thetas[-1]
     n_markers = 5
+    _label_offs = max(round(9 * s), 9)  # px to push label outside the fence arc
     for k in range(n_markers):
         target = theta_lo + (k / (n_markers - 1)) * (theta_hi - theta_lo)
         idx = min(range(len(thetas)), key=lambda i: abs(thetas[i] - target))
@@ -2942,63 +2958,72 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         pt = wall_pts[idx]
         dist = round(_math.sqrt(x_ft**2 + y_ft**2))
 
-        # Short tick mark straddling the fence line, pointing along the radial direction
+        # Radial unit vector pointing away from home plate (i.e. into the stands).
         norm = _math.sqrt(x_ft**2 + y_ft**2) or 1
         ux, uy = x_ft / norm, y_ft / norm
-        tick_in  = _fpt(x_ft - ux * 6, y_ft - uy * 6)
-        tick_out = _fpt(x_ft + ux * 6, y_ft + uy * 6)
-        draw.line([tick_in, tick_out], fill=0, width=1)
+        # Place label outside the wall: move in the outward radial direction in pixel space.
+        # x-pixel and x-field share the same sign; y-pixel is inverted vs y-field.
+        lx_c = int(pt[0] + ux * _label_offs)
+        ly_c = int(pt[1] - uy * _label_offs)
+        tw = max(int(font_tiny.getlength(str(dist))), 1)
+        tx = max(_cx0, min(_cx1 - tw, lx_c - tw // 2))
+        ty = max(_cy0, ly_c - 5)
+        draw.text((tx, ty), str(dist), font=font_tiny, fill=0)
 
-        # Keep label text inside the cell: hug the side it's on
-        if pt[0] < HX - 10:
-            lx = pt[0] + 2
-        elif pt[0] > HX + 10:
-            lx = pt[0] - 18
-        else:
-            lx = pt[0] - 8
-        draw.text((lx, pt[1] - 9), str(dist), font=font_tiny, fill=0)
+    # Batted-ball markers — last 7 balls put in play (fair or foul).
+    # API hit coordinates: home plate ≈ (125, 200); scale ≈ 2 ft per unit.
+    # recent_hits is newest-last; fall back to single last_hit_x/y.
+    recent_hits = game_data.get('recent_hits') or []
+    if not recent_hits:
+        lhx = game_data.get('last_hit_x')
+        lhy = game_data.get('last_hit_y')
+        if lhx is not None and lhy is not None:
+            recent_hits = [{
+                'x': lhx, 'y': lhy,
+                'is_hr':  bool(game_data.get('last_hit_is_hr')),
+                'is_out': bool(game_data.get('last_hit_is_out')),
+            }]
 
-    # Batted-ball marker for the last play, if it was hit into play.
-    # API hit coordinates -> field feet: derived from field_view.py's calibration
-    # (home plate at api (125, 200), 2 ft per api-coordinate unit).
-    hit_x = game_data.get('last_hit_x')
-    hit_y = game_data.get('last_hit_y')
-    if hit_x is not None and hit_y is not None:
-        hx_ft = (hit_x - 125) * 2.0
-        hy_ft = (200 - hit_y) * 2.0
-        land_pt = _fpt(hx_ft, hy_ft)
-        notation = game_data.get('last_play') or ''
-        is_out = bool(game_data.get('last_hit_is_out'))
-
-        # Bowed trajectory line (quadratic bezier) from home plate to the landing
-        # spot, to read as a fly ball's arc rather than a line-drive straight shot.
-        p0x, p0y = HX, HY
-        p1x, p1y = land_pt
+    def _bezier_trajectory(p0x, p0y, p1x, p1y):
         mx_, my_ = (p0x + p1x) / 2, (p0y + p1y) / 2
         dx_, dy_ = p1x - p0x, p1y - p0y
         dist_ = _math.sqrt(dx_ ** 2 + dy_ ** 2) or 1
-        # Perpendicular offset, bowed toward the left (arbitrary consistent side)
         ctrl_x = mx_ - dy_ / dist_ * dist_ * 0.15
         ctrl_y = my_ + dx_ / dist_ * dist_ * 0.15
-        n_seg = 12
-        arc_pts = []
-        for i in range(n_seg + 1):
-            t = i / n_seg
-            bx = (1 - t) ** 2 * p0x + 2 * (1 - t) * t * ctrl_x + t ** 2 * p1x
-            by = (1 - t) ** 2 * p0y + 2 * (1 - t) * t * ctrl_y + t ** 2 * p1y
-            arc_pts.append((bx, by))
-        for i in range(len(arc_pts) - 1):
-            draw.line([arc_pts[i], arc_pts[i + 1]], fill=0, width=1)
+        pts = []
+        for i in range(13):
+            t = i / 12
+            pts.append(((1-t)**2 * p0x + 2*(1-t)*t * ctrl_x + t**2 * p1x,
+                         (1-t)**2 * p0y + 2*(1-t)*t * ctrl_y + t**2 * p1y))
+        for i in range(len(pts) - 1):
+            draw.line([pts[i], pts[i+1]], fill=0, width=1)
 
-        mr = max(round(3 * s), 3)
-        if is_out:
-            draw.line([land_pt[0] - mr, land_pt[1] - mr, land_pt[0] + mr, land_pt[1] + mr], fill=0, width=1)
-            draw.line([land_pt[0] + mr, land_pt[1] - mr, land_pt[0] - mr, land_pt[1] + mr], fill=0, width=1)
-        else:
-            draw.ellipse([land_pt[0] - mr, land_pt[1] - mr, land_pt[0] + mr, land_pt[1] + mr], outline=0)
+    # recent_hits is oldest-first; the last entry is the most recent play.
+    most_recent_idx = len(recent_hits) - 1
 
-        if notation:
-            draw.text((land_pt[0] + mr + 1, land_pt[1] - 4), notation, font=font_tiny, fill=0)
+    for idx, h in enumerate(recent_hits):
+        hx_ft = (h['x'] - 125) * 2.0
+        hy_ft = (200  - h['y']) * 2.0
+        is_hr  = h.get('is_hr',  False)
+        is_out = h.get('is_out', False)
+        abbr   = h.get('abbr', 'HR' if is_hr else ('F' if is_out else '1B'))
+        if is_hr:
+            dist_ft = h.get('distance')
+            if dist_ft is not None:
+                abbr = f'HR {int(dist_ft)}'
+
+        # HR endpoint: _ray_end traces to the cell edge (visually over the fence).
+        land_pt = _ray_end(hx_ft, hy_ft) if is_hr else _fpt(hx_ft, hy_ft)
+
+        if idx == most_recent_idx:
+            _bezier_trajectory(HX, HY, *land_pt)
+
+        # Play abbreviation label (F, L, G, HR, 1B, 2B, 3B …) at the landing spot.
+        # HR lands at the cell edge; keep text inside by clamping y.
+        tw = max(int(font_tiny.getlength(abbr)), 1)
+        _tx = max(_cx0, min(_cx1 - tw, land_pt[0] - tw // 2))
+        _ty = max(_cy0 + 1, land_pt[1] - 9)
+        draw.text((_tx, _ty), abbr, font=font_tiny, fill=0)
 
     return Himage
 
@@ -3059,10 +3084,11 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         scale=scale,
     )
 
-    # Cell 3: field diagram — rendered 150px tall (full grid slot) so the
-    # 20px footer gap below the 130px tile is hidden by field content.
+    # Cell 3: field diagram. vis_h=150 centres the field across the full
+    # 150 px grid slot (tile + footer gap), since cell 3 has no bottom border.
+    # This gives ~13 px above CF and places home plate ~6 px into the footer.
     draw = ImageDraw.Draw(Himage)
-    _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, y_offset=20)
+    _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
 
     # Invert spanning header when a run scored or score changed
     _between   = game_data.get('inningState') in ('Middle', 'End')
