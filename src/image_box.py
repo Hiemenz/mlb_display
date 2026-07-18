@@ -1148,18 +1148,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         draw.text((start_x + _gm_pre_x,         start_y + _gm_pre_y), _gm_pre_text, font=font14, fill=0)
         draw.text((start_x + _gm_pre_x + 1 * s, start_y + _gm_pre_y), _gm_pre_text, font=font14, fill=0)
 
-    # game state — bold via double draw; for pre-game times render AM/PM smaller + bold.
-    # For a not-yet-started DH game, "Game N" already owns the header (see _dh_scheduled
-    # above), so the start time moves down to the small corner spot that a Final walkoff
-    # uses for its duration, keeping the header uncrowded.
-    if _dh_scheduled:
-        _dh_time_font = font9
-        _dh_time_x = start_x + logo_x_offset + 28 * s + 2 * s + 3 * s if use_logos else start_x + 8 * s
-        _dh_time_y = start_y + 50 * s
-        draw.text((_dh_time_x,         _dh_time_y), game_state_str, font=_dh_time_font, fill=0)
-        draw.text((_dh_time_x + 1 * s, _dh_time_y), game_state_str, font=_dh_time_font, fill=0)
-        _total_time_w = 0
-    elif game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
+    # game state — bold via double draw; for pre-game times render AM/PM smaller + bold
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
         _time_parts = game_state_str.rsplit(' ', 1)
         _time_main, _time_ampm = _time_parts[0], _time_parts[1].lower()
         for _dx in (2 * s, 3 * s):
