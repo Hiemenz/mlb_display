@@ -298,6 +298,174 @@ def test_fetch_game_timeline_first_actual_pitch_fallback_to_first_completed_play
 
 
 # ---------------------------------------------------------------------------
+# _fetch_game_timeline — header_events / pitcher_k_events (cell-2 header strip
+# and K-footer reconstruction for the timelapse video)
+# ---------------------------------------------------------------------------
+
+def _action_event(event_type, time='2026-06-20T23:04:30Z'):
+    """A mid-play 'action' playEvent (steal, pickoff, wild pitch, ...)."""
+    return {'type': 'action', 'startTime': time, 'details': {'eventType': event_type}}
+
+
+def _review_event(overturned, in_progress=False, time='2026-06-20T23:04:45Z'):
+    """A playEvent carrying a completed challenge/replay review."""
+    return {
+        'type': 'no_pitch', 'startTime': time,
+        'reviewDetails': {'inProgress': in_progress, 'isOverturned': overturned},
+    }
+
+
+def test_fetch_game_timeline_header_events_action_code_inserts_break_marker():
+    """A stolen base in the bottom half after a top-half event gets an SB token
+    plus a 'v' inning-break marker, since the two events span different halves."""
+    top_play = _play(inning=1, half='top', outs_after=1,
+                      start='2026-06-20T23:00:00Z', end='2026-06-20T23:02:00Z')
+    bottom_play = _play(inning=1, half='bottom', outs_after=1,
+                         start='2026-06-20T23:03:00Z', end='2026-06-20T23:05:00Z',
+                         events=[_action_event('stolen_base_2b')])
+    feed = _live_feed(all_plays=[top_play, bottom_play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    tokens = [tok for _, tok in tl['header_events']]
+    assert 'SB' in tokens
+    assert 'v' in tokens
+    assert tokens.index('v') < tokens.index('SB')
+
+
+def test_fetch_game_timeline_header_events_action_code_malformed_time_ignored():
+    """An action event with an unparsable startTime contributes no token."""
+    play = _play(events=[_action_event('wild_pitch', time='not-a-timestamp')])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert 'WP' not in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_header_events_challenge_review_overturned():
+    """A completed, overturned review produces a 'CHAL W' token."""
+    play = _play(events=[_review_event(overturned=True)])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert 'CHAL W' in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_header_events_challenge_review_upheld():
+    """A completed, upheld review produces a 'CHAL L' token, added only once per play."""
+    play = _play(events=[_review_event(overturned=False), _review_event(overturned=False)])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    tokens = [tok for _, tok in tl['header_events']]
+    assert tokens.count('CHAL L') == 1
+
+
+def test_fetch_game_timeline_header_events_review_in_progress_ignored():
+    """A review still in progress contributes no token."""
+    play = _play(events=[_review_event(overturned=False, in_progress=True)])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert not [tok for _, tok in tl['header_events'] if tok.startswith('CHAL')]
+
+
+def test_fetch_game_timeline_header_events_review_malformed_time_ignored():
+    """A review with an unparsable startTime contributes no token."""
+    play = _play(events=[_review_event(overturned=True, time='not-a-timestamp')])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert 'CHAL W' not in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_header_events_pitching_substitution_deduped():
+    """Consecutive pitching-substitution plays collapse to a single 'PC' token."""
+    p1 = _play(event='', event_type='Pitching Substitution', outs_after=0,
+               start='2026-06-20T23:00:00Z', end='2026-06-20T23:01:00Z')
+    p2 = _play(event='', event_type='Pitching Substitution', outs_after=0,
+               start='2026-06-20T23:01:00Z', end='2026-06-20T23:02:00Z')
+    feed = _live_feed(all_plays=[p1, p2])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    tokens = [tok for _, tok in tl['header_events']]
+    assert tokens.count('PC') == 1
+
+
+def test_fetch_game_timeline_header_events_grand_slam_notation():
+    """A 4-RBI home run is relabeled 'Grand Slam' in the header strip."""
+    play = _play(event='Home Run', event_type='home_run')
+    play['result']['rbi'] = 4
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert 'Grand Slam' in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_header_events_multi_run_hr_notation():
+    """A 2- or 3-RBI home run is prefixed 'NR HR' in the header strip."""
+    play = _play(event='Home Run', event_type='home_run')
+    play['result']['rbi'] = 3
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert '3R HR' in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_header_events_solo_hr_no_prefix():
+    """A solo (1-RBI) home run keeps the plain 'HR' notation."""
+    play = _play(event='Home Run', event_type='home_run')
+    play['result']['rbi'] = 1
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert 'HR' in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_header_events_single_rbi_prefix():
+    """A 1-RBI non-HR play is prefixed 'RBI '."""
+    play = _play(event='Single', event_type='single')
+    play['result']['rbi'] = 1
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert 'RBI 1B' in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_header_events_multi_rbi_prefix():
+    """A multi-RBI non-HR play is prefixed 'NRBI '."""
+    play = _play(event='Double', event_type='double')
+    play['result']['rbi'] = 2
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert '2RBI 2B' in [tok for _, tok in tl['header_events']]
+
+
+def test_fetch_game_timeline_pitcher_k_events_swinging_by_side():
+    """A strikeout in the top half is credited to the home pitcher as a swinging K."""
+    pitch = {'type': 'pitch', 'isPitch': True, 'startTime': '2026-06-20T23:00:30Z',
+              'details': {'code': 'S'}, 'count': {}}
+    play = _play(inning=1, half='top', event='Strikeout', event_type='strikeout',
+                 events=[pitch])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert [(side, kt) for _, side, kt in tl['pitcher_k_events']] == [('home', 'K')]
+
+
+def test_fetch_game_timeline_pitcher_k_events_looking_by_side():
+    """A called-strikeout in the bottom half is credited to the away pitcher as a looking K."""
+    pitch = {'type': 'pitch', 'isPitch': True, 'startTime': '2026-06-20T23:00:30Z',
+              'details': {'code': 'C'}, 'count': {}}
+    play = _play(inning=1, half='bottom', event='Strikeout', event_type='strikeout',
+                 events=[pitch])
+    feed = _live_feed(all_plays=[play])
+    with patch('timelapse.requests.get', side_effect=_mock_requests_get(feed)):
+        tl = _fetch_game_timeline(12345)
+    assert [(side, kt) for _, side, kt in tl['pitcher_k_events']] == [('away', 'L')]
+
+
+# ---------------------------------------------------------------------------
 # _inning_runs_at_time
 # ---------------------------------------------------------------------------
 
@@ -629,6 +797,44 @@ def test_game_state_next_batters_shown_during_break():
     state = _game_state_at_time(_base_game(), tl, _dt(23, 12))
     assert state['next_batter_1'] == 'A'
     assert state['next_pitcher'] == 'D'
+
+
+def test_game_state_half_inning_plays_filtered_by_target_time():
+    """half_inning_plays only includes header tokens at or before target_utc."""
+    plays = [_completed_play(1, 'top', 0, 0, _dt(23, 10))]
+    header_events = [(_dt(23, 8), 'K'), (_dt(23, 12), '1B')]
+    tl = _tl(plays=plays, header_events=header_events, last_play_utc=_dt(23, 10))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 10))
+    assert state['half_inning_plays'] == ['K']
+
+
+def test_game_state_half_inning_plays_trims_to_last_seven_events_with_markers():
+    """Only the last 7 non-marker tokens survive, plus any markers between them."""
+    plays = [_completed_play(1, 'top', 0, 0, _dt(23, 10))]
+    header_events = [
+        (_dt(23, 0), 'K'), (_dt(23, 1), '1B'), (_dt(23, 2), 'v'), (_dt(23, 3), 'F9'),
+        (_dt(23, 4), 'K'), (_dt(23, 5), '6-3'), (_dt(23, 6), '^'), (_dt(23, 7), 'BB'),
+        (_dt(23, 8), 'K'), (_dt(23, 9), 'HR'),
+    ]
+    tl = _tl(plays=plays, header_events=header_events, last_play_utc=_dt(23, 10))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 10))
+    # 10 events total, oldest ('K' at 23:00) dropped to keep the last 7.
+    assert state['half_inning_plays'] == [
+        '1B', 'v', 'F9', 'K', '6-3', '^', 'BB', 'K', 'HR',
+    ]
+
+
+def test_game_state_pitcher_ks_accumulate_by_side_and_time():
+    """home_pitcher_ks/away_pitcher_ks accumulate cumulatively as of target_utc."""
+    plays = [_completed_play(1, 'top', 0, 0, _dt(23, 10))]
+    pitcher_k_events = [
+        (_dt(23, 1), 'home', 'K'), (_dt(23, 2), 'away', 'K'),
+        (_dt(23, 3), 'home', 'L'), (_dt(23, 20), 'home', 'K'),  # after target
+    ]
+    tl = _tl(plays=plays, pitcher_k_events=pitcher_k_events, last_play_utc=_dt(23, 10))
+    state = _game_state_at_time(_base_game(), tl, _dt(23, 10))
+    assert state['home_pitcher_ks'] == ['K', 'L']
+    assert state['away_pitcher_ks'] == ['K']
 
 
 # ---------------------------------------------------------------------------
