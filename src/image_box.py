@@ -3051,6 +3051,20 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
                 'is_out': bool(game_data.get('last_hit_is_out')),
             }]
 
+    def _wall_dist_at_angle(theta):
+        """Fence distance (ft) at a given angle from home plate, interpolated
+        along wall_poly (same theta = atan2(x_ft, y_ft) convention as `thetas` above)."""
+        t = max(thetas[0], min(thetas[-1], theta))
+        for i in range(len(thetas) - 1):
+            if thetas[i] <= t <= thetas[i + 1]:
+                x0, y0 = wall_poly[i]
+                x1, y1 = wall_poly[i + 1]
+                d0, d1 = _math.hypot(x0, y0), _math.hypot(x1, y1)
+                span = thetas[i + 1] - thetas[i]
+                frac = (t - thetas[i]) / span if span else 0
+                return d0 + (d1 - d0) * frac
+        return _math.hypot(*wall_poly[-1])
+
     def _bezier_trajectory(p0x, p0y, p1x, p1y):
         mx_, my_ = (p0x + p1x) / 2, (p0y + p1y) / 2
         dx_, dy_ = p1x - p0x, p1y - p0y
@@ -3079,8 +3093,17 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             if dist_ft is not None:
                 abbr = f'HR {int(dist_ft)}'
 
-        # HR endpoint: _ray_end traces to the cell edge (visually over the fence).
-        land_pt = _ray_end(hx_ft, hy_ft) if is_hr else _fpt(hx_ft, hy_ft)
+        # Landing spot: real hit coordinates for every ball. A confirmed HR must
+        # clear the fence visually — if the API coordinates land short of the wall
+        # in that direction (coordinate imprecision), push it out to just past
+        # the fence rather than forcing every HR to the cell edge.
+        if is_hr:
+            _ang = _math.atan2(hx_ft, hy_ft)
+            _d_ball = _math.hypot(hx_ft, hy_ft)
+            _d_wall = _wall_dist_at_angle(_ang)
+            _d_final = max(_d_ball, _d_wall + 8)
+            hx_ft, hy_ft = _d_final * _math.sin(_ang), _d_final * _math.cos(_ang)
+        land_pt = _fpt(hx_ft, hy_ft)
 
         if idx == most_recent_idx:
             _bezier_trajectory(HX, HY, *land_pt)
