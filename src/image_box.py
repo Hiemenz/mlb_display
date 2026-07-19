@@ -2702,6 +2702,43 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
     return Himage
 
 
+def _draw_rotated_text(Himage, center_xy, text, font, angle_deg, bounds=None, font_size=None):
+    """Draw text rotated to lie along angle_deg (screen-space, atan2(dy,dx) convention),
+    centered at center_xy. Used to align outfield wall distance labels with the fence.
+
+    Renders at 4x scale and rotates with bicubic resampling before downsampling —
+    rotating a tiny bitmap font directly (nearest-neighbor) produces illegible,
+    blocky glyphs at these font sizes.
+
+    bounds, if given, is (cx0, cy0, cx1, cy1) — the paste box is clamped to stay
+    fully inside it, rather than clamping center_xy itself, so a centered label
+    near an edge is pushed inward instead of spilling half off the edge.
+    """
+    SS = 4  # supersample factor
+    ss_font = _get_font(font_size * SS) if font_size else font
+    bbox = ss_font.getbbox(text)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    pad = 2 * SS
+    txt_img = Image.new('L', (tw + pad * 2, th + pad * 2), 0)
+    ImageDraw.Draw(txt_img).text((pad - bbox[0], pad - bbox[1]), text, font=ss_font, fill=255)
+    rotated = txt_img.rotate(-angle_deg, expand=True, fillcolor=0, resample=Image.BICUBIC)
+    rotated = rotated.resize((max(1, rotated.width // SS), max(1, rotated.height // SS)),
+                              resample=Image.LANCZOS)
+    # Threshold to pure black/white before pasting — Himage is mode '1' (bilevel),
+    # and a grayscale mask with anti-aliased edges blends to near-invisible gray.
+    rotated = rotated.point(lambda p: 255 if p > 80 else 0).convert('1')
+    black_img = Image.new('1', rotated.size, 0)
+    cx, cy = center_xy
+    px = int(cx - rotated.width / 2)
+    py = int(cy - rotated.height / 2)
+    if bounds is not None:
+        cx0, cy0, cx1, cy1 = bounds
+        px = max(cx0, min(cx1 - rotated.width, px))
+        py = max(cy0, min(cy1 - rotated.height, py))
+    Himage.paste(black_img, (px, py), rotated)
+
+
 # Generic outfield wall used when venue is unknown (symmetric 330-400-330 park).
 _FIELD_FALLBACK_POLY = [
     (-233.3,  233.3),
@@ -2964,7 +3001,8 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
 
     # Fence distance markers: 5 points evenly spaced by angle from home plate
     # (mirrors real outfield wall signage — LF pole, two power-alley gaps, CF, RF pole)
-    font_tiny = _get_font(max(round(7 * s), 7))
+    _wall_font_size = max(round(10 * s), 10)
+    font_tiny = _get_font(_wall_font_size)
     thetas = [_math.atan2(x_ft, y_ft) for x_ft, y_ft in wall_poly]
     theta_lo, theta_hi = thetas[0], thetas[-1]
     n_markers = 5
@@ -2983,10 +3021,21 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         # x-pixel and x-field share the same sign; y-pixel is inverted vs y-field.
         lx_c = int(pt[0] + ux * _label_offs)
         ly_c = int(pt[1] - uy * _label_offs)
-        tw = max(int(font_tiny.getlength(str(dist))), 1)
-        tx = max(_cx0, min(_cx1 - tw, lx_c - tw // 2))
-        ty = max(_cy0, ly_c - 5)
-        draw.text((tx, ty), str(dist), font=font_tiny, fill=0)
+
+        # Local wall angle at this point (screen-space), from the neighbouring
+        # fence points, so the label's baseline runs parallel to the fence.
+        i0, i1 = max(0, idx - 1), min(len(wall_pts) - 1, idx + 1)
+        (nx0, ny0), (nx1, ny1) = wall_pts[i0], wall_pts[i1]
+        wall_angle = _math.degrees(_math.atan2(ny1 - ny0, nx1 - nx0))
+        # A wall segment has two equivalent directions 180° apart; pick the one
+        # that keeps the label upright/readable instead of upside-down.
+        if wall_angle > 90:
+            wall_angle -= 180
+        elif wall_angle < -90:
+            wall_angle += 180
+
+        _draw_rotated_text(Himage, (lx_c, ly_c), str(dist), font_tiny, wall_angle,
+                            bounds=(_cx0, _cy0, _cx1, _cy1), font_size=_wall_font_size)
 
     # Batted-ball markers — last 7 balls put in play (fair or foul).
     # API hit coordinates: home plate ≈ (125, 200); scale ≈ 2 ft per unit.
