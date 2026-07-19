@@ -23,7 +23,7 @@ import requests
 
 from fetch_games import fetch_scoreboard_for_date, _lookup_stadium
 from util import load_json_file, load_yaml_file
-from game_detail_fetch import _PITCH_TYPE_ABBR
+from game_detail_fetch import _PITCH_TYPE_ABBR, _EVENT_ABBR, _build_scorecard_notation
 
 _INNING_ORDINALS = {
     1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', 6: '6th',
@@ -122,8 +122,19 @@ def _fetch_game_timeline(game_pk):
     away_order = _build_order(bscore_teams.get('away', {}))  # [(pid, name), ...]
     home_order = _build_order(bscore_teams.get('home', {}))
 
+    # Jersey numbers by player id, for runner-on-base labels (mirrors
+    # game_detail_fetch._runner_jersey, which is only available for live games).
+    player_jersey = {}
+    for _side in ('away', 'home'):
+        for _pdata in bscore_teams.get(_side, {}).get('players', {}).values():
+            _pid = _pdata.get('person', {}).get('id')
+            _jn = _pdata.get('jerseyNumber')
+            if _pid is not None and _jn is not None:
+                player_jersey[_pid] = _jn
+
     all_plays = data.get('liveData', {}).get('plays', {}).get('allPlays', [])
     timeline = []
+    hit_events = []
     first_pitch = None
     pitch_events = []
     wp_events = []
@@ -151,6 +162,7 @@ def _fetch_game_timeline(game_pk):
     running_away = 0
     running_home = 0
     running_runners = {'first': None, 'second': None, 'third': None}
+    running_runner_ids = {'first': None, 'second': None, 'third': None}
     cumulative_last_play      = None  # last non-substitution event name seen so far
     cumulative_last_play_inn  = None  # inning of that event
     cumulative_last_play_top  = None  # True if top half, False if bottom
@@ -189,6 +201,7 @@ def _fetch_game_timeline(game_pk):
         at_bat_batter_id = matchup.get('batter',  {}).get('id')
         # Runners at START of this at-bat = running_runners before the play completes
         at_bat_runners = dict(running_runners)
+        at_bat_runner_ids = dict(running_runner_ids)
 
         # Per-at-bat pitch detail state (reset for each play/at-bat)
         ab_pitch_num       = 0
@@ -260,6 +273,9 @@ def _fetch_game_timeline(game_pk):
                 'runner_on_first':    at_bat_runners['first'],
                 'runner_on_second':   at_bat_runners['second'],
                 'runner_on_third':    at_bat_runners['third'],
+                'runner_first_number':  player_jersey.get(at_bat_runner_ids['first']),
+                'runner_second_number': player_jersey.get(at_bat_runner_ids['second']),
+                'runner_third_number':  player_jersey.get(at_bat_runner_ids['third']),
                 # Pitch detail fields — populated for pitch events; non-pitch
                 # events carry over the last pitch values so they're always fresh.
                 'is_pitch':           is_pitch,
@@ -296,7 +312,11 @@ def _fetch_game_timeline(game_pk):
         post_first  = (matchup.get('postOnFirst')  or {}).get('fullName') or None
         post_second = (matchup.get('postOnSecond') or {}).get('fullName') or None
         post_third  = (matchup.get('postOnThird')  or {}).get('fullName') or None
+        post_first_id  = (matchup.get('postOnFirst')  or {}).get('id')
+        post_second_id = (matchup.get('postOnSecond') or {}).get('id')
+        post_third_id  = (matchup.get('postOnThird')  or {}).get('id')
         running_runners = {'first': post_first, 'second': post_second, 'third': post_third}
+        running_runner_ids = {'first': post_first_id, 'second': post_second_id, 'third': post_third_id}
 
         # Track hits and perfect-game state for no-hitter reconstruction.
         play_event = result.get('event', '')
@@ -315,6 +335,32 @@ def _fetch_game_timeline(game_pk):
             if _batter_reached:
                 away_pg_intact = False  # away pitcher's PG is broken
 
+        # Batted-ball landing spot for the field diagram (mirrors
+        # game_detail_fetch._extract_all_hit_coordinates, unavailable for past games).
+        _hit_data = play.get('hitData', {})
+        _hx = _hit_data.get('coordinates', {}).get('coordX')
+        _hy = _hit_data.get('coordinates', {}).get('coordY')
+        if _hx is None or _hy is None:
+            for _pe in play.get('playEvents', []):
+                _pe_hit_data = _pe.get('hitData', {})
+                _hx = _pe_hit_data.get('coordinates', {}).get('coordX')
+                _hy = _pe_hit_data.get('coordinates', {}).get('coordY')
+                if _hx is not None and _hy is not None:
+                    break
+        if _hx is not None and _hy is not None:
+            hit_events.append({
+                'time':     end_time,
+                'x':        _hx,
+                'y':        _hy,
+                'is_hr':    play_event == 'Home Run',
+                'is_out':   not _is_hit,
+                # Credits-based notation (e.g. 'F9', 'L4') shows the fielder who
+                # made the catch/play, matching the live-game field diagram.
+                'abbr':     _build_scorecard_notation(play) or
+                            _EVENT_ABBR.get(play_event, play_event[:2].upper() if play_event else '?'),
+                'distance': _hit_data.get('totalDistance'),
+            })
+
         timeline.append({
             'end_time':           end_time,
             'away_score':         away_score,
@@ -329,6 +375,9 @@ def _fetch_game_timeline(game_pk):
             'runner_on_first':    post_first,
             'runner_on_second':   post_second,
             'runner_on_third':    post_third,
+            'runner_first_number':  player_jersey.get(post_first_id),
+            'runner_second_number': player_jersey.get(post_second_id),
+            'runner_third_number':  player_jersey.get(post_third_id),
             # Cumulative hit counts and PG state as of this play's completion.
             'away_hits_so_far':   running_away_hits,
             'home_hits_so_far':   running_home_hits,
@@ -386,6 +435,7 @@ def _fetch_game_timeline(game_pk):
     timeline.sort(key=lambda p: p['end_time'])
     pitch_events.sort(key=lambda e: e['time'])
     wp_events.sort(key=lambda e: e['time'])
+    hit_events.sort(key=lambda e: e['time'])
 
     # First pitch event where a ball or strike was actually registered
     first_actual_pitch = None
@@ -454,6 +504,7 @@ def _fetch_game_timeline(game_pk):
         'first_actual_pitch_utc': first_actual_pitch,
         'last_play_utc':         timeline[-1]['end_time'] if timeline else None,
         'plays':                 timeline,
+        'hit_events':            hit_events,
         'pitch_events':          pitch_events,
         'wp_events':             wp_events,
         'challenge_events':      challenge_events,
@@ -797,14 +848,28 @@ def _game_state_at_time(base_game, tl, target_utc):
         state['runner_on_first']  = last_event.get('runner_on_first')
         state['runner_on_second'] = last_event.get('runner_on_second')
         state['runner_on_third']  = last_event.get('runner_on_third')
+        state['runner_first_number']  = last_event.get('runner_first_number')
+        state['runner_second_number'] = last_event.get('runner_second_number')
+        state['runner_third_number']  = last_event.get('runner_third_number')
     elif between_plays and last_play and last_play.get('outs_after', 0) < 3:
         state['runner_on_first']  = last_play.get('runner_on_first')
         state['runner_on_second'] = last_play.get('runner_on_second')
         state['runner_on_third']  = last_play.get('runner_on_third')
+        state['runner_first_number']  = last_play.get('runner_first_number')
+        state['runner_second_number'] = last_play.get('runner_second_number')
+        state['runner_third_number']  = last_play.get('runner_third_number')
     else:
         state['runner_on_first']  = None
         state['runner_on_second'] = None
         state['runner_on_third']  = None
+        state['runner_first_number']  = None
+        state['runner_second_number'] = None
+        state['runner_third_number']  = None
+
+    # Batted-ball markers for the field diagram: last 7 balls in play up to target_utc.
+    state['recent_hits'] = [
+        h for h in tl.get('hit_events', []) if h['time'] <= target_utc
+    ][-7:]
 
     # ABS challenges: replay cumulative state up to target_utc.
     # Default to full allotment when no challenges have been used yet.

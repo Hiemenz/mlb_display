@@ -858,7 +858,9 @@ def _extract_all_hit_coordinates(plays):
         hit_data = play.get('hitData', {})
         cx = hit_data.get('coordinates', {}).get('coordX')
         cy = hit_data.get('coordinates', {}).get('coordY')
-        abbr = _EVENT_ABBR.get(event, event[:2].upper() if event else '?')
+        # Use the same credits-based notation as the scorecard (e.g. 'F9', 'L4')
+        # so flyouts/lineouts on the field diagram show the fielder who made the play.
+        abbr = _build_scorecard_notation(play) or _EVENT_ABBR.get(event, event[:2].upper() if event else '?')
         if cx is not None and cy is not None:
             distance = hit_data.get('totalDistance')
             hits.append({'x': cx, 'y': cy, 'is_hr': is_hr, 'is_hit': is_hit, 'is_out': is_out,
@@ -932,7 +934,9 @@ def fetch_field_view_data(game_pk):
 
     # Pitch locations and hit coordinates
     pitches = _extract_pitches_detailed(plays)
-    all_hits = _extract_all_hit_coordinates(plays)
+    # Keep only the last 7 batted balls so old markers are removed from the
+    # field diagram instead of accumulating for the whole game.
+    all_hits = _extract_all_hit_coordinates(plays)[-7:]
     last_hit = all_hits[-1] if all_hits else None
     hit_coords = (last_hit['x'], last_hit['y']) if last_hit else None
 

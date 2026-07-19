@@ -188,7 +188,7 @@ def _transform_hit_coords(api_x, api_y):
 
 
 def _draw_all_hits(draw, data, fonts=None):
-    """Plot all batted balls accumulated this game.
+    """Plot the last 7 batted balls in play (older markers are dropped upstream).
 
     Current half-inning events → filled markers.
     Previous half-inning events → outline/ghost markers.
