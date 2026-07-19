@@ -188,10 +188,14 @@ def _load_logo_gray(abbr, team_id):
             if matches:
                 subdir_id_path = matches[0]
 
-    # Prefer team_id path (subdir or flat) over abbr — avoids collisions where a MiLB
-    # team shares an abbreviation with an MLB team (e.g. COL = Rockies AND Clippers).
+    # Prefer team_id path over abbr — avoids collisions where a MiLB team shares an
+    # abbreviation with an MLB team (e.g. COL = Rockies AND Clippers). The MiLB subdir
+    # match comes last: it's keyed by sport_id (defaulting to 0 when unknown, since
+    # _try_download_logo is never called with an explicit sport_id), so a flat file
+    # here is always a deliberate, known-good logo — it must win over a generic
+    # subdir cache entry even when both exist for the same team_id.
     result = None
-    for path in (subdir_id_path, id_path, abbr_path):
+    for path in (id_path, abbr_path, subdir_id_path):
         if path and os.path.exists(path):
             try:
                 img = Image.open(path).convert('RGBA')
