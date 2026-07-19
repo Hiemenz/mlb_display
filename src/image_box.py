@@ -1136,17 +1136,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _wo_y    = 3 * s
         draw.text((start_x + _wo_x,         start_y + _wo_y), _wo_text, font=font14, fill=0)
         draw.text((start_x + _wo_x + 1 * s, start_y + _wo_y), _wo_text, font=font14, fill=0)
-    elif _dh_scheduled:
-        # Doubleheader, not yet started: the venue name normally right-anchors
-        # in the header and collides with a centered "GM1" label, so reuse the
-        # WALKOFF slot (unused pre-game) for "Game N" and suppress the venue
-        # below instead.
-        _gm_pre_text = f'Game {_gnum}'
-        _gm_pre_w    = int(font14.getlength(_gm_pre_text))
-        _gm_pre_x    = (horizonta_len - _gm_pre_w) // 2
-        _gm_pre_y    = 3 * s
-        draw.text((start_x + _gm_pre_x,         start_y + _gm_pre_y), _gm_pre_text, font=font14, fill=0)
-        draw.text((start_x + _gm_pre_x + 1 * s, start_y + _gm_pre_y), _gm_pre_text, font=font14, fill=0)
+    # _dh_scheduled's "Game N" label is drawn later, in the same small corner
+    # spot the moved duration uses for sweep/walkoff finals (see below), so the
+    # header stays free for the venue name.
 
     # game state — bold via double draw; for pre-game times render AM/PM smaller + bold
     if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and ' ' in game_state_str:
@@ -1347,9 +1339,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     _ser_content_left_x = _ppd_logo_x
 
     # Venue — right-anchored in header, as large as possible without overlapping the time.
-    # Suppressed for a not-yet-started doubleheader game since "Game N" occupies
-    # the header there instead (see _dh_scheduled above).
-    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup') and not _dh_scheduled:
+    # Always shown for a scheduled game, including doubleheaders: "Game N" now
+    # lives in the corner spot below (see _dh_scheduled block near the duration
+    # code) instead of the header, so it no longer collides with the venue.
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
         venue_clean = _clean_venue_name(game_data.get('venue'))
         if venue_clean:
             try:
@@ -1722,9 +1715,18 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         except Exception:  # pragma: no cover
             pass
 
+    # Doubleheader game number, not-yet-started game: same small corner spot the
+    # moved duration uses for sweep/walkoff finals, freeing the header for venue.
+    if _dh_scheduled:
+        _gm_pre_text = f'Game {_gnum}'
+        _gm_pre_x = start_x + logo_x_offset + 28 * s + 2 * s + 3 * s if use_logos else start_x + 8 * s
+        _gm_pre_y = start_y + 50 * s
+        draw.text((_gm_pre_x,         _gm_pre_y), _gm_pre_text, font=font9, fill=0)
+        draw.text((_gm_pre_x + 1 * s, _gm_pre_y), _gm_pre_text, font=font9, fill=0)
+
     # Doubleheader game number — in header for non-sweep/non-walkoff finals; beside the
-    # moved duration for sweeps/walkoffs. Not-yet-started DH games are handled earlier
-    # via _dh_scheduled ("Game N" in the WALKOFF slot), so they're excluded here.
+    # moved duration for sweeps/walkoffs. Not-yet-started DH games are handled just
+    # above ("Game N" in the corner spot), so they're excluded here.
     _dh_state = game_data['detailed_state'] in (
         'Final', 'Game Over', 'Final: Tied', 'Postponed')
     if _dh_is_active and _dh_state:
