@@ -206,6 +206,11 @@ def _fetch_game_timeline(game_pk):
     header_events = []
     _last_header_half = None   # (inning, isTopInning) of the last appended token
 
+    # Strikeout-tally stream for the cell-2 footer ("home_pitcher_ks"/
+    # "away_pitcher_ks"): (time, side, 'K'|'L') per strikeout, mirroring
+    # game_detail_fetch's home_pitcher_ks/away_pitcher_ks construction.
+    pitcher_k_events = []
+
     for i, play in enumerate(all_plays):
         about  = play.get('about', {})
         result = play.get('result', {})
@@ -395,6 +400,19 @@ def _fetch_game_timeline(game_pk):
             if _batter_reached:
                 away_pg_intact = False  # away pitcher's PG is broken
 
+        # Strikeout tally for the cell-2 footer: home_pitcher_ks tracks Ks by
+        # home-team pitchers (recorded when isTopInning, i.e. away batters are
+        # struck out); away_pitcher_ks is the mirror image.
+        if (result.get('eventType') or '').lower() == 'strikeout':
+            _k_last_code = ''
+            for _kpe in reversed(play.get('playEvents', [])):
+                if _kpe.get('isPitch'):
+                    _k_last_code = _kpe.get('details', {}).get('code', '')
+                    break
+            _k_type = 'L' if _k_last_code == 'C' else 'K'
+            _k_side = 'home' if half_inning == 'top' else 'away'
+            pitcher_k_events.append((end_time, _k_side, _k_type))
+
         # Finalized play notation for the header (e.g. '6-3', 'K', 'F9', '3R HR'),
         # mirroring game_detail_fetch's game_plays construction.
         _et_h = (result.get('eventType') or '').lower().replace(' ', '_')
@@ -526,6 +544,7 @@ def _fetch_game_timeline(game_pk):
     wp_events.sort(key=lambda e: e['time'])
     hit_events.sort(key=lambda e: e['time'])
     header_events.sort(key=lambda t: t[0])
+    pitcher_k_events.sort(key=lambda t: t[0])
 
     # First pitch event where a ball or strike was actually registered
     first_actual_pitch = None
@@ -596,6 +615,7 @@ def _fetch_game_timeline(game_pk):
         'plays':                 timeline,
         'hit_events':            hit_events,
         'header_events':         header_events,
+        'pitcher_k_events':      pitcher_k_events,
         'pitch_events':          pitch_events,
         'wp_events':             wp_events,
         'challenge_events':      challenge_events,
@@ -975,6 +995,17 @@ def _game_state_at_time(base_game, tl, target_utc):
             if _header_event_count >= 7:
                 break
     state['half_inning_plays'] = list(reversed(_kept_tokens))
+
+    # Cell-2 footer K tally: cumulative strikeouts by each side's pitching
+    # as of target_utc.
+    state['home_pitcher_ks'] = [
+        kt for (t, side, kt) in tl.get('pitcher_k_events', [])
+        if t <= target_utc and side == 'home'
+    ]
+    state['away_pitcher_ks'] = [
+        kt for (t, side, kt) in tl.get('pitcher_k_events', [])
+        if t <= target_utc and side == 'away'
+    ]
 
     # ABS challenges: replay cumulative state up to target_utc.
     # Default to full allotment when no challenges have been used yet.
