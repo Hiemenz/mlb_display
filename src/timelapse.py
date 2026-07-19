@@ -45,6 +45,31 @@ _NOT_AB_EVENTS = frozenset({
 # Inning threshold before displaying no-hitter / perfect game banner
 _NO_HITTER_INNING_THRESHOLD = 5
 
+# Header event ("half_inning_plays") reconstruction — mirrors
+# game_detail_fetch.fetch_scoreboard_live_extras, which is only available for
+# live games and can't be replayed for a historical timelapse.
+_HEADER_ACTION_CODES = {
+    'stolen_base':      'SB',
+    'caught_stealing':  'CS',
+    'pickoff':          'PK',
+    'wild_pitch':       'WP',
+    'passed_ball':      'PB',
+    'balk':             'BLK',
+    'pitching_substitution': 'PC',
+}
+_HEADER_SUBST_EVENT_TYPES = frozenset({
+    'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
+    'runner_substitution', 'game_advisory', 'ejection', 'defensive_switch',
+})
+
+
+def _header_action_code(et):
+    """Map a lowercased playEvent eventType to its header abbreviation, if any."""
+    for kw, code in _HEADER_ACTION_CODES.items():
+        if et.startswith(kw):
+            return code
+    return None
+
 
 def _ordinal(n):
     """Ordinal."""
@@ -176,6 +201,11 @@ def _fetch_game_timeline(game_pk):
     home_pg_intact      = True   # home pitcher's PG (away team has no baserunners)
     away_pg_intact      = True   # away pitcher's PG (home team has no baserunners)
 
+    # Header event stream: (time, token) pairs feeding half_inning_plays
+    # reconstruction, mirroring game_detail_fetch's game_plays list.
+    header_events = []
+    _last_header_half = None   # (inning, isTopInning) of the last appended token
+
     for i, play in enumerate(all_plays):
         about  = play.get('about', {})
         result = play.get('result', {})
@@ -210,8 +240,38 @@ def _fetch_game_timeline(game_pk):
         ab_last_pitch_type = None
         ab_last_strike     = ''
         ab_last_call_code  = ''
+        _review_added_this_play = False
 
         for ev in play.get('playEvents', []):
+            # Header events: in-play actions (steals, pickoffs, wild pitches, ...)
+            # and challenge/replay reviews, timestamped by the event itself so
+            # they can be filtered to "as of target_utc" later.
+            if ev.get('type') == 'action':
+                _hcode = _header_action_code((ev.get('details', {}).get('eventType') or '').lower())
+                if _hcode and (not header_events or header_events[-1][1] != _hcode):
+                    _hev_time_str = ev.get('startTime', '')
+                    try:
+                        _hev_time = _parse_mlb_time(_hev_time_str) if _hev_time_str else None
+                    except ValueError:
+                        _hev_time = None
+                    if _hev_time:
+                        _this_half = (inning, half_inning == 'top')
+                        if _last_header_half and _this_half != _last_header_half:
+                            header_events.append((_hev_time, '^' if _this_half[1] else 'v'))
+                        header_events.append((_hev_time, _hcode))
+                        _last_header_half = _this_half
+            _hrd = ev.get('reviewDetails')
+            if _hrd and not _hrd.get('inProgress') and not _review_added_this_play:
+                _hev_time_str2 = ev.get('startTime', '')
+                try:
+                    _hev_time2 = _parse_mlb_time(_hev_time_str2) if _hev_time_str2 else None
+                except ValueError:
+                    _hev_time2 = None
+                if _hev_time2:
+                    header_events.append(
+                        (_hev_time2, 'CHAL W' if _hrd.get('isOverturned') else 'CHAL L')
+                    )
+                    _review_added_this_play = True
             # ABS challenge tracking
             rd = ev.get('reviewDetails')
             if rd and ev.get('type') == 'pitch':
@@ -335,6 +395,35 @@ def _fetch_game_timeline(game_pk):
             if _batter_reached:
                 away_pg_intact = False  # away pitcher's PG is broken
 
+        # Finalized play notation for the header (e.g. '6-3', 'K', 'F9', '3R HR'),
+        # mirroring game_detail_fetch's game_plays construction.
+        _et_h = (result.get('eventType') or '').lower().replace(' ', '_')
+        _this_header_half = (inning, half_inning == 'top')
+        if _et_h == 'pitching_substitution':
+            if not header_events or header_events[-1][1] != 'PC':
+                if _last_header_half and _this_header_half != _last_header_half:
+                    header_events.append((end_time, '^' if _this_header_half[1] else 'v'))
+                header_events.append((end_time, 'PC'))
+                _last_header_half = _this_header_half
+        elif _et_h not in _HEADER_SUBST_EVENT_TYPES and play_event.strip():
+            _note = _build_scorecard_notation(play)
+            _rbi = int(result.get('rbi') or 0)
+            _is_err = _note.startswith('E') or ' E' in _note
+            if _rbi > 0 and not _is_err:
+                if _note == 'HR':
+                    if _rbi == 4:
+                        _note = 'Grand Slam'
+                    elif _rbi >= 2:
+                        _note = f'{_rbi}R HR'
+                elif _rbi == 1:
+                    _note = f'RBI {_note}'
+                else:
+                    _note = f'{_rbi}RBI {_note}'
+            if _last_header_half and _this_header_half != _last_header_half:
+                header_events.append((end_time, '^' if _this_header_half[1] else 'v'))
+            header_events.append((end_time, _note))
+            _last_header_half = _this_header_half
+
         # Batted-ball landing spot for the field diagram (mirrors
         # game_detail_fetch._extract_all_hit_coordinates, unavailable for past games).
         _hit_data = play.get('hitData', {})
@@ -436,6 +525,7 @@ def _fetch_game_timeline(game_pk):
     pitch_events.sort(key=lambda e: e['time'])
     wp_events.sort(key=lambda e: e['time'])
     hit_events.sort(key=lambda e: e['time'])
+    header_events.sort(key=lambda t: t[0])
 
     # First pitch event where a ball or strike was actually registered
     first_actual_pitch = None
@@ -505,6 +595,7 @@ def _fetch_game_timeline(game_pk):
         'last_play_utc':         timeline[-1]['end_time'] if timeline else None,
         'plays':                 timeline,
         'hit_events':            hit_events,
+        'header_events':         header_events,
         'pitch_events':          pitch_events,
         'wp_events':             wp_events,
         'challenge_events':      challenge_events,
@@ -870,6 +961,20 @@ def _game_state_at_time(base_game, tl, target_utc):
     state['recent_hits'] = [
         h for h in tl.get('hit_events', []) if h['time'] <= target_utc
     ][-7:]
+
+    # Header play-by-play strip (same "half_inning_plays" field the live 2-cell/
+    # 3-cell header reads): last 7 events, plus interleaved inning-break markers,
+    # as of target_utc.
+    _header_tokens = [tok for (t, tok) in tl.get('header_events', []) if t <= target_utc]
+    _kept_tokens = []
+    _header_event_count = 0
+    for _tok in reversed(_header_tokens):
+        _kept_tokens.append(_tok)
+        if _tok not in ('^', 'v'):
+            _header_event_count += 1
+            if _header_event_count >= 7:
+                break
+    state['half_inning_plays'] = list(reversed(_kept_tokens))
 
     # ABS challenges: replay cumulative state up to target_utc.
     # Default to full allotment when no challenges have been used yet.
