@@ -1,5 +1,4 @@
 import requests
-import json
 import argparse
 from datetime import datetime, timedelta
 
@@ -31,7 +30,7 @@ def get_teams(team_id):
     if tid in team_abbreviation_list:
         return
     try:
-        response = requests.get(f'https://statsapi.mlb.com/api/v1/teams/{team_id}')
+        response = requests.get(f'https://statsapi.mlb.com/api/v1/teams/{team_id}', timeout=10)
         if response.status_code == 200:
             data = response.json()
             fetched_team_id = data.get('teams', [{}])[0].get('id')
@@ -65,7 +64,7 @@ def get_standings(league_id_list, season=2025, date=None, save_as='standings'):
         if date:
             url += f'&date={date}'
 
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
 
         data = response.json()
 

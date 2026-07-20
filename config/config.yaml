@@ -61,7 +61,7 @@ sport_id_priority:
 
 # Night mode: skip refreshes between night_start and night_end (24-hour format)
 night_mode: true
-night_start: 2   # midnight (hour in 24h, local timezone)
+night_start: 2   # 2am (hour in 24h, local timezone)
 night_end: 7     # 7am
 
 # Morning alternating mode: between night_end and morning_end, alternate between yesterday's

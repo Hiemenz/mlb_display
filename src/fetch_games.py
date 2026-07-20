@@ -15,7 +15,7 @@ import pytz
 # Allow running as a standalone script from any directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from util import load_json_file, load_yaml_file, save_off_results
+from util import load_json_file, save_off_results
 from config_loader import load_config, add_config_arg
 
 SPORT_NAMES = {
@@ -32,6 +32,8 @@ _WBC_ABBR_OVERRIDES = {
 
 def convert_time_z_to(utc_time_str, time_zone='America/Chicago'):
     """Convert time z to."""
+    if not utc_time_str:
+        return ''
     utc_time = datetime.strptime(utc_time_str, "%Y-%m-%dT%H:%M:%SZ")
     utc_time = pytz.utc.localize(utc_time)
     local_tz = pytz.timezone(time_zone)
@@ -381,7 +383,7 @@ def fetch_all_team_abbreviations(sport_id=1):
     team_abbreviations = {}
     try:
         print(f"Fetching all teams for sport_id {sport_id}...")
-        response = requests.get(f'https://statsapi.mlb.com/api/v1/teams?sportId={sport_id}')
+        response = requests.get(f'https://statsapi.mlb.com/api/v1/teams?sportId={sport_id}', timeout=10)
         if response.status_code == 200:
             data = response.json()
             teams = data.get('teams', [])
@@ -405,7 +407,7 @@ def fetch_all_team_abbreviations(sport_id=1):
 def get_team_abbreviation(team_id):
     """Fetch a single team abbreviation from MLB API."""
     try:
-        response = requests.get(f'https://statsapi.mlb.com/api/v1/teams/{team_id}')
+        response = requests.get(f'https://statsapi.mlb.com/api/v1/teams/{team_id}', timeout=10)
         if response.status_code == 200:
             data = response.json()
             abbreviation = data.get('teams', [{}])[0].get('abbreviation')
@@ -424,7 +426,7 @@ def check_games_for_sport(date, sport_id):
         f'startDate={date}&endDate={date}&sportId={sport_id}'
     )
     try:
-        response = requests.get(endpoint_url)
+        response = requests.get(endpoint_url, timeout=10)
         if response.status_code == 200:
             data = response.json()
             game_dates = data.get('dates', [])
@@ -469,24 +471,36 @@ def find_next_game_date(sport_id_priority, from_date_str):
     return None
 
 
+def _season_for_games(game_array):
+    """Season year for pitcher stat lookups — from the games' own dates so
+    historical --date replays query the right season, not today's."""
+    for gd in game_array:
+        gdate = gd.get('game_date') or ''
+        if len(gdate) >= 4 and gdate[:4].isdigit():
+            return gdate[:4]
+    from datetime import date as _date
+    return str(_date.today().year)
+
+
 def parse_games(data, sport_id=None, config=None):
     """Parse schedule API response and write data/games.json + data/teams.json."""
     if config is None:
         config = load_config()
     tz = config.get('timezone', 'America/Chicago')
 
+    # On empty days only clear games.json — leave the accumulated teams.json
+    # abbreviation cache intact (the idle screen and later fallback lookups
+    # depend on it).
     game_dates = data.get('dates', [])
     if not game_dates:
         print("No games found for this date")
         save_off_results({'games': []}, 'games')
-        save_off_results({'team_abbreviation': {}}, 'teams')
         return
 
     games = game_dates[0].get('games', [])
     if not games:
         print("No games found for this date")
         save_off_results({'games': []}, 'games')
-        save_off_results({'team_abbreviation': {}}, 'teams')
         return
 
     game_array = []
@@ -718,8 +732,7 @@ def parse_games(data, sport_id=None, config=None):
         if gd.get('_home_probable_id'):
             pitcher_ids.add(gd['_home_probable_id'])
     if pitcher_ids:
-        from datetime import date as _date
-        season = str(_date.today().year)
+        season = _season_for_games(game_array)
         eras = _fetch_pitcher_eras(pitcher_ids, season)
         for gd in game_array:
             away_id = gd.pop('_away_probable_id', None)
@@ -741,8 +754,7 @@ def parse_games(data, sport_id=None, config=None):
         decision_ids.add(gd.get('_saver_id'))
     decision_ids.discard(None)
     if decision_ids:
-        from datetime import date as _date
-        season = str(_date.today().year)
+        season = _season_for_games(game_array)
         decision_stats = _fetch_decision_pitcher_stats(decision_ids, season)
         for gd in game_array:
             winner_id = gd.pop('_winner_id', None)
@@ -907,7 +919,7 @@ def fetch_scoreboard_for_date(date, sport_id=None, config=None):
         f'startDate={date}&endDate={date}&sportId={sport_id}'
         '&hydrate=decisions,probablePitcher(note),linescore,flags,team,broadcasts(all),seriesStatus,gameInfo'
     )
-    response = requests.get(endpoint_url)
+    response = requests.get(endpoint_url, timeout=15)
     data = response.json()
     parse_games(data, sport_id, config)
 

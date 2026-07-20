@@ -2,9 +2,7 @@ import os
 import math
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from generate_image import (
-    picdir, _logo_small, _load_logo_gray, draw_diamond, draw_circle,
-)
+from generate_image import picdir, _logo_small
 from stadium_polygons import get_polygon
 
 EPD_WIDTH = 800

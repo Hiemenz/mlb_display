@@ -8,7 +8,7 @@ for the duration of that window instead of changing on every render).
 import random as _random
 from datetime import datetime
 
-from image_assets import _get_font, ImageDraw, _logo_small, Image
+from image_assets import _get_font, ImageDraw, _logo_small
 
 _CATEGORIES = [
     'homeRuns', 'battingAverage', 'earnedRunAverage', 'saves', 'hits',

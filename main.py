@@ -357,7 +357,11 @@ def _should_skip_poll(date_str, config, sched):
     last_fetch = sched.get('last_game_fetch')
     if last_fetch:
         try:
-            elapsed = datetime.now() - datetime.fromisoformat(last_fetch)
+            last_dt = datetime.fromisoformat(last_fetch)
+            if last_dt.tzinfo is None:
+                # State written before the UTC-aware format (pre-#202 files)
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            elapsed = datetime.now(timezone.utc) - last_dt
             if elapsed < timedelta(minutes=interval_min):
                 mins = int(elapsed.total_seconds() // 60)
                 state_label = (
@@ -467,6 +471,26 @@ def _show_idle_screen(config, sched, auto_open=False):
     image = draw_idle_screen(transactions, team_data, {}, idle_config)
 
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
+
+    # Skip the push when the idle screen is pixel-identical to what's already
+    # on disk — off-days hit this path on every cron tick, and an unconditional
+    # force_full would flash the e-ink panel all day. Still let the hourly
+    # full-refresh timer through for the anti-ghosting flash.
+    from refresh_tracker import needs_full_refresh
+    if not needs_full_refresh() and os.path.isfile(output_path):
+        try:
+            from PIL import Image as _PILImage, ImageChops as _ImageChops
+            _prev = _PILImage.open(output_path)
+            _unchanged = (
+                _prev.size == image.size and
+                _ImageChops.difference(_prev.convert('L'), image.convert('L')).getbbox() is None
+            )
+            if _unchanged:
+                print("Idle screen unchanged — skipping display update")
+                return
+        except Exception:
+            pass
+
     image.save(output_path)
     print(f"Idle screen saved → {output_path}")
 
@@ -569,8 +593,8 @@ Examples:
 
     config = load_config(args.config)
 
-    # 3. Night mode gate
-    if config.get('night_mode', False) and not _no_throttle:
+    # 3. Night mode gate (default True to match the dark-mode checks below)
+    if config.get('night_mode', True) and not _no_throttle:
         if _in_night_window(config):
             tz = config.get('timezone', 'America/Chicago')
             now_str = datetime.now(pytz.timezone(tz)).strftime('%H:%M')

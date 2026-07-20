@@ -285,7 +285,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     def _draw_team_row(abbr, tid, row_y, runs, hits, errs, bold_score=False,
                        batting=False, abs_remaining=None, replay_remaining=None):
         """Draw team row."""
-        nonlocal draw, canvas
+        nonlocal draw
         if use_logos:
             _lg = _logo_small(abbr, tid, size=LOGO_SZ)
             if _lg:
