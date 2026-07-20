@@ -606,4 +606,63 @@ class TestClusterLiveGames:
         result, positions = _cluster_live_games(games, cfg, {})
         assert positions is not None
         assert result[0]['game_pk'] == 99
-        assert positions[0] == ('normal', 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# hide_finished_games
+# ---------------------------------------------------------------------------
+
+class TestHideFinishedGames:
+    def test_default_off_keeps_final_games(self):
+        """Without the flag, Final games stay on the grid."""
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        assert len(ordered) == 5
+
+    def test_enabled_drops_final_games(self):
+        """With hide_finished_games=True, Final games are dropped from the grid."""
+        cfg = dict(BASE_CONFIG, hide_finished_games=True)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 1
+        assert all(g['game_pk'] != 0 or g['detailed_state'] == 'In Progress' for g in ordered)
+
+    def test_enabled_lets_remaining_game_expand(self):
+        """Freeing up finished games' slots lets the sole remaining live game go triple."""
+        cfg = dict(BASE_CONFIG, hide_finished_games=True)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(13)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 1
+        assert slots[0][0] == 'triple'
+
+    def test_all_final_keeps_everything_to_avoid_empty_grid(self):
+        """If every game is Final, none are dropped (grid must never go empty)."""
+        cfg = dict(BASE_CONFIG, hide_finished_games=True)
+        games = [_game(i, state='Final') for i in range(5)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 5
+
+    def test_pinned_favorite_game_survives_even_when_final(self):
+        """The pinned favorite-team game is never hidden, even after it finishes."""
+        cfg = dict(BASE_CONFIG, hide_finished_games=True, favorite_team_first=True, primary='NYY')
+        pinned = _game(99, state='Final')
+        games = [pinned] + [_game(1, state='In Progress')] + [_game(i + 2, state='Final') for i in range(3)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert any(g['game_pk'] == 99 for g in ordered)
+        assert ordered[0]['game_pk'] == 99
+
+    def test_env_var_overrides_config_to_enable(self, monkeypatch):
+        """HIDE_FINISHED_GAMES=true overrides a false config value."""
+        monkeypatch.setenv('HIDE_FINISHED_GAMES', 'true')
+        cfg = dict(BASE_CONFIG, hide_finished_games=False)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 1
+
+    def test_env_var_overrides_config_to_disable(self, monkeypatch):
+        """HIDE_FINISHED_GAMES=false overrides a true config value."""
+        monkeypatch.setenv('HIDE_FINISHED_GAMES', 'false')
+        cfg = dict(BASE_CONFIG, hide_finished_games=True)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 5

@@ -19,6 +19,15 @@ _LIVE_WIDE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
 _FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
 
 
+def _hide_finished_games_enabled(config):
+    """Whether finished games should be dropped from the grid, per config.yaml's
+    hide_finished_games key or the HIDE_FINISHED_GAMES env var (env wins)."""
+    _env = os.environ.get('HIDE_FINISHED_GAMES')
+    if _env is not None:
+        return _env.lower() in ('true', '1', 'yes')
+    return config.get('hide_finished_games', False)
+
+
 def _overflow_priority(g):
     """Sort key used when there are more games than grid slots: live games
     first, Final games last, everything else in between."""
@@ -508,6 +517,16 @@ def compute_grid_layout(game_state_data, team_data, config):
                 if primary in (away_abbr, home_abbr):
                     game_list.insert(0, game_list.pop(i))
                     break
+
+    # Hide finished games so their slots free up for the remaining live/
+    # scheduled games to expand into wide/triple tiles. The pinned favorite-
+    # team game (index 0) is exempt so it stays visible after it finishes.
+    # Skipped entirely if it would empty the grid (every game already Final).
+    if _hide_finished_games_enabled(config):
+        _pinned_game = game_list[0] if (config.get('favorite_team_first', False) and game_list) else None
+        _kept = [g for g in game_list if g is _pinned_game or g.get('detailed_state') not in _FINAL_STATES]
+        if _kept:
+            game_list = _kept
 
     # More games than the 15-slot grid can hold: games still In Progress must
     # not be bumped off (or drawn past the visible rows) in favor of games
