@@ -1,12 +1,15 @@
 import os
 import json
-import random
 import time as _time_mod
 from datetime import datetime, timezone
 import pytz
 from util import load_json_file, load_yaml_file, save_off_results
 from collections import OrderedDict
 
+# NOTE: several names imported below are unused here but re-exported for
+# backward compatibility — field_view, scorecard_view, pitch_view, and the
+# test suite all import them via this module. Don't "clean up" without
+# checking consumers.
 from image_assets import (
     picdir, _get_font, _logo_small, _load_logo_gray, _logo_ghost, _paste_logo,
     Image, ImageDraw, ImageFont, ImageOps,

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from PIL import Image
 from display_eink import display_image, display_partial_regions
 from refresh_tracker import needs_full_refresh
-from config_loader import load_config, add_config_arg
+from config_loader import add_config_arg
 
 
 def send_to_display(image_path, changed_regions=None, force_full=False):

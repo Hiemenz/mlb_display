@@ -8,7 +8,6 @@ Teams with no official mascot are skipped silently.
 """
 import argparse
 import os
-import sys
 import urllib.request
 
 from PIL import Image, ImageOps, ImageEnhance

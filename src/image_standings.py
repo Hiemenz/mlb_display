@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw
+from PIL import ImageDraw
 
 from image_assets import _get_font, _logo_small
 import time as _time

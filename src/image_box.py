@@ -563,11 +563,8 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
         away_game.get('home_team_id') == today_home_id
     )
 
-    # Use full "H:MMp" time when only one matchup fills the whole strip (room to breathe).
-    # When two different games must share the strip, fall back to abbreviated "Hp".
-    _two_games = (not same_series) and away_game and home_game
-    _use_full_time = not _two_games
-
+    # _fit_time prefers the full "H:MMp" form and falls back to abbreviated "Hp"
+    # when space is tight, so shared-strip layouts degrade automatically.
     strip_right = BAR_X + BAR_W - 1 * s   # rightmost pixel the strip may use
 
     def _fit_time(t_full, t_abbr, cx, right_limit):
@@ -577,7 +574,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
                 return t
         return ''
 
-    def _draw_single(g, full=True):
+    def _draw_single(g):
         """Left-to-right: away logo  @  home logo  TIME (immediately after, if it fits)."""
         a_abbr = abbr_map.get(str(g['away_team_id']), '')
         h_abbr = abbr_map.get(str(g['home_team_id']), '')
@@ -594,7 +591,7 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
             draw.text((_tx + 1 * s, _time_y), t_str, font=font14, fill=0)
 
     if same_series:
-        _draw_single(away_game, full=True)
+        _draw_single(away_game)
         return
 
     # New series — only draw the entry for each team that actually has a game.
@@ -602,11 +599,11 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
     # Two different games share the strip → abbreviated preferred; each half checked independently.
 
     if away_game and not home_game:
-        _draw_single(away_game, full=True)
+        _draw_single(away_game)
         return
 
     if home_game and not away_game:
-        _draw_single(home_game, full=True)
+        _draw_single(home_game)
         return
 
     # Both teams have different games.

@@ -5,7 +5,7 @@ from collections import deque
 # import qrcode  # disabled — not supported on this Pi build
 
 from util import load_json_file, load_yaml_file
-from image_assets import _get_font, ImageDraw, Image
+from image_assets import _get_font, ImageDraw
 from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box, draw_triple_box
 from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
