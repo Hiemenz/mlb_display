@@ -145,16 +145,17 @@ wide_cell_featured: false
 # always be placed at column 0 or 2 where a 3-unit tile fits.
 triple_cell_live: false
 
-# Hide finished games: when true, games in a Final state (Final, Game Over,
-# Final: Tied) are dropped from the grid entirely once at least one other
-# game is still live or hasn't started yet — freeing up their slots so the
-# remaining games can expand into wide/triple tiles instead. If every game on
-# the slate has finished, all of them stay visible (so the grid never goes
-# empty at the end of the day). The favorite team's pinned game (see
-# favorite_team_first) is never hidden, even after it finishes.
-# Can also be set via the HIDE_FINISHED_GAMES environment variable
+# Hide non-live games: when true, games that are already finished (Final,
+# Game Over, Final: Tied) or haven't started yet (Scheduled, Pre-Game,
+# Warmup, Delayed Start) are dropped from the grid entirely, as long as at
+# least one other game is still in progress — freeing up their slots so the
+# live games can expand into wide (2-cell) or triple (3-cell) tiles instead.
+# Up to 3 live games (the ones farthest along) get a triple tile when the
+# freed-up slot budget allows it. The favorite team's pinned game (see
+# favorite_team_first) is never hidden, regardless of its state.
+# Can also be set via the HIDE_NON_LIVE_GAMES environment variable
 # (true/1/yes), which overrides this value.
-hide_finished_games: false
+hide_non_live_games: false
 
 # Season leaders panel: show HR / AVG / ERA leaders in an empty grid cell when
 # fewer than 15 games are on the slate. Rotates categories every 5 minutes.

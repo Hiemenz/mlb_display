@@ -18,14 +18,26 @@ _LIVE_WIDE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
 
 _FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
 
+# Games that haven't started yet — grouped with _FINAL_STATES by
+# _hide_non_live_games_enabled since neither shows anything worth the slot
+# once a live game could use the room instead.
+_PRE_GAME_STATES = {'Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start'}
 
-def _hide_finished_games_enabled(config):
-    """Whether finished games should be dropped from the grid, per config.yaml's
-    hide_finished_games key or the HIDE_FINISHED_GAMES env var (env wins)."""
-    _env = os.environ.get('HIDE_FINISHED_GAMES')
+_NON_LIVE_HIDE_STATES = _FINAL_STATES | _PRE_GAME_STATES
+
+# Number of live games that can be shown as a triple (3-cell) tile at once,
+# ranked by how far along they are (see _game_progress).
+_MAX_TRIPLE_TILES = 3
+
+
+def _hide_non_live_games_enabled(config):
+    """Whether finished/not-yet-started games should be dropped from the grid,
+    per config.yaml's hide_non_live_games key or the HIDE_NON_LIVE_GAMES env
+    var (env wins)."""
+    _env = os.environ.get('HIDE_NON_LIVE_GAMES')
     if _env is not None:
         return _env.lower() in ('true', '1', 'yes')
-    return config.get('hide_finished_games', False)
+    return config.get('hide_non_live_games', False)
 
 
 def _overflow_priority(g):
@@ -261,10 +273,13 @@ def _find_wide_games(game_list, config, team_data):
 def _find_tile_types(game_list, config, team_data):
     """Return {index: 'triple'|'wide'} for games that should get an expanded tile.
 
-    The featured live game always tries triple (3-cell) first, falls back to
-    wide (2-cell) if the slot budget is tight, and lands on normal (1-cell) if
-    there is no room at all.  Other live games fill remaining budget as wide,
-    then normal.  The dict is empty when no in-progress games exist.
+    Up to _MAX_TRIPLE_TILES live games try triple (3-cell) first — the
+    featured live game (if any) ranked highest, then whichever games are
+    farthest along by inning — falling back to wide (2-cell) once the triple
+    budget is used up or the slot budget is tight, and landing on normal
+    (1-cell) if there is no room at all. Remaining live games fill leftover
+    budget as wide, then normal. The dict is empty when no in-progress games
+    exist.
     """
     in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
     if not in_progress:
@@ -281,10 +296,12 @@ def _find_tile_types(game_list, config, team_data):
         # Extra slot units available beyond what normal tiles would consume.
         remaining = 15 - len(game_list)
         tile_map = {}
+        triples_assigned = 0
         for idx in sorted_live:
-            if not tile_map and remaining >= 2:
+            if triples_assigned < _MAX_TRIPLE_TILES and remaining >= 2:
                 tile_map[idx] = 'triple'
                 remaining -= 2
+                triples_assigned += 1
             elif remaining >= 1:
                 tile_map[idx] = 'wide'
                 remaining -= 1
@@ -296,6 +313,69 @@ def _find_tile_types(game_list, config, team_data):
         return {}
     best = max(in_progress, key=_rank)
     return {best: 'triple'}
+
+
+def _pack_multi_triple_rows(game_list, tile_type_map):
+    """Pack the grid when 2+ games need a triple (3-cell) tile.
+
+    _pack_grid's bucket packer assumes at most one triple tile ever exists
+    (true before multiple live games could all rank for a triple); its
+    row_caps bucketing silently strands extra triples when 2+ are requested
+    in the same packing pass. This function is the safe alternative: each
+    triple claims its own row outright (column 0-2) up front, in original
+    relative order — the grid has exactly 3 rows, matching
+    _MAX_TRIPLE_TILES, so this never runs out of rows in practice. Every
+    other (wide/normal) game is then packed row-major into whatever's left —
+    starting with the 2 leftover columns of each triple's row, then any
+    fully-free rows — demoting wide to normal in place when a row has just
+    1 column left, so no game's slot capacity is ever wasted and nothing
+    gets dropped.
+
+    Returns (new_game_list, positions).
+    """
+    _STEP = {'triple': 3, 'wide': 2, 'normal': 1}
+    n_rows = 3
+
+    triple_idxs = [i for i in range(len(game_list)) if tile_type_map.get(i) == 'triple']
+    other_idxs = [i for i in range(len(game_list)) if tile_type_map.get(i) != 'triple']
+
+    # _find_tile_types caps triples at _MAX_TRIPLE_TILES (== n_rows), so this
+    # only trims in the impossible case of a mismatched tile_type_map.
+    n_triple_rows = min(len(triple_idxs), n_rows)
+    demoted = set(triple_idxs[n_triple_rows:])
+    triple_idxs = triple_idxs[:n_triple_rows]
+    if demoted:
+        other_idxs = list(demoted) + other_idxs
+
+    new_order = []
+    positions = []
+    row_next_col = [0] * n_rows
+
+    for row_i, gi in enumerate(triple_idxs):
+        new_order.append(game_list[gi])
+        positions.append(('triple', 0, row_i))
+        row_next_col[row_i] = 3
+
+    cur_row = 0
+    for gi in other_idxs:
+        slot_type = 'wide' if gi in demoted else tile_type_map.get(gi, 'normal')
+        needed = _STEP[slot_type]
+        while cur_row < n_rows:
+            cap_left = 5 - row_next_col[cur_row]
+            if cap_left >= needed:
+                break
+            if slot_type == 'wide' and cap_left >= 1:
+                slot_type, needed = 'normal', 1
+                break
+            cur_row += 1
+        if cur_row >= n_rows:
+            break  # grid is genuinely full
+        col = row_next_col[cur_row]
+        new_order.append(game_list[gi])
+        positions.append((slot_type, col, cur_row))
+        row_next_col[cur_row] += needed
+
+    return new_order, positions
 
 
 def _pack_grid(game_list, tile_type_map):
@@ -319,6 +399,12 @@ def _pack_grid(game_list, tile_type_map):
 
     def _tile_type(i):
         return tile_type_map.get(i, 'normal')
+
+    # 2+ triple tiles: the bucket packer below assumes at most one triple
+    # ever exists and silently strands extra ones. Use the dedicated packer
+    # instead, which gives each triple its own row.
+    if sum(1 for i in range(len(game_list)) if _tile_type(i) == 'triple') >= 2:
+        return _pack_multi_triple_rows(game_list, tile_type_map)
 
     # With 15+ games, use simple row-major layout to preserve order
     if len(game_list) >= 15:
@@ -518,15 +604,18 @@ def compute_grid_layout(game_state_data, team_data, config):
                     game_list.insert(0, game_list.pop(i))
                     break
 
-    # Hide finished games so their slots free up for the remaining live/
-    # scheduled games to expand into wide/triple tiles. The pinned favorite-
-    # team game (index 0) is exempt so it stays visible after it finishes.
-    # Skipped entirely if it would empty the grid (every game already Final).
-    if _hide_finished_games_enabled(config):
-        _pinned_game = game_list[0] if (config.get('favorite_team_first', False) and game_list) else None
-        _kept = [g for g in game_list if g is _pinned_game or g.get('detailed_state') not in _FINAL_STATES]
-        if _kept:
-            game_list = _kept
+    # Hide finished and not-yet-started games so their slots free up for the
+    # remaining live games to expand into wide/triple tiles. Only applies
+    # while at least one game is actually live — otherwise there's nothing
+    # for the freed slots to expand into. The pinned favorite-team game
+    # (index 0) is exempt so it stays visible regardless of its state.
+    if _hide_non_live_games_enabled(config):
+        _live_exists_for_hide = any(g.get('detailed_state') in _LIVE_WIDE_STATES for g in game_list)
+        if _live_exists_for_hide:
+            _pinned_game = game_list[0] if (config.get('favorite_team_first', False) and game_list) else None
+            _kept = [g for g in game_list if g is _pinned_game or g.get('detailed_state') not in _NON_LIVE_HIDE_STATES]
+            if _kept:
+                game_list = _kept
 
     # More games than the 15-slot grid can hold: games still In Progress must
     # not be bumped off (or drawn past the visible rows) in favor of games
