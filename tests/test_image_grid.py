@@ -193,9 +193,12 @@ class TestComputeGridLayout:
         triple_count = sum(1 for s in slots if s[0] == 'triple')
         assert triple_count == 1
 
-    def test_four_live_games_featured_gets_triple_others_wide(self):
-        """With 4 live games and budget of 4, featured gets triple, next gets wide."""
-        # 11 games, 4 live → remaining = 4 → triple (costs 2) + wide (costs 1) + wide (costs 1).
+    def test_four_live_games_two_get_triple_with_budget_of_four(self):
+        """With 4 live games and a budget of 4 extra units, the 2 farthest-along
+        (here, the first 2 in ranking order — all tied on progress) get triple
+        tiles (2 extra units each); the budget runs out before the other 2 can
+        expand, so they stay normal."""
+        # 11 games, 4 live → remaining = 4 → 2 triples (costs 2 each) exhausts it.
         games = (
             [_game(0, state='In Progress'), _game(1, state='In Progress')]
             + [_game(2)]
@@ -207,7 +210,9 @@ class TestComputeGridLayout:
         live_count = sum(1 for g in ordered if g.get('detailed_state') == 'In Progress')
         assert live_count == 4
         triple_count = sum(1 for s in slots if s[0] == 'triple')
-        assert triple_count == 1
+        wide_count = sum(1 for s in slots if s[0] == 'wide')
+        assert triple_count == 2
+        assert wide_count == 0
 
     def test_filler_swap_leaves_all_games_rendered(self):
         """Filler swap leaves all games rendered."""
@@ -606,4 +611,127 @@ class TestClusterLiveGames:
         result, positions = _cluster_live_games(games, cfg, {})
         assert positions is not None
         assert result[0]['game_pk'] == 99
-        assert positions[0] == ('normal', 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# hide_non_live_games
+# ---------------------------------------------------------------------------
+
+class TestHideNonLiveGames:
+    def test_default_off_keeps_final_games(self):
+        """Without the flag, Final games stay on the grid."""
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        assert len(ordered) == 5
+
+    def test_enabled_drops_final_games(self):
+        """With hide_non_live_games=True, Final games are dropped from the grid."""
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 1
+        assert all(g['game_pk'] != 0 or g['detailed_state'] == 'In Progress' for g in ordered)
+
+    def test_enabled_drops_scheduled_games(self):
+        """With hide_non_live_games=True, not-yet-started games are also dropped."""
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Scheduled') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 1
+        assert ordered[0]['game_pk'] == 0
+
+    def test_enabled_lets_remaining_game_expand(self):
+        """Freeing up finished games' slots lets the sole remaining live game go triple."""
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(13)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 1
+        assert slots[0][0] == 'triple'
+
+    def test_no_live_games_keeps_everything(self):
+        """If no game is live (even if some are Final/Scheduled), nothing is dropped —
+        there's no live game for the freed slots to benefit."""
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True)
+        games = [_game(i, state='Final') for i in range(3)] + [_game(i + 3, state='Scheduled') for i in range(2)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 5
+
+    def test_pinned_favorite_game_survives_even_when_final(self):
+        """The pinned favorite-team game is never hidden, even after it finishes."""
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True, favorite_team_first=True, primary='NYY')
+        pinned = _game(99, state='Final')
+        games = [pinned] + [_game(1, state='In Progress')] + [_game(i + 2, state='Final') for i in range(3)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert any(g['game_pk'] == 99 for g in ordered)
+        assert ordered[0]['game_pk'] == 99
+
+    def test_env_var_overrides_config_to_enable(self, monkeypatch):
+        """HIDE_NON_LIVE_GAMES=true overrides a false config value."""
+        monkeypatch.setenv('HIDE_NON_LIVE_GAMES', 'true')
+        cfg = dict(BASE_CONFIG, hide_non_live_games=False)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 1
+
+    def test_env_var_overrides_config_to_disable(self, monkeypatch):
+        """HIDE_NON_LIVE_GAMES=false overrides a true config value."""
+        monkeypatch.setenv('HIDE_NON_LIVE_GAMES', 'false')
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True)
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 5
+
+
+# ---------------------------------------------------------------------------
+# Multiple triple (3-cell) tiles for the farthest-along live games
+# ---------------------------------------------------------------------------
+
+class TestMultipleTripleTiles:
+    def test_three_live_games_all_get_triple_when_budget_allows(self):
+        """With plenty of spare slots, up to 3 live games each get a triple tile."""
+        games = (
+            [_game(0, state='In Progress', inning=8)]
+            + [_game(1, state='In Progress', inning=5)]
+            + [_game(2, state='In Progress', inning=2)]
+        )
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        assert triple_count == 3
+
+    def test_fourth_live_game_falls_back_to_wide(self):
+        """A 4th live game doesn't get a triple tile — the cap is 3."""
+        games = [
+            _game(i, state='In Progress', inning=8 - i) for i in range(4)
+        ]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        triple_count = sum(1 for s in slots if s[0] == 'triple')
+        wide_count = sum(1 for s in slots if s[0] == 'wide')
+        assert triple_count == 3
+        assert wide_count == 1
+
+    def test_triples_ranked_by_progress_farthest_along_first(self):
+        """The 3 triple tiles go to the games farthest along, not just the first 3 listed."""
+        games = (
+            [_game(0, state='In Progress', inning=1)]
+            + [_game(1, state='In Progress', inning=9)]
+            + [_game(2, state='In Progress', inning=2)]
+            + [_game(3, state='In Progress', inning=7)]
+        )
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        triple_pks = {g['game_pk'] for g, s in zip(ordered, slots) if s[0] == 'triple'}
+        assert triple_pks == {1, 2, 3}
+        assert 0 not in triple_pks
+
+    def test_hide_non_live_games_combined_with_multi_triple(self):
+        """Hiding finished/scheduled games frees enough room for 3 live games to go triple."""
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True)
+        games = (
+            [_game(0, state='In Progress', inning=3)]
+            + [_game(1, state='In Progress', inning=6)]
+            + [_game(2, state='In Progress', inning=9)]
+            + [_game(i + 10, state='Scheduled') for i in range(8)]
+            + [_game(i + 20, state='Final') for i in range(4)]
+        )
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 3
+        assert all(s[0] == 'triple' for s in slots)

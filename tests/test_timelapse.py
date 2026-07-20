@@ -1940,7 +1940,10 @@ def test_generate_gif_live_games_get_wide_slots_in_frames(monkeypatch, tmp_path)
         f"All games should be 'In Progress' during live window, got: {states}"
     )
 
-    # compute_grid_layout must allocate wide slots for those live games.
+    # compute_grid_layout must allocate expanded (wide or triple) slots for
+    # those live games. With only 2 games on the slate and ample spare slot
+    # budget, both now qualify for the bigger triple (3-cell) tile rather
+    # than wide (2-cell) — see _MAX_TRIPLE_TILES in image_grid.py.
     cfg = {
         'wide_cell_always': False,
         'wide_cell_featured': False,
@@ -1949,9 +1952,9 @@ def test_generate_gif_live_games_get_wide_slots_in_frames(monkeypatch, tmp_path)
     }
     team_data = {'team_abbreviation': {}}
     _, slots = compute_grid_layout(first_frame, team_data, cfg)
-    wide_count = sum(1 for s in slots if s[0] == 'wide')
-    assert wide_count >= 1, (
-        f"Expected wide slots for live games in timelapse frame, got slots: {slots}"
+    expanded_count = sum(1 for s in slots if s[0] in ('wide', 'triple'))
+    assert expanded_count >= 1, (
+        f"Expected expanded slots for live games in timelapse frame, got slots: {slots}"
     )
 
 
