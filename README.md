@@ -10,7 +10,7 @@ Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480
 
 ## Display Modes
 
-Switch modes any time via `display_mode` in `config/config.yaml` or via the Discord bot.
+Switch modes any time via `display_mode` in `config/config.yaml` or via the Discord bot. Valid modes: `scoreboard`, `field`, `scorecard`, `pitch`, `derby` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
 
 ### Scoreboard — 5×3 grid (15 games)
 
@@ -51,6 +51,13 @@ The right panel shows:
 
 ![Wide cell — live game with pitch zone](docs/wide_cell.png)
 
+Wide-cell behavior is configurable:
+
+- `wide_cell_always` — always show a wide cell for the in-progress game farthest along, even with a full 15-game slate (one game is dropped to make room).
+- `wide_cell_featured` — reserve the wide cell for the primary team's game while it's live, falling back to the farthest-along game otherwise.
+- `triple_cell_live` — expand the featured live game to a **3-cell (435 px) tile**: score/linescore, pitch zone/situation, and a third cell with the venue outfield wall, infield diamond, and live runner positions. Falls back to a 2-cell tile when a 3-unit tile can't fit the column.
+- `hide_non_live_games` — when at least one game is live, drop finished and not-yet-started games from the grid so live games can expand into wide/triple tiles (up to 3 live games get triple tiles). The pinned favorite game is never hidden.
+
 ---
 
 ### Standings Sidebar
@@ -62,6 +69,37 @@ Both outer edges of the scoreboard display division standings. AL divisions run 
 - A **clinch box** around the slot when a team has clinched a playoff spot or division
 
 ![Standings sidebar — AL (left) and NL (right) with streak badges](docs/standings_sidebar.png)
+
+---
+
+### Top Header Strip
+
+The strip across the top of the scoreboard shows one of two things:
+
+- **Wildcard standings** (`show_wildcard_standings`) — AL top-10 left-to-right on the left half, NL right-to-left on the right half; rank 1 at the outer edge, converging toward center, with abbreviation and games back per slot.
+- **Postseason bracket** (`show_playoff_bracket`) — during the postseason window (mid-September to mid-November), once real bracket data exists, the strip auto-switches to a series-win bracket fetched from the MLB schedule API. It falls back to wildcard standings the rest of the year.
+
+---
+
+### Empty-Cell Panels
+
+When the slate has fewer than 15 games, the spare grid cells are filled with informational panels instead of being left blank. In priority order:
+
+- **Transactions ticker** (`show_transactions_ticker`) — recent MLB transactions (IL moves, call-ups/demotions, signings), claims the first free slot.
+- **Season leaders panel** (`show_leaders_panel`) — cycles through HR / AVG / ERA / Saves / Hits / RBI / SB, rotating category every `leaders_rotation_minutes` (default 5) and refreshed once a day.
+- **Config QR code** (`show_config_qr`) — a QR code linking straight to the [config web server](#config-web-server).
+
+---
+
+### Idle Screen
+
+When there are no games at all for the day (e.g. the All-Star break or a deep off-season day), the display shows an idle **"Recent Moves"** screen: two columns of recent MLB transactions with a team **mascot** image bouncing across the screen as an overlay. Mascots are fetched by `src/download_mascots.py`.
+
+---
+
+### Home Run Derby
+
+On the Derby's date, when there are no regular games to show, the display auto-switches to a single-elimination **Home Run Derby bracket** (8 batters) — see `auto_derby_mode`. Setting `display_mode: derby` forces it on unconditionally. Bracket data lives in `data/derby_bracket.json`; once the event goes live the run polls MLB every 60 seconds until it ends (capped at 3 hours).
 
 ---
 
@@ -133,24 +171,32 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 | Feature | Detail |
 |---|---|
 | **Wildcard strip** | Top row of team logos, AL left → NL right, ordered by games back |
+| **Playoff bracket** | Header strip auto-switches to a series-win bracket during the postseason |
 | **Standings sidebar** | AL East/Central/West on left edge, NL on right — 1st through 5th |
 | **Streak badge** | `W7` / `L3` displayed below each team's logo in the standings sidebar |
 | **Movement indicator** | Line on sidebar outer edge when a team changed rank in the last 20 hours |
-| **Wide cell** | Primary team gets a 2-slot tile with pitch zone, K strip, and BSO count |
+| **Wide / triple cell** | Featured game gets a 2- or 3-slot tile with pitch zone, K strip, BSO, and outfield wall |
+| **Hide non-live** | Drop finished/upcoming games so live games expand into wide/triple tiles |
 | **No-hitter alert** | Header inverts (white-on-black) when a no-hitter or perfect game is active ≥ 6th inning |
 | **Win probability** | Live bar with logos at their real-time win % position |
 | **Live details** | Pitcher, current batter, fastball %, pitch count, last pitch speed |
+| **Leaders panel** | HR / AVG / ERA / Saves / Hits / RBI / SB leaders in a spare cell, rotating |
+| **Transactions ticker** | Recent IL moves, call-ups, and signings in a spare cell |
+| **Idle screen** | "Recent Moves" + bouncing mascot when there are no games today |
+| **Derby bracket** | Auto Home Run Derby single-elimination bracket on Derby day |
 | **Team logos** | Auto-fetched from ESPN CDN; per-team invert/darken config |
 | **Ghost logo** | Winning team logo as watermark on Final tiles |
 | **Weather** | Open-Meteo (no key needed) with stadium GPS coordinates |
 | **Vegas odds** | Moneyline displayed on pre-game tiles |
 | **Smart polling** | Skips API on off-days; finds next game date up to 30 days ahead |
 | **Night mode** | Suppresses refreshes during configurable overnight window |
-| **Morning mode** | Alternates yesterday finals ↔ today schedule until `morning_end` hour |
+| **Morning mode** | Alternates yesterday finals ↔ today schedule until `morning_end` (separate weekday/weekend cutoffs) |
+| **Auto dark mode** | White-on-black between `dark_start` and `dark_end`; full refresh forced on the transition |
 | **Auto timelapse** | Generates `.gif` + `.mp4` after all games go Final |
 | **Discord bot** | Switch mode or team from a Discord channel; bot posts preview image |
-| **Dark mode** | White-on-black; toggled via `dark_mode: true` |
-| **WBC / MiLB** | Sport priority list — WBC, Triple-A, Spring Training, International |
+| **MLB / MiLB / WBC** | `league_mode` (`mlb`/`aaa`) plus a sport priority list — WBC, Spring Training, International, Triple-A |
+| **Config QR** | QR to the mobile config server shown in a spare cell |
+| **Debug overlay** | Uptime + last successful fetch time in the corner (`show_debug_overlay`) |
 | **Partial refresh** | Changed regions refreshed without full-screen flash |
 
 ---
@@ -161,14 +207,15 @@ Edit `config/config.yaml`:
 
 ```yaml
 # ── Display mode ──────────────────────────────────────────────
-# scoreboard | field | scorecard | pitch
+# scoreboard | linescore | field | scorecard | pitch | derby
 display_mode: scoreboard
+auto_derby_mode: true        # auto-show the Derby bracket on Derby day when no games
 
 # ── Primary team (for single-game modes and favorite-first slot) ──
 primary: NYY
 primary_backup: BOS
 primary_backup_2: NYM
-favorite_team_first: true   # pin primary team to top-left slot
+favorite_team_first: true    # pin primary team to top-left slot
 
 # ── Refresh ───────────────────────────────────────────────────
 update_interval: 14          # minutes between schedule API calls
@@ -178,8 +225,9 @@ max_live_game_calls: 15      # max live-feed calls per game per run
 # ── Timezone ──────────────────────────────────────────────────
 timezone: America/Chicago
 
-# ── Sport priority (first sport with regular-season games wins) ──
-sport_id_priority:
+# ── League / sport priority (first sport with games wins) ─────
+league_mode: mlb             # "mlb" (AL/NL) or "aaa" (Triple-A, IL/PCL)
+sport_id_priority:           # only used when league_mode is "mlb"
   - 1    # MLB
   - 8    # World Baseball Classic
   - 16   # Spring Training
@@ -191,21 +239,35 @@ night_mode: true
 night_start: 2               # hour (24h) to stop refreshing
 night_end: 7                 # hour (24h) to resume
 morning_alternate_games: true
-morning_end: 11              # hour when "yesterday" mode gives way to today
+morning_end: 9               # weekday hour when "yesterday" gives way to today
+morning_end_weekend: 11      # weekend cutoff
 
-# ── Appearance ────────────────────────────────────────────────
-dark_mode: true
+# ── Auto dark mode ────────────────────────────────────────────
+dark_start: 20               # 8pm — display goes white-on-black
+dark_end: 7                  # 7am — display returns to light
 use_team_logos: true
 small_logo_x_offset: 2
 
 # ── Scoreboard extras ─────────────────────────────────────────
 show_wildcard_standings: true
 show_standings_sidebar: true
+show_playoff_bracket: true    # header auto-switches to bracket in postseason
 scoreboard_win_probability: true
 scoreboard_live_details: true
-final_linescore_minutes: 60  # minutes to keep linescore visible after Final
-show_config_qr: true         # QR code to the config web server in a spare cell (<15 games)
-config_server_port: 8080     # port for `python src/config_server.py` — see Config Web Server below
+final_linescore_minutes: 60   # minutes to keep linescore visible after Final
+hide_non_live_games: true     # drop finished/upcoming games so live games expand
+wide_cell_always: false       # always show a wide cell for the farthest-along game
+wide_cell_featured: false     # reserve the wide cell for the primary team's live game
+triple_cell_live: false       # expand featured live game to a 3-cell tile
+
+# ── Empty-cell panels (shown when < 15 games) ─────────────────
+show_transactions_ticker: false
+transactions_lookback_days: 2
+show_leaders_panel: true
+leaders_rotation_minutes: 5
+show_config_qr: false         # QR to the config web server in a spare cell
+config_server_port: 8080      # port for `python src/config_server.py`
+show_debug_overlay: true      # uptime + last fetch time in the corner
 
 # ── Weather ───────────────────────────────────────────────────
 weather:
@@ -230,6 +292,9 @@ poetry install
 # Download team logos (MLB + WBC)
 poetry run python src/download_logos.py
 poetry run python src/download_logos.py --wbc
+
+# Download mascot images (for the idle "Recent Moves" screen)
+poetry run python src/download_mascots.py
 
 # Seed standings cache before enabling show_standings_sidebar
 poetry run python src/standings.py
@@ -350,10 +415,21 @@ mlb_display/
 │   ├── field_view.py             # Field diagram renderer
 │   ├── scorecard_view.py         # At-bat scorecard renderer
 │   ├── pitch_view.py             # Pitch location renderer
+│   ├── image_derby.py            # Home Run Derby bracket renderer
+│   ├── image_idle.py             # Idle "Recent Moves" screen + bouncing mascot
+│   ├── image_leaders.py          # Season-leaders panel cell
+│   ├── image_transactions.py     # Transactions ticker cell
+│   ├── image_standings.py        # Standings sidebar + wildcard / playoff strip
+│   ├── fetch_derby.py            # Derby bracket fetcher → data/derby_bracket.json
+│   ├── fetch_leaders.py          # Season-leaders fetcher (MLB Stats API)
+│   ├── fetch_idle.py             # Historical game fetcher for the idle screen
 │   ├── game_detail_fetch.py      # MLB live feed API (pitch-by-pitch)
-│   ├── standings.py              # Standings fetcher + cache
+│   ├── standings.py              # Standings + transactions fetcher + cache
+│   ├── weather.py                # Open-Meteo forecast fetcher
+│   ├── timelapse.py              # End-of-day .gif / .mp4 generator
 │   ├── config_server.py          # Mobile-first config web server
 │   ├── download_logos.py         # Bulk logo downloader (MLB + WBC)
+│   ├── download_mascots.py       # Mascot image downloader (idle screen)
 │   ├── display_eink.py           # Waveshare driver wrapper (macOS-safe)
 │   ├── display.py                # CLI wrapper for display_eink
 │   ├── refresh_tracker.py        # Full-refresh interval tracker (burn-in prevention)
@@ -365,12 +441,14 @@ mlb_display/
 │   ├── games.json                # Cached game state from last fetch
 │   ├── teams.json                # Team abbreviation cache
 │   ├── standings.json            # Standings cache (refreshed on Final)
+│   ├── derby_bracket.json        # Home Run Derby bracket state
 │   └── schedule_state.json       # Next game date (smart polling)
 ├── docs/                         # README screenshots
 ├── pic/
 │   ├── Font.ttc                  # Display font
 │   ├── logo_render_config.json   # Per-team logo invert/darken settings
-│   └── logos/                    # Team logo PNGs (auto-downloaded)
+│   ├── logos/                    # Team logo PNGs (auto-downloaded)
+│   └── mascots/                  # Team mascot PNGs (auto-downloaded)
 └── output/                       # Generated images and timelapses
 ```
 
