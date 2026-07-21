@@ -155,7 +155,7 @@ triple_cell_live: false
 # favorite_team_first) is never hidden, regardless of its state.
 # Can also be set via the HIDE_NON_LIVE_GAMES environment variable
 # (true/1/yes), which overrides this value.
-hide_non_live_games: false
+hide_non_live_games: true
 
 # Season leaders panel: show HR / AVG / ERA leaders in an empty grid cell when
 # fewer than 15 games are on the slate. Rotates categories every 5 minutes.

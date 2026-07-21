@@ -319,7 +319,15 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             Himage = Image.new('1', (800, 480), 255)
             Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob)
 
-        Himage = ImageOps.invert(Himage.convert('L')).convert('1')
+        # Only invert to white-on-black during the configured dark window — matching
+        # the normal grid view — so a real light<->dark polarity flip occurs and the
+        # existing day/night transition logic in main.py can force a true full
+        # e-ink refresh at the boundary. Previously this always inverted regardless
+        # of dark_mode, so the display never actually changed polarity and the
+        # black background only ever got small partial refreshes, which accumulate
+        # visible ghosting on e-ink far more than the same content in light mode.
+        if config.get('dark_mode', False):
+            Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 
         # Partial refresh for live fullscreen: map changed fields to display zones and
         # refresh only the affected zones.  Three zones:
