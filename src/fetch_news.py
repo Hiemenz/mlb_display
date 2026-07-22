@@ -118,7 +118,7 @@ def fetch_news(primary_abbr=None, team_only=True, force=False):
         return cached or {}
 
 
-def main():
+def main():  # pragma: no cover
     """CLI entry point: fetch MLB news headlines and write to data/news.json."""
     parser = argparse.ArgumentParser(description='Fetch recent MLB news headlines')
     parser.add_argument('--team', help='Primary team abbreviation to filter to, e.g. NYY')
@@ -130,5 +130,5 @@ def main():
         print(f"  • {a['headline']}")
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()
