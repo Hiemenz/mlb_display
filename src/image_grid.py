@@ -769,6 +769,15 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     else:
         game_list, _slots = compute_grid_layout(game_state_data, team_data, config)
 
+    # Finished games dropped from the grid (e.g. by hide_non_live_games) are
+    # shown in spare cells ahead of the leaders panel so scores aren't lost.
+    _placed_pks = {g.get('game_pk') for g in game_list[:len(_slots)]}
+    _dropped_finals = [
+        g for g in game_state_data
+        if g.get('game_pk') not in _placed_pks
+        and g.get('detailed_state') in _FINAL_STATES
+    ]
+
     # Build per-team stats lookup {str(team_id): {'streak', 'l10_wins', 'l10_losses', 'wins', 'losses'}}
     _standings = load_json_file('standings.json')
     streak_map = {}
@@ -849,6 +858,19 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         Himage = draw_magic_cell(
             Himage, _mn_lx, _mn_ly, _mn_standings, team_data,
             primary_abbr=_primary_abbr, use_logos=use_logos,
+        )
+
+    # Dropped Final games — show scores for games hidden by hide_non_live_games.
+    for _fg in _dropped_finals:
+        if not _free_slots:
+            break
+        _fg_col, _fg_row = _free_slots.pop(0)
+        _fg_lx = _fg_col * 150 + x_start
+        _fg_ly = _fg_row * 150 + y_start
+        Himage = draw_box(
+            Himage, _fg_lx, _fg_ly, _fg, team_data,
+            use_logos=use_logos, logo_x_offset=logo_x_offset,
+            streak_map=streak_map,
         )
 
     if config.get('show_leaders_panel', False) and _free_slots:

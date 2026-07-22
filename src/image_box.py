@@ -3180,11 +3180,12 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     draw = ImageDraw.Draw(Himage)
     _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
 
-    # Venue name: right-aligned at the very bottom of cell 3.
-    # Drawn after the field diagram so it sits on top of any clipped elements.
+    # Venue name: small right-aligned label at the bottom of cell 3.
+    # Drawn on top of the field diagram without erasing it — kept small (7 pt)
+    # so the text is legible without significantly obscuring field elements.
     _venue_name = game_data.get('venue', '') or ''
     if _venue_name:
-        _vfont = _get_font(9)
+        _vfont = _get_font(7)
         _max_vw = int(FIELD_W) - 4
         _vname = _venue_name
         while _vname and int(_vfont.getlength(_vname)) > _max_vw:
