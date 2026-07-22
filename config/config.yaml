@@ -170,6 +170,20 @@ leaders_rotation_minutes: 5
 show_transactions_ticker: false
 transactions_lookback_days: 2
 
+# News headlines panel: show recent MLB news in an empty grid cell when fewer
+# than 15 games are on the slate. Uses ESPN's public MLB news API (no key
+# needed). When news_team_only is true, headlines are filtered to the primary
+# team; falls back to league-wide headlines when fewer than 3 team stories
+# are found. Refreshed every 6 hours.
+show_news_panel: false
+news_team_only: true
+
+# Magic / elimination numbers: show the primary team's division standings with
+# each team's magic number (leader) or elimination number (trailer) in an empty
+# grid cell. Reuses the standings already cached in data/standings.json — no
+# extra API call. Only meaningful during the regular season.
+show_magic_numbers: false
+
 # Debug overlay: show system uptime and last successful game-data fetch time
 # in the bottom-right corner. Useful when the Pi loses network connectivity.
 show_debug_overlay: true
