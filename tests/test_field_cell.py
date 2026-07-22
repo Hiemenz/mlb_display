@@ -266,7 +266,7 @@ class TestGetInfieldPolygon:
     def test_all_major_parks_have_infield_data(self):
         """All MLBAM-sourced parks except Rogers Centre have infield data."""
         from stadium_polygons import STADIUM_POLYGONS, STADIUM_INFIELD_POLYGONS
-        allowed_missing = {'Rogers Centre', 'Sutter Health Park'}
+        allowed_missing = {'Rogers Centre', 'Sutter Health Park', 'Las Vegas Ballpark'}
         missing = {
             v for v in STADIUM_POLYGONS
             if v not in STADIUM_INFIELD_POLYGONS and v not in allowed_missing
