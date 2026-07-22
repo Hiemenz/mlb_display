@@ -3192,7 +3192,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         _vw = int(_vfont.getlength(_vname))
         _vx = int(fp_x + FIELD_W) - _vw - 1
         _vfont_h = _vfont.getbbox('Ay')[3]
-        _vy = start_y + int(TOTAL_H) + 14
+        _vy = start_y + int(TOTAL_H) + 9
         draw.text((_vx, _vy), _vname, font=_vfont, fill=0)
 
     # Invert spanning header when a run scored or score changed
