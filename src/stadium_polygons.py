@@ -58,6 +58,15 @@ if 'Sutter Health Park' not in STADIUM_POLYGONS:
         (229.8,  229.8),   # RF foul pole, 325 ft
     ]
 
+if 'Las Vegas Ballpark' not in STADIUM_POLYGONS:
+    STADIUM_POLYGONS['Las Vegas Ballpark'] = [
+        (-240.4, 240.4),   # LF foul pole, 340 ft
+        (-145.4, 351.1),   # LCF, 380 ft
+        (0.0,    415.0),   # CF, 415 ft
+        (145.4,  351.1),   # RCF, 380 ft
+        (240.4,  240.4),   # RF foul pole, 340 ft
+    ]
+
 
 # ---------------------------------------------------------------------------
 # Team name mapping (stadium → franchise name)
@@ -151,25 +160,26 @@ def dimensions_to_polygon(dims):
 # IDs come from the MLB Stats API schedule endpoint (venue.id).
 # ---------------------------------------------------------------------------
 _VENUE_ID_TO_KEY = {
+    # IDs verified against the MLB Stats API schedule endpoint (2026 season).
     1:    'Angel Stadium',
-    2:    'Camden Yards',
+    2:    'Camden Yards',            # API: 'Oriole Park at Camden Yards'
     3:    'Fenway Park',
-    4:    'Guaranteed Rate Field',
+    4:    'Guaranteed Rate Field',   # API: 'Rate Field'
     5:    'Progressive Field',
     7:    'Kauffman Stadium',
     12:   'Tropicana Field',
     14:   'Rogers Centre',
     15:   'Chase Field',
-    16:   'Coors Field',
     17:   'Wrigley Field',
-    22:   'Dodger Stadium',
+    19:   'Coors Field',
+    22:   'Dodger Stadium',          # API: 'UNIQLO Field at Dodger Stadium' (2025)
     31:   'PNC Park',
     32:   'American Family Field',
     680:  'T-Mobile Park',
-    2392: 'Minute Maid Park',   # renamed Daikin Park (2025)
+    2392: 'Minute Maid Park',        # API: 'Daikin Park' (renamed 2025)
     2394: 'Comerica Park',
     2395: 'Oracle Park',
-    2529: 'Sutter Health Park',
+    2529: 'Sutter Health Park',      # A's Sacramento park (also used alongside Las Vegas in 2026)
     2602: 'Great American Ball Park',
     2680: 'Petco Park',
     2681: 'Citizens Bank Park',
@@ -181,6 +191,7 @@ _VENUE_ID_TO_KEY = {
     4169: 'loanDepot park',
     4705: 'Truist Park',
     5325: 'Globe Life Field',
+    5355: 'Las Vegas Ballpark',      # A's home (2026)
 }
 
 
