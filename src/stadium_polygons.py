@@ -143,36 +143,89 @@ def dimensions_to_polygon(dims):
 
 
 # ---------------------------------------------------------------------------
+# Venue-ID → polygon key mapping.
+#
+# MLB venue IDs are stable across stadium renames (e.g. Minute Maid Park →
+# Daikin Park in 2025, Guaranteed Rate Field formerly US Cellular, etc.), so
+# an ID-first lookup survives future name changes without touching this file.
+# IDs come from the MLB Stats API schedule endpoint (venue.id).
+# ---------------------------------------------------------------------------
+_VENUE_ID_TO_KEY = {
+    1:    'Angel Stadium',
+    2:    'Camden Yards',
+    3:    'Fenway Park',
+    4:    'Guaranteed Rate Field',
+    5:    'Progressive Field',
+    7:    'Kauffman Stadium',
+    12:   'Tropicana Field',
+    14:   'Rogers Centre',
+    15:   'Chase Field',
+    16:   'Coors Field',
+    17:   'Wrigley Field',
+    22:   'Dodger Stadium',
+    31:   'PNC Park',
+    32:   'American Family Field',
+    680:  'T-Mobile Park',
+    2392: 'Minute Maid Park',   # renamed Daikin Park (2025)
+    2394: 'Comerica Park',
+    2395: 'Oracle Park',
+    2529: 'Sutter Health Park',
+    2602: 'Great American Ball Park',
+    2680: 'Petco Park',
+    2681: 'Citizens Bank Park',
+    2889: 'Busch Stadium',
+    3289: 'Citi Field',
+    3309: 'Nationals Park',
+    3312: 'Target Field',
+    3313: 'Yankee Stadium',
+    4169: 'loanDepot park',
+    4705: 'Truist Park',
+    5325: 'Globe Life Field',
+}
+
+
+# ---------------------------------------------------------------------------
 # Lookup helpers
 # ---------------------------------------------------------------------------
 
-def get_polygon(venue_name):
-    """Return wall polygon for *venue_name*, with case-insensitive fuzzy fallback.
+def get_polygon(venue_name, venue_id=None):
+    """Return wall polygon for the given venue.
 
-    Returns None if no reasonable match is found; callers should fall back to
-    a generic 400-ft symmetric polygon.
+    Lookup order: MLB venue ID (stable across renames) → exact name →
+    case-insensitive substring match. Returns None when no match is found;
+    callers should fall back to a generic 400-ft symmetric polygon.
     """
-    if venue_name in STADIUM_POLYGONS:
+    if venue_id is not None:
+        key = _VENUE_ID_TO_KEY.get(int(venue_id))
+        if key and key in STADIUM_POLYGONS:
+            return STADIUM_POLYGONS[key]
+    if venue_name and venue_name in STADIUM_POLYGONS:
         return STADIUM_POLYGONS[venue_name]
-    lower = venue_name.lower()
-    for k, v in STADIUM_POLYGONS.items():
-        if lower in k.lower() or k.lower() in lower:
-            return v
+    if venue_name:
+        lower = venue_name.lower()
+        for k, v in STADIUM_POLYGONS.items():
+            if lower in k.lower() or k.lower() in lower:
+                return v
     return None
 
 
-def get_infield_polygon(venue_name):
-    """Return infield dirt cutout polygon for *venue_name*, fuzzy-matched.
+def get_infield_polygon(venue_name, venue_id=None):
+    """Return infield dirt cutout polygon for the given venue, ID-first.
 
     Returns None if no match is found; callers should fall back to a
     generic cutout shape.
     """
-    if venue_name in STADIUM_INFIELD_POLYGONS:
+    if venue_id is not None:
+        key = _VENUE_ID_TO_KEY.get(int(venue_id))
+        if key and key in STADIUM_INFIELD_POLYGONS:
+            return STADIUM_INFIELD_POLYGONS[key]
+    if venue_name and venue_name in STADIUM_INFIELD_POLYGONS:
         return STADIUM_INFIELD_POLYGONS[venue_name]
-    lower = venue_name.lower()
-    for k, v in STADIUM_INFIELD_POLYGONS.items():
-        if lower in k.lower() or k.lower() in lower:
-            return v
+    if venue_name:
+        lower = venue_name.lower()
+        for k, v in STADIUM_INFIELD_POLYGONS.items():
+            if lower in k.lower() or k.lower() in lower:
+                return v
     return None
 
 

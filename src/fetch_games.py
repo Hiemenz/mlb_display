@@ -590,6 +590,7 @@ def parse_games(data, sport_id=None, config=None):
             'game_start': convert_time_z_to(game.get('gameDate'), tz),
             'detailed_state': detailed_state,
             'venue': game.get('venue', {}).get('name'),
+            'venue_id': game.get('venue', {}).get('id'),
             'current_inning': linescore.get('currentInning'),
             'currentInningOrdinal': linescore.get('currentInningOrdinal'),
             'inningState': linescore.get('inningState'),

@@ -60,8 +60,9 @@ def _draw_field(draw, data, fonts=None):
     """
     hx, hy = HOME_PLATE
 
-    venue = data.get('venue', '')
-    wall_poly = get_polygon(venue) or _DEFAULT_WALL_POLY  # [(x_ft, y_ft), ...]
+    venue    = data.get('venue', '')
+    venue_id = data.get('venue_id')
+    wall_poly = get_polygon(venue, venue_id) or _DEFAULT_WALL_POLY  # [(x_ft, y_ft), ...]
 
     wall_pts = [_poly_pt(x, y) for x, y in wall_poly]
     lf_pole  = wall_pts[0]
