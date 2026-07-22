@@ -3180,20 +3180,27 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     draw = ImageDraw.Draw(Himage)
     _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
 
-    # Venue name: small right-aligned label at the bottom of cell 3.
-    # Drawn on top of the field diagram without erasing it — kept small (7 pt)
-    # so the text is legible without significantly obscuring field elements.
+    # Venue name: right-aligned label in the footer gap below the cell border.
+    # Font size grows from 7 pt upward until adding one more point would push
+    # the text bottom past the 150 px field boundary, then steps back one size.
     _venue_name = game_data.get('venue', '') or ''
     if _venue_name:
-        _vfont = _get_font(8)
+        _vy = start_y + int(TOTAL_H) + 9          # top of text in footer gap
+        _field_bottom = start_y + 150              # vis_h=150 hard limit
+        _vfont = _get_font(7)
+        _vfont_h = _vfont.getbbox('Ay')[3]
+        for _fs in range(8, 20):
+            _cand = _get_font(_fs)
+            _ch   = _cand.getbbox('Ay')[3]
+            if _vy + _ch > _field_bottom:
+                break
+            _vfont, _vfont_h = _cand, _ch
         _max_vw = int(FIELD_W) - 4
         _vname = _venue_name
         while _vname and int(_vfont.getlength(_vname)) > _max_vw:
             _vname = _vname[:-1]
         _vw = int(_vfont.getlength(_vname))
         _vx = int(fp_x + FIELD_W) - _vw - 1
-        _vfont_h = _vfont.getbbox('Ay')[3]
-        _vy = start_y + int(TOTAL_H) + 9
         draw.text((_vx, _vy), _vname, font=_vfont, fill=0)
 
     # Invert spanning header when a run scored or score changed
