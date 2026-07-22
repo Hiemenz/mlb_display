@@ -2770,8 +2770,9 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     HX = int(fx + 75 * s)
 
     venue     = game_data.get('venue', '')
-    wall_poly = _field_get_polygon(venue) or _FIELD_FALLBACK_POLY
-    infield_poly = (_field_get_infield_polygon(venue)
+    venue_id  = game_data.get('venue_id')
+    wall_poly = _field_get_polygon(venue, venue_id) or _FIELD_FALLBACK_POLY
+    infield_poly = (_field_get_infield_polygon(venue, venue_id)
                      or _field_get_infield_polygon('Yankee Stadium'))
 
     _cx0 = fx + 1
@@ -3178,6 +3179,20 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     # This gives ~13 px above CF and places home plate ~6 px into the footer.
     draw = ImageDraw.Draw(Himage)
     _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
+
+    # Venue name: right-aligned in the bottom-right corner of cell 3.
+    # Drawn after the field diagram so it sits on top of any clipped elements.
+    _venue_name = game_data.get('venue', '') or ''
+    if _venue_name:
+        _vfont = _get_font(9)
+        _max_vw = int(FIELD_W * s) - 4
+        _vname = _venue_name
+        while _vname and int(_vfont.getlength(_vname)) > _max_vw:
+            _vname = _vname[:-1]
+        _vw = int(_vfont.getlength(_vname))
+        _vx = int(fp_x + FIELD_W * s) - _vw - 2
+        _vy = int(start_y + TOTAL_H * s) - 11
+        draw.text((_vx, _vy), _vname, font=_vfont, fill=0)
 
     # Invert spanning header when a run scored or score changed
     _between   = game_data.get('inningState') in ('Middle', 'End')
