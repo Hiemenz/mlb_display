@@ -10,6 +10,8 @@ from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box, draw_triple_box
 from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
 from image_transactions import draw_transactions_cell
+from image_news import draw_news_cell
+from image_magic import draw_magic_cell
 
 
 # Live game states that qualify for a wide (2-cell) tile. Challenge/review states
@@ -818,8 +820,8 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
 
     _free_slots = _free_grid_slots(_slots)
 
-    # Transactions ticker claims the first free slot, ahead of the leaders
-    # panel, whenever there's room (i.e. fewer than 15 games on the slate).
+    # Free-slot panels, in priority order (first match claims the slot).
+    # Transactions ticker claims the first free slot, ahead of everything.
     if config.get('show_transactions_ticker', False) and _free_slots:
         _tx_col, _tx_row = _free_slots.pop(0)
         _tx_data = load_json_file('transactions.json').get('transactions', [])
@@ -827,6 +829,26 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         _tx_ly = _tx_row * 150 + y_start
         Himage = draw_transactions_cell(
             Himage, _tx_lx, _tx_ly, _tx_data, team_data, use_logos=use_logos,
+        )
+
+    # News headlines panel — team-scoped or league-wide.
+    if config.get('show_news_panel', False) and _free_slots:
+        _nx_col, _nx_row = _free_slots.pop(0)
+        _nx_data = load_json_file('news.json')
+        _nx_lx = _nx_col * 150 + x_start
+        _nx_ly = _nx_row * 150 + y_start
+        Himage = draw_news_cell(Himage, _nx_lx, _nx_ly, _nx_data, team_data, use_logos=use_logos)
+
+    # Magic / elimination numbers for the primary team's division.
+    if config.get('show_magic_numbers', False) and _free_slots:
+        _mn_col, _mn_row = _free_slots.pop(0)
+        _mn_standings = load_json_file('standings.json')
+        _mn_lx = _mn_col * 150 + x_start
+        _mn_ly = _mn_row * 150 + y_start
+        _primary_abbr = config.get('primary', '')
+        Himage = draw_magic_cell(
+            Himage, _mn_lx, _mn_ly, _mn_standings, team_data,
+            primary_abbr=_primary_abbr, use_logos=use_logos,
         )
 
     if config.get('show_leaders_panel', False) and _free_slots:

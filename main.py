@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
+from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from render_scoreboard import render
 from display import send_to_display
@@ -171,6 +172,7 @@ def _maybe_generate_video(date_str, config):
 _STANDINGS_MAX_AGE_HOURS = 20  # refresh if standings.json is older than this
 _LEADERS_MAX_AGE_HOURS = 24    # refresh if leaders.json is older than this
 _TRANSACTIONS_MAX_AGE_HOURS = 3  # refresh if transactions.json is older than this
+_NEWS_MAX_AGE_HOURS = 6         # refresh if news.json is older than this
 _PLAYOFF_BRACKET_MAX_AGE_HOURS = 1  # refresh cadence during an active postseason
 
 
@@ -228,6 +230,21 @@ def _should_refresh_transactions(force=False):
     age_hours = (_t.time() - os.path.getmtime(transactions_path)) / 3600
     if age_hours >= _TRANSACTIONS_MAX_AGE_HOURS:
         print(f"Transactions stale ({age_hours:.1f}h old) — refreshing")
+        return True
+    return False
+
+
+def _should_refresh_news(force=False):
+    """Return True if news.json needs a refresh (simple age check)."""
+    if force:
+        return True
+    news_path = _data_path('news.json')
+    if not os.path.exists(news_path):
+        return True
+    import time as _t
+    age_hours = (_t.time() - os.path.getmtime(news_path)) / 3600
+    if age_hours >= _NEWS_MAX_AGE_HOURS:
+        print(f"News stale ({age_hours:.1f}h old) — refreshing")
         return True
     return False
 
@@ -728,6 +745,12 @@ Examples:
                         fetch_transactions(config.get('transactions_lookback_days', 2))
                     except Exception as _tx_e:
                         print(f"Warning: transactions fetch on poll-skip: {_tx_e}")
+                if config.get('show_news_panel', False) and _should_refresh_news():
+                    try:
+                        fetch_news(primary_abbr=config.get('primary'),
+                                   team_only=config.get('news_team_only', True))
+                    except Exception as _nx_e:
+                        print(f"Warning: news fetch on poll-skip: {_nx_e}")
                 return
 
     # 6. Fetch
@@ -850,6 +873,15 @@ Examples:
             fetch_transactions(config.get('transactions_lookback_days', 2))
         except Exception as e:
             print(f"Warning: transactions fetch failed: {e}")
+
+    # 7c3. News headlines refresh — team-scoped or league-wide, every 6 hours.
+    if config.get('show_news_panel', False) and _should_refresh_news(force=_force_data_refresh):
+        try:
+            fetch_news(primary_abbr=config.get('primary'),
+                       team_only=config.get('news_team_only', True),
+                       force=_force_data_refresh)
+        except Exception as e:
+            print(f"Warning: news fetch failed: {e}")
 
     # 7d. Season leaders refresh (HR/AVG/ERA/Saves/Hits) — only when panel is
     # enabled, and only once games have gone Final (or cache is stale/missing),
