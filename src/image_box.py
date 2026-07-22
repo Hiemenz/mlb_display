@@ -3180,20 +3180,32 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     draw = ImageDraw.Draw(Himage)
     _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
 
-    # Venue name: right-aligned at the very bottom of cell 3.
-    # Drawn after the field diagram so it sits on top of any clipped elements.
+    # Venue name: right-aligned label in the footer gap below the cell border.
+    # A tight white rectangle erases the infield polygon lines behind the glyphs.
+    # Max width is capped so the label stays right of the home-plate dirt area;
+    # font shrinks (never truncates) until the full name fits inside that cap.
     _venue_name = game_data.get('venue', '') or ''
     if _venue_name:
-        _vfont = _get_font(9)
-        _max_vw = int(FIELD_W) - 4
-        _vname = _venue_name
-        while _vname and int(_vfont.getlength(_vname)) > _max_vw:
-            _vname = _vname[:-1]
-        _vw = int(_vfont.getlength(_vname))
-        _vx = int(fp_x + FIELD_W) - _vw - 1
+        _vy        = start_y + int(TOTAL_H) + 9
+        _field_bot = start_y + int(150 * scale)
+        # Left boundary: 2 px right of home plate centre (HX = FIELD_W/2) plus margin.
+        _max_vw    = int(FIELD_W // 2) - 8   # = 67 px at scale=1
+        # Grow from 5 pt upward; stop at the last size where the full name fits
+        # both horizontally (≤ _max_vw) and vertically (≤ _field_bot).
+        _vfont = _get_font(5)
+        for _fs in range(6, 20):
+            _cand = _get_font(_fs)
+            if _vy + _cand.getbbox('Ay')[3] > _field_bot:
+                break
+            if int(_cand.getlength(_venue_name)) > _max_vw:
+                break
+            _vfont = _cand
         _vfont_h = _vfont.getbbox('Ay')[3]
-        _vy = start_y + int(TOTAL_H) + 14
-        draw.text((_vx, _vy), _vname, font=_vfont, fill=0)
+        if _vy + _vfont_h <= _field_bot and int(_vfont.getlength(_venue_name)) <= _max_vw:
+            _vw = int(_vfont.getlength(_venue_name))
+            _vx = int(fp_x + FIELD_W) - _vw - 1
+            draw.rectangle([_vx, _vy, _vx + _vw, _vy + _vfont_h], fill=255)
+            draw.text((_vx, _vy), _venue_name, font=_vfont, fill=0)
 
     # Invert spanning header when a run scored or score changed
     _between   = game_data.get('inningState') in ('Middle', 'End')
