@@ -3185,7 +3185,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     # so the text is legible without significantly obscuring field elements.
     _venue_name = game_data.get('venue', '') or ''
     if _venue_name:
-        _vfont = _get_font(7)
+        _vfont = _get_font(8)
         _max_vw = int(FIELD_W) - 4
         _vname = _venue_name
         while _vname and int(_vfont.getlength(_vname)) > _max_vw:
