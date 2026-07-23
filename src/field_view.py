@@ -3,7 +3,7 @@ import math
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from generate_image import picdir, _logo_small
-from stadium_polygons import get_polygon
+from stadium_polygons import get_polygon, get_infield_polygon
 
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
@@ -85,12 +85,17 @@ def _draw_field(draw, data, fonts=None):
     draw.line([HOME_PLATE, lf_pole], fill=0, width=1)
     draw.line([HOME_PLATE, rf_pole], fill=0, width=1)
 
-    # Infield arc: edge of infield grass, arcing from 3B side to 1B side through CF
-    # PIL arc angles: 0=east, 90=south, 180=west, 270=north (up on screen = toward CF)
-    # Second base is ~95 px from home plate (127.3 ft × 0.75), so radius > 95 clears it.
-    r_arc = 110  # ~15 px past second base (95 px from home)
-    bb_arc = [hx - r_arc, hy - r_arc, hx + r_arc, hy + r_arc]
-    draw.arc(bb_arc, start=225, end=315, fill=0, width=1)
+    # Infield dirt boundary — venue-specific polygon when available, generic arc fallback.
+    infield_poly = get_infield_polygon(venue, venue_id)
+    if infield_poly:
+        for i in range(len(infield_poly) - 1):
+            x0, y0 = infield_poly[i]
+            x1, y1 = infield_poly[i + 1]
+            draw.line([_poly_pt(x0, y0), _poly_pt(x1, y1)], fill=0, width=1)
+    else:
+        r_arc = 110
+        bb_arc = [hx - r_arc, hy - r_arc, hx + r_arc, hy + r_arc]
+        draw.arc(bb_arc, start=225, end=315, fill=0, width=1)
 
     # Base paths (infield diamond) — slightly bolder
     draw.line([HOME_PLATE, FIRST_BASE],  fill=0, width=2)

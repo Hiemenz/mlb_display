@@ -787,6 +787,17 @@ Examples:
             game_state_data = load_json_file('games.json').get('games', [])
             no_games = _update_schedule_state(game_state_data, date_str, config, sched)
             if no_games:
+                # Leaders only otherwise refresh once games go Final, so a
+                # multi-day gap (All-Star break, rainouts) leaves the cache
+                # frozen.  Run the staleness check here too.
+                if config.get('show_leaders_panel', False) and league_mode != 'aaa' \
+                        and _should_refresh_leaders(sched, force=args.full_refresh):
+                    print("Refreshing leaders during no-games gap (stale cache)...")
+                    try:
+                        _leaders_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
+                        fetch_leaders(sport_id=_leaders_sport)
+                    except Exception as _e:
+                        print(f"Warning: leaders fetch failed: {_e}")
                 if not _maybe_show_derby_bracket(config, no_throttle=_no_throttle,
                                                  auto_open=args.local and system_platform == 'Darwin'):
                     _show_idle_screen(config, sched,
