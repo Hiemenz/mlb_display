@@ -184,7 +184,6 @@ class TestFetchStreaksNetwork:
 
     def test_ip_joined_to_pitcher(self):
         era_leaders = [_pitcher(10, 'Pitcher A', '2.00')]
-        ip_leaders = [{'statGroup': 'pitching', 'person': {'id': 10}, 'value': '88.2'}]
         primary = _primary_payload(era_leaders=era_leaders)
         secondary = {'leagueLeaders': [
             {'statGroup': 'pitching', 'leaderCategory': 'inningsPitched',

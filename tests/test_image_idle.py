@@ -279,13 +279,12 @@ def test_load_mascot_image_download_path():
          patch('image_idle.Image.open', return_value=fake_mascot):
         # Patch download_mascot inside the function's import
         import unittest.mock as _m
-        sys_modules_backup = {}
         import sys
         fake_module = _m.MagicMock()
         fake_module.download_mascot.return_value = True
         sys.modules['download_mascots'] = fake_module
         try:
-            result = image_idle._load_mascot_image('NYY', '147', 80)
+            image_idle._load_mascot_image('NYY', '147', 80)
         finally:
             if 'download_mascots' in sys.modules:
                 del sys.modules['download_mascots']
