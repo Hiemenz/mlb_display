@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import image_box
 import image_grid
 from generate_image import orchestrate_score_board
+from display_eink import display_image
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'output', 'triple_example.bmp')
@@ -129,6 +130,9 @@ def main():
     parser.add_argument('--output', default=_DEFAULT_OUTPUT)
     parser.add_argument('--dark', action='store_true')
     parser.add_argument('--open', action='store_true')
+    parser.add_argument('--display', action='store_true',
+                        help='Push the rendered image to the physical e-ink display '
+                             '(no-op outside Linux / without the waveshare driver)')
     args = parser.parse_args()
 
     # Fixed config, independent of config/config.yaml on disk — draw_out_of_town_score_board
@@ -165,8 +169,12 @@ def main():
     image, _regions = result
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    image.save(args.output)
-    print(f"Image saved to {args.output}")
+
+    if args.display:
+        display_image(image, output_filename=args.output)
+    else:
+        image.save(args.output)
+        print(f"Image saved to {args.output}")
 
     if args.open:
         image.show()
