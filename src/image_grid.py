@@ -12,6 +12,8 @@ from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as
 from image_transactions import draw_transactions_cell
 from image_news import draw_news_cell
 from image_magic import draw_magic_cell
+from image_streaks import draw_streaks_cell
+from image_scoreless import draw_scoreless_cell
 
 
 # Live game states that qualify for a wide (2-cell) tile. Challenge/review states
@@ -859,6 +861,22 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             Himage, _mn_lx, _mn_ly, _mn_standings, team_data,
             primary_abbr=_primary_abbr, use_logos=use_logos,
         )
+
+    # Hot Hitters panel (14-day rolling batting avg).
+    if config.get('show_streaks_panel', False) and _free_slots:
+        _sk_col, _sk_row = _free_slots.pop(0)
+        _sk_data = load_json_file('streaks.json')
+        _sk_lx = _sk_col * 150 + x_start
+        _sk_ly = _sk_row * 150 + y_start
+        Himage = draw_streaks_cell(Himage, _sk_lx, _sk_ly, _sk_data, team_data, use_logos=use_logos)
+
+    # Hot Arms panel (14-day rolling ERA, sorted ascending).
+    if config.get('show_scoreless_panel', False) and _free_slots:
+        _sc_col, _sc_row = _free_slots.pop(0)
+        _sc_data = load_json_file('streaks.json')
+        _sc_lx = _sc_col * 150 + x_start
+        _sc_ly = _sc_row * 150 + y_start
+        Himage = draw_scoreless_cell(Himage, _sc_lx, _sc_ly, _sc_data, team_data, use_logos=use_logos)
 
     # Dropped Final games — show scores for games hidden by hide_non_live_games.
     for _fg in _dropped_finals:

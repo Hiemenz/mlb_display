@@ -1952,8 +1952,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     if _bfill:
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
-                        _bnw = int(font9.getlength(_bnum)) if _bnum else 0
-                        draw.text((_bcx - _bnw // 2, _bcy - 5 * s), _bnum, font=font9, fill=255)
+                        if _bnum:
+                            draw.text((_bcx, _bcy), _bnum, font=font9, fill=255, anchor='mm')
             _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
             Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
@@ -1998,8 +1998,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     if _bfill:
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
-                        _bnw = int(font9.getlength(_bnum)) if _bnum else 0
-                        draw.text((_bcx - _bnw // 2, _bcy - 5 * s), _bnum, font=font9, fill=255)
+                        if _bnum:
+                            draw.text((_bcx, _bcy), _bnum, font=font9, fill=255, anchor='mm')
 
                 outs_list = [None] * 3
                 for i in range(1, 4):
@@ -2399,8 +2399,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 if _bfill:
                     _raw = game_data.get(_bkey)
                     _bnum = str(_raw) if _raw is not None else ''
-                    _bnw = int(font9.getlength(_bnum)) if _bnum else 0
-                    draw.text((_bcx - _bnw // 2, _bcy - 5 * s), _bnum, font=font9, fill=255)
+                    if _bnum:
+                        draw.text((_bcx, _bcy), _bnum, font=font9, fill=255, anchor='mm')
 
         # ── Outs circles: left side, below bases ──────────────────────
         outs_list = [i + 1 <= _outs_count for i in range(3)]

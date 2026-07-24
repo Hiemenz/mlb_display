@@ -424,8 +424,9 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     if config.get('show_standings_sidebar', False):
         if standings_data and 'standings' in standings_data:
-            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode)
-            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode)
+            _magic_badges = config.get('sidebar_magic_badges', False)
+            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode, show_magic_badges=_magic_badges)
+            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode, show_magic_badges=_magic_badges)
 
     if config.get('show_debug_overlay', False):
         Himage = _draw_debug_overlay(Himage, config)

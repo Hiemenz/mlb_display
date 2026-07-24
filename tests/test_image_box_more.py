@@ -559,6 +559,28 @@ class TestDrawBoxFinalFlags:
                                       saver_saves=30)
         assert isinstance(result, Image.Image)
 
+    def test_long_winner_name_with_initial_triggers_truncation(self, white_image, team_data):
+        """WP/LP name longer than cell width hits _truncate_keep_suffix lines 884-901."""
+        long_name = 'C. Bartholomew-Christopherson-McLongname'
+        result = self._render_final(
+            white_image, team_data,
+            winner_name=long_name,
+            loser_name=long_name,
+        )
+        assert isinstance(result, Image.Image)
+
+    def test_long_winner_name_no_record_char_truncation(self, white_image, team_data):
+        """No parens in WP string forces char-by-char truncation (lines 902-904)."""
+        long_name = 'Bartholomew Christopherson-McLongname-III'
+        result = self._render_final(
+            white_image, team_data,
+            winner_name=long_name,
+            loser_name=long_name,
+            winner_record='',
+            loser_record='',
+        )
+        assert isinstance(result, Image.Image)
+
     def test_extra_innings_final(self, white_image, team_data):
         """Extra innings final."""
         result = self._render_final(

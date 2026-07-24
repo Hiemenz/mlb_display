@@ -821,6 +821,25 @@ class TestDrawStandingsSidebarMovers:
 class TestWildcardMovers:
     """Cover lines 68-69 (ValueError on league_rank) and 100-103 (logo paste)."""
 
+    def test_division_leader_skipped_in_wildcard_loop(self):
+        """Division rank 1 teams hit the `continue` on line 63 and are excluded."""
+        from image_standings import derive_wildcard_from_standings
+        data = {
+            'standings': {
+                'American League East': [
+                    {'team_id': '1', 'divisionRank': '1', 'team_name': 'Rays',
+                     'league_rank': '1', 'wild_card_games_back': '-'},
+                    {'team_id': '2', 'divisionRank': '2', 'team_name': 'Yankees',
+                     'league_rank': '4', 'wild_card_games_back': '1.0'},
+                ],
+            },
+            'team_abbreviation': {},
+        }
+        result = derive_wildcard_from_standings(data)
+        ids = [t['team_id'] for t in result.get('AL', [])]
+        assert '1' not in ids   # division leader was skipped
+        assert '2' in ids       # wildcard team was included
+
     def test_malformed_league_rank_falls_back_to_999(self):
         """A non-numeric league_rank hits the ValueError branch (lines 68-69),
         resulting in rank=999 and the team still being appended."""
@@ -849,3 +868,135 @@ class TestWildcardMovers:
         with patch('image_standings._logo_small', return_value=fake_logo):
             result = draw_wildcard_header(img, {'AL': al, 'NL': nl})
         assert result is img
+
+
+# ===========================================================================
+# _me_badge_value
+# ===========================================================================
+
+from image_standings import _me_badge_value, _ME_BADGE_THRESHOLD, _ME_MAGIC_BASE
+
+
+class TestMeBadgeValue:
+    def _leader(self, wins=90):
+        return {'league_record_wins': wins}
+
+    def test_clinch_z_returns_cl(self):
+        assert _me_badge_value({'clinch_indicator': 'z'}, self._leader(), True, 50) == 'CL'
+
+    def test_clinch_y_returns_cl(self):
+        assert _me_badge_value({'clinch_indicator': 'y'}, self._leader(), True, 50) == 'CL'
+
+    def test_clinch_e_returns_out(self):
+        assert _me_badge_value({'clinch_indicator': 'e'}, self._leader(), False, 50) == 'OUT'
+
+    def test_leader_wins_none_returns_empty(self):
+        assert _me_badge_value({}, {'league_record_wins': None}, True, 50) == ''
+
+    def test_leader_no_rivals_returns_cl(self):
+        assert _me_badge_value({}, self._leader(wins=100), True, None) == 'CL'
+
+    def test_leader_magic_zero_returns_cl(self):
+        # 163 - 100 - 63 = 0
+        assert _me_badge_value({}, self._leader(wins=100), True, 63) == 'CL'
+
+    def test_leader_magic_within_threshold(self):
+        # 163 - 90 - 40 = 33 ≤ 50
+        result = _me_badge_value({}, self._leader(wins=90), True, 40)
+        assert result == 'M33'
+
+    def test_leader_magic_above_threshold(self):
+        # 163 - 60 - 10 = 93 > 50
+        result = _me_badge_value({}, self._leader(wins=60), True, 10)
+        assert result == ''
+
+    def test_trailer_losses_none_returns_empty(self):
+        team = {}  # missing league_record_losses
+        assert _me_badge_value(team, self._leader(), False, 50) == ''
+
+    def test_trailer_elim_zero_returns_out(self):
+        # 163 - 100 - 63 = 0
+        team = {'league_record_losses': 63}
+        assert _me_badge_value(team, self._leader(wins=100), False, 50) == 'OUT'
+
+    def test_trailer_elim_within_threshold(self):
+        # 163 - 90 - 40 = 33 ≤ 50
+        team = {'league_record_losses': 40}
+        assert _me_badge_value(team, self._leader(wins=90), False, 50) == 'E33'
+
+    def test_trailer_elim_above_threshold(self):
+        # 163 - 60 - 10 = 93 > 50
+        team = {'league_record_losses': 10}
+        assert _me_badge_value(team, self._leader(wins=60), False, 50) == ''
+
+    def test_clinch_indicator_case_insensitive(self):
+        assert _me_badge_value({'clinch_indicator': 'Z'}, self._leader(), True, 50) == 'CL'
+
+
+# ===========================================================================
+# draw_standings_sidebar — show_magic_badges paths
+# ===========================================================================
+
+@needs_pil
+class TestDrawStandingsSidebarMagicBadges:
+    def _make_standings(self, wins_leader=90, losses_leader=40,
+                        wins_rival=80, losses_rival=50,
+                        clinch_leader=None, clinch_rival=None):
+        leader = _team(1, 1, wins=wins_leader, losses=losses_leader, clinch=clinch_leader)
+        rival  = _team(2, 2, wins=wins_rival,  losses=losses_rival,  clinch=clinch_rival)
+        # Populate both an AL and NL division so left AND right sidebar tests hit the badge path.
+        return _standings({
+            'American League East': [leader, rival],
+            'National League East': [leader, rival],
+        })
+
+    def _render(self, standings, side='left'):
+        img = _blank()
+        with patch('image_standings.load_json_file', return_value={}), \
+             patch('image_standings.save_off_results'), \
+             patch('image_standings._logo_small', return_value=None):
+            draw_standings_sidebar(img, standings, {}, side=side, show_magic_badges=True)
+        return img
+
+    def test_magic_badge_renders_left(self):
+        # 163 - 90 - 50 = 23 ≤ 50 → M23 badge on left sidebar
+        standings = self._make_standings(wins_leader=90, losses_rival=50)
+        result = self._render(standings, side='left')
+        assert result is not None
+
+    def test_magic_badge_renders_right(self):
+        standings = self._make_standings(wins_leader=90, losses_rival=50)
+        result = self._render(standings, side='right')
+        assert result is not None
+
+    def test_no_badge_above_threshold(self):
+        # 163 - 50 - 10 = 103 > 50 → no badge
+        standings = self._make_standings(wins_leader=50, losses_rival=10)
+        result = self._render(standings, side='left')
+        assert result is not None
+
+    def test_clinched_leader_shows_cl(self):
+        standings = self._make_standings(clinch_leader='z')
+        result = self._render(standings, side='left')
+        assert result is not None
+
+    def test_eliminated_rival_shows_out(self):
+        standings = self._make_standings(clinch_rival='e')
+        result = self._render(standings, side='left')
+        assert result is not None
+
+    def test_only_one_team_in_division(self):
+        only = [_team(1, 1, wins=90, losses=40)]
+        standings = _standings({'American League East': only})
+        result = self._render(standings, side='left')
+        assert result is not None
+
+    def test_aaa_mode_skips_badges(self):
+        standings = self._make_standings()
+        img = _blank()
+        with patch('image_standings.load_json_file', return_value={}), \
+             patch('image_standings.save_off_results'), \
+             patch('image_standings._logo_small', return_value=None):
+            draw_standings_sidebar(img, standings, {}, side='left',
+                                   league_mode='aaa', show_magic_badges=True)
+        assert img is not None

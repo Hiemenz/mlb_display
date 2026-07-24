@@ -273,6 +273,20 @@ class TestGetInfieldPolygon:
         }
         assert not missing, f"Parks unexpectedly missing infield polygon: {missing}"
 
+    def test_lookup_by_venue_id(self):
+        """venue_id fast-path (lines 230-232) returns the polygon directly."""
+        from stadium_polygons import get_infield_polygon
+        poly = get_infield_polygon(venue_name=None, venue_id=1)  # 1 → Angel Stadium
+        assert poly is not None
+
+
+class TestGetPolygon:
+    def test_lookup_by_venue_id(self):
+        """venue_id fast-path (lines 210-212) returns the polygon directly."""
+        from stadium_polygons import get_polygon
+        poly = get_polygon(venue_name=None, venue_id=1)  # 1 → Angel Stadium
+        assert poly is not None
+
 
 # ---------------------------------------------------------------------------
 # draw_triple_box smoke tests
