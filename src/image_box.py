@@ -3000,19 +3000,21 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             draw.polygon(pts, fill=255, outline=0)
 
     # Coaches' boxes: rotated rectangles in foul territory, aligned with each
-    # foul line (16ft long x 5ft deep, near edge ~6ft beyond
-    # the base). u = home->base unit direction (ft-space, x right / y toward
-    # CF), n = its outward normal (away from the infield). Real feet scaled
-    # by FSCALE, same geometry as field_view.py — but floored to a minimum
-    # scale so the box stays legible at this tile's tiny FSCALE instead of
-    # rounding away to nothing.
+    # foul line (16ft long, centered even with the base, x 5ft deep, offset
+    # 15ft out from the foul line). u = home->base unit direction (ft-space,
+    # x right / y toward CF), n = its outward normal (away from the
+    # infield). Real feet scaled by FSCALE, same geometry as field_view.py —
+    # but floored to a minimum scale so the box stays legible at this tile's
+    # tiny FSCALE instead of rounding away to nothing.
     _coach_scale = max(FSCALE, 0.45)
 
     def _coach_box_poly(u, n):
-        da_near = 90 + 6
-        da_far  = da_near + 16
+        da_near = 90 - 16 / 2
+        da_far  = 90 + 16 / 2
+        dp_near = 15
+        dp_far  = 15 + 5
         pts = []
-        for da, dp in [(da_near, 0), (da_far, 0), (da_far, 5), (da_near, 5)]:
+        for da, dp in [(da_near, dp_near), (da_far, dp_near), (da_far, dp_far), (da_near, dp_far)]:
             pts.append((int(HX + (da * u[0] + dp * n[0]) * _coach_scale),
                          int(HY - (da * u[1] + dp * n[1]) * _coach_scale)))
         return pts
