@@ -165,10 +165,11 @@ def _draw_field(draw, data, fonts=None):
 # Coaches' box real-world dimensions: 16 ft long (parallel to the foul line)
 # x 5 ft deep (perpendicular), offset 15 ft out from the foul line into foul
 # territory. Centered closer to home plate than the base itself.
-_COACH_CENTER_DIST_FT = 72   # distance from home along the line to box centre
+_COACH_CENTER_DIST_FT = 50   # distance from home along the line to box centre
 _COACH_LINE_GAP_FT    = 15   # gap from the foul line to the box's near edge
 _COACH_LENGTH_FT      = 16   # along the foul line
 _COACH_WIDTH_FT       = 5    # into foul territory
+_COACH_PX_NUDGE       = 2    # fine-tune: extra px along the line, away from home
 
 
 def _coach_box_poly(u, n):
@@ -182,8 +183,8 @@ def _coach_box_poly(u, n):
     dp_far  = _COACH_LINE_GAP_FT + _COACH_WIDTH_FT
     pts = []
     for da, dp in [(da_near, dp_near), (da_far, dp_near), (da_far, dp_far), (da_near, dp_far)]:
-        x = hx + (da * u[0] + dp * n[0]) * FIELD_SCALE
-        y = hy + (da * u[1] + dp * n[1]) * FIELD_SCALE
+        x = hx + (da * u[0] + dp * n[0]) * FIELD_SCALE + _COACH_PX_NUDGE * u[0]
+        y = hy + (da * u[1] + dp * n[1]) * FIELD_SCALE + _COACH_PX_NUDGE * u[1]
         pts.append((int(x), int(y)))
     return pts
 
@@ -193,8 +194,13 @@ def _draw_coaches_boxes(draw):
     each foul line, ~20ft x 15ft, starting just beyond the base."""
     u1, n1 = (0.7071, -0.7071), (0.7071, 0.7071)    # home->first, outward
     u3, n3 = (-0.7071, -0.7071), (-0.7071, 0.7071)  # home->third, outward
-    draw.polygon(_coach_box_poly(u1, n1), outline=0)
-    draw.polygon(_coach_box_poly(u3, n3), outline=0)
+    for pts in (_coach_box_poly(u1, n1), _coach_box_poly(u3, n3)):
+        # Omit the far side (parallel to the foul line, farthest from it) —
+        # only draw the near side and the two perpendicular ends.
+        near, far_near, far_far, near_far = pts
+        draw.line([near, far_near], fill=0)
+        draw.line([far_near, far_far], fill=0)
+        draw.line([near_far, near], fill=0)
 
 
 def _draw_runners(draw, data):
@@ -509,11 +515,15 @@ def _draw_pitch_zone(draw, fonts, data):
     draw.line([zl, zt+th,   zr, zt+th  ], fill=0)
     draw.line([zl, zt+2*th, zr, zt+2*th], fill=0)
 
-    # Home plate indicator (V below zone, centered on zone)
+    # Home plate indicator (pentagon below zone, centered on zone)
     phy = zb + 6
-    draw.line([panel_cx - 10, phy, panel_cx,      phy + 11], fill=0)
-    draw.line([panel_cx + 10, phy, panel_cx,      phy + 11], fill=0)
-    draw.line([panel_cx - 10, phy, panel_cx + 10, phy     ], fill=0)
+    draw.polygon([
+        (panel_cx - 10, phy),
+        (panel_cx + 10, phy),
+        (panel_cx + 10, phy + 5),
+        (panel_cx,      phy + 11),
+        (panel_cx - 10, phy + 5),
+    ], outline=0)
 
     # Pitch markers
     r = 5
