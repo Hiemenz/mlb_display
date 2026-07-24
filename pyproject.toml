@@ -88,6 +88,7 @@ omit = [
     "src/fetch_idle.py",
     "src/extract_infield_polygons.py",
     "src/waveshare_epd/*",
+    "src/example_triple_cell_view.py",
 ]
 
 [tool.coverage.report]

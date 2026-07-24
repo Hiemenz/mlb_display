@@ -2982,8 +2982,8 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         draw.polygon([
             (HX,          hcy + hp),
             (HX - hp,     hcy),
-            (HX - hp + 1, hcy - hp),
-            (HX + hp - 1, hcy - hp),
+            (HX - hp,     hcy - hp),
+            (HX + hp,     hcy - hp),
             (HX + hp,     hcy),
         ], fill=255, outline=0)
 
@@ -2998,6 +2998,39 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             draw.polygon(pts, fill=0, outline=0)
         else:
             draw.polygon(pts, fill=255, outline=0)
+
+    # Coaches' boxes: rotated rectangles in foul territory, aligned with each
+    # foul line (16ft long, centered closer to home than the base, x 5ft
+    # deep, offset 15ft out from the foul line). u = home->base unit
+    # direction (ft-space, x right / y toward CF), n = its outward normal
+    # (away from the infield). Real feet scaled by FSCALE, same geometry as
+    # field_view.py — but floored to a minimum scale so the box stays
+    # legible at this tile's tiny FSCALE instead of rounding away to
+    # nothing.
+    _coach_scale = max(FSCALE, 0.45)
+
+    _coach_px_nudge = 2  # fine-tune: extra px along the line, away from home
+
+    def _coach_box_poly(u, n):
+        da_near = 50 - 16 / 2
+        da_far  = 50 + 16 / 2
+        dp_near = 15
+        dp_far  = 15 + 5
+        pts = []
+        for da, dp in [(da_near, dp_near), (da_far, dp_near), (da_far, dp_far), (da_near, dp_far)]:
+            pts.append((int(HX + (da * u[0] + dp * n[0]) * _coach_scale + _coach_px_nudge * u[0]),
+                         int(HY - (da * u[1] + dp * n[1]) * _coach_scale - _coach_px_nudge * u[1])))
+        return pts
+
+    _u1, _n1 = (0.7071, 0.7071), (0.7071, -0.7071)    # home->first, outward
+    _u3, _n3 = (-0.7071, 0.7071), (-0.7071, -0.7071)  # home->third, outward
+    for _pts in (_coach_box_poly(_u1, _n1), _coach_box_poly(_u3, _n3)):
+        # Omit the far side (parallel to the foul line, farthest from it) —
+        # only draw the near side and the two perpendicular ends.
+        _near, _far_near, _far_far, _near_far = _pts
+        draw.line([_near, _far_near], fill=0)
+        draw.line([_far_near, _far_far], fill=0)
+        draw.line([_near_far, _near], fill=0)
 
     # Fence distance markers: 5 points evenly spaced by angle from home plate
     # (mirrors real outfield wall signage — LF pole, two power-alley gaps, CF, RF pole)

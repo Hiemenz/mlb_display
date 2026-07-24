@@ -818,6 +818,41 @@ def test_grid_with_triple_cell_tile(white_image, team_data):
 
 
 @needs_pil
+def test_grid_with_three_triple_cell_tiles(white_image, team_data):
+    """3 live games with ample room each get their own triple-cell tile."""
+    from image_grid import draw_out_of_town_score_board
+    games = [
+        _live_game(game_pk=1),
+        _live_game(game_pk=2),
+        _live_game(game_pk=3),
+        _base_game(game_pk=4),
+    ]
+    with patch('image_grid.load_yaml_file', return_value={
+        'triple_cell_live': True,
+        'wide_cell_always': False,
+        'wide_cell_featured': False,
+        'scoreboard_live_details': False,
+    }):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)
+
+
+def test_compute_grid_layout_three_live_games_all_get_triple():
+    """3 live games with enough free slots (< 15 games total) each get a
+    triple tile — one per row, capped at _MAX_TRIPLE_TILES."""
+    from image_grid import compute_grid_layout
+    games = _make_game_list(
+        [('In Progress', 6, 'Bottom'),
+         ('In Progress', 5, 'Top'),
+         ('In Progress', 4, 'Bottom')]
+        + [('Scheduled', 0, '')]
+    )
+    game_list, slots = compute_grid_layout(games, {}, {})
+    triple_count = sum(1 for s in slots if s[0] == 'triple')
+    assert triple_count == 3
+
+
+@needs_pil
 def test_grid_triple_cell_15_plus_games(white_image, team_data):
     """triple_cell_live=True with 15+ games assigns triple to the best game."""
     from image_grid import draw_out_of_town_score_board
