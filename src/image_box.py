@@ -2999,6 +2999,20 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         else:
             draw.polygon(pts, fill=255, outline=0)
 
+    # Coaches' boxes: small outline rectangles in foul territory just past
+    # first and third base. Home→1st/3rd baseline direction and the outward
+    # normal away from the diamond centre are both 45°, so their sum reduces
+    # to a purely horizontal offset from each base. Offset is anchored to
+    # `bsz` (the base marker's half-size) so the box clears the filled base
+    # square instead of overlapping/hiding behind it at small tile scales.
+    _coach_w   = max(round(6 * FSCALE), 4)
+    _coach_h   = max(round(5 * FSCALE), 3)
+    _coach_off = bsz + _coach_w // 2 + 2
+    for (bx, by), direction in [(FIRST, 1), (THIRD, -1)]:
+        ccx = bx + direction * _coach_off
+        draw.rectangle([ccx - _coach_w // 2, by - _coach_h // 2,
+                         ccx + _coach_w // 2, by + _coach_h // 2], outline=0)
+
     # Fence distance markers: 5 points evenly spaced by angle from home plate
     # (mirrors real outfield wall signage — LF pole, two power-alley gaps, CF, RF pole)
     _wall_font_size = max(round(10 * s), 10)
