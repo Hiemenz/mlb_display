@@ -162,13 +162,13 @@ def _draw_field(draw, data, fonts=None):
                 draw.text((pt[0] - 18, pt[1] - 2), str(_dist(rf_alley[1])), font=font_tiny, fill=0)
 
 
-# Coaches' box real-world dimensions: 16 ft long (parallel to the foul line,
-# centered even with the base) x 5 ft deep (perpendicular), offset 15 ft out
-# from the foul line into foul territory.
-_COACH_BASE_DIST_FT = 90    # home-to-base distance
-_COACH_LINE_GAP_FT  = 15    # gap from the foul line to the box's near edge
-_COACH_LENGTH_FT     = 16   # along the foul line
-_COACH_WIDTH_FT      = 5    # into foul territory
+# Coaches' box real-world dimensions: 16 ft long (parallel to the foul line)
+# x 5 ft deep (perpendicular), offset 15 ft out from the foul line into foul
+# territory. Centered closer to home plate than the base itself.
+_COACH_CENTER_DIST_FT = 72   # distance from home along the line to box centre
+_COACH_LINE_GAP_FT    = 15   # gap from the foul line to the box's near edge
+_COACH_LENGTH_FT      = 16   # along the foul line
+_COACH_WIDTH_FT       = 5    # into foul territory
 
 
 def _coach_box_poly(u, n):
@@ -176,8 +176,8 @@ def _coach_box_poly(u, n):
     (home→base direction) and its outward normal `n` (away from the infield).
     """
     hx, hy = HOME_PLATE
-    da_near = _COACH_BASE_DIST_FT - _COACH_LENGTH_FT / 2
-    da_far  = _COACH_BASE_DIST_FT + _COACH_LENGTH_FT / 2
+    da_near = _COACH_CENTER_DIST_FT - _COACH_LENGTH_FT / 2
+    da_far  = _COACH_CENTER_DIST_FT + _COACH_LENGTH_FT / 2
     dp_near = _COACH_LINE_GAP_FT
     dp_far  = _COACH_LINE_GAP_FT + _COACH_WIDTH_FT
     pts = []
