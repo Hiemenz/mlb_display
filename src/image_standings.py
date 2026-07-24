@@ -250,7 +250,41 @@ def _aaa_divisions(standings_data, side):
     return [d for d in candidates if d in all_divs]
 
 
-def draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode='mlb'):
+_ME_BADGE_THRESHOLD = 50   # only show M/E badge when ≤ this many games remain
+_ME_MAGIC_BASE = 163       # 162 games + 1
+
+
+def _me_badge_value(team, leader, is_leader, rival_losses):
+    """Return badge text ('M5', 'E12', 'CL', 'OUT', or '') for a standings row."""
+    clinch = (team.get('clinch_indicator') or '').strip().lower()
+    if clinch in ('z', 'y'):
+        return 'CL'
+    if clinch == 'e':
+        return 'OUT'
+
+    lead_w = leader.get('league_record_wins')
+    if lead_w is None:
+        return ''
+
+    if is_leader:
+        if rival_losses is None:
+            return 'CL'
+        magic = _ME_MAGIC_BASE - lead_w - rival_losses
+        if magic <= 0:
+            return 'CL'
+        return f'M{magic}' if magic <= _ME_BADGE_THRESHOLD else ''
+    else:
+        team_l = team.get('league_record_losses')
+        if team_l is None:
+            return ''
+        elim = _ME_MAGIC_BASE - lead_w - team_l
+        if elim <= 0:
+            return 'OUT'
+        return f'E{elim}' if elim <= _ME_BADGE_THRESHOLD else ''
+
+
+def draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode='mlb',
+                           show_magic_badges=False):
     """Draw a vertical strip of division-standings logos on the left or right edge.
 
     MLB: left=AL divisions, right=NL divisions.
@@ -409,6 +443,18 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 except (ValueError, TypeError):
                     pass
 
+        # Precompute M/E badge data for this division (leader + minimum rival losses)
+        _me_leader = teams[0] if teams else None
+        _rival_losses = None
+        if _me_leader and len(teams) > 1:
+            _rl_vals = [
+                t.get('league_record_losses')
+                for t in teams[1:]
+                if t.get('league_record_losses') is not None
+            ]
+            if _rl_vals:
+                _rival_losses = min(_rl_vals)
+
         for slot_idx, team in enumerate(teams[:n_show]):
             team_id = str(team.get('team_id', ''))
             abbr    = abbr_map.get(team_id, f'T{team_id}')
@@ -426,6 +472,19 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 tw = int(font.getlength(abbr[:3]))
                 draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - tw) // 2, logo_y + 8), abbr[:3], font=font, fill=0)
                 _logo_img_bottom = logo_y + _SIDEBAR_LOGO_SIZE
+
+            # M/E badge: outer sidebar wall, same vertical position and font as
+            # the streak badge on the inner wall — mirrored to the opposite side.
+            if show_magic_badges and league_mode == 'mlb' and _me_leader:
+                _badge = _me_badge_value(team, _me_leader, slot_idx == 0, _rival_losses)
+                if _badge:
+                    _bf = _get_font(7)
+                    _bw = int(_bf.getlength(_badge))
+                    _by = _logo_img_bottom - 1
+                    if side == 'left':
+                        draw.text((sep_x0 + 1, _by), _badge, font=_bf, fill=0)
+                    else:
+                        draw.text((sep_x1 - _bw - 1, _by), _badge, font=_bf, fill=0)
 
             # Streak badge: tucked just below the actual logo image, flush with the inner sidebar wall.
             _streak_str = (team.get('streak') or '').strip()
@@ -470,9 +529,9 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                     # shifted up 2px from center.
                     gap_y = logo_y + _SIDEBAR_LOGO_SIZE + (slot_h - _SIDEBAR_LOGO_SIZE - 2) // 2 - 2
                     dash_w, gap_w = 4, 2
-                    total_dash_w = 3 * dash_w + 2 * gap_w
-                    dash_start = 4 if side == 'left' else 800 - total_dash_w - 4
-                    for d in range(3):
+                    total_dash_w = 2 * dash_w + gap_w
+                    dash_start = logo_x + (_SIDEBAR_LOGO_SIZE - total_dash_w) // 2
+                    for d in range(2):
                         x0 = dash_start + d * (dash_w + gap_w)
                         draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=2)
 

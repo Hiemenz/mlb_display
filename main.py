@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
+from fetch_streaks import fetch_streaks
 from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from render_scoreboard import render
@@ -798,6 +799,16 @@ Examples:
                         fetch_leaders(sport_id=_leaders_sport)
                     except Exception as _e:
                         print(f"Warning: leaders fetch failed: {_e}")
+                _ng_needs_streaks = (
+                    config.get('show_streaks_panel', False) or config.get('show_scoreless_panel', False)
+                )
+                if _ng_needs_streaks and league_mode != 'aaa' \
+                        and _should_refresh_leaders(sched, force=args.full_refresh):
+                    try:
+                        _streaks_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
+                        fetch_streaks(sport_id=_streaks_sport)
+                    except Exception as _e:
+                        print(f"Warning: streaks fetch failed: {_e}")
                 if not _maybe_show_derby_bracket(config, no_throttle=_no_throttle,
                                                  auto_open=args.local and system_platform == 'Darwin'):
                     _show_idle_screen(config, sched,
@@ -911,6 +922,20 @@ Examples:
             _save_schedule_state(sched)
         except Exception as e:
             print(f"Warning: leaders fetch failed: {e}")
+
+    # 7e. Hot Hitters / Hot Arms panels — piggybacked on the same refresh gate
+    # as leaders (same TTL, same trigger: new Finals or stale/missing cache).
+    _needs_streaks = (
+        (config.get('show_streaks_panel', False) or config.get('show_scoreless_panel', False))
+        and league_mode != 'aaa'
+        and _should_refresh_leaders(sched, force=_force_data_refresh)
+    )
+    if _needs_streaks:
+        try:
+            _streaks_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
+            fetch_streaks(sport_id=_streaks_sport, force=_force_data_refresh)
+        except Exception as e:
+            print(f"Warning: streaks fetch failed: {e}")
 
     # 9. Render
     # On a dark-mode transition the rendered image inverts even when the game
