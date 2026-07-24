@@ -2999,19 +2999,28 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         else:
             draw.polygon(pts, fill=255, outline=0)
 
-    # Coaches' boxes: small outline rectangles in foul territory just past
-    # first and third base. Home→1st/3rd baseline direction and the outward
-    # normal away from the diamond centre are both 45°, so their sum reduces
-    # to a purely horizontal offset from each base. Offset is anchored to
-    # `bsz` (the base marker's half-size) so the box clears the filled base
-    # square instead of overlapping/hiding behind it at small tile scales.
-    _coach_w   = max(round(6 * FSCALE), 4)
-    _coach_h   = max(round(5 * FSCALE), 3)
-    _coach_off = bsz + _coach_w // 2 + 2
-    for (bx, by), direction in [(FIRST, 1), (THIRD, -1)]:
-        ccx = bx + direction * _coach_off
-        draw.rectangle([ccx - _coach_w // 2, by - _coach_h // 2,
-                         ccx + _coach_w // 2, by + _coach_h // 2], outline=0)
+    # Coaches' boxes: rotated rectangles in foul territory, aligned with each
+    # foul line (16ft long x 5ft deep, near edge ~6ft beyond
+    # the base). u = home->base unit direction (ft-space, x right / y toward
+    # CF), n = its outward normal (away from the infield). Real feet scaled
+    # by FSCALE, same geometry as field_view.py — but floored to a minimum
+    # scale so the box stays legible at this tile's tiny FSCALE instead of
+    # rounding away to nothing.
+    _coach_scale = max(FSCALE, 0.45)
+
+    def _coach_box_poly(u, n):
+        da_near = 90 + 6
+        da_far  = da_near + 16
+        pts = []
+        for da, dp in [(da_near, 0), (da_far, 0), (da_far, 5), (da_near, 5)]:
+            pts.append((int(HX + (da * u[0] + dp * n[0]) * _coach_scale),
+                         int(HY - (da * u[1] + dp * n[1]) * _coach_scale)))
+        return pts
+
+    _u1, _n1 = (0.7071, 0.7071), (0.7071, -0.7071)    # home->first, outward
+    _u3, _n3 = (-0.7071, 0.7071), (-0.7071, -0.7071)  # home->third, outward
+    draw.polygon(_coach_box_poly(_u1, _n1), outline=0)
+    draw.polygon(_coach_box_poly(_u3, _n3), outline=0)
 
     # Fence distance markers: 5 points evenly spaced by angle from home plate
     # (mirrors real outfield wall signage — LF pole, two power-alley gaps, CF, RF pole)

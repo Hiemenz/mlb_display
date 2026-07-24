@@ -162,37 +162,37 @@ def _draw_field(draw, data, fonts=None):
                 draw.text((pt[0] - 18, pt[1] - 2), str(_dist(rf_alley[1])), font=font_tiny, fill=0)
 
 
-# Coaches' box centers — offset beyond and outside first/third base
-# (~10ft past the base along the baseline, ~10ft out into foul territory).
-FIRST_COACH_BOX = (259, 372)
-THIRD_COACH_BOX = (141, 372)
+# Coaches' box real-world dimensions: 16 ft long (parallel to the foul line)
+# x 5 ft deep (perpendicular, into foul territory), with the near edge
+# starting ~6 ft beyond the base (farther from home plate).
+_COACH_BASE_DIST_FT  = 90    # home-to-base distance
+_COACH_START_GAP_FT  = 6     # gap from base to box's near edge
+_COACH_LENGTH_FT     = 16    # along the foul line
+_COACH_WIDTH_FT      = 5     # into foul territory
 
 
-def _dashed_rect(draw, cx, cy, w, h, dash=3, gap=2):
-    """Draw a dashed rectangle outline centered at (cx, cy)."""
-    x0, y0 = cx - w // 2, cy - h // 2
-    x1, y1 = cx + w // 2, cy + h // 2
-    for (sx, sy, ex, ey) in [(x0, y0, x1, y0), (x0, y1, x1, y1),
-                              (x0, y0, x0, y1), (x1, y0, x1, y1)]:
-        length = max(abs(ex - sx), abs(ey - sy))
-        steps = max(int(length // (dash + gap)), 1)
-        for i in range(steps + 1):
-            t0 = i * (dash + gap) / length if length else 0
-            t1 = min(t0 + dash / length, 1) if length else 1
-            if t0 >= 1:
-                break
-            px0 = sx + (ex - sx) * t0
-            py0 = sy + (ey - sy) * t0
-            px1 = sx + (ex - sx) * t1
-            py1 = sy + (ey - sy) * t1
-            draw.line([(px0, py0), (px1, py1)], fill=0, width=1)
+def _coach_box_poly(u, n):
+    """4 corners of a coaches' box, given the foul-line unit vector `u`
+    (home→base direction) and its outward normal `n` (away from the infield).
+    """
+    hx, hy = HOME_PLATE
+    da_near = _COACH_BASE_DIST_FT + _COACH_START_GAP_FT
+    da_far  = da_near + _COACH_LENGTH_FT
+    pts = []
+    for da, dp in [(da_near, 0), (da_far, 0), (da_far, _COACH_WIDTH_FT), (da_near, _COACH_WIDTH_FT)]:
+        x = hx + (da * u[0] + dp * n[0]) * FIELD_SCALE
+        y = hy + (da * u[1] + dp * n[1]) * FIELD_SCALE
+        pts.append((int(x), int(y)))
+    return pts
 
 
 def _draw_coaches_boxes(draw):
-    """Draw the first- and third-base coaches' boxes (dashed, ~20ft x 15ft)."""
-    box_w, box_h = int(20 * FIELD_SCALE), int(15 * FIELD_SCALE)
-    _dashed_rect(draw, FIRST_COACH_BOX[0], FIRST_COACH_BOX[1], box_w, box_h)
-    _dashed_rect(draw, THIRD_COACH_BOX[0], THIRD_COACH_BOX[1], box_w, box_h)
+    """Draw the first- and third-base coaches' boxes, rotated to align with
+    each foul line, ~20ft x 15ft, starting just beyond the base."""
+    u1, n1 = (0.7071, -0.7071), (0.7071, 0.7071)    # home->first, outward
+    u3, n3 = (-0.7071, -0.7071), (-0.7071, 0.7071)  # home->third, outward
+    draw.polygon(_coach_box_poly(u1, n1), outline=0)
+    draw.polygon(_coach_box_poly(u3, n3), outline=0)
 
 
 def _draw_runners(draw, data):
