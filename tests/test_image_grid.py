@@ -735,3 +735,54 @@ class TestMultipleTripleTiles:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
         assert len(ordered) == 3
         assert all(s[0] == 'triple' for s in slots)
+
+
+# ---------------------------------------------------------------------------
+# _pack_multi_triple_rows — line 376 (grid genuinely full)
+# ---------------------------------------------------------------------------
+
+from image_grid import _pack_multi_triple_rows
+
+
+class TestPackMultiTripleRowsFull:
+    """Cover the `break  # grid is genuinely full` branch (line 376)."""
+
+    def test_extra_normal_games_dropped_when_grid_full(self):
+        """3 triple rows fill all 3 rows; 6 normals fill their remaining 2 cols
+        each (3×2=6); the 7th normal cannot fit and triggers the grid-full
+        break on line 376."""
+        game_list = list(range(10))  # 3 triples + 7 normals = 10 games
+        tile_type_map = {0: 'triple', 1: 'triple', 2: 'triple',
+                         3: 'normal', 4: 'normal', 5: 'normal',
+                         6: 'normal', 7: 'normal', 8: 'normal', 9: 'normal'}
+        ordered, positions = _pack_multi_triple_rows(game_list, tile_type_map)
+        # All 3 triples are placed; at most 6 normals fit (2 per row × 3 rows)
+        assert all(g in ordered for g in [0, 1, 2])   # triples included
+        assert 9 not in ordered                        # 7th normal dropped (break)
+
+
+# ---------------------------------------------------------------------------
+# _pack_grid overflow path — lines 473-476 (row-skip and else-break)
+# ---------------------------------------------------------------------------
+
+class TestPackGridOverflowSkipAndBreak:
+    """Cover the row-skip (473-474) branch in the overflow packer."""
+
+    def test_row_skip_when_cap_too_small_for_wide(self):
+        """After placing a triple at col 1 (slots 1-3), only 1 slot remains
+        (col 4, cap=1). A wide game is still queued but needs cap>=2, so
+        branch 4 (lines 473-474) fires to skip to the next row. The wide
+        then lands at col 0 of row 1."""
+        # game 0: normal (pinned) — col 0, cost 1
+        # game 2: triple — col 1, cost 3 → next slot at col 4 (cap=1)
+        # cap=1 < 2 AND wide in queue → row-skip (473-474) → slot=5
+        # game 1: wide — col 0 row 1, cost 2
+        game_list = ['g0', 'g1', 'g2']
+        tile_type_map = {0: 'normal', 1: 'wide', 2: 'triple'}
+        ordered, positions = _pack_grid(game_list, tile_type_map)
+        assert ordered[0] == 'g0'   # pinned normal always first
+        assert 'g2' in ordered       # triple placed
+        assert 'g1' in ordered       # wide placed after row-skip
+        wide_pos = [p for p in positions if p[0] == 'wide']
+        assert len(wide_pos) == 1
+        assert wide_pos[0][1] == 0   # wide starts at col 0 (new row)
