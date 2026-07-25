@@ -1953,7 +1953,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            draw.text((_bcx, _bcy), _bnum, font=font9, fill=255, anchor='mm')
+                            _bb = font9.getbbox(_bnum)
+                            draw.text((_bcx - (_bb[0] + _bb[2]) // 2, _bcy - (_bb[1] + _bb[3]) // 2), _bnum, font=font9, fill=255)
             _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
             Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
@@ -1999,7 +2000,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            draw.text((_bcx, _bcy), _bnum, font=font9, fill=255, anchor='mm')
+                            _bb = font9.getbbox(_bnum)
+                            draw.text((_bcx - (_bb[0] + _bb[2]) // 2, _bcy - (_bb[1] + _bb[3]) // 2), _bnum, font=font9, fill=255)
 
                 outs_list = [None] * 3
                 for i in range(1, 4):
