@@ -170,6 +170,16 @@ leaders_rotation_minutes: 5
 show_transactions_ticker: false
 transactions_lookback_days: 2
 
+# Batting lineup panel: show today's batting order for the primary team in an empty
+# grid cell when fewer than 15 games are on the slate. Data comes from the schedule
+# API lineups hydrate — lineup appears once the manager files the card (typically a
+# few hours before first pitch). Shows 'Not Yet Posted' before then.
+show_lineup_panel: false
+
+# Trade deadline countdown panel: shows time remaining until the MLB trade deadline
+# (July 31) plus recent transactions. Enabled by default while the deadline is near.
+show_deadline_panel: true
+
 # News headlines panel: show recent MLB news in an empty grid cell when fewer
 # than 15 games are on the slate. Uses ESPN's public MLB news API (no key
 # needed). When news_team_only is true, headlines are filtered to the primary

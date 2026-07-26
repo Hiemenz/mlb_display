@@ -1335,6 +1335,53 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     draw = ImageDraw.Draw(Himage)
                     _ser_content_left_x = _ppd_logo_x
 
+    # Series context for pre-game tiles: "Gm N/M" in the header right corner,
+    # with the current series leader's logo + score stacked above when the
+    # series is already in progress.  Mirrors the Postponed handling above.
+    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
+        _pg_total = game_data.get('series_total_games') or 1
+        _pg_gnum  = game_data.get('series_game_number') or 0
+        if _pg_total > 1 and _pg_gnum:
+            _rx = start_x + horizonta_len - 2 * s
+            _gm_str = f'Gm {_pg_gnum}/{_pg_total}'
+            _gm_w   = int(font9.getlength(_gm_str))
+            _gm_x   = _rx - _gm_w
+            draw.text((_gm_x, start_y + 10 * s), _gm_str, font=font9, fill=0)
+            _ser_content_left_x = min(_ser_content_left_x, _gm_x)
+
+            _pg_sw     = game_data.get('series_wins',   0) or 0
+            _pg_sl     = game_data.get('series_losses', 0) or 0
+            _pg_result = (game_data.get('series_result') or '').strip()
+            _pg_parts  = _pg_result.split()
+            if _pg_sw + _pg_sl > 0:
+                if 'tied' in _pg_result.lower():
+                    _pg_score_str = f'{_pg_sw}-{_pg_sl}'
+                    _pgsw = int(font9.getlength(_pg_score_str))
+                    _pgsx = _gm_x - _pgsw - 2 * s
+                    draw.text((_pgsx, start_y + 4 * s), _pg_score_str, font=font9, fill=0)
+                    _ser_content_left_x = min(_ser_content_left_x, _pgsx)
+                elif len(_pg_parts) >= 3 and _pg_parts[1] == 'leads':
+                    _pg_score_str = _pg_parts[2]
+                    _pg_leader_upper = _pg_parts[0].upper()
+                    _pg_logo_abbr = _pg_logo_id = None
+                    if _pg_leader_upper == away_team_name.upper():
+                        _pg_logo_abbr, _pg_logo_id = away_team_name, str(game_data['away_team_id'])
+                    elif _pg_leader_upper == home_team_name.upper():
+                        _pg_logo_abbr, _pg_logo_id = home_team_name, str(game_data['home_team_id'])
+                    _pgsw = int(font9.getlength(_pg_score_str))
+                    _pgsx = _gm_x - _pgsw - 2 * s
+                    draw.text((_pgsx, start_y + 4 * s), _pg_score_str, font=font9, fill=0)
+                    _ser_content_left_x = min(_ser_content_left_x, _pgsx)
+                    if _pg_logo_abbr:
+                        _pg_logo = _logo_small(_pg_logo_abbr, _pg_logo_id, size=12 * s)
+                        if _pg_logo:
+                            _lw2, _lh2 = _pg_logo.size
+                            _pg_logo_x = _pgsx - 2 * s - _lw2
+                            _pg_logo_y = start_y + (20 * s - _lh2) // 2
+                            Himage.paste(_pg_logo, (_pg_logo_x, _pg_logo_y))
+                            draw = ImageDraw.Draw(Himage)
+                            _ser_content_left_x = min(_ser_content_left_x, _pg_logo_x)
+
     # Venue — right-anchored in header, as large as possible without overlapping the time.
     # Always shown for a scheduled game, including doubleheaders: "Game N" now
     # lives in the corner spot below (see _dh_scheduled block near the duration
@@ -1954,7 +2001,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
                             _bb = font9.getbbox(_bnum)
-                            draw.text((_bcx - (_bb[0] + _bb[2]) // 2, _bcy - (_bb[1] + _bb[3]) // 2), _bnum, font=font9, fill=255)
+                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font9, fill=255)
             _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
             Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
@@ -2001,7 +2048,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
                             _bb = font9.getbbox(_bnum)
-                            draw.text((_bcx - (_bb[0] + _bb[2]) // 2, _bcy - (_bb[1] + _bb[3]) // 2), _bnum, font=font9, fill=255)
+                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font9, fill=255)
 
                 outs_list = [None] * 3
                 for i in range(1, 4):
@@ -2149,6 +2196,84 @@ def _draw_backward_k(Himage, x, y, font):
     tmp = Image.new('1', (w, h), 1)
     ImageDraw.Draw(tmp).text((-bbox[0] + 1, -bbox[1] + 1), 'K', font=font, fill=0)
     Himage.paste(tmp.transpose(Image.FLIP_LEFT_RIGHT), (int(x), int(y)))
+
+
+def _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, scale=1):
+    """Fill the wide right panel body with both teams' batting lineups for pre-game tiles.
+
+    Layout: two columns split at the midpoint.
+    Left = away team, Right = home team.
+    Team abbr header row, then up to 9 player rows (slot + last name + pos).
+    Falls back to a centered 'Lineups TBD' message when neither lineup is posted.
+    """
+    from image_utils import _last_name as _ln
+    s = scale
+    font_team = _get_font(10 * s)
+    font_row  = _get_font(9 * s)
+
+    body_y = rp_y + header_h
+    body_h = rp_h - header_h
+    col_w  = rp_w // 2
+    mid_x  = rp_x + col_w
+
+    away_lineup = game_data.get('away_lineup') or []
+    home_lineup = game_data.get('home_lineup') or []
+
+    if not away_lineup and not home_lineup:
+        msg = 'Lineups TBD'
+        mw  = int(font_row.getlength(msg))
+        mx  = rp_x + (rp_w - mw) // 2
+        my  = body_y + (body_h - 9 * s) // 2
+        draw.text((mx, my), msg, font=font_row, fill=0)
+        return
+
+    # Vertical divider between columns
+    draw.line([(mid_x, body_y), (mid_x, rp_y + rp_h - 1)], fill=0)
+
+    def _render_col(lineup, col_x, label):
+        lw = int(font_team.getlength(label))
+        lx = col_x + (col_w - lw) // 2
+        draw.text((lx,     body_y + 1 * s), label, font=font_team, fill=0)
+        draw.text((lx + 1, body_y + 1 * s), label, font=font_team, fill=0)
+
+        avail_h = body_h - 11 * s
+        n = min(len(lineup), 9)
+        row_h = avail_h // max(n, 1)
+        pad = 2
+
+        for i, entry in enumerate(lineup[:9]):
+            ry  = body_y + 11 * s + i * row_h
+            slot_str = f'{i + 1}.'
+            name = _ln(entry.get('name', ''))
+            pos  = entry.get('pos', '')
+
+            sw = int(font_row.getlength(slot_str))
+            draw.text((col_x + pad, ry), slot_str, font=font_row, fill=0)
+
+            pw  = int(font_row.getlength(pos))
+            px2 = col_x + col_w - pw - pad - 1
+            draw.text((px2, ry), pos, font=font_row, fill=0)
+
+            name_x = col_x + pad + sw + 2
+            max_nw  = px2 - 2 - name_x
+            while name and int(font_row.getlength(name)) > max_nw:
+                name = name[:-1]
+            draw.text((name_x, ry), name, font=font_row, fill=0)
+
+    away_name = (game_data.get('away_team_name') or 'Away')
+    home_name = (game_data.get('home_team_name') or 'Home')
+    # Use the last word of the team name (e.g. "Yankees") as the column header
+    away_label = away_name.split()[-1] if away_name else 'Away'
+    home_label = home_name.split()[-1] if home_name else 'Home'
+    # Truncate if too wide for the column
+    for lbl_font in (font_team,):
+        while away_label and int(lbl_font.getlength(away_label)) > col_w - 4:
+            away_label = away_label[:-1]
+        while home_label and int(lbl_font.getlength(home_label)) > col_w - 4:
+            home_label = home_label[:-1]
+
+    _render_col(away_lineup, rp_x,  away_label)
+    _render_col(home_lineup, mid_x, home_label)
 
 
 def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1):
@@ -2306,6 +2431,10 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         _tx = max(_hdr_left, _hdr_right - _measure_items(_hdr_items))
         _draw_items(_tx, rp_y + 4 * s, _hdr_items)
 
+    if state in ('Scheduled', 'Pre-Game', 'Warmup'):
+        _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, scale)
+        return
+
     if state != 'In Progress':
         return
 
@@ -2402,7 +2531,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                     _raw = game_data.get(_bkey)
                     _bnum = str(_raw) if _raw is not None else ''
                     if _bnum:
-                        draw.text((_bcx, _bcy), _bnum, font=font9, fill=255, anchor='mm')
+                        _bb = font9.getbbox(_bnum)
+                        draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font9, fill=255)
 
         # ── Outs circles: left side, below bases ──────────────────────
         outs_list = [i + 1 <= _outs_count for i in range(3)]

@@ -40,6 +40,8 @@ FIELD_SPECS = [
      'label': 'League Mode', 'options': ['mlb', 'aaa']},
     {'key': 'show_leaders_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Season Leaders Panel'},
     {'key': 'show_transactions_ticker', 'source': 'yaml', 'type': 'bool', 'label': 'Transactions Ticker'},
+    {'key': 'show_lineup_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Batting Lineup Panel'},
+    {'key': 'show_deadline_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Trade Deadline Countdown'},
     {'key': 'show_news_panel', 'source': 'yaml', 'type': 'bool', 'label': 'News Headlines Panel'},
     {'key': 'news_team_only', 'source': 'yaml', 'type': 'bool', 'label': 'News: Team Only'},
     {'key': 'show_magic_numbers', 'source': 'yaml', 'type': 'bool', 'label': 'Magic/Elim Numbers'},
