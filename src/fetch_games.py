@@ -45,6 +45,20 @@ _SUBSTITUTION_TYPES = ('substitution', 'timeout', 'advisory')
 _PRE_GAME_STATES = ('Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start')
 
 
+def _parse_schedule_lineup(players):
+    """Parse lineup players from the schedule API lineups hydrate.
+
+    Returns list of {"name": str, "pos": str} in batting order (array order).
+    """
+    result = []
+    for p in (players or []):
+        name = p.get('fullName') or ''
+        pos = (p.get('primaryPosition') or {}).get('abbreviation', '')
+        if name:
+            result.append({'name': name, 'pos': pos})
+    return result
+
+
 def _pick_tv_channel(broadcasts, favorite_abbr, away_abbr, home_abbr):
     """Return one TV callSign/name to display, or None.
 
@@ -646,6 +660,10 @@ def parse_games(data, sport_id=None, config=None):
                 home_abbreviation,
             ),
             'game_duration_minutes': game.get('gameInfo', {}).get('gameDurationMinutes'),
+            'home_lineup': _parse_schedule_lineup(
+                game.get('lineups', {}).get('homePlayers', [])),
+            'away_lineup': _parse_schedule_lineup(
+                game.get('lineups', {}).get('awayPlayers', [])),
         }
         _h_inn = game_dict.get('home_inning_runs') or []
         _a_inn = game_dict.get('away_inning_runs') or []
@@ -918,7 +936,7 @@ def fetch_scoreboard_for_date(date, sport_id=None, config=None):
     endpoint_url = (
         'https://statsapi.mlb.com/api/v1/schedule?'
         f'startDate={date}&endDate={date}&sportId={sport_id}'
-        '&hydrate=decisions,probablePitcher(note),linescore,flags,team,broadcasts(all),seriesStatus,gameInfo'
+        '&hydrate=decisions,probablePitcher(note),linescore,flags,team,broadcasts(all),seriesStatus,gameInfo,lineups'
     )
     response = requests.get(endpoint_url, timeout=15)
     data = response.json()

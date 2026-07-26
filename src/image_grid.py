@@ -14,6 +14,8 @@ from image_news import draw_news_cell
 from image_magic import draw_magic_cell
 from image_streaks import draw_streaks_cell
 from image_scoreless import draw_scoreless_cell
+from image_lineup import draw_lineup_cell
+from image_deadline import draw_deadline_cell
 
 
 # Live game states that qualify for a wide (2-cell) tile. Challenge/review states
@@ -832,7 +834,19 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     _free_slots = _free_grid_slots(_slots)
 
     # Free-slot panels, in priority order (first match claims the slot).
-    # Transactions ticker claims the first free slot, ahead of everything.
+    # Trade deadline countdown is first — it's the most time-sensitive panel
+    # and disappears automatically once the deadline passes.
+    if config.get('show_deadline_panel', False) and _free_slots:
+        from image_deadline import _countdown as _dl_countdown
+        _, _, _dl_past = _dl_countdown()
+        if not _dl_past:
+            _dl_col, _dl_row = _free_slots.pop(0)
+            _dl_data = load_json_file('transactions.json').get('transactions', [])
+            _dl_lx = _dl_col * 150 + x_start
+            _dl_ly = _dl_row * 150 + y_start
+            Himage = draw_deadline_cell(Himage, _dl_lx, _dl_ly, _dl_data, team_data, use_logos=use_logos)
+
+    # Transactions ticker.
     if config.get('show_transactions_ticker', False) and _free_slots:
         _tx_col, _tx_row = _free_slots.pop(0)
         _tx_data = load_json_file('transactions.json').get('transactions', [])
@@ -841,6 +855,19 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         Himage = draw_transactions_cell(
             Himage, _tx_lx, _tx_ly, _tx_data, team_data, use_logos=use_logos,
         )
+
+    # Batting lineup panel — both teams' orders, shown within 30 min of first pitch.
+    if config.get('show_lineup_panel', False) and _free_slots:
+        _primary_abbr = config.get('primary', '')
+        from image_lineup import _find_primary_game, game_within_minutes
+        _lu_game = _find_primary_game(game_state_data, _primary_abbr)
+        if _lu_game and game_within_minutes(_lu_game, minutes=30):
+            _lu_col, _lu_row = _free_slots.pop(0)
+            _lu_lx = _lu_col * 150 + x_start
+            _lu_ly = _lu_row * 150 + y_start
+            Himage = draw_lineup_cell(
+                Himage, _lu_lx, _lu_ly, game_state_data, _primary_abbr, team_data, use_logos=use_logos,
+            )
 
     # News headlines panel — team-scoped or league-wide.
     if config.get('show_news_panel', False) and _free_slots:

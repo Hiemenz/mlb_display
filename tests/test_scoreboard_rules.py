@@ -854,14 +854,14 @@ class TestStateNormalization:
             "Delayed Start should show no score (treated as Pre-Game)"
 
     @needs_pil
-    def test_delayed_start_and_pregame_render_same(self, minimal_team_data):
-        """Delayed Start must render identically to a plain Pre-Game."""
+    def test_delayed_start_differs_from_pregame_in_header(self, minimal_team_data):
+        """Delayed Start shows 'Delay' in the header; plain Pre-Game shows game time."""
         delayed = _pregame_game(detailed_state='Delayed Start')
         pregame = _pregame_game(detailed_state='Pre-Game')
         img_d = self._render(delayed, minimal_team_data)
         img_p = self._render(pregame, minimal_team_data)
-        assert list(img_d.getdata()) == list(img_p.getdata()), \
-            "Delayed Start and Pre-Game should produce identical renders"
+        assert list(img_d.getdata()) != list(img_p.getdata()), \
+            "Delayed Start should differ from Pre-Game (different header text)"
 
     @needs_pil
     def test_challenge_states_show_challenge_text_in_header(self, minimal_team_data):
@@ -3311,4 +3311,152 @@ class TestDrawNextGamePreview:
         # home_id=137 (SF) matches; away_id=119 (LAD) has no tomorrow game.
         tmrw_games = [self._fake_game(away_id=143, home_id=137)]
         img = self._call(tmrw_games, today_home_id=137, today_away_id=119)
+        assert isinstance(img, Image.Image)
+
+
+# ===========================================================================
+# 15. Lineup-in-cell mode
+# ===========================================================================
+
+_LINEUP_9 = [{'name': f'Player {i} Lastname', 'pos': 'CF'} for i in range(9)]
+
+
+class TestLineupMode:
+    """draw_box lineup-in-cell mode (within 30 min of first pitch with lineup data)."""
+
+    def _render(self, game, team_data):
+        """Render."""
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    def _lineup_game(self, **overrides):
+        from datetime import datetime, timezone, timedelta
+        soon = (datetime.now(timezone.utc) + timedelta(minutes=15)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        g = _pregame_game(
+            detailed_state='Pre-Game',
+            game_date=soon,
+            away_lineup=_LINEUP_9,
+            home_lineup=_LINEUP_9,
+            venue_name='Yankee Stadium',
+        )
+        g.update(overrides)
+        return g
+
+    @needs_pil
+    def test_lineup_mode_renders(self, minimal_team_data):
+        """A pre-game cell with lineup data within 30 min renders without error."""
+        img = self._render(self._lineup_game(), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_suppresses_team_names(self, minimal_team_data):
+        """In lineup mode the large team-name text is not drawn (body is lineup content)."""
+        game_no_lineup = _pregame_game(detailed_state='Pre-Game')
+        img_normal = self._render(game_no_lineup, minimal_team_data)
+        img_lineup = self._render(self._lineup_game(), minimal_team_data)
+        assert list(img_normal.getdata()) != list(img_lineup.getdata()), \
+            "Lineup mode should produce a different render than normal pre-game"
+
+    @needs_pil
+    def test_lineup_mode_warmup_state(self, minimal_team_data):
+        """Warmup state within 30 min also activates lineup mode."""
+        img = self._render(self._lineup_game(detailed_state='Warmup'), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_scheduled_state(self, minimal_team_data):
+        """Scheduled state within 30 min also activates lineup mode."""
+        img = self._render(self._lineup_game(detailed_state='Scheduled'), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_no_lineup_outside_window_shows_normal(self, minimal_team_data):
+        """A pre-game cell without lineup data shows the normal pitcher/record view."""
+        game = _pregame_game(detailed_state='Pre-Game')
+        img = self._render(game, minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_delayed_start_with_reason_in_header(self, minimal_team_data):
+        """Delayed Start with a postpone_reason shows delay info in the header."""
+        from datetime import datetime, timezone, timedelta
+        soon = (datetime.now(timezone.utc) + timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        game = _pregame_game(
+            detailed_state='Delayed Start',
+            game_date=soon,
+            postpone_reason='Rain',
+        )
+        img = self._render(game, minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_warmup_header_shows_time_not_word(self, minimal_team_data):
+        """Warmup header shows the start time string, not the literal word 'Warmup'."""
+        game = _pregame_game(detailed_state='Warmup', game_start='7:05 PM')
+        img_warmup = self._render(game, minimal_team_data)
+        game_scheduled = _pregame_game(detailed_state='Scheduled', game_start='7:05 PM')
+        img_scheduled = self._render(game_scheduled, minimal_team_data)
+        # Both should render without error; Warmup renders like Scheduled (time in header)
+        assert isinstance(img_warmup, Image.Image)
+        assert isinstance(img_scheduled, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_short_lineup(self, minimal_team_data):
+        """Lineup with < 9 entries exercises the empty-slot branch in _lu_render_col."""
+        short = [{'name': f'Player {i} Smith', 'pos': 'CF'} for i in range(4)]
+        img = self._render(self._lineup_game(away_lineup=short, home_lineup=short), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_long_name_truncation(self, minimal_team_data):
+        """Very long last name is truncated to fit the column width."""
+        long = [{'name': 'Bartholomew Witherspoon-Fitzgerald', 'pos': 'CF'}] * 9
+        img = self._render(self._lineup_game(away_lineup=long, home_lineup=long), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_long_pitcher_name(self, minimal_team_data):
+        """Very long probable-pitcher name is truncated to fit the SP strip."""
+        img = self._render(self._lineup_game(
+            away_probable='Bartholomew Witherspoon-Fitzgerald',
+            home_probable='Bartholomew Witherspoon-Fitzgerald',
+        ), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+
+# ===========================================================================
+# 16. Pre-game series context
+# ===========================================================================
+
+class TestPreGameSeriesContext:
+    """Series score/logo shown in the header of pre-game tiles."""
+
+    def _render(self, game, team_data):
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    @needs_pil
+    def test_pregame_series_tied(self, minimal_team_data):
+        """Series tied shows score in the header (e.g., 'tied' in series_result)."""
+        game = _pregame_game(
+            detailed_state='Scheduled',
+            series_wins=1,
+            series_losses=1,
+            series_result='Series tied 1-1',
+        )
+        img = self._render(game, minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_pregame_series_leader(self, minimal_team_data):
+        """Series leader shown in the header (e.g., 'NYY leads 2-1')."""
+        game = _pregame_game(
+            detailed_state='Scheduled',
+            series_wins=2,
+            series_losses=1,
+            series_result='NYY leads 2-1',
+        )
+        img = self._render(game, minimal_team_data)
         assert isinstance(img, Image.Image)
