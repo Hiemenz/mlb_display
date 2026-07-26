@@ -854,14 +854,14 @@ class TestStateNormalization:
             "Delayed Start should show no score (treated as Pre-Game)"
 
     @needs_pil
-    def test_delayed_start_and_pregame_render_same(self, minimal_team_data):
-        """Delayed Start must render identically to a plain Pre-Game."""
+    def test_delayed_start_differs_from_pregame_in_header(self, minimal_team_data):
+        """Delayed Start shows 'Delay' in the header; plain Pre-Game shows game time."""
         delayed = _pregame_game(detailed_state='Delayed Start')
         pregame = _pregame_game(detailed_state='Pre-Game')
         img_d = self._render(delayed, minimal_team_data)
         img_p = self._render(pregame, minimal_team_data)
-        assert list(img_d.getdata()) == list(img_p.getdata()), \
-            "Delayed Start and Pre-Game should produce identical renders"
+        assert list(img_d.getdata()) != list(img_p.getdata()), \
+            "Delayed Start should differ from Pre-Game (different header text)"
 
     @needs_pil
     def test_challenge_states_show_challenge_text_in_header(self, minimal_team_data):
