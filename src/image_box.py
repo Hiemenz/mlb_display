@@ -1166,10 +1166,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         else:
             try:
                 from datetime import datetime
-                dt = datetime.strptime(game_data['game_start'], "%Y-%m-%dT%H:%M:%SZ")
+                dt = datetime.strptime(game_data.get('game_start', ''), "%Y-%m-%dT%H:%M:%SZ")
                 game_state_str = dt.strftime("%I:%M %p").lstrip("0")
             except Exception:
-                game_state_str = game_data['game_start']
+                game_state_str = game_data.get('game_start', '')
     elif game_data['detailed_state'] in ('Suspended', 'Cancelled', 'Cancelled: Rain'):
         game_state_str = 'Susp' if game_data['detailed_state'] == 'Suspended' else 'Canc'
         _inn = game_data.get('current_inning')

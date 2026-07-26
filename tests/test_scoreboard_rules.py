@@ -3400,3 +3400,63 @@ class TestLineupMode:
         # Both should render without error; Warmup renders like Scheduled (time in header)
         assert isinstance(img_warmup, Image.Image)
         assert isinstance(img_scheduled, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_short_lineup(self, minimal_team_data):
+        """Lineup with < 9 entries exercises the empty-slot branch in _lu_render_col."""
+        short = [{'name': f'Player {i} Smith', 'pos': 'CF'} for i in range(4)]
+        img = self._render(self._lineup_game(away_lineup=short, home_lineup=short), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_long_name_truncation(self, minimal_team_data):
+        """Very long last name is truncated to fit the column width."""
+        long = [{'name': 'Bartholomew Witherspoon-Fitzgerald', 'pos': 'CF'}] * 9
+        img = self._render(self._lineup_game(away_lineup=long, home_lineup=long), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_long_pitcher_name(self, minimal_team_data):
+        """Very long probable-pitcher name is truncated to fit the SP strip."""
+        img = self._render(self._lineup_game(
+            away_probable='Bartholomew Witherspoon-Fitzgerald',
+            home_probable='Bartholomew Witherspoon-Fitzgerald',
+        ), minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+
+# ===========================================================================
+# 16. Pre-game series context
+# ===========================================================================
+
+class TestPreGameSeriesContext:
+    """Series score/logo shown in the header of pre-game tiles."""
+
+    def _render(self, game, team_data):
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    @needs_pil
+    def test_pregame_series_tied(self, minimal_team_data):
+        """Series tied shows score in the header (e.g., 'tied' in series_result)."""
+        game = _pregame_game(
+            detailed_state='Scheduled',
+            series_wins=1,
+            series_losses=1,
+            series_result='Series tied 1-1',
+        )
+        img = self._render(game, minimal_team_data)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_pregame_series_leader(self, minimal_team_data):
+        """Series leader shown in the header (e.g., 'NYY leads 2-1')."""
+        game = _pregame_game(
+            detailed_state='Scheduled',
+            series_wins=2,
+            series_losses=1,
+            series_result='NYY leads 2-1',
+        )
+        img = self._render(game, minimal_team_data)
+        assert isinstance(img, Image.Image)
