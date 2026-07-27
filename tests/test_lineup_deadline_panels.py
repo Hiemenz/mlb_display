@@ -270,7 +270,7 @@ def test_draw_lineup_cell_long_name_and_pitcher(tmp_path, monkeypatch):
 
 
 def test_image_grid_spare_cell_lineup(tmp_path, monkeypatch):
-    """image_grid dispatches to draw_lineup_cell when show_lineup_panel=True and game within 30 min."""
+    """image_grid dispatches to draw_lineup_cell when show_lineup_panel=True and game within 45 min."""
     try:
         from PIL import Image
     except ImportError:
