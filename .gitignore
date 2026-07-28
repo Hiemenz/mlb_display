@@ -12,6 +12,7 @@ __pycache__/
 *.mp4
 # Exception: README screenshots in docs/
 !docs/*.png
+!docs/*.gif
 # Exception: golden-image regression references (checked in on purpose)
 !tests/golden/*.png
 # ...but not the actual-render dumps left behind by a failing golden test
