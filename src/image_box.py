@@ -728,11 +728,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font11 = _get_font(11 * s)
     font9 = _get_font(9 * s)
 
-    # Lineup mode: within 30 min of first pitch with lineup data posted.
+    # Lineup mode: within 45 min of first pitch with lineup data posted.
     # Replaces pitcher-probables body and team-records section with batting orders.
     _is_lineup_mode = (
         game_data.get('detailed_state') in ('Scheduled', 'Pre-Game', 'Warmup')
-        and _game_within_minutes_check(game_data, 30)
+        and _game_within_minutes_check(game_data, 45)
         and bool(game_data.get('away_lineup') or game_data.get('home_lineup'))
     )
 
@@ -2110,8 +2110,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            _bb = font9.getbbox(_bnum)
-                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font9, fill=255)
+                            _bb = font11.getbbox(_bnum)
+                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font11, fill=255)
             _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
             Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
@@ -2157,8 +2157,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            _bb = font9.getbbox(_bnum)
-                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font9, fill=255)
+                            _bb = font11.getbbox(_bnum)
+                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font11, fill=255)
 
                 outs_list = [None] * 3
                 for i in range(1, 4):
@@ -2401,6 +2401,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     """
     s = scale
     font11 = _get_font(11 * s)
+    font10 = _get_font(10 * s)   # slightly bigger than font9, for base-runner numbers
     font9  = _get_font(9 * s)
     font7  = _get_font(max(7 * s, 7))
 
@@ -2642,8 +2643,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                     _raw = game_data.get(_bkey)
                     _bnum = str(_raw) if _raw is not None else ''
                     if _bnum:
-                        _bb = font9.getbbox(_bnum)
-                        draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font9, fill=255)
+                        _bb = font10.getbbox(_bnum)
+                        draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font10, fill=255)
 
         # ── Outs circles: left side, below bases ──────────────────────
         outs_list = [i + 1 <= _outs_count for i in range(3)]
@@ -3252,17 +3253,23 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     # nothing.
     _coach_scale = max(FSCALE, 0.45)
 
-    _coach_px_nudge = 2  # fine-tune: extra px along the line, away from home
+    _coach_px_nudge = 2    # fine-tune: extra px along the line, away from home
+    _coach_screen_dx = -2  # fine-tune: flat screen-space shift, mirrored per side (left for 3B)
+    _coach_screen_dy = 2   # fine-tune: flat screen-space shift, down (same both sides)
 
     def _coach_box_poly(u, n):
         da_near = 50 - 16 / 2
         da_far  = 50 + 16 / 2
         dp_near = 15
         dp_far  = 15 + 5
+        # Mirror the horizontal shift by side so 1B and 3B look symmetric:
+        # u[0] < 0 is the 3B (left) side, keeping the shift as-is (left);
+        # u[0] > 0 is the 1B (right) side, flipping it to move right instead.
+        _dx = _coach_screen_dx if u[0] < 0 else -_coach_screen_dx
         pts = []
         for da, dp in [(da_near, dp_near), (da_far, dp_near), (da_far, dp_far), (da_near, dp_far)]:
-            pts.append((int(HX + (da * u[0] + dp * n[0]) * _coach_scale + _coach_px_nudge * u[0]),
-                         int(HY - (da * u[1] + dp * n[1]) * _coach_scale - _coach_px_nudge * u[1])))
+            pts.append((int(HX + (da * u[0] + dp * n[0]) * _coach_scale + _coach_px_nudge * u[0]) + _dx,
+                         int(HY - (da * u[1] + dp * n[1]) * _coach_scale - _coach_px_nudge * u[1]) + _coach_screen_dy))
         return pts
 
     _u1, _n1 = (0.7071, 0.7071), (0.7071, -0.7071)    # home->first, outward
@@ -3460,7 +3467,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     # A tight white rectangle erases the infield polygon lines behind the glyphs.
     # Max width is capped so the label stays right of the home-plate dirt area;
     # font shrinks (never truncates) until the full name fits inside that cap.
-    _venue_name = game_data.get('venue', '') or ''
+    _venue_name = _clean_venue_name(game_data.get('venue', '')) or ''
     if _venue_name:
         _vy        = start_y + int(TOTAL_H) + 9
         _field_bot = start_y + int(150 * scale)

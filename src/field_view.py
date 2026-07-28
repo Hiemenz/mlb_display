@@ -3,6 +3,7 @@ import math
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from generate_image import picdir, _logo_small
+from image_utils import _clean_venue_name
 from stadium_polygons import get_polygon, get_infield_polygon
 
 EPD_WIDTH = 800
@@ -169,7 +170,8 @@ _COACH_CENTER_DIST_FT = 50   # distance from home along the line to box centre
 _COACH_LINE_GAP_FT    = 15   # gap from the foul line to the box's near edge
 _COACH_LENGTH_FT      = 16   # along the foul line
 _COACH_WIDTH_FT       = 5    # into foul territory
-_COACH_PX_NUDGE       = 2    # fine-tune: extra px along the line, away from home
+_COACH_PX_NUDGE       = 4    # fine-tune: extra px along the line, away from home
+_COACH_PERP_NUDGE     = 2    # fine-tune: extra px perpendicular, toward home plate
 
 
 def _coach_box_poly(u, n):
@@ -183,8 +185,8 @@ def _coach_box_poly(u, n):
     dp_far  = _COACH_LINE_GAP_FT + _COACH_WIDTH_FT
     pts = []
     for da, dp in [(da_near, dp_near), (da_far, dp_near), (da_far, dp_far), (da_near, dp_far)]:
-        x = hx + (da * u[0] + dp * n[0]) * FIELD_SCALE + _COACH_PX_NUDGE * u[0]
-        y = hy + (da * u[1] + dp * n[1]) * FIELD_SCALE + _COACH_PX_NUDGE * u[1]
+        x = hx + (da * u[0] + dp * n[0]) * FIELD_SCALE + _COACH_PX_NUDGE * u[0] - _COACH_PERP_NUDGE * n[0]
+        y = hy + (da * u[1] + dp * n[1]) * FIELD_SCALE + _COACH_PX_NUDGE * u[1] - _COACH_PERP_NUDGE * n[1]
         pts.append((int(x), int(y)))
     return pts
 
@@ -613,7 +615,7 @@ def _draw_mini_linescore(draw, fonts, data):
     draw.text((rhe_x+18, hy2), str(data.get('home_hits',   0)), font=fonts['f9'], fill=0)
     draw.text((rhe_x+36, hy2), str(data.get('home_errors', 0)), font=fonts['f9'], fill=0)
 
-    venue = data.get('venue', '')
+    venue = _clean_venue_name(data.get('venue', ''))
     if venue:
         draw.text((x, hy2 + 14), venue, font=fonts['f9'], fill=0)
 
