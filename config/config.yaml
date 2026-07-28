@@ -177,8 +177,15 @@ transactions_lookback_days: 2
 show_lineup_panel: false
 
 # Trade deadline countdown panel: shows time remaining until the MLB trade deadline
-# (July 31) plus recent transactions. Enabled by default while the deadline is near.
+# plus recent transactions. Only appears in the two weeks before the deadline
+# (and auto-hides once it passes) — enabling it year-round is safe.
 show_deadline_panel: true
+
+# MLB trade deadline date/time, local ET, as announced by MLB (format: "YYYY-MM-DD HH:MM").
+# There's no fixed rule for this date — the Commissioner's Office picks one each year
+# (CBA allows July 28-Aug 3) to avoid a game being played at the moment of the deadline —
+# so it must be updated here once MLB announces it (usually a few weeks ahead of season/deadline).
+trade_deadline: "2026-08-03 18:00"
 
 # News headlines panel: show recent MLB news in an empty grid cell when fewer
 # than 15 games are on the slate. Uses ESPN's public MLB news API (no key

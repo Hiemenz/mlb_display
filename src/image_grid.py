@@ -834,17 +834,18 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     _free_slots = _free_grid_slots(_slots)
 
     # Free-slot panels, in priority order (first match claims the slot).
-    # Trade deadline countdown is first — it's the most time-sensitive panel
-    # and disappears automatically once the deadline passes.
+    # Trade deadline countdown is first — it's the most time-sensitive panel.
+    # It only appears within the two weeks before the deadline, and disappears
+    # automatically once the deadline passes.
     if config.get('show_deadline_panel', False) and _free_slots:
-        from image_deadline import _countdown as _dl_countdown
-        _, _, _dl_past = _dl_countdown()
-        if not _dl_past:
+        from image_deadline import in_countdown_window as _dl_in_window
+        if _dl_in_window(config=config):
             _dl_col, _dl_row = _free_slots.pop(0)
             _dl_data = load_json_file('transactions.json').get('transactions', [])
             _dl_lx = _dl_col * 150 + x_start
             _dl_ly = _dl_row * 150 + y_start
-            Himage = draw_deadline_cell(Himage, _dl_lx, _dl_ly, _dl_data, team_data, use_logos=use_logos)
+            Himage = draw_deadline_cell(Himage, _dl_lx, _dl_ly, _dl_data, team_data,
+                                         use_logos=use_logos, config=config)
 
     # Transactions ticker.
     if config.get('show_transactions_ticker', False) and _free_slots:

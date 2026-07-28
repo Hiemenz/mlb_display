@@ -42,6 +42,8 @@ FIELD_SPECS = [
     {'key': 'show_transactions_ticker', 'source': 'yaml', 'type': 'bool', 'label': 'Transactions Ticker'},
     {'key': 'show_lineup_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Batting Lineup Panel'},
     {'key': 'show_deadline_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Trade Deadline Countdown'},
+    {'key': 'trade_deadline', 'source': 'yaml', 'type': 'text', 'label': 'Trade Deadline Date/Time',
+     'help': 'Local ET, format YYYY-MM-DD HH:MM, e.g. 2026-08-03 18:00 — update once MLB announces it'},
     {'key': 'show_news_panel', 'source': 'yaml', 'type': 'bool', 'label': 'News Headlines Panel'},
     {'key': 'news_team_only', 'source': 'yaml', 'type': 'bool', 'label': 'News: Team Only'},
     {'key': 'show_magic_numbers', 'source': 'yaml', 'type': 'bool', 'label': 'Magic/Elim Numbers'},
