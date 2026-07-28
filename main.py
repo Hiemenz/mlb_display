@@ -741,7 +741,8 @@ Examples:
                         fetch_playoff_bracket()
                     except Exception as _bp_e:
                         print(f"Warning: playoff bracket fetch on poll-skip: {_bp_e}")
-                if config.get('show_transactions_ticker', False) and _should_refresh_transactions():
+                if (config.get('show_transactions_ticker', False) or config.get('show_deadline_panel', False)) \
+                        and _should_refresh_transactions():
                     try:
                         fetch_transactions(config.get('transactions_lookback_days', 2))
                     except Exception as _tx_e:
@@ -888,9 +889,11 @@ Examples:
             print(f"Warning: playoff bracket fetch failed: {e}")
 
     # 7c2. Transactions ticker refresh — recent IL moves/call-ups/signings,
-    # only when the panel is enabled, and only when the cache is stale
-    # (transactions don't change fast enough to warrant fetching every poll).
-    if config.get('show_transactions_ticker', False) and _should_refresh_transactions(force=_force_data_refresh):
+    # only when a panel that uses them is enabled (ticker or deadline
+    # countdown), and only when the cache is stale (transactions don't
+    # change fast enough to warrant fetching every poll).
+    if (config.get('show_transactions_ticker', False) or config.get('show_deadline_panel', False)) \
+            and _should_refresh_transactions(force=_force_data_refresh):
         try:
             fetch_transactions(config.get('transactions_lookback_days', 2))
         except Exception as e:

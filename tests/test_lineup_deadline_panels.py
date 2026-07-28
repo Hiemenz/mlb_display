@@ -11,7 +11,42 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 # image_deadline
 # ──────────────────────────────────────────────────────────────────────────────
 
-from image_deadline import _countdown, _DEADLINE_UTC
+from image_deadline import _countdown, _DEADLINE_UTC, in_countdown_window
+
+
+def test_in_countdown_window_within_two_weeks():
+    within = datetime(2026, 7, 25, 0, 0, 0, tzinfo=timezone.utc)  # 9 days before deadline
+    assert in_countdown_window(now_utc=within)
+
+
+def test_in_countdown_window_more_than_two_weeks_out():
+    far = datetime(2026, 6, 1, 0, 0, 0, tzinfo=timezone.utc)  # ~2 months before deadline
+    assert not in_countdown_window(now_utc=far)
+
+
+def test_in_countdown_window_after_deadline():
+    after = datetime(2026, 8, 5, 0, 0, 0, tzinfo=timezone.utc)
+    assert not in_countdown_window(now_utc=after)
+
+
+def test_countdown_uses_config_trade_deadline_over_fallback():
+    """A config trade_deadline in a different year overrides the hardcoded fallback."""
+    config = {'trade_deadline': '2027-07-27 18:00'}
+    just_before = datetime(2027, 7, 27, 21, 0, 0, tzinfo=timezone.utc)  # 1h before 22:00 UTC
+    big, sub, is_past = _countdown(now_utc=just_before, config=config)
+    assert not is_past
+    assert 'h' in big
+    # The hardcoded 2026 fallback would already show this as long past.
+    assert in_countdown_window(now_utc=just_before, config=config)
+    assert not in_countdown_window(now_utc=just_before)
+
+
+def test_countdown_falls_back_on_invalid_config_value():
+    config = {'trade_deadline': 'not-a-date'}
+    before = datetime(2026, 7, 30, 0, 0, 0, tzinfo=timezone.utc)
+    big, sub, is_past = _countdown(now_utc=before, config=config)
+    assert not is_past
+    assert 'd' in big
 
 
 def test_countdown_before_deadline():

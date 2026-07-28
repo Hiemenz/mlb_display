@@ -3,9 +3,16 @@
 Shows time remaining until the MLB trade deadline plus the most recent
 transactions from data/transactions.json as a transaction ticker beneath.
 
-The deadline constant below must be updated each season.
+MLB has no fixed rule for the deadline date/time — the Commissioner's Office
+picks a specific date each year (per the CBA, between July 28 and Aug 3) to
+avoid a game being played at the moment of the deadline, and announces it via
+press release. There's nothing to compute or fetch it from, so the date comes
+from config.yaml's `trade_deadline` (local ET, e.g. "2026-08-03 18:00") and
+must be updated there once MLB announces the date each season.
+`_DEADLINE_UTC` below is only a fallback for when config.yaml has no value.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import pytz
 from image_assets import _get_font, ImageDraw
 
 _CELL_W = 135
@@ -13,8 +20,36 @@ _CELL_H = 130
 _PAD = 2
 _HEADER = 'Trade Deadline'
 
+_DEADLINE_TZ = pytz.timezone('America/New_York')
+
+# Fallback if config.yaml has no (or an unparseable) trade_deadline value.
 # 2026 MLB trade deadline: August 3, 6 PM ET (UTC-4 in summer = 22:00 UTC)
 _DEADLINE_UTC = datetime(2026, 8, 3, 22, 0, 0, tzinfo=timezone.utc)
+
+# The countdown is only relevant this close to the deadline; outside this
+# window the panel stays off so a free slot doesn't sit on a months-away date.
+_SHOW_WINDOW_DAYS = 14
+
+
+def _deadline_utc(config=None):
+    """Resolve the deadline as a UTC datetime from config's `trade_deadline`
+    ("YYYY-MM-DD HH:MM" local ET), falling back to _DEADLINE_UTC when config
+    is absent or the value can't be parsed."""
+    raw = (config or {}).get('trade_deadline')
+    if raw:
+        try:
+            naive = datetime.strptime(raw, '%Y-%m-%d %H:%M')
+            return _DEADLINE_TZ.localize(naive).astimezone(timezone.utc)
+        except ValueError:
+            print(f"Warning: invalid trade_deadline config value {raw!r}, using fallback")
+    return _DEADLINE_UTC
+
+
+def in_countdown_window(now_utc=None, config=None):
+    """Return True if now is within _SHOW_WINDOW_DAYS of the deadline (and not past it)."""
+    now = now_utc or datetime.now(timezone.utc)
+    deadline = _deadline_utc(config)
+    return deadline - timedelta(days=_SHOW_WINDOW_DAYS) <= now < deadline
 
 _TYPE_ABBR = {
     'Status Change':              'IL',
@@ -30,10 +65,10 @@ _TYPE_ABBR = {
 }
 
 
-def _countdown(now_utc=None):
+def _countdown(now_utc=None, config=None):
     """Return (big_str, small_str, is_past)."""
     now = now_utc or datetime.now(timezone.utc)
-    delta = _DEADLINE_UTC - now
+    delta = _deadline_utc(config) - now
     if delta.total_seconds() <= 0:
         return 'Passed', 'Trade Deadline', True
     s = int(delta.total_seconds())
@@ -47,7 +82,7 @@ def _countdown(now_utc=None):
     return f'{mins}m', 'until deadline', False
 
 
-def draw_deadline_cell(Himage, sx, sy, transactions_data, team_data, use_logos=False):
+def draw_deadline_cell(Himage, sx, sy, transactions_data, team_data, use_logos=False, config=None):
     """Draw the trade deadline countdown panel at pixel position (sx, sy)."""
     draw = ImageDraw.Draw(Himage)
 
@@ -67,7 +102,7 @@ def draw_deadline_cell(Himage, sx, sy, transactions_data, team_data, use_logos=F
     draw.text((hdr_x + 1, sy + 4), _HEADER, font=font_hdr, fill=0)
 
     # Countdown
-    big_str, sub_str, is_past = _countdown()
+    big_str, sub_str, is_past = _countdown(config=config)
     big_y = sy + 24
     bw = int(font_big.getlength(big_str))
     bx = sx + (_CELL_W - bw) // 2
