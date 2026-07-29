@@ -216,7 +216,7 @@ show_magic_numbers: false
 # M# / E# / CL / OUT badge in the top-right corner of each team's logo in the
 # sidebar. Only shown when the number is ≤ 20 games (or already clinched/out).
 # Reuses standings.json — no extra API call.
-sidebar_magic_badges: false
+sidebar_magic_badges: true
 
 # Hot Hitters panel: show the top batting-average leaders over the last 14
 # days in an empty grid cell (position players only). The MLB Stats API does
