@@ -800,21 +800,73 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
                 canvas, standings_data, team_data, side='right', league_mode=league_mode,
                 x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
-    # Game state label centered in the top strip — rotates between series
-    # context, venue name, and TV channel.  The date is omitted since the
-    # featured game is already the focus of the fullscreen layout.
+    # Game-state-specific header label centered in the top strip.
+    # 4 states: Scheduled, Finished, Postponed/Cancelled, other (fallback).
+    # Each state has its own set of rotating candidates.
     # Skipped entirely when the bracket fills the whole strip.
     if not _bracket:
         _state_candidates = []
-        _series_s = _series_display_str(game_data)
-        if _series_s:
-            _state_candidates.append(_series_s)
-        _venue_s = _clean_venue_name(game_data.get('venue') or '')
-        if _venue_s:
-            _state_candidates.append(_venue_s)
-        _tv_s = (game_data.get('tv_channel') or '').strip()
-        if _tv_s:
-            _state_candidates.append(_tv_s)
+        _ds_now = game_data.get('detailed_state', '')
+        _scheduled_states = {'Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start', 'Delayed'}
+        _final_states = {'Final', 'Game Over', 'Final: Tied'}
+        _postponed_states = {'Postponed', 'Cancelled', 'Cancelled: Rain', 'Suspended', 'Suspended: Rain'}
+
+        if _ds_now in _scheduled_states:
+            # Scheduled: series context → venue → TV channel → game time
+            _s = _series_display_str(game_data)
+            if _s:
+                _state_candidates.append(_s)
+            _v = _clean_venue_name(game_data.get('venue') or '')
+            if _v:
+                _state_candidates.append(_v)
+            _tv = (game_data.get('tv_channel') or '').strip()
+            if _tv:
+                _state_candidates.append(_tv)
+            _gt = (game_data.get('game_date') or '').strip()
+            if _gt:
+                # parse ISO datetime → "7:05 PM" local display
+                try:
+                    import datetime as _dt_mod
+                    _gdt = _dt_mod.datetime.fromisoformat(_gt.replace('Z', '+00:00'))
+                    _state_candidates.append(_gdt.astimezone().strftime('%-I:%M %p'))
+                except Exception:
+                    pass
+
+        elif _ds_now in _final_states or _ds_now.startswith('Completed Early'):
+            # Finished: series result → WP → LP → SV
+            _s = _series_display_str(game_data)
+            if _s:
+                _state_candidates.append(_s)
+            _wp = _last_name(game_data.get('winner_name') or '')
+            if _wp:
+                _state_candidates.append(f'WP: {_wp}')
+            _lp = _last_name(game_data.get('loser_name') or '')
+            if _lp:
+                _state_candidates.append(f'LP: {_lp}')
+            _sv = _last_name(game_data.get('saver_name') or '')
+            if _sv:
+                _state_candidates.append(f'SV: {_sv}')
+
+        elif _ds_now in _postponed_states:
+            # Postponed/Cancelled: status label → reason → venue
+            _ppd_lbl = 'POSTPONED' if 'Postponed' in _ds_now else 'CANCELLED'
+            _state_candidates.append(_ppd_lbl)
+            _reason = (game_data.get('postpone_reason') or '').strip()
+            if _reason:
+                _state_candidates.append(_reason)
+            _v = _clean_venue_name(game_data.get('venue') or '')
+            if _v:
+                _state_candidates.append(_v)
+
+        else:
+            # Fallback for any unlisted state
+            _s = _series_display_str(game_data)
+            if _s:
+                _state_candidates.append(_s)
+            _v = _clean_venue_name(game_data.get('venue') or '')
+            if _v:
+                _state_candidates.append(_v)
+
         if _state_candidates:
             _rot_mins = max(config.get('overflow_ticker_rotation_minutes', 2), 1)
             _block = int(_time_feat.time() // (_rot_mins * 60))
