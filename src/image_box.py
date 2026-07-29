@@ -966,19 +966,23 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # Sized bigger than the logo row itself and nudged up 5px into the
             # header-gap whitespace above, without moving the lineup rows below.
             if use_logos:
-                _lu_logo_sz = min(_lu_logo_h + 2 * s, _lu_col_w - 10 * s)
+                # Bottom-anchored 2px above the batting rows — growing the size
+                # only extends the logo upward into the header-gap whitespace,
+                # never down into the rows below.
+                _lu_logo_bottom = _lu_body_y0 + _lu_logo_h - 2 * s
+                _lu_logo_sz = min(30 * s, _lu_col_w - 10 * s)
+                _lu_logo_y  = _lu_logo_bottom - _lu_logo_sz
                 _lu_away_logo = _logo_small(away_team_name, away_team_id, size=_lu_logo_sz)
                 _lu_home_logo = _logo_small(home_team_name, home_team_id, size=_lu_logo_sz)
-                _lu_logo_y = _lu_body_y0 + (_lu_logo_h - _lu_logo_sz) // 2 - 5 * s
                 if _lu_away_logo:
                     _lu_alx = start_x + (_lu_col_w - _lu_away_logo.width) // 2
-                    Himage.paste(_lu_away_logo, (_lu_alx, _lu_logo_y))
+                    Himage.paste(_lu_away_logo, (_lu_alx, _lu_logo_bottom - _lu_away_logo.height))
                 if _lu_home_logo:
                     _lu_hlx = _lu_mid_x + (_lu_col_w - _lu_home_logo.width) // 2
-                    Himage.paste(_lu_home_logo, (_lu_hlx, _lu_logo_y))
+                    Himage.paste(_lu_home_logo, (_lu_hlx, _lu_logo_bottom - _lu_home_logo.height))
                 _lu_vs_txt = 'vs'
-                _lu_vs_w   = int(font9.getlength(_lu_vs_txt))
-                draw.text((_lu_mid_x - _lu_vs_w // 2, _lu_body_y0 + (_lu_logo_h - 9 * s) // 2), _lu_vs_txt, font=font9, fill=0)
+                _lu_vs_w   = int(font11.getlength(_lu_vs_txt))
+                draw.text((_lu_mid_x - _lu_vs_w // 2, _lu_logo_y + (_lu_logo_sz - 11 * s) // 2), _lu_vs_txt, font=font11, fill=0)
                 draw = ImageDraw.Draw(Himage)
 
             # Vertical divider — starts below the logo row
