@@ -944,7 +944,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_home = game_data.get('home_lineup') or []
             _lu_away_sp = _format_player_name(game_data.get('away_probable') or '')
             _lu_home_sp = _format_player_name(game_data.get('home_probable') or '')
-            _lu_cell_h  = 130 * s
+            _lu_cell_h  = 140 * s
             _lu_body_y  = start_y + 21 * s   # one below header separator
             _lu_sp_h    = 11 * s
             _lu_n_rows  = 9
@@ -1948,8 +1948,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw.line((home_px, BAR_Y, home_px, BAR_Y + BAR_H), fill=0)
 
     end_x = start_x + horizonta_len
-    end_y = start_y + vertical_len + 20 * s
-    draw.line((start_x, start_y + vertical_len + 20 * s, end_x, end_y), fill=0)
+    _box_bottom_y = start_y + _lu_cell_h if _is_lineup_mode else start_y + vertical_len + 20 * s
+    end_y = _box_bottom_y
+    draw.line((start_x, _box_bottom_y, end_x, end_y), fill=0)
 
     # Next game preview — shown in the win-prob strip for Final games after final_linescore_minutes expires
     if _game_is_final and not _historical_mode:
