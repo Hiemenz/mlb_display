@@ -1967,9 +1967,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw.line((home_px, BAR_Y, home_px, BAR_Y + BAR_H), fill=0)
 
     end_x = start_x + horizonta_len
-    _box_bottom_y = start_y + _lu_cell_h if _is_lineup_mode else start_y + vertical_len + 20 * s
-    end_y = _box_bottom_y
-    draw.line((start_x, _box_bottom_y, end_x, end_y), fill=0)
+    if not _is_lineup_mode:
+        end_y = start_y + vertical_len + 20 * s
+        draw.line((start_x, end_y, end_x, end_y), fill=0)
 
     # Next game preview — shown in the win-prob strip for Final games after final_linescore_minutes expires
     if _game_is_final and not _historical_mode:
