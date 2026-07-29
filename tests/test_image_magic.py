@@ -124,9 +124,9 @@ class TestMagicOrElim:
         return {'league_record_wins': wins, 'league_record_losses': losses,
                 'clinch_indicator': ''}
 
-    def _team(self, wins=50, losses=40, clinch=''):
+    def _team(self, wins=50, losses=40, clinch='', games_back=None):
         return {'league_record_wins': wins, 'league_record_losses': losses,
-                'clinch_indicator': clinch}
+                'clinch_indicator': clinch, 'games_back': games_back}
 
     def test_leader_magic_number(self):
         leader = self._leader(wins=60)
@@ -152,12 +152,31 @@ class TestMagicOrElim:
         result = _magic_or_elim(leader, leader, is_leader=True, rival_losses=None)
         assert result == 'CL'
 
-    def test_trailer_elimination_number(self):
+    def test_trailer_shows_games_back_when_elim_number_is_large(self):
+        """Above _ELIM_THRESHOLD, games back is shown instead of the (not yet
+        meaningful) elimination number."""
         leader = self._leader(wins=60)
-        team = self._team(losses=40)
-        # E = 163-60-40 = 63
+        team = self._team(losses=40, games_back='6.5')
+        # E = 163-60-40 = 63, well above the threshold
         result = _magic_or_elim(team, leader, is_leader=False, rival_losses=35)
-        assert result == 'E63'
+        assert result == '6.5'
+
+    def test_trailer_games_back_falls_back_to_dash_when_missing(self):
+        """No games_back on the team dict falls back to '-', mirroring the
+        wildcard header's convention for a missing value."""
+        leader = self._leader(wins=60)
+        team = self._team(losses=40, games_back=None)
+        result = _magic_or_elim(team, leader, is_leader=False, rival_losses=35)
+        assert result == '-'
+
+    def test_trailer_shows_elimination_number_once_race_is_close(self):
+        """Below _ELIM_THRESHOLD, the elimination number takes over from
+        games back — the race is tight enough to be worth highlighting."""
+        leader = self._leader(wins=100)
+        team = self._team(losses=44, games_back='18.0')
+        # E = 163-100-44 = 19 < 20 → elimination number, not games back
+        result = _magic_or_elim(team, leader, is_leader=False, rival_losses=35)
+        assert result == 'E19'
 
     def test_trailer_eliminated(self):
         leader = self._leader(wins=120)

@@ -786,3 +786,53 @@ class TestPackGridOverflowSkipAndBreak:
         wide_pos = [p for p in positions if p[0] == 'wide']
         assert len(wide_pos) == 1
         assert wide_pos[0][1] == 0   # wide starts at col 0 (new row)
+
+
+# ---------------------------------------------------------------------------
+# _prioritize_live_over_final — dropped games favor keeping live/scheduled
+# ---------------------------------------------------------------------------
+
+class TestPrioritizeLiveOverFinal:
+    def test_final_games_dropped_before_scheduled_ones(self):
+        """15 games (1 live + 3 Final + 11 Scheduled) with wide_cell_featured
+        forces 2 games off the grid via the >=15 row-major path. Without
+        state-aware prioritization, whichever games land at the tail of the
+        packed order get dropped regardless of state; with it, the already-
+        finished games must be the ones bumped, not the scheduled ones still
+        worth watching."""
+        cfg = dict(BASE_CONFIG, wide_cell_featured=True, primary='NYY')
+        games = (
+            [_game(0, state='In Progress', inning=5)]
+            + [_game(100 + i, state='Final') for i in range(3)]
+            + [_game(200 + i, state='Scheduled') for i in range(11)]
+        )
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        placed_pks = {g['game_pk'] for g in ordered}
+        dropped = [g for g in games if g['game_pk'] not in placed_pks]
+
+        assert len(ordered) < len(games)   # sanity: this scenario does drop games
+        assert all(g['detailed_state'] == 'Final' for g in dropped)
+        assert all(g['game_pk'] in placed_pks for g in games if g['detailed_state'] == 'Scheduled')
+
+    def test_no_drop_means_no_swap(self):
+        """When everything fits, the swap is a no-op — order/content untouched
+        beyond what packing already does."""
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
+        assert len(ordered) == len(games)
+        assert {g['game_pk'] for g in ordered} == {g['game_pk'] for g in games}
+
+    def test_pinned_favorite_final_game_never_swapped_out(self):
+        """The pinned favorite-team game stays in slot 0 even when it's Final
+        and a live/scheduled game elsewhere got dropped — index 0 is exempt
+        from the priority swap, same as _move_non_live_to_fillers."""
+        cfg = dict(BASE_CONFIG, wide_cell_featured=True, favorite_team_first=True, primary='NYY')
+        pinned = _game(999, state='Final')
+        games = (
+            [pinned]
+            + [_game(0, state='In Progress', inning=5)]
+            + [_game(100 + i, state='Final') for i in range(3)]
+            + [_game(200 + i, state='Scheduled') for i in range(11)]
+        )
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert ordered[0]['game_pk'] == 999

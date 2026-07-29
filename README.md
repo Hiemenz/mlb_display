@@ -74,10 +74,11 @@ Both outer edges of the scoreboard display division standings. AL divisions run 
 
 ### Top Header Strip
 
-The strip across the top of the scoreboard shows one of two things:
+The strip across the top of the scoreboard shows one of three things, in priority order:
 
-- **Wildcard standings** (`show_wildcard_standings`) — AL top-10 left-to-right on the left half, NL right-to-left on the right half; rank 1 at the outer edge, converging toward center, with abbreviation and games back per slot.
-- **Postseason bracket** (`show_playoff_bracket`) — during the postseason window (mid-September to mid-November), once real bracket data exists, the strip auto-switches to a series-win bracket fetched from the MLB schedule API. It falls back to wildcard standings the rest of the year.
+- **Overflow ticker** — whenever a live game's wide/triple tile (or a >15-game slate) bumps other games off the 5×3 grid, the bumped games are shown as a compact "Away v Home &lt;status&gt;" strip instead of just disappearing: start time if the game hasn't started, inning (e.g. `Top 4`) if live, `Final`, or `Postponed`. Games still worth watching are kept on the grid — already-finished games are bumped first. Rotates through a batch of them every `overflow_ticker_rotation_minutes` (default 2) if more are bumped than fit at once. Takes over the strip outright whenever any games are bumped.
+- **Postseason bracket** (`show_playoff_bracket`) — during the postseason window (mid-September to mid-November), once real bracket data exists, the strip switches to a series-win bracket fetched from the MLB schedule API.
+- **Wildcard standings** (`show_wildcard_standings`) — the fallback the rest of the year: AL top-10 left-to-right on the left half, NL right-to-left on the right half; rank 1 at the outer edge, converging toward center, with abbreviation and games back per slot.
 
 ---
 
@@ -85,7 +86,12 @@ The strip across the top of the scoreboard shows one of two things:
 
 When the slate has fewer than 15 games, the spare grid cells are filled with informational panels instead of being left blank. In priority order:
 
-- **Transactions ticker** (`show_transactions_ticker`) — recent MLB transactions (IL moves, call-ups/demotions, signings), claims the first free slot.
+- **Trade deadline countdown** (`show_deadline_panel`) — countdown to `trade_deadline` plus recent transactions; only appears in the two weeks before the deadline.
+- **Transactions ticker** (`show_transactions_ticker`) — recent MLB transactions (IL moves, call-ups/demotions, signings).
+- **Batting lineup panel** (`show_lineup_panel`) — both teams' batting orders, shown within 45 minutes of the primary team's first pitch.
+- **News headlines** (`show_news_panel`) — recent MLB news, optionally scoped to the primary team (`news_team_only`).
+- **Magic / elimination numbers** (`show_magic_numbers`) — the primary team's division standings. The leader's row always shows its magic number (`M12`); trailing teams show games back until their elimination number drops below 20, at which point that row switches to the elimination number (`E7`) instead. A miniature version of the same M12/E7 badge (`sidebar_magic_badges`) can also be shown next to each team's logo in the standings sidebar.
+- **Hot Hitters / Hot Arms** (`show_streaks_panel` / `show_scoreless_panel`) — 14-day rolling batting average and ERA leaders.
 - **Season leaders panel** (`show_leaders_panel`) — cycles through HR / AVG / ERA / Saves / Hits / RBI / SB, rotating category every `leaders_rotation_minutes` (default 5) and refreshed once a day.
 - **Config QR code** (`show_config_qr`) — a QR code linking straight to the [config web server](#config-web-server).
 
@@ -170,6 +176,7 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 
 | Feature | Detail |
 |---|---|
+| **Overflow ticker** | Header strip shows games bumped off the grid — already-finished games are bumped first |
 | **Wildcard strip** | Top row of team logos, AL left → NL right, ordered by games back |
 | **Playoff bracket** | Header strip auto-switches to a series-win bracket during the postseason |
 | **Standings sidebar** | AL East/Central/West on left edge, NL on right — 1st through 5th |
@@ -182,6 +189,7 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 | **Live details** | Pitcher, current batter, fastball %, pitch count, last pitch speed |
 | **Leaders panel** | HR / AVG / ERA / Saves / Hits / RBI / SB leaders in a spare cell, rotating |
 | **Transactions ticker** | Recent IL moves, call-ups, and signings in a spare cell |
+| **Magic / elimination numbers** | Leader shows magic number; trailing teams show games back, switching to elimination number under 20 |
 | **Idle screen** | "Recent Moves" + bouncing mascot when there are no games today |
 | **Derby bracket** | Auto Home Run Derby single-elimination bracket on Derby day |
 | **Team logos** | Auto-fetched from ESPN CDN; per-team invert/darken config |

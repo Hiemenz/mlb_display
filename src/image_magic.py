@@ -6,8 +6,10 @@ call. For each team in the division:
 
   * Division leader → magic number ``M`` (games to clinch over the closest
     rival, i.e. the rival with the fewest losses).
-  * Trailing team  → elimination number ``E`` (games until it can no longer
-    catch the leader).
+  * Trailing team  → games back from the leader, until its elimination
+    number drops below ``_ELIM_THRESHOLD`` (elimination numbers are too
+    large to be meaningful for most of the season); once the race is
+    actually close, the elimination number ``E`` takes over that same slot.
 
 When the MLB Stats API's ``clinch_indicator`` already settles it, that wins
 over the arithmetic: ``z``/``y`` → ``CL`` (clinched), ``e`` → ``OUT``.
@@ -26,6 +28,11 @@ _PAD = 2
 # A full MLB season is 162 games; a team clinches over a rival the moment the
 # rival can no longer tie it, i.e. when (162 + 1) - wins - rival_losses hits 0.
 _MAGIC_BASE = 163
+
+# Below this, a trailing team's elimination number is dramatic enough to show
+# instead of games back — early/mid-season elimination numbers (60+) aren't
+# meaningful, so games back is the more useful stat until the race tightens.
+_ELIM_THRESHOLD = 20
 
 # Collapse a division's full name into a compact header, e.g.
 # "American League East" → "AL EAST".
@@ -62,8 +69,10 @@ def _find_primary_division(standings, abbr_map, primary_abbr):
 
 
 def _magic_or_elim(team, leader, is_leader, rival_losses):
-    """Value string for one team's row: 'M4', 'E7', 'CL', 'OUT', or '' when
-    the underlying win/loss data isn't available yet."""
+    """Value string for one team's row: 'M4' (leader), 'E7' (trailing team
+    within _ELIM_THRESHOLD of elimination), games back (trailing team
+    otherwise), 'CL', 'OUT', or '' when the underlying win/loss data isn't
+    available yet."""
     clinch = (team.get('clinch_indicator') or '').strip().lower()
     if clinch in ('z', 'y'):
         return 'CL'
@@ -84,7 +93,11 @@ def _magic_or_elim(team, leader, is_leader, rival_losses):
     if team_l is None:
         return ''
     elim = _MAGIC_BASE - lead_w - team_l
-    return 'OUT' if elim <= 0 else f'E{elim}'
+    if elim <= 0:
+        return 'OUT'
+    if elim < _ELIM_THRESHOLD:
+        return f'E{elim}'
+    return str(team.get('games_back') or '-')
 
 
 def draw_magic_cell(Himage, sx, sy, standings_data, team_data, primary_abbr, use_logos=False):

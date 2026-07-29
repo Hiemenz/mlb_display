@@ -24,6 +24,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
     draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
+    draw_overflow_ticker, _ticker_window,
 )
 from image_box import draw_box, _abbr_play, _draw_linescore_grid, _draw_backwards_k
 
@@ -31,6 +32,7 @@ from image_box import draw_box, _abbr_play, _draw_linescore_grid, _draw_backward
 from image_grid import (
     draw_out_of_town_score_board,
     compute_grid_layout,
+    _overflow_priority,
 )
 
 # Re-export featured/fullscreen functions for backward compatibility
@@ -400,6 +402,15 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     _ordered, _slots = compute_grid_layout(game_state_data, team_data, config)
     Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots))
 
+    # Games compute_grid_layout couldn't place on the grid (bumped by live-game
+    # tile expansion, hide_non_live_games, or >15-game overflow) — surfaced in
+    # the header strip via the overflow ticker below instead of just vanishing.
+    _placed_pks = {g.get('game_pk') for g in _ordered[:len(_slots)]}
+    _dropped_games = sorted(
+        (g for g in game_state_data if g.get('game_pk') not in _placed_pks),
+        key=_overflow_priority,
+    )
+
     standings_data = None
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
         standings_data = load_json_file('standings.json')
@@ -415,7 +426,15 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         if _candidate and _candidate.get('series') and _candidate.get('season') == datetime.now().year:
             _bracket = _candidate
 
-    if _bracket:
+    # The overflow ticker wins the header strip outright over both the
+    # playoff bracket and wildcard standings whenever games got dropped —
+    # a game missing from the grid is more time-sensitive than either.
+    if _dropped_games:
+        Himage = draw_overflow_ticker(
+            Himage, _dropped_games, team_data,
+            rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2),
+        )
+    elif _bracket:
         Himage = draw_playoff_bracket_header(Himage, _bracket)
     elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
         if standings_data and 'standings' in standings_data:
@@ -483,5 +502,27 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         layout_changed = new_positions != old_positions
         save_off_results(new_positions, 'old_grid_positions')
         save_off_results({'needed': layout_changed}, 'force_full_refresh')
+
+        # The header strip (overflow ticker / bracket / wildcard standings)
+        # isn't covered by the grid-cell diffing above — a pure ticker
+        # rotation change, for instance, wouldn't otherwise be included in
+        # changed_regions and so wouldn't reach the e-ink panel on a partial
+        # refresh. Fingerprint whatever's currently showing there and add the
+        # strip to changed_regions when it differs from the last poll.
+        if _dropped_games:
+            _header_key = [str(g.get('game_pk', '')) for g in _ticker_window(
+                _dropped_games, rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2))]
+            _header_state = {'mode': 'ticker', 'key': _header_key}
+        elif _bracket:
+            _header_state = {'mode': 'bracket', 'key': []}
+        elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
+            _header_state = {'mode': 'wildcard', 'key': []}
+        else:
+            _header_state = {'mode': 'none', 'key': []}
+
+        old_header_state = load_json_file('old_header_state.json') or {}
+        if _header_state != old_header_state and changed_regions != [(0, 0, 800, 480)]:
+            changed_regions.append((0, 0, 800, _WC_STRIP_H))
+        save_off_results(_header_state, 'old_header_state')
 
     return (Himage, changed_regions)

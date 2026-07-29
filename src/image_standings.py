@@ -1,3 +1,4 @@
+import re
 from PIL import ImageDraw
 
 from image_assets import _get_font, _logo_small
@@ -236,6 +237,178 @@ def draw_playoff_bracket_header(Himage, bracket_data):
     return Himage
 
 
+# Local state-set duplication of image_grid.py's equivalents — image_grid
+# already imports from this module, so importing back would be circular.
+_TICKER_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
+_TICKER_POSTPONED_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
+_TICKER_LIVE_STATES = {'In Progress', 'Player challenge', 'Manager challenge'}
+
+_TICKER_MAX_ENTRIES = 5   # entries shown per render before rotation kicks in
+_TICKER_SCORE_FONT_SIZE = 16   # bigger than the surrounding 9pt status text
+# Font.ttc's glyphs have enough negative left-bearing at these odd pixel sizes
+# that the dash visually overlaps whatever getlength() alone measured as
+# "before" it — a small fixed gap on each side compensates (same technique as
+# draw_playoff_bracket_header's leader-digit spacing).
+_TICKER_SCORE_GAP = 2
+
+
+def _ticker_status(game):
+    """Short status label for one overflow-ticker entry, based on game state:
+    start time (not started), 'Top 4'/'Bot 7' (live), 'Final', or 'Postponed'."""
+    state = game.get('detailed_state', '')
+    if state in _TICKER_FINAL_STATES:
+        return 'Final'
+    if state in _TICKER_POSTPONED_STATES:
+        return 'Postponed'
+    if state in _TICKER_LIVE_STATES:
+        _inn_state = game.get('inningState') or ''
+        _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
+            _inn_state, _inn_state[:3].capitalize() if _inn_state else '')
+        _inn_ord_raw = game.get('currentInningOrdinal') or str(game.get('current_inning') or 1)
+        _inn_ord = re.sub(r'(?:st|nd|rd|th)$', '', _inn_ord_raw, flags=re.IGNORECASE)
+        return f'{_inn_label} {_inn_ord}'.strip()
+    # Scheduled / Pre-Game / Warmup / Delayed Start / anything else not-yet-started —
+    # fetch_games.py pre-formats game_start as local time (e.g. "7:05 PM").
+    return game.get('game_start') or state
+
+
+def _ticker_score(game):
+    """'5-3' scoreline for a Final or live game with runs recorded, '' for a
+    Scheduled/Postponed game (nothing to score yet)."""
+    state = game.get('detailed_state', '')
+    if state not in _TICKER_FINAL_STATES and state not in _TICKER_LIVE_STATES:
+        return ''
+    away = game.get('away_runs')
+    home = game.get('home_runs')
+    if away is None or home is None:
+        return ''
+    return f'{away}-{home}'
+
+
+def _ticker_window(dropped_games, max_entries=_TICKER_MAX_ENTRIES, rotation_minutes=2):
+    """Return up to ``max_entries`` games to show this render.
+
+    When there are more dropped games than fit at once, cycles through
+    consecutive windows over time (stable within a rotation_minutes block,
+    same time-block-seeded approach as image_leaders.py's rotating_categories)
+    so every dropped game eventually gets shown instead of a fixed subset
+    winning forever.
+    """
+    if len(dropped_games) <= max_entries:
+        return dropped_games
+    rotation_minutes = max(rotation_minutes, 1)
+    n_chunks = -(-len(dropped_games) // max_entries)  # ceil division
+    block_idx = int(_time.time() // (rotation_minutes * 60))
+    i = (block_idx % n_chunks) * max_entries
+    return dropped_games[i:i + max_entries]
+
+
+def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
+    """Draw games that couldn't fit on the grid as a compact 'Away v Home
+    <score> <status>' ticker across the top header strip (y=0..30). The score
+    is included for Final and live games (e.g. '5-3 Final', '5-3 Bot 7');
+    Scheduled/Postponed games have no score yet, so it's omitted for those.
+
+    ``dropped_games`` are games compute_grid_layout couldn't place — bumped by
+    live-game tile expansion, hide_non_live_games, or plain >15-game overflow.
+    compute_grid_layout's _prioritize_live_over_final biases what gets dropped
+    toward already-finished games, so in practice this is mostly Finals, but
+    formats every state (see _ticker_status) since a live/scheduled/postponed
+    game can still end up here (e.g. hide_non_live_games, doubleheader
+    postponed eviction). Takes over the header strip outright — callers should
+    only invoke this instead of draw_wildcard_header/draw_playoff_bracket_header,
+    not alongside them. Rotates through a subset each render via _ticker_window
+    when more games are dropped than fit on screen at once.
+    """
+    if not dropped_games:
+        return Himage
+
+    chunk = _ticker_window(dropped_games, rotation_minutes=rotation_minutes)
+
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9)
+    score_font = _get_font(_TICKER_SCORE_FONT_SIZE)
+    abbr_map = team_data.get('team_abbreviation', {})
+    text_y = (_WC_STRIP_H - 9) // 2
+    score_y = (_WC_STRIP_H - _TICKER_SCORE_FONT_SIZE) // 2
+
+    n = len(chunk)
+    entry_w = 800 // n
+
+    for i, game in enumerate(chunk):
+        x0 = i * entry_w
+
+        away_id = str(game.get('away_team_id', ''))
+        home_id = str(game.get('home_team_id', ''))
+        away_abbr = abbr_map.get(away_id, '???')
+        home_abbr = abbr_map.get(home_id, '???')
+        score = _ticker_score(game)
+        status = _ticker_status(game)
+
+        away_logo = _logo_small(away_abbr, away_id, size=_WC_LOGO_SZ)
+        home_logo = _logo_small(home_abbr, home_id, size=_WC_LOGO_SZ)
+
+        away_w = away_logo.size[0] if away_logo else int(font.getlength(away_abbr))
+        home_w = home_logo.size[0] if home_logo else int(font.getlength(home_abbr))
+        sep = ' v '
+        sep_w = int(font.getlength(sep))
+        status_w = int(font.getlength(status)) if status else 0
+
+        # Score digits/dash measured individually (at the bigger font) so the
+        # gap around the dash can be added explicitly rather than trusting
+        # getlength() on the combined string, which is what causes the
+        # overlap in the first place.
+        if score:
+            away_r, home_r = score.split('-')
+            away_r_w = int(score_font.getlength(away_r))
+            dash_w = int(score_font.getlength('-'))
+            home_r_w = int(score_font.getlength(home_r))
+            score_w = away_r_w + _TICKER_SCORE_GAP + dash_w + _TICKER_SCORE_GAP + home_r_w
+        else:
+            score_w = 0
+
+        total_w = away_w + sep_w + home_w
+        if score:
+            total_w += 4 + score_w
+        if status:
+            total_w += 4 + status_w
+
+        cur_x = x0 + max(0, (entry_w - total_w) // 2)
+
+        if away_logo:
+            Himage.paste(away_logo, (cur_x, (_WC_STRIP_H - away_logo.size[1]) // 2))
+        else:
+            draw.text((cur_x, text_y), away_abbr, font=font, fill=0)
+        cur_x += away_w
+
+        draw.text((cur_x, text_y), sep, font=font, fill=0)
+        cur_x += sep_w
+
+        if home_logo:
+            Himage.paste(home_logo, (cur_x, (_WC_STRIP_H - home_logo.size[1]) // 2))
+        else:
+            draw.text((cur_x, text_y), home_abbr, font=font, fill=0)
+        cur_x += home_w
+
+        if score:
+            cur_x += 4
+            draw.text((cur_x, score_y), away_r, font=score_font, fill=0)
+            cur_x += away_r_w + _TICKER_SCORE_GAP
+            draw.text((cur_x, score_y), '-', font=score_font, fill=0)
+            cur_x += dash_w + _TICKER_SCORE_GAP
+            draw.text((cur_x, score_y), home_r, font=score_font, fill=0)
+            cur_x += home_r_w
+
+        if status:
+            cur_x += 4
+            draw.text((cur_x, text_y), status, font=font, fill=0)
+
+    draw.line((0, 0, 799, 0), fill=0, width=1)
+    draw.line((0, _WC_STRIP_H - 1, 799, _WC_STRIP_H - 1), fill=0, width=1)
+
+    return Himage
+
+
 def _aaa_divisions(standings_data, side):
     """Return division names for each sidebar side in AAA mode.
 
@@ -250,12 +423,16 @@ def _aaa_divisions(standings_data, side):
     return [d for d in candidates if d in all_divs]
 
 
-_ME_BADGE_THRESHOLD = 50   # only show M/E badge when ≤ this many games remain
+_ME_BADGE_THRESHOLD = 50   # below this, the elimination number is dramatic
+                           # enough to badge instead of games back
 _ME_MAGIC_BASE = 163       # 162 games + 1
 
 
 def _me_badge_value(team, leader, is_leader, rival_losses):
-    """Return badge text ('M5', 'E12', 'CL', 'OUT', or '') for a standings row."""
+    """Return badge text for a standings row: 'M5'/'CL' for the leader
+    (always shown), or games back for a trailing team until its elimination
+    number drops below _ME_BADGE_THRESHOLD, at which point 'E12'/'OUT' takes
+    over — mirrors image_magic._magic_or_elim's leader/trailer split."""
     clinch = (team.get('clinch_indicator') or '').strip().lower()
     if clinch in ('z', 'y'):
         return 'CL'
@@ -270,9 +447,7 @@ def _me_badge_value(team, leader, is_leader, rival_losses):
         if rival_losses is None:
             return 'CL'
         magic = _ME_MAGIC_BASE - lead_w - rival_losses
-        if magic <= 0:
-            return 'CL'
-        return f'M{magic}' if magic <= _ME_BADGE_THRESHOLD else ''
+        return 'CL' if magic <= 0 else f'M{magic}'
     else:
         team_l = team.get('league_record_losses')
         if team_l is None:
@@ -280,7 +455,9 @@ def _me_badge_value(team, leader, is_leader, rival_losses):
         elim = _ME_MAGIC_BASE - lead_w - team_l
         if elim <= 0:
             return 'OUT'
-        return f'E{elim}' if elim <= _ME_BADGE_THRESHOLD else ''
+        if elim < _ME_BADGE_THRESHOLD:
+            return f'E{elim}'
+        return str(team.get('games_back') or '-')
 
 
 def draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode='mlb',
