@@ -2249,11 +2249,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             if game_data.get('home_team_is_winner'):
                 draw.text((start_x + 7 * s, start_y + 55 * s), home_team_name, font=font24, fill=0)
 
-    # Bold-offset score for winner (both modes)
-    if game_data.get('away_team_is_winner'):
-        draw.text((start_x + 69 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
-    if game_data.get('home_team_is_winner'):
-        draw.text((start_x + 69 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
+    # Bold-offset score for winner (both modes) — only when the score itself
+    # is shown; lineup mode replaces the score area with the batting order.
+    if not _is_lineup_mode:
+        if game_data.get('away_team_is_winner'):
+            draw.text((start_x + 69 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
+        if game_data.get('home_team_is_winner'):
+            draw.text((start_x + 69 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = game_data['detailed_state'] == 'In Progress' and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
