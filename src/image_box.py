@@ -1024,7 +1024,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # Starting pitcher strip — same left-name/right-position layout as the
             # batting order rows above, for visual consistency.
             _lu_sp_y = start_y + _lu_cell_h - _lu_sp_h
-            draw.line([(start_x, _lu_sp_y), (start_x + 135 * s - s, _lu_sp_y)], fill=0)
+            draw.line([(start_x, _lu_sp_y + s), (start_x + 135 * s - s, _lu_sp_y + s)], fill=0)
             _lu_pw = int(font9.getlength('P'))
             for _lu_sp, _lu_sx in ((_lu_away_sp, start_x), (_lu_home_sp, _lu_mid_x)):
                 draw.text((_lu_sx + _lu_pos_gap + (_lu_gpw - _lu_pw), _lu_sp_y + s), 'P', font=font9, fill=0)
