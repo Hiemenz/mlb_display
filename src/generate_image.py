@@ -427,9 +427,10 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             _bracket = _candidate
 
     # Header strip priority:
-    #   1. Overflow ticker — only when total games genuinely exceed the 15-slot
-    #      grid capacity AND at least one game hasn't finished yet (once all
-    #      games are done the ticker gives way to standings).
+    #   1. Overflow ticker — shown whenever any game didn't get a grid slot
+    #      (hide_non_live_games, live-tile expansion, or >15-game overflow)
+    #      AND at least one game hasn't finished yet (once all games are done
+    #      the ticker gives way to standings).
     #   2. Playoff bracket
     #   3. Wildcard standings
     #   4. Transactions (when show_transactions_ticker is on and strip is empty)
@@ -439,9 +440,8 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     _all_games_done = bool(game_state_data) and all(
         g.get('detailed_state') in _FINISHED_STATES for g in game_state_data
     )
-    _genuine_overflow = len(game_state_data) > 15
 
-    if _dropped_games and _genuine_overflow and not _all_games_done:
+    if _dropped_games and not _all_games_done:
         Himage = draw_overflow_ticker(
             Himage, _dropped_games, team_data,
             rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2),
@@ -528,7 +528,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         # changed_regions and so wouldn't reach the e-ink panel on a partial
         # refresh. Fingerprint whatever's currently showing there and add the
         # strip to changed_regions when it differs from the last poll.
-        if _dropped_games and _genuine_overflow and not _all_games_done:
+        if _dropped_games and not _all_games_done:
             _header_key = [str(g.get('game_pk', '')) for g in _ticker_window(
                 _dropped_games, rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2))]
             _header_state = {'mode': 'ticker', 'key': _header_key}

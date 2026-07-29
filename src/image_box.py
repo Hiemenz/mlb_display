@@ -942,8 +942,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # Two-column batting order in the cell body (replaces scores + pitcher probables)
             _lu_away = game_data.get('away_lineup') or []
             _lu_home = game_data.get('home_lineup') or []
-            _lu_away_sp = _last_name(game_data.get('away_probable') or '')
-            _lu_home_sp = _last_name(game_data.get('home_probable') or '')
+            _lu_away_sp = _format_player_name(game_data.get('away_probable') or '')
+            _lu_home_sp = _format_player_name(game_data.get('home_probable') or '')
             _lu_cell_h  = 130 * s
             _lu_body_y  = start_y + 21 * s   # one below header separator
             _lu_team_h  = 11 * s
@@ -968,18 +968,23 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_avail_h = _lu_cell_h - 21 * s - _lu_team_h - _lu_sp_h
             _lu_row_h   = _lu_avail_h // _lu_n_rows
 
+            # Single global position-column width so both columns are symmetric
+            _lu_all_pos = [p.get('pos', '') for p in _lu_away + _lu_home]
+            _lu_gpw = max((int(font9.getlength(p)) for p in _lu_all_pos), default=0)
+            _lu_pos_gap = _lu_col_w - _lu_gpw - _lu_pad - s
+
             def _lu_render_col(lineup, col_x):
                 for _ri in range(_lu_n_rows):
                     _ry = _lu_row_top + _ri * _lu_row_h
                     if _ri < len(lineup):
-                        _rname = _last_name(lineup[_ri].get('name', ''))
+                        _rname = _format_player_name(lineup[_ri].get('name', ''))
                         _rpos  = lineup[_ri].get('pos', '')
                     else:
                         _rname, _rpos = '', ''
-                    _rpw = int(font9.getlength(_rpos))
-                    _rpx = col_x + _lu_col_w - _rpw - _lu_pad - s
-                    draw.text((_rpx, _ry), _rpos, font=font9, fill=0)
-                    _max_rw = _rpx - 2 * s - (col_x + _lu_pad)
+                    if _rpos:
+                        _rpw = int(font9.getlength(_rpos))
+                        draw.text((col_x + _lu_pos_gap + (_lu_gpw - _rpw), _ry), _rpos, font=font9, fill=0)
+                    _max_rw = _lu_pos_gap - 2 * s - _lu_pad
                     while _rname and int(font9.getlength(_rname)) > _max_rw:
                         _rname = _rname[:-1]
                     if _rname:

@@ -234,6 +234,41 @@ def _transform_hit_coords(api_x, api_y):
     return int(px), int(py)
 
 
+def _wall_dist_at_angle(wall_poly, theta):
+    """Interpolate the outfield fence distance (ft) at bearing `theta`
+    (atan2(x, y) convention, same as wall_poly's ordering) along wall_poly."""
+    thetas = [math.atan2(x, y) for x, y in wall_poly]
+    for i in range(len(thetas) - 1):
+        t0, t1 = thetas[i], thetas[i + 1]
+        if t0 <= theta <= t1:
+            x0, y0 = wall_poly[i]
+            x1, y1 = wall_poly[i + 1]
+            frac = 0 if t1 == t0 else (theta - t0) / (t1 - t0)
+            x = x0 + frac * (x1 - x0)
+            y = y0 + frac * (y1 - y0)
+            return math.hypot(x, y)
+    return math.hypot(*wall_poly[-1])
+
+
+def _hr_landing_pixel(hx_coord, hy_coord, wall_poly):
+    """Pixel position for a confirmed HR, pushed at least 8ft past the fence
+    along its hit angle when the raw Statcast coordinates land short of the
+    wall (coordinate imprecision) — mirrors image_box.py's _draw_field_cell
+    so a real home run always renders as clearing the fence in every view."""
+    hx_ft = (hx_coord - 125) * 2.0
+    hy_ft = (200 - hy_coord) * 2.0
+    ang = math.atan2(hx_ft, hy_ft)
+    d_ball = math.hypot(hx_ft, hy_ft)
+    d_wall = _wall_dist_at_angle(wall_poly, ang)
+    d_final = max(d_ball, d_wall + 8)
+    x_ft, y_ft = d_final * math.sin(ang), d_final * math.cos(ang)
+    px = HOME_PLATE[0] + x_ft * FIELD_SCALE
+    py = HOME_PLATE[1] - y_ft * FIELD_SCALE
+    px = max(5, min(395, px))
+    py = max(5, min(475, py))
+    return int(px), int(py)
+
+
 def _draw_all_hits(draw, data, fonts=None):
     """Plot the last 7 batted balls in play (older markers are dropped upstream).
 
@@ -259,6 +294,10 @@ def _draw_all_hits(draw, data, fonts=None):
     # 'Top'/'Middle' = currently playing/just finished top half
     current_half = 'top' if inning_state in ('Top', 'Middle') else 'bottom'
 
+    venue     = data.get('venue', '')
+    venue_id  = data.get('venue_id')
+    wall_poly = get_polygon(venue, venue_id) or _DEFAULT_WALL_POLY
+
     font_tiny = fonts.get('f9') if fonts else None
 
     for hit in all_hits:
@@ -276,7 +315,10 @@ def _draw_all_hits(draw, data, fonts=None):
             player = ''
             this_half = True  # legacy tuples treated as current
 
-        px, py = _transform_hit_coords(hx_coord, hy_coord)
+        if is_hr:
+            px, py = _hr_landing_pixel(hx_coord, hy_coord, wall_poly)
+        else:
+            px, py = _transform_hit_coords(hx_coord, hy_coord)
 
         if is_hr:
             r = 7

@@ -140,12 +140,16 @@ def draw_lineup_cell(Himage, sx, sy, games_data, primary_abbr, team_data, use_lo
 
     # ── Ghost logos in each column background ──────────────────────────────
     if use_logos:
+        abbr_map  = team_data.get('team_abbreviation', {})
         body_h    = _CELL_H - _HDR_H - _SP_H
         ghost_sz  = min(col_w - 4, body_h - 4)
-        for abbr, tid, col_x in (
-            (game.get('away_team_name'), str(game.get('away_team_id', '')), sx),
-            (game.get('home_team_name'), str(game.get('home_team_id', '')), mid_x),
+        for tid, col_x in (
+            (str(game.get('away_team_id', '')), sx),
+            (str(game.get('home_team_id', '')), mid_x),
         ):
+            abbr = abbr_map.get(tid)
+            if not abbr:
+                continue
             ghost = _logo_ghost(abbr, tid, size=ghost_sz, lightness=160)
             if ghost:
                 gw, gh = ghost.size

@@ -35,7 +35,32 @@ def _load_polygon_json(path):
     return {name: [tuple(pt) for pt in pts] for name, pts in raw.items()}
 
 
-STADIUM_POLYGONS = _load_polygon_json(_MLBAM_WALLS_PATH)
+def _smooth_wall_polygon(pts, iterations=6):
+    """Laplacian-smooth a wall polygon to remove hand-digitization noise.
+
+    The raw MLBAM outfield traces are dense (~50 points) and visibly jagged
+    when rendered as straight segments — small pixel-level noise in the
+    source trace, not real wall geometry. Each interior point is pulled
+    toward the average of its neighbors; the foul-pole endpoints are held
+    fixed since distance labels are read directly off them.
+    """
+    if len(pts) < 5:
+        return pts
+    for _ in range(iterations):
+        smoothed = [pts[0]]
+        for i in range(1, len(pts) - 1):
+            x = (pts[i - 1][0] + 2 * pts[i][0] + pts[i + 1][0]) / 4
+            y = (pts[i - 1][1] + 2 * pts[i][1] + pts[i + 1][1]) / 4
+            smoothed.append((round(x, 1), round(y, 1)))
+        smoothed.append(pts[-1])
+        pts = smoothed
+    return pts
+
+
+STADIUM_POLYGONS = {
+    name: _smooth_wall_polygon(pts)
+    for name, pts in _load_polygon_json(_MLBAM_WALLS_PATH).items()
+}
 
 # Infield dirt cutout boundary per park (data/mlbam_infield.json), extracted
 # from GeomMLBStadiums' infield_outer path segment — see
