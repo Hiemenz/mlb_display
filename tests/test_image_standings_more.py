@@ -27,6 +27,10 @@ from image_standings import (
     draw_wildcard_header,
     draw_standings_sidebar,
     draw_standings_sidebar_fullscreen,
+    draw_overflow_ticker,
+    _ticker_status,
+    _ticker_score,
+    _ticker_window,
 )
 
 try:
@@ -695,6 +699,192 @@ class TestDrawPlayoffBracketHeader:
 
 
 # ===========================================================================
+# draw_overflow_ticker() / _ticker_status() / _ticker_window()
+# ===========================================================================
+
+def _ov_game(pk, away_id=1, home_id=2, state='Scheduled', **overrides):
+    """Minimal game dict covering the fields _ticker_status/draw_overflow_ticker read."""
+    g = {
+        'game_pk': pk, 'away_team_id': away_id, 'home_team_id': home_id,
+        'detailed_state': state, 'game_start': '7:05 PM',
+    }
+    g.update(overrides)
+    return g
+
+
+class TestTickerStatus:
+    def test_final_family_normalizes_to_final(self):
+        """Final family normalizes to Final."""
+        for state in ('Final', 'Game Over', 'Final: Tied'):
+            assert _ticker_status(_ov_game(1, state=state)) == 'Final'
+
+    def test_postponed_family_normalizes_to_postponed(self):
+        """Postponed family normalizes to Postponed."""
+        for state in ('Postponed', 'Cancelled', 'Cancelled: Rain'):
+            assert _ticker_status(_ov_game(1, state=state)) == 'Postponed'
+
+    def test_live_game_formats_inning_half_and_number(self):
+        """Live game formats inning half and number."""
+        g = _ov_game(1, state='In Progress', inningState='Bottom', currentInningOrdinal='7th')
+        assert _ticker_status(g) == 'Bot 7'
+
+    def test_live_game_falls_back_to_current_inning_without_ordinal(self):
+        """Live game falls back to current_inning without ordinal."""
+        g = _ov_game(1, state='In Progress', inningState='Top', current_inning=4)
+        assert _ticker_status(g) == 'Top 4'
+
+    def test_not_started_uses_pre_formatted_game_start(self):
+        """Not started uses pre-formatted game_start (already local time)."""
+        g = _ov_game(1, state='Scheduled', game_start='7:05 PM')
+        assert _ticker_status(g) == '7:05 PM'
+
+
+class TestTickerScore:
+    def test_final_game_shows_score(self):
+        """Final game shows score."""
+        g = _ov_game(1, state='Final', away_runs=5, home_runs=3)
+        assert _ticker_score(g) == '5-3'
+
+    def test_live_game_shows_score(self):
+        """Live game shows score."""
+        g = _ov_game(1, state='In Progress', away_runs=2, home_runs=1)
+        assert _ticker_score(g) == '2-1'
+
+    def test_scheduled_game_has_no_score(self):
+        """Scheduled game has no score."""
+        g = _ov_game(1, state='Scheduled', away_runs=None, home_runs=None)
+        assert _ticker_score(g) == ''
+
+    def test_postponed_game_has_no_score(self):
+        """Postponed game has no score."""
+        g = _ov_game(1, state='Postponed', away_runs=0, home_runs=0)
+        assert _ticker_score(g) == ''
+
+    def test_missing_runs_data_falls_back_to_empty(self):
+        """Missing runs data falls back to empty, not 'None-None'."""
+        g = _ov_game(1, state='Final', away_runs=None, home_runs=3)
+        assert _ticker_score(g) == ''
+
+
+class TestTickerWindow:
+    def test_fewer_than_max_returns_all(self):
+        """Fewer than max returns all."""
+        games = [_ov_game(i) for i in range(3)]
+        assert _ticker_window(games, max_entries=5) == games
+
+    def test_more_than_max_returns_a_capped_subset(self):
+        """More than max returns a capped subset (10 games / 5 per window —
+        an exact multiple, so every rotation window is full-sized, not just
+        whichever wall-clock block this test happens to run in)."""
+        games = [_ov_game(i) for i in range(10)]
+        window = _ticker_window(games, max_entries=5)
+        assert len(window) == 5
+        assert all(g in games for g in window)
+
+    def test_stable_within_same_rotation_block(self):
+        """Two calls within the same rotation window return the same subset."""
+        games = [_ov_game(i) for i in range(12)]
+        first = _ticker_window(games, max_entries=5, rotation_minutes=5)
+        second = _ticker_window(games, max_entries=5, rotation_minutes=5)
+        assert first == second
+
+    def test_empty_input_returns_empty(self):
+        """Empty input returns empty."""
+        assert _ticker_window([], max_entries=5) == []
+
+
+@needs_pil
+class TestDrawOverflowTicker:
+    def _white(self):
+        """White."""
+        return Image.new('1', (800, 30), 255)
+
+    def test_empty_dropped_games_returns_unchanged(self):
+        """Empty dropped games returns unchanged."""
+        canvas = self._white()
+        result = draw_overflow_ticker(canvas, [], {'team_abbreviation': {}})
+        assert result is canvas
+
+    def test_single_entry_renders_with_logo_fallback(self):
+        """Single entry renders with logo fallback (abbreviation text)."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+        games = [_ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3)]
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_overflow_ticker(canvas, games, team_data)
+        assert isinstance(result, Image.Image)
+        assert any(px == 0 for px in result.getdata())
+
+    def test_final_entry_includes_score_and_status(self):
+        """A Final game draws both the score (digits + dash, each measured
+        and drawn separately at the bigger score font) and the status word —
+        verified via draw.text call args since font rendering itself isn't
+        pixel-inspectable at this granularity."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+        games = [_ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3)]
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings.ImageDraw.ImageDraw.text') as mock_text:
+            draw_overflow_ticker(canvas, games, team_data)
+        drawn_strings = [call.args[1] for call in mock_text.call_args_list]
+        assert '5' in drawn_strings
+        assert '-' in drawn_strings
+        assert '3' in drawn_strings
+        assert 'Final' in drawn_strings
+
+    def test_no_separator_lines_between_entries(self):
+        """The vertical '|' separators between entries have been removed —
+        only the top/bottom strip border lines remain."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS', '3': 'LAD', '4': 'SF'}}
+        games = [
+            _ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3),
+            _ov_game(2, away_id=3, home_id=4, state='Scheduled'),
+        ]
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings.ImageDraw.ImageDraw.line') as mock_line:
+            draw_overflow_ticker(canvas, games, team_data)
+        # Only the two horizontal border lines (top + bottom of the strip) —
+        # no vertical separator between the two entries.
+        assert mock_line.call_count == 2
+
+    def test_multiple_entries_render_with_separators(self):
+        """Multiple entries render with separators."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS', '3': 'LAD', '4': 'SF'}}
+        games = [
+            _ov_game(1, away_id=1, home_id=2, state='Final'),
+            _ov_game(2, away_id=3, home_id=4, state='Scheduled'),
+        ]
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_overflow_ticker(canvas, games, team_data)
+        assert isinstance(result, Image.Image)
+        assert any(px == 0 for px in result.getdata())
+
+    def test_more_than_max_entries_consults_ticker_window(self):
+        """With more dropped games than fit, draw_overflow_ticker delegates the
+        windowing decision to _ticker_window rather than drawing everything."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {}}
+        games = [_ov_game(i) for i in range(12)]
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings._ticker_window', wraps=_ticker_window) as mock_window:
+            draw_overflow_ticker(canvas, games, team_data)
+        mock_window.assert_called_once()
+
+    def test_logo_available_pastes_instead_of_text(self):
+        """When a logo is available, it's pasted rather than falling back to text."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+        games = [_ov_game(1, away_id=1, home_id=2, state='Final')]
+        fake_logo = Image.new('1', (20, 20), 0)  # solid black square
+        with patch('image_standings._logo_small', return_value=fake_logo):
+            result = draw_overflow_ticker(canvas, games, team_data)
+        assert isinstance(result, Image.Image)
+        assert any(px == 0 for px in result.getdata())
+
+
+# ===========================================================================
 # draw_standings_sidebar() — mover detection paths (lines 341-357, 389-393,
 # 397-398, 408, 447, 481)
 # ===========================================================================
@@ -905,10 +1095,11 @@ class TestMeBadgeValue:
         result = _me_badge_value({}, self._leader(wins=90), True, 40)
         assert result == 'M33'
 
-    def test_leader_magic_above_threshold(self):
-        # 163 - 60 - 10 = 93 > 50
+    def test_leader_magic_above_threshold_still_shows_magic_number(self):
+        # 163 - 60 - 10 = 93 > threshold — the leader always shows its magic
+        # number, unlike a trailing team's badge.
         result = _me_badge_value({}, self._leader(wins=60), True, 10)
-        assert result == ''
+        assert result == 'M93'
 
     def test_trailer_losses_none_returns_empty(self):
         team = {}  # missing league_record_losses
@@ -920,14 +1111,18 @@ class TestMeBadgeValue:
         assert _me_badge_value(team, self._leader(wins=100), False, 50) == 'OUT'
 
     def test_trailer_elim_within_threshold(self):
-        # 163 - 90 - 40 = 33 ≤ 50
+        # 163 - 90 - 40 = 33 < 50
         team = {'league_record_losses': 40}
         assert _me_badge_value(team, self._leader(wins=90), False, 50) == 'E33'
 
-    def test_trailer_elim_above_threshold(self):
-        # 163 - 60 - 10 = 93 > 50
+    def test_trailer_elim_at_or_above_threshold_shows_games_back(self):
+        # 163 - 60 - 10 = 93 >= 50 → games back, not the elimination number
+        team = {'league_record_losses': 10, 'games_back': '15.5'}
+        assert _me_badge_value(team, self._leader(wins=60), False, 50) == '15.5'
+
+    def test_trailer_games_back_falls_back_to_dash_when_missing(self):
         team = {'league_record_losses': 10}
-        assert _me_badge_value(team, self._leader(wins=60), False, 50) == ''
+        assert _me_badge_value(team, self._leader(wins=60), False, 50) == '-'
 
     def test_clinch_indicator_case_insensitive(self):
         assert _me_badge_value({'clinch_indicator': 'Z'}, self._leader(), True, 50) == 'CL'
@@ -969,8 +1164,8 @@ class TestDrawStandingsSidebarMagicBadges:
         result = self._render(standings, side='right')
         assert result is not None
 
-    def test_no_badge_above_threshold(self):
-        # 163 - 50 - 10 = 103 > 50 → no badge
+    def test_games_back_badge_above_threshold(self):
+        # 163 - 50 - 10 = 103 > 50 → games back badge instead of E-number
         standings = self._make_standings(wins_leader=50, losses_rival=10)
         result = self._render(standings, side='left')
         assert result is not None

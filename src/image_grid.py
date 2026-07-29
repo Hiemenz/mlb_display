@@ -587,6 +587,37 @@ def _move_non_live_to_fillers(game_list, positions):
     return game_list
 
 
+def _prioritize_live_over_final(full_game_list, placed_list, positions):
+    """If tile-packing dropped a live/scheduled/postponed game while a Final
+    game still occupies a normal (single-cell) slot, swap them in place — a
+    game that's still worth watching should never lose its slot to one that's
+    already over, and this is a game the overflow header ticker can pick up.
+
+    Only swaps within 'normal' slots, so slot geometry never changes and no
+    repacking is needed. positions is parallel to placed_list.
+    """
+    placed_pks = {g.get('game_pk') for g in placed_list}
+    dropped_worth_showing = [
+        g for g in full_game_list
+        if g.get('game_pk') not in placed_pks and _overflow_priority(g) < 2
+    ]
+    if not dropped_worth_showing:
+        return placed_list
+
+    # Index 0 is protected — same as _move_non_live_to_fillers — since it may
+    # hold the favorite team's game when favorite_team_first is enabled, and
+    # that should never be displaced regardless of its state.
+    final_normal_idxs = [
+        i for i, (g, pos) in enumerate(zip(placed_list, positions))
+        if i != 0 and pos[0] == 'normal' and _overflow_priority(g) == 2
+    ]
+    for dg in dropped_worth_showing:
+        if not final_normal_idxs:
+            break
+        placed_list[final_normal_idxs.pop(0)] = dg
+    return placed_list
+
+
 def compute_grid_layout(game_state_data, team_data, config):
     """Return (ordered_game_list, slots) for the 5×3 scoreboard grid.
 
@@ -661,10 +692,12 @@ def compute_grid_layout(game_state_data, team_data, config):
     # non-live games into filler single-cell slots within expanded rows so a
     # live game never sits in a filler slot when a finished or not-yet-started
     # game can take it instead.
+    _pre_pack_list = list(game_list)
     _tile_map = _find_tile_types(game_list, config, team_data)
     if _tile_map:
         game_list, _slots = _pack_grid(game_list, _tile_map)
         game_list = _move_non_live_to_fillers(game_list, _slots)
+        game_list = _prioritize_live_over_final(_pre_pack_list, game_list, _slots)
     else:
         # No expansion — try clustering live games into the bottom row instead.
         # When 1-5 live games exist and everyone fits on the grid, group all of
@@ -772,15 +805,6 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         game_list, _slots = layout
     else:
         game_list, _slots = compute_grid_layout(game_state_data, team_data, config)
-
-    # Finished games dropped from the grid (e.g. by hide_non_live_games) are
-    # shown in spare cells ahead of the leaders panel so scores aren't lost.
-    _placed_pks = {g.get('game_pk') for g in game_list[:len(_slots)]}
-    _dropped_finals = [
-        g for g in game_state_data
-        if g.get('game_pk') not in _placed_pks
-        and g.get('detailed_state') in _FINAL_STATES
-    ]
 
     # Build per-team stats lookup {str(team_id): {'streak', 'l10_wins', 'l10_losses', 'wins', 'losses'}}
     _standings = load_json_file('standings.json')
@@ -905,19 +929,6 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         _sc_lx = _sc_col * 150 + x_start
         _sc_ly = _sc_row * 150 + y_start
         Himage = draw_scoreless_cell(Himage, _sc_lx, _sc_ly, _sc_data, team_data, use_logos=use_logos)
-
-    # Dropped Final games — show scores for games hidden by hide_non_live_games.
-    for _fg in _dropped_finals:
-        if not _free_slots:
-            break
-        _fg_col, _fg_row = _free_slots.pop(0)
-        _fg_lx = _fg_col * 150 + x_start
-        _fg_ly = _fg_row * 150 + y_start
-        Himage = draw_box(
-            Himage, _fg_lx, _fg_ly, _fg, team_data,
-            use_logos=use_logos, logo_x_offset=logo_x_offset,
-            streak_map=streak_map,
-        )
 
     if config.get('show_leaders_panel', False) and _free_slots:
         _leaders_data = load_json_file('leaders.json').get('leaders', {})

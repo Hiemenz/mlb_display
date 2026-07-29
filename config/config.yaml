@@ -107,6 +107,14 @@ show_wildcard_standings: true
 # the bracket entirely (always shows wildcard standings instead, if enabled).
 show_playoff_bracket: true
 
+# Overflow ticker: when a live game's triple/wide tile crowds another game off
+# the 5x3 grid (or there are simply >15 games), the bumped games are shown as
+# a compact "Away v Home <status>" strip in the top header instead of just
+# vanishing — taking over the header strip ahead of the playoff bracket and
+# wildcard standings above whenever any games are bumped. Rotates through a
+# batch of them every N minutes if more are bumped than fit on screen at once.
+overflow_ticker_rotation_minutes: 2
+
 # Small logo X offset: pixels from the left edge of each score box where the small logo is placed.
 # Set to 2 to align with the box edge. Increase to shift the logo right.
 small_logo_x_offset: 2
@@ -195,9 +203,12 @@ trade_deadline: "2026-08-03 18:00"
 show_news_panel: false
 news_team_only: true
 
-# Magic / elimination numbers: show the primary team's division standings with
-# each team's magic number (leader) or elimination number (trailer) in an empty
-# grid cell. Reuses the standings already cached in data/standings.json — no
+# Magic / elimination numbers: show the primary team's division standings in an
+# empty grid cell — the leader's row always shows its magic number; trailing
+# teams show games back until their elimination number drops below 20, at
+# which point that row switches to the elimination number instead (games back
+# isn't very interesting once a team is genuinely on the verge of being
+# eliminated). Reuses the standings already cached in data/standings.json — no
 # extra API call. Only meaningful during the regular season.
 show_magic_numbers: false
 

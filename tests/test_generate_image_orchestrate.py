@@ -135,10 +135,15 @@ def _fake_loader(overrides):
     """Build a side_effect for generate_image.load_json_file keyed by filename.
 
     Any filename not present in `overrides` returns {} (matching util's
-    default-empty-dict behavior for a missing file).
+    default-empty-dict behavior for a missing file) — except
+    old_header_state.json, which defaults to the steady-state "nothing in the
+    header strip" fingerprint so tests unrelated to the header/overflow
+    ticker don't pick up a spurious extra changed_regions entry for it.
     """
     def _load(file_name, *args, **kwargs):
         """Load."""
+        if file_name == 'old_header_state.json' and file_name not in overrides:
+            return {'mode': 'none', 'key': []}
         return overrides.get(file_name, {})
     return _load
 
@@ -641,7 +646,7 @@ def test_games_without_game_pk_are_skipped_in_refresh_and_score_tracking():
     stub_img = Image.new('1', (800, 480), 255)
     games = [{'detailed_state': 'Scheduled'}]  # no game_pk at all
 
-    with patch('generate_image.load_json_file', return_value={}), \
+    with patch('generate_image.load_json_file', side_effect=_fake_loader({})), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img):
         result = generate_image.orchestrate_score_board(
@@ -978,6 +983,175 @@ def test_playoff_bracket_header_drawn_when_bracket_data_present():
 
     mock_bracket.assert_called_once()
     assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Overflow ticker header wiring
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_overflow_ticker_wins_over_playoff_bracket_when_games_dropped():
+    """When compute_grid_layout can't place every game (here: wide_cell_featured
+    forcing 2 of 15 games off the grid), draw_overflow_ticker takes the header
+    strip instead of draw_playoff_bracket_header, even with valid bracket data
+    present and otherwise eligible to show."""
+    import generate_image
+    from datetime import datetime
+
+    cfg = dict(FIXED_CONFIG, show_playoff_bracket=True, wide_cell_featured=True,
+               league_mode='mlb')
+    stub_img = Image.new('1', (800, 480), 255)
+    bracket_data = {'season': datetime.now().year,
+                     'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'LAD',
+                                 'away_wins': 2, 'home_wins': 3, 'complete': False}]}
+
+    games = (
+        [_live_game(game_pk=1)]
+        + [_base_game(game_pk=100 + i, detailed_state='Final') for i in range(3)]
+        + [_base_game(game_pk=200 + i, detailed_state='Scheduled') for i in range(11)]
+    )
+
+    def fake_load(filename, *a, **kw):
+        """Fake load."""
+        return {'playoff_bracket.json': bracket_data}.get(filename, {})
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
+        result = generate_image.orchestrate_score_board(
+            games, TEAM_DATA, date_str='2026-06-20',
+            bypass_cache=True, config=cfg,
+        )
+
+    mock_ticker.assert_called_once()
+    mock_bracket.assert_not_called()
+    assert result is not None
+
+
+@needs_pil
+def test_no_dropped_games_falls_back_to_playoff_bracket():
+    """With no overflow (every game fits), the ticker is never invoked and the
+    playoff bracket still wins the header strip as before."""
+    import generate_image
+    from datetime import datetime
+
+    cfg = dict(FIXED_CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    stub_img = Image.new('1', (800, 480), 255)
+    bracket_data = {'season': datetime.now().year,
+                     'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'LAD',
+                                 'away_wins': 2, 'home_wins': 3, 'complete': False}]}
+    games = [_base_game(game_pk=1)]
+
+    def fake_load(filename, *a, **kw):
+        """Fake load."""
+        return {'playoff_bracket.json': bracket_data}.get(filename, {})
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
+        result = generate_image.orchestrate_score_board(
+            games, TEAM_DATA, date_str='2026-06-20',
+            bypass_cache=True, config=cfg,
+        )
+
+    mock_bracket.assert_called_once()
+    mock_ticker.assert_not_called()
+    assert result is not None
+
+
+@needs_pil
+def test_header_fingerprint_covers_bracket_and_wildcard_modes():
+    """With bypass_cache=False (so the header-fingerprint persistence path
+    actually runs) and no dropped games, the fingerprint's 'bracket' and
+    'wildcard' branches are exercised instead of only 'ticker'/'none'."""
+    import generate_image
+    from datetime import datetime
+
+    bracket_data = {'season': datetime.now().year,
+                     'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'LAD',
+                                 'away_wins': 2, 'home_wins': 3, 'complete': False}]}
+    games = [_base_game(game_pk=1, detailed_state='Scheduled', away_runs=0, home_runs=0)]
+
+    bracket_cfg = dict(FIXED_CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({'playoff_bracket.json': bracket_data})), \
+         patch('generate_image.save_off_results') as mock_save, \
+         patch('image_grid.load_yaml_file', return_value=bracket_cfg), \
+         patch('image_box.load_yaml_file', return_value=bracket_cfg), \
+         patch('generate_image.draw_playoff_bracket_header', side_effect=lambda img, b: img):
+        result = generate_image.orchestrate_score_board(
+            games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=bracket_cfg,
+        )
+    assert result is not None
+    saved_states = [c.args[0] for c in mock_save.call_args_list if c.args[1] == 'old_header_state']
+    assert saved_states[-1] == {'mode': 'bracket', 'key': []}
+
+    wc_cfg = dict(FIXED_CONFIG, show_wildcard_standings=True, league_mode='mlb')
+    standings_data = {'standings': {'1': [{'team_id': 119, 'streak': 'W2'}]}}
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({'standings.json': standings_data})), \
+         patch('generate_image.save_off_results') as mock_save, \
+         patch('image_grid.load_yaml_file', return_value=wc_cfg), \
+         patch('image_box.load_yaml_file', return_value=wc_cfg), \
+         patch('generate_image.draw_wildcard_header', side_effect=lambda img, wc: img):
+        result = generate_image.orchestrate_score_board(
+            games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=wc_cfg,
+        )
+    assert result is not None
+    saved_states = [c.args[0] for c in mock_save.call_args_list if c.args[1] == 'old_header_state']
+    assert saved_states[-1] == {'mode': 'wildcard', 'key': []}
+
+
+@needs_pil
+def test_header_region_included_when_ticker_activates():
+    """The overflow ticker turning on between polls (dropped-games set going
+    from empty to non-empty) is a header-strip content change that isn't
+    captured by the per-cell grid diffing alone — changed_regions must still
+    include the header strip so it reaches the e-ink panel.
+
+    Games 1-13 (Scheduled) and 14 (Final) are byte-identical old vs new, so
+    none of them register in refreshed_game_ids even though 13 and 14 get
+    bumped off the grid into the ticker this poll (wide_cell_featured gives
+    the one new live game, 99, a triple tile). Only game 99 is "changed" —
+    a single small region from grid-cell diffing alone, well under the
+    10-cells collapse threshold — so the header region can only be present
+    because the header-fingerprint check added it.
+    """
+    import generate_image
+    import image_box
+
+    old_games = (
+        [_base_game(game_pk=i, detailed_state='Scheduled') for i in range(1, 14)]
+        + [_base_game(game_pk=14, detailed_state='Final')]
+    )
+    new_games = (
+        [_live_game(game_pk=99)]
+        + [_base_game(game_pk=i, detailed_state='Scheduled') for i in range(1, 14)]
+        + [_base_game(game_pk=14, detailed_state='Final')]
+    )
+    cfg = dict(FIXED_CONFIG, wide_cell_featured=True)
+
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({'old_scoreboard_state.json': old_games})), \
+         patch('generate_image.save_off_results'), \
+         patch('image_grid.load_yaml_file', return_value=cfg), \
+         patch('image_box.load_yaml_file', return_value=cfg):
+        image_box.set_historical_mode(True)
+        try:
+            result = generate_image.orchestrate_score_board(
+                new_games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=cfg,
+            )
+        finally:
+            image_box.set_historical_mode(False)
+
+    assert result is not None
+    _, regions = result
+    assert (0, 0, 800, 30) in regions
+    assert regions != [(0, 0, 800, 480)]   # sanity: didn't just collapse to full-screen
 
 
 # ---------------------------------------------------------------------------
