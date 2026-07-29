@@ -5,9 +5,12 @@ from image_assets import (
     _get_font, _logo_small, _logo_ghost, _paste_logo,
     Image, ImageDraw, ImageOps,
 )
+import time as _time_feat
+
 from image_utils import (
-    draw_diamond, draw_circle,
+    draw_diamond, draw_circle, draw_tight_number,
     _last_name, _is_game_effectively_over,
+    _series_display_str, _clean_venue_name,
 )
 from image_standings import (
     _WC_STRIP_H,
@@ -95,7 +98,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     f28  = _get_font(28)    # between-innings pitcher + SV badge
     f36  = _get_font(36)    # pitch info right-aligned
     f42  = _get_font(42)    # BSO labels + pitcher/batter + team abbreviations
-    f44  = _get_font(48)    # runner jersey numbers inside bases
+    f52  = _get_font(52)    # runner jersey numbers inside bases
     f56  = _get_font(56)    # header inning + last-event text
     f72  = _get_font(72)    # R / H / E values in score rows
 
@@ -381,10 +384,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             _raw  = game_data.get(_bkey)
             _bnum = str(_raw) if _raw is not None else ''
             if _bnum:
-                _bbox = f44.getbbox(_bnum)
-                _tx = _bc[0] - (_bbox[0] + _bbox[2]) // 2
-                _ty = _bc[1] - (_bbox[1] + _bbox[3]) // 2
-                draw.text((_tx, _ty), _bnum, font=f44, fill=255)
+                draw_tight_number(draw, _bc[0], _bc[1], _bnum, f52, 255)
 
     # ---- OUTS circles (right side, moved up, bigger) ------------------------
     _outs = game_data.get('num_of_outs') or 0
@@ -800,40 +800,37 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
                 canvas, standings_data, team_data, side='right', league_mode=league_mode,
                 x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
-    # Date label centered in the top strip — use the largest font that fits
-    _gd_str = (game_data.get('game_date') or '')[:10]
-    if _gd_str:
-        try:
-            _gd = datetime.strptime(_gd_str, '%Y-%m-%d')
-            _date_label_full  = _gd.strftime('%A, %B %-d, %Y')   # Monday, May 11, 2026
-            _date_label_short = _gd.strftime('%a · %b %-d, %Y')  # Mon · May 11, 2026
-        except Exception:
-            _date_label_full = _date_label_short = _gd_str
-        _date_draw = ImageDraw.Draw(canvas)
-        # When wildcard standings are shown they fill the strip leaving only ~155px
-        # clear in the center (same constraint as the normal scoreboard header).
-        # Without wildcard the full strip is free so the content-area width applies.
-        _show_wc = config.get('show_wildcard_standings', False)
-        _MAX_DATE_W = 151 if _show_wc else (_box_w - 8)
-        _center_x = 400  # midpoint of the 800px display (matches _WC_MID = 399)
-        _date_font = _get_font(14)
-        _date_label = _date_label_short
-        _fsize_used = 14
-        for _fsize in (20, 18, 16, 14):
-            _f = _get_font(_fsize)
-            for _candidate in (_date_label_full, _date_label_short):
-                if int(_f.getlength(_candidate)) <= _MAX_DATE_W:
-                    _date_font = _f
-                    _date_label = _candidate
-                    _fsize_used = _fsize
+    # Game state label centered in the top strip — rotates between series
+    # context, venue name, and TV channel.  The date is omitted since the
+    # featured game is already the focus of the fullscreen layout.
+    # Skipped entirely when the bracket fills the whole strip.
+    if not _bracket:
+        _state_candidates = []
+        _series_s = _series_display_str(game_data)
+        if _series_s:
+            _state_candidates.append(_series_s)
+        _venue_s = _clean_venue_name(game_data.get('venue') or '')
+        if _venue_s:
+            _state_candidates.append(_venue_s)
+        _tv_s = (game_data.get('tv_channel') or '').strip()
+        if _tv_s:
+            _state_candidates.append(_tv_s)
+        if _state_candidates:
+            _rot_mins = max(config.get('overflow_ticker_rotation_minutes', 2), 1)
+            _block = int(_time_feat.time() // (_rot_mins * 60))
+            _state_label = _state_candidates[_block % len(_state_candidates)]
+            _show_wc = config.get('show_wildcard_standings', False)
+            _MAX_LABEL_W = 151 if _show_wc else (_box_w - 8)
+            _center_x = 400
+            _hdr_draw = ImageDraw.Draw(canvas)
+            for _fsize in (16, 14, 11, 9):
+                _f = _get_font(_fsize)
+                if int(_f.getlength(_state_label)) <= _MAX_LABEL_W:
+                    _lw = int(_f.getlength(_state_label))
+                    _lx = _center_x - _lw // 2
+                    _ly = max(0, (_WC_STRIP_H - _fsize) // 2)
+                    _hdr_draw.text((_lx,     _ly), _state_label, font=_f, fill=0)
+                    _hdr_draw.text((_lx + 1, _ly), _state_label, font=_f, fill=0)
                     break
-            else:
-                continue
-            break
-        _dw = int(_date_font.getlength(_date_label))
-        _dx = _center_x - _dw // 2
-        _dy = max(0, (_WC_STRIP_H - _fsize_used) // 2)
-        _date_draw.text((_dx,     _dy), _date_label, font=_date_font, fill=0)
-        _date_draw.text((_dx + 1, _dy), _date_label, font=_date_font, fill=0)
 
     return canvas

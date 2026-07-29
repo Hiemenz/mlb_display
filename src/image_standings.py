@@ -409,6 +409,65 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
     return Himage
 
 
+_TX_HEADER_MAX = 5
+_TX_HEADER_ABBR = {
+    'Status Change': 'IL', 'Recalled': 'Recall', 'Optioned': 'Option',
+    'Selected': 'Select', 'Designated for Assignment': 'DFA',
+    'Released': 'Release', 'Signed': 'Sign', 'Trade': 'Trade',
+    'Claimed off Waivers': 'Waiver', 'Outrighted': 'Outright',
+}
+
+
+def draw_transactions_header(Himage, transactions_data, team_data, rotation_minutes=3):
+    """Draw recent transactions in the 30px header strip (y=0..30).
+
+    Called when the strip is otherwise blank (no overflow ticker, bracket, or
+    wildcard standings). Rotates through entries when more than _TX_HEADER_MAX
+    are available. Format per entry: 'ABBR LastName Type' (e.g. 'NYY Stanton IL').
+    """
+    entries = list(transactions_data or [])
+    if not entries:
+        return Himage
+
+    rotation_minutes = max(rotation_minutes, 1)
+    n = len(entries)
+    if n <= _TX_HEADER_MAX:
+        chunk = entries[:_TX_HEADER_MAX]
+    else:
+        n_chunks = -(-n // _TX_HEADER_MAX)
+        block_idx = int(_time.time() // (rotation_minutes * 60))
+        start = (block_idx % n_chunks) * _TX_HEADER_MAX
+        chunk = entries[start:start + _TX_HEADER_MAX]
+
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9)
+    text_y = (_WC_STRIP_H - 9) // 2
+
+    n_shown = len(chunk)
+    entry_w = 800 // max(n_shown, 1)
+
+    for i, entry in enumerate(chunk):
+        x0 = i * entry_w
+
+        abbr = entry.get('team_abbr', '')
+        player = entry.get('player_name', '')
+        last = player.split()[-1] if player else ''
+        tag = _TX_HEADER_ABBR.get(entry.get('type_desc', ''), (entry.get('type_desc') or '')[:7])
+
+        text = ' '.join(p for p in (abbr, last, tag) if p)
+        tw = int(font.getlength(text))
+        tx = x0 + max(0, (entry_w - tw) // 2)
+        draw.text((tx, text_y), text, font=font, fill=0)
+
+        if i > 0:
+            draw.line((x0, 3, x0, _WC_STRIP_H - 4), fill=0, width=1)
+
+    draw.line((0, 0, 799, 0), fill=0, width=1)
+    draw.line((0, _WC_STRIP_H - 1, 799, _WC_STRIP_H - 1), fill=0, width=1)
+
+    return Himage
+
+
 def _aaa_divisions(standings_data, side):
     """Return division names for each sidebar side in AAA mode.
 
