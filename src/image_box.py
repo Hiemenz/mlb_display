@@ -943,8 +943,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_home = game_data.get('home_lineup') or []
             _lu_away_sp = _format_player_name(game_data.get('away_probable') or '')
             _lu_home_sp = _format_player_name(game_data.get('home_probable') or '')
-            _lu_cell_h  = 140 * s
-            _lu_body_y0 = start_y + 21 * s   # one below header separator
+            _lu_cell_h  = 150 * s
+            _lu_body_y0 = start_y + 31 * s   # one below header separator, +10px
             _lu_logo_h  = 22 * s             # "logo vs logo" row, right below header
             _lu_body_y  = _lu_body_y0 + _lu_logo_h
             _lu_sp_h    = 11 * s
@@ -977,7 +977,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # Ghost team logos in each column background, in place of the old
             # abbreviation sub-header — frees that row's height for the rows below.
             if use_logos and _cfg.get('lineup_logo_background', False):
-                _lu_body_h   = _lu_cell_h - 21 * s - _lu_logo_h - _lu_sp_h
+                _lu_body_h   = _lu_cell_h - (_lu_body_y0 - start_y) - _lu_logo_h - _lu_sp_h
                 _lu_ghost_sz = min(_lu_col_w - 4 * s, _lu_body_h - 4 * s)
                 for _lu_abbr, _lu_tid, _lu_cx in (
                     (away_team_name, away_team_id, start_x),
@@ -993,7 +993,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             # Batting order rows
             _lu_row_top = _lu_body_y
-            _lu_avail_h = _lu_cell_h - 21 * s - _lu_logo_h - _lu_sp_h
+            _lu_avail_h = _lu_cell_h - (_lu_body_y0 - start_y) - _lu_logo_h - _lu_sp_h
             _lu_row_h   = _lu_avail_h // _lu_n_rows
 
             # Single global position-column width so both columns are symmetric
