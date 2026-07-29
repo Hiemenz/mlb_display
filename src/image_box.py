@@ -945,7 +945,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_home_sp = _format_player_name(game_data.get('home_probable') or '')
             _lu_cell_h  = 140 * s
             _lu_body_y0 = start_y + 21 * s   # one below header separator
-            _lu_logo_h  = 11 * s             # "logo vs logo" row, right below header
+            _lu_logo_h  = 22 * s             # "logo vs logo" row, right below header
             _lu_body_y  = _lu_body_y0 + _lu_logo_h
             _lu_sp_h    = 11 * s
             _lu_n_rows  = 9
@@ -953,24 +953,22 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_mid_x   = start_x + _lu_col_w
             _lu_pad     = 2 * s
 
-            # Small away/home logos + "vs", centered as a group — no divider
-            # line runs through this row.
+            # Away/home logos, each centered over its own column of names,
+            # with "vs" at the divider — no divider line runs through this row.
             if use_logos:
+                _lu_logo_sz = min(_lu_logo_h, _lu_col_w - 10 * s)
+                _lu_away_logo = _logo_small(away_team_name, away_team_id, size=_lu_logo_sz)
+                _lu_home_logo = _logo_small(home_team_name, home_team_id, size=_lu_logo_sz)
+                _lu_logo_y = _lu_body_y0 + (_lu_logo_h - _lu_logo_sz) // 2
+                if _lu_away_logo:
+                    _lu_alx = start_x + (_lu_col_w - _lu_away_logo.width) // 2
+                    Himage.paste(_lu_away_logo, (_lu_alx, _lu_logo_y))
+                if _lu_home_logo:
+                    _lu_hlx = _lu_mid_x + (_lu_col_w - _lu_home_logo.width) // 2
+                    Himage.paste(_lu_home_logo, (_lu_hlx, _lu_logo_y))
                 _lu_vs_txt = 'vs'
                 _lu_vs_w   = int(font9.getlength(_lu_vs_txt))
-                _lu_away_logo = _logo_small(away_team_name, away_team_id, size=_lu_logo_h)
-                _lu_home_logo = _logo_small(home_team_name, home_team_id, size=_lu_logo_h)
-                _lu_alw = _lu_away_logo.width if _lu_away_logo else 0
-                _lu_hlw = _lu_home_logo.width if _lu_home_logo else 0
-                _lu_group_w = _lu_alw + 3 * s + _lu_vs_w + 3 * s + _lu_hlw
-                _lu_group_x = start_x + (135 * s - _lu_group_w) // 2
-                _lu_group_y = _lu_body_y0
-                if _lu_away_logo:
-                    Himage.paste(_lu_away_logo, (_lu_group_x, _lu_group_y))
-                _lu_vs_x = _lu_group_x + _lu_alw + 3 * s
-                draw.text((_lu_vs_x, _lu_body_y0 + (_lu_logo_h - 9 * s) // 2), _lu_vs_txt, font=font9, fill=0)
-                if _lu_home_logo:
-                    Himage.paste(_lu_home_logo, (_lu_vs_x + _lu_vs_w + 3 * s, _lu_group_y))
+                draw.text((_lu_mid_x - _lu_vs_w // 2, _lu_body_y0 + (_lu_logo_h - 9 * s) // 2), _lu_vs_txt, font=font9, fill=0)
                 draw = ImageDraw.Draw(Himage)
 
             # Vertical divider — starts below the logo row
