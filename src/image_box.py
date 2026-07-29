@@ -11,7 +11,7 @@ from image_assets import (
     _load_codepoint_ghost, _TEAM_ID_ABBR_OVERRIDE, _PPD_EMOJI_CODEPOINTS, _SUSP_EMOJI_CODEPOINTS,
 )
 from image_utils import (
-    draw_diamond, draw_circle, check_if_two_chars,
+    draw_diamond, draw_circle, draw_tight_number, check_if_two_chars,
     _format_player_name, _last_name, _pitcher_line, _clean_venue_name,
     _is_game_effectively_over,
 )
@@ -725,6 +725,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font24 = _get_font(24 * s)
     font18 = _get_font(18 * s)
     font14 = _get_font(14 * s)
+    font13 = _get_font(13 * s)   # base-runner numbers
     font11 = _get_font(11 * s)
     font9 = _get_font(9 * s)
 
@@ -2110,8 +2111,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            _bb = font11.getbbox(_bnum)
-                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font11, fill=255)
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font13, 255)
             _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
             Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
@@ -2157,8 +2157,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            _bb = font11.getbbox(_bnum)
-                            draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font11, fill=255)
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font13, 255)
 
                 outs_list = [None] * 3
                 for i in range(1, 4):
@@ -2400,8 +2399,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     Bottom strip (below rp_h): K strikeouts for each pitcher.
     """
     s = scale
-    font11 = _get_font(11 * s)
-    font10 = _get_font(10 * s)   # slightly bigger than font9, for base-runner numbers
+    font11 = _get_font(11 * s)   # base-runner numbers
     font9  = _get_font(9 * s)
     font7  = _get_font(max(7 * s, 7))
 
@@ -2643,8 +2641,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                     _raw = game_data.get(_bkey)
                     _bnum = str(_raw) if _raw is not None else ''
                     if _bnum:
-                        _bb = font10.getbbox(_bnum)
-                        draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font10, fill=255)
+                        _bb = font11.getbbox(_bnum)
+                        draw.text((_bcx - (_bb[0] + _bb[2] - 1) // 2, _bcy - (_bb[1] + _bb[3] - 1) // 2), _bnum, font=font11, fill=255)
 
         # ── Outs circles: left side, below bases ──────────────────────
         outs_list = [i + 1 <= _outs_count for i in range(3)]
@@ -3289,7 +3287,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     thetas = [_math.atan2(x_ft, y_ft) for x_ft, y_ft in wall_poly]
     theta_lo, theta_hi = thetas[0], thetas[-1]
     n_markers = 5
-    _label_offs = max(round(9 * s), 9)  # px to push label outside the fence arc
+    _label_offs = max(round(16 * s), 16)  # px to push label outside the fence arc
     for k in range(n_markers):
         target = theta_lo + (k / (n_markers - 1)) * (theta_hi - theta_lo)
         idx = min(range(len(thetas)), key=lambda i: abs(thetas[i] - target))
@@ -3300,7 +3298,11 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         # Radial unit vector pointing away from home plate (i.e. into the stands).
         norm = _math.sqrt(x_ft**2 + y_ft**2) or 1
         ux, uy = x_ft / norm, y_ft / norm
-        # Place label outside the wall: move in the outward radial direction in pixel space.
+        # Place label outside the wall: move further out along the same radial
+        # direction from home plate. At the foul poles this direction runs
+        # right along the fence/foul line, so the offset has to be large
+        # enough to clear the pole label past where the wall curves away —
+        # a small nudge leaves the label sitting on top of the line.
         # x-pixel and x-field share the same sign; y-pixel is inverted vs y-field.
         lx_c = int(pt[0] + ux * _label_offs)
         ly_c = int(pt[1] - uy * _label_offs)
@@ -3497,7 +3499,9 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         and int(game_data.get('last_play_rbi') or 0) > 0
     )
     if (score_changed or _run_scored) and not _between:
-        header_box = Himage.crop((start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H))
+        # Only cells 1+2 (up to fp_x) light up — cell 3 is the field diagram
+        # and has no header row of its own.
+        header_box = Himage.crop((start_x, start_y, fp_x, start_y + HEADER_H))
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
         draw = ImageDraw.Draw(Himage)
 
