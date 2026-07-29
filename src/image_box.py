@@ -651,7 +651,15 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
 
 
 def _game_within_minutes_check(game_data, minutes=30):
-    """Return True if the game starts within `minutes` of now (UTC)."""
+    """Return True once the game is within `minutes` of its scheduled start.
+
+    No lower bound: once first pitch is within the window, this stays True
+    indefinitely past the scheduled start time too — the caller's own
+    detailed_state check (Scheduled/Pre-Game/Warmup) is what actually cuts
+    lineup mode off, the moment the game goes live. Without this, a game
+    running a few minutes late at its scheduled start would revert from the
+    lineup display back to the plain pre-game tile before the first pitch.
+    """
     from datetime import datetime, timezone, timedelta
     game_date = game_data.get('game_date') or ''
     if not game_date:
@@ -660,7 +668,7 @@ def _game_within_minutes_check(game_data, minutes=30):
         gd = game_date.replace('Z', '+00:00')
         start = datetime.fromisoformat(gd)
         now   = datetime.now(timezone.utc)
-        return timedelta(0) <= (start - now) <= timedelta(minutes=minutes)
+        return (start - now) <= timedelta(minutes=minutes)
     except (ValueError, TypeError):
         return False
 
@@ -728,11 +736,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font11 = _get_font(11 * s)   # also used for base-runner numbers
     font9 = _get_font(9 * s)
 
-    # Lineup mode: within 45 min of first pitch with lineup data posted.
+    # Lineup mode: within 2 hours of first pitch with lineup data posted.
     # Replaces pitcher-probables body and team-records section with batting orders.
     _is_lineup_mode = (
         game_data.get('detailed_state') in ('Scheduled', 'Pre-Game', 'Warmup')
-        and _game_within_minutes_check(game_data, 45)
+        and _game_within_minutes_check(game_data, 120)
         and bool(game_data.get('away_lineup') or game_data.get('home_lineup'))
     )
 
@@ -945,7 +953,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_home_sp = _format_player_name(game_data.get('home_probable') or '')
             _lu_cell_h  = 150 * s
             _lu_body_y0 = start_y + 31 * s   # one below header separator, +10px
-            _lu_logo_h  = 22 * s             # "logo vs logo" row, right below header
+            _lu_logo_h  = 26 * s             # "logo vs logo" row, right below header
             _lu_body_y  = _lu_body_y0 + _lu_logo_h
             _lu_sp_h    = 11 * s
             _lu_n_rows  = 9
@@ -955,11 +963,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             # Away/home logos, each centered over its own column of names,
             # with "vs" at the divider — no divider line runs through this row.
+            # Sized bigger than the logo row itself and nudged up 5px into the
+            # header-gap whitespace above, without moving the lineup rows below.
             if use_logos:
-                _lu_logo_sz = min(_lu_logo_h, _lu_col_w - 10 * s)
+                _lu_logo_sz = min(_lu_logo_h + 2 * s, _lu_col_w - 10 * s)
                 _lu_away_logo = _logo_small(away_team_name, away_team_id, size=_lu_logo_sz)
                 _lu_home_logo = _logo_small(home_team_name, home_team_id, size=_lu_logo_sz)
-                _lu_logo_y = _lu_body_y0 + (_lu_logo_h - _lu_logo_sz) // 2
+                _lu_logo_y = _lu_body_y0 + (_lu_logo_h - _lu_logo_sz) // 2 - 5 * s
                 if _lu_away_logo:
                     _lu_alx = start_x + (_lu_col_w - _lu_away_logo.width) // 2
                     Himage.paste(_lu_away_logo, (_lu_alx, _lu_logo_y))

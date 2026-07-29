@@ -4,7 +4,7 @@ Shows both teams' batting orders side-by-side (Away left, Home right) with
 the starting pitchers in a strip at the bottom.  The header replicates the
 standard scheduled-game tile style: game time on the left, venue on the right.
 
-Only shown by image_grid when the game is within 45 minutes of first pitch.
+Only shown by image_grid when the game is within 2 hours of first pitch.
 """
 from image_assets import _get_font, ImageDraw, _logo_ghost, _paste_logo
 from image_utils import _clean_venue_name, _pitcher_line
@@ -45,8 +45,14 @@ def _find_primary_game(games_data, primary_abbr):
     return None
 
 
-def game_within_minutes(game, minutes=45):
-    """Return True when the game's UTC start time is within `minutes` of now."""
+def game_within_minutes(game, minutes=120):
+    """Return True once the game is within `minutes` of its scheduled start.
+
+    No lower bound: stays True past the scheduled start time too, so a game
+    running a few minutes late keeps showing the lineup panel instead of
+    reverting away right at the scheduled first-pitch time. The caller
+    checks detailed_state separately to know when the game actually goes live.
+    """
     from datetime import datetime, timezone, timedelta
     game_date = game.get('game_date') or ''
     if not game_date:
@@ -55,7 +61,7 @@ def game_within_minutes(game, minutes=45):
         gd    = game_date.replace('Z', '+00:00')
         start = datetime.fromisoformat(gd)
         now   = datetime.now(timezone.utc)
-        return timedelta(0) <= (start - now) <= timedelta(minutes=minutes)
+        return (start - now) <= timedelta(minutes=minutes)
     except (ValueError, TypeError):
         return False
 

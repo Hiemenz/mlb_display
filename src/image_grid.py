@@ -886,7 +886,11 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         _primary_abbr = config.get('primary', '')
         from image_lineup import _find_primary_game, game_within_minutes
         _lu_game = _find_primary_game(game_state_data, _primary_abbr)
-        if _lu_game and game_within_minutes(_lu_game, minutes=45):
+        if (
+            _lu_game
+            and _lu_game.get('detailed_state') in ('Scheduled', 'Pre-Game', 'Warmup')
+            and game_within_minutes(_lu_game, minutes=120)
+        ):
             _lu_col, _lu_row = _free_slots.pop(0)
             _lu_lx = _lu_col * 150 + x_start
             _lu_ly = _lu_row * 150 + y_start

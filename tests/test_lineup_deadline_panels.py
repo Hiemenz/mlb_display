@@ -177,10 +177,13 @@ def test_game_within_minutes_too_early():
 
 
 def test_game_within_minutes_past():
+    """No lower bound: a game running late past its scheduled start still
+    counts as "within minutes" — the caller's detailed_state check is what
+    actually cuts the lineup display off once the game goes live."""
     from datetime import timedelta
     start = datetime.now(timezone.utc) - timedelta(minutes=10)
     game = {'game_date': start.strftime('%Y-%m-%dT%H:%M:%SZ')}
-    assert game_within_minutes(game, minutes=30) is False
+    assert game_within_minutes(game, minutes=30) is True
 
 
 def test_draw_lineup_cell_with_lineup(tmp_path, monkeypatch):
@@ -305,7 +308,7 @@ def test_draw_lineup_cell_long_name_and_pitcher(tmp_path, monkeypatch):
 
 
 def test_image_grid_spare_cell_lineup(tmp_path, monkeypatch):
-    """image_grid dispatches to draw_lineup_cell when show_lineup_panel=True and game within 45 min."""
+    """image_grid dispatches to draw_lineup_cell when show_lineup_panel=True and game within 2 hours."""
     try:
         from PIL import Image
     except ImportError:
