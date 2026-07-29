@@ -8,6 +8,7 @@ Only shown by image_grid when the game is within 45 minutes of first pitch.
 """
 from image_assets import _get_font, ImageDraw, _logo_ghost, _paste_logo
 from image_utils import _clean_venue_name, _pitcher_line
+from util import load_yaml_file
 
 
 def _short_name(full_name):
@@ -139,7 +140,7 @@ def draw_lineup_cell(Himage, sx, sy, games_data, primary_abbr, team_data, use_lo
     draw.line([(mid_x, body_y), (mid_x, sy + _CELL_H - 1)], fill=0)
 
     # ── Ghost logos in each column background ──────────────────────────────
-    if use_logos:
+    if use_logos and load_yaml_file('config.yaml').get('lineup_logo_background', False):
         abbr_map  = team_data.get('team_abbreviation', {})
         body_h    = _CELL_H - _HDR_H - _SP_H
         ghost_sz  = min(col_w - 4, body_h - 4)

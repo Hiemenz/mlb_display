@@ -25,17 +25,24 @@ def normalize_dict(d):
     return d
 
 
-def draw_tight_number(draw, cx, cy, text, font, fill, gap=None):
+def draw_tight_number(draw, cx, cy, text, font, fill, gap=None, bold=False):
     """Draw text centered at (cx, cy), spacing glyphs by their own ink width.
 
     Tabular-figure digit fonts give every glyph the same advance width so
     columns of numbers align, but that leaves a wide gap around narrow
     glyphs like '1'. Packing by each glyph's actual ink bbox instead keeps
     multi-digit runner numbers visually tight inside the small base diamonds.
+
+    bold: double-draws each glyph offset by 1px, matching the bold pattern
+    used elsewhere in the renderer.
     """
     full_bb = font.getbbox(text)
     if len(text) <= 1:
-        draw.text((cx - (full_bb[0] + full_bb[2]) // 2, cy - (full_bb[1] + full_bb[3]) // 2), text, font=font, fill=fill)
+        x0 = cx - (full_bb[0] + full_bb[2]) // 2
+        y0 = cy - (full_bb[1] + full_bb[3]) // 2
+        draw.text((x0, y0), text, font=font, fill=fill)
+        if bold:
+            draw.text((x0 + 1, y0), text, font=font, fill=fill)
         return
     if gap is None:
         gap = 1
@@ -46,6 +53,8 @@ def draw_tight_number(draw, cx, cy, text, font, fill, gap=None):
     y = cy - (full_bb[1] + full_bb[3]) // 2
     for ch, bb, w in zip(text, char_bbs, widths):
         draw.text((x - bb[0], y), ch, font=font, fill=fill)
+        if bold:
+            draw.text((x - bb[0] + 1, y), ch, font=font, fill=fill)
         x += w + gap
 
 

@@ -184,6 +184,10 @@ transactions_lookback_days: 2
 # few hours before first pitch). Shows 'Not Yet Posted' before then.
 show_lineup_panel: false
 
+# Faint ghost team-logo watermark behind each column of a batting lineup panel
+# (both the standalone spare-cell panel and the in-cell 45-min lineup mode).
+lineup_logo_background: false
+
 # Trade deadline countdown panel: shows time remaining until the MLB trade deadline
 # plus recent transactions. Only appears in the two weeks before the deadline
 # (and auto-hides once it passes) — enabling it year-round is safe.

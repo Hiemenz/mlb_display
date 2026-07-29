@@ -725,8 +725,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font24 = _get_font(24 * s)
     font18 = _get_font(18 * s)
     font14 = _get_font(14 * s)
-    font13 = _get_font(13 * s)   # base-runner numbers
-    font11 = _get_font(11 * s)
+    font11 = _get_font(11 * s)   # also used for base-runner numbers
     font9 = _get_font(9 * s)
 
     # Lineup mode: within 45 min of first pitch with lineup data posted.
@@ -945,20 +944,42 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_away_sp = _format_player_name(game_data.get('away_probable') or '')
             _lu_home_sp = _format_player_name(game_data.get('home_probable') or '')
             _lu_cell_h  = 140 * s
-            _lu_body_y  = start_y + 21 * s   # one below header separator
+            _lu_body_y0 = start_y + 21 * s   # one below header separator
+            _lu_logo_h  = 11 * s             # "logo vs logo" row, right below header
+            _lu_body_y  = _lu_body_y0 + _lu_logo_h
             _lu_sp_h    = 11 * s
             _lu_n_rows  = 9
             _lu_col_w   = (135 * s) // 2      # 67 at scale=1
             _lu_mid_x   = start_x + _lu_col_w
             _lu_pad     = 2 * s
 
-            # Vertical divider
+            # Small away/home logos + "vs", centered as a group — no divider
+            # line runs through this row.
+            if use_logos:
+                _lu_vs_txt = 'vs'
+                _lu_vs_w   = int(font9.getlength(_lu_vs_txt))
+                _lu_away_logo = _logo_small(away_team_name, away_team_id, size=_lu_logo_h)
+                _lu_home_logo = _logo_small(home_team_name, home_team_id, size=_lu_logo_h)
+                _lu_alw = _lu_away_logo.width if _lu_away_logo else 0
+                _lu_hlw = _lu_home_logo.width if _lu_home_logo else 0
+                _lu_group_w = _lu_alw + 3 * s + _lu_vs_w + 3 * s + _lu_hlw
+                _lu_group_x = start_x + (135 * s - _lu_group_w) // 2
+                _lu_group_y = _lu_body_y0
+                if _lu_away_logo:
+                    Himage.paste(_lu_away_logo, (_lu_group_x, _lu_group_y))
+                _lu_vs_x = _lu_group_x + _lu_alw + 3 * s
+                draw.text((_lu_vs_x, _lu_body_y0 + (_lu_logo_h - 9 * s) // 2), _lu_vs_txt, font=font9, fill=0)
+                if _lu_home_logo:
+                    Himage.paste(_lu_home_logo, (_lu_vs_x + _lu_vs_w + 3 * s, _lu_group_y))
+                draw = ImageDraw.Draw(Himage)
+
+            # Vertical divider — starts below the logo row
             draw.line([(_lu_mid_x, _lu_body_y), (_lu_mid_x, start_y + _lu_cell_h - s)], fill=0)
 
             # Ghost team logos in each column background, in place of the old
             # abbreviation sub-header — frees that row's height for the rows below.
-            if use_logos:
-                _lu_body_h   = _lu_cell_h - 21 * s - _lu_sp_h
+            if use_logos and _cfg.get('lineup_logo_background', False):
+                _lu_body_h   = _lu_cell_h - 21 * s - _lu_logo_h - _lu_sp_h
                 _lu_ghost_sz = min(_lu_col_w - 4 * s, _lu_body_h - 4 * s)
                 for _lu_abbr, _lu_tid, _lu_cx in (
                     (away_team_name, away_team_id, start_x),
@@ -974,7 +995,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
             # Batting order rows
             _lu_row_top = _lu_body_y
-            _lu_avail_h = _lu_cell_h - 21 * s - _lu_sp_h
+            _lu_avail_h = _lu_cell_h - 21 * s - _lu_logo_h - _lu_sp_h
             _lu_row_h   = _lu_avail_h // _lu_n_rows
 
             # Single global position-column width so both columns are symmetric
@@ -2081,7 +2102,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            draw_tight_number(draw, _bcx, _bcy, _bnum, font13, 255)
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
             _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
             Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
@@ -2127,7 +2148,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            draw_tight_number(draw, _bcx, _bcy, _bnum, font13, 255)
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
 
                 outs_list = [None] * 3
                 for i in range(1, 4):
