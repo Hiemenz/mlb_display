@@ -224,6 +224,32 @@ def test_draw_lineup_cell_no_lineup(tmp_path, monkeypatch):
     assert result is img
 
 
+def test_draw_lineup_cell_with_venue_and_logo_background(tmp_path, monkeypatch):
+    """Venue text in the header, plus the ghost-logo background gated by config."""
+    try:
+        from PIL import Image
+    except ImportError:
+        pytest.skip('PIL not available')
+
+    import json
+    (tmp_path / 'standings.json').write_text(json.dumps({
+        'team_abbreviation': {'147': 'NYY', '111': 'BOS'}, 'standings': {},
+    }))
+    import util as _util
+    monkeypatch.setattr(_util, '_DATA_DIR', str(tmp_path))
+
+    import image_lineup
+    monkeypatch.setattr(image_lineup, 'load_yaml_file',
+                         lambda *a, **kw: {'lineup_logo_background': True})
+
+    from image_lineup import draw_lineup_cell
+    games = _make_games(has_lineup=True, venue='Yankee Stadium', game_start='7:05 PM')
+    team_data = {'team_abbreviation': {'147': 'NYY', '111': 'BOS'}}
+    img = Image.new('1', (800, 480), 1)
+    result = draw_lineup_cell(img, 32, 30, games, 'NYY', team_data, use_logos=True)
+    assert result is img
+
+
 def test_game_within_minutes_no_game_date():
     assert game_within_minutes({}, minutes=30) is False
     assert game_within_minutes({'game_date': ''}, minutes=30) is False
