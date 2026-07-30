@@ -651,7 +651,15 @@ def _draw_next_game_preview(draw, Himage, start_x, start_y, tmrw_games, today_ho
 
 
 def _game_within_minutes_check(game_data, minutes=30):
-    """Return True if the game starts within `minutes` of now (UTC)."""
+    """Return True once the game is within `minutes` of its scheduled start.
+
+    No lower bound: once first pitch is within the window, this stays True
+    indefinitely past the scheduled start time too — the caller's own
+    detailed_state check (Scheduled/Pre-Game/Warmup) is what actually cuts
+    lineup mode off, the moment the game goes live. Without this, a game
+    running a few minutes late at its scheduled start would revert from the
+    lineup display back to the plain pre-game tile before the first pitch.
+    """
     from datetime import datetime, timezone, timedelta
     game_date = game_data.get('game_date') or ''
     if not game_date:
@@ -660,7 +668,7 @@ def _game_within_minutes_check(game_data, minutes=30):
         gd = game_date.replace('Z', '+00:00')
         start = datetime.fromisoformat(gd)
         now   = datetime.now(timezone.utc)
-        return timedelta(0) <= (start - now) <= timedelta(minutes=minutes)
+        return (start - now) <= timedelta(minutes=minutes)
     except (ValueError, TypeError):
         return False
 
@@ -725,15 +733,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font24 = _get_font(24 * s)
     font18 = _get_font(18 * s)
     font14 = _get_font(14 * s)
-    font13 = _get_font(13 * s)   # base-runner numbers
-    font11 = _get_font(11 * s)
+    font11 = _get_font(11 * s)   # also used for base-runner numbers
     font9 = _get_font(9 * s)
 
-    # Lineup mode: within 45 min of first pitch with lineup data posted.
+    # Lineup mode: within 2 hours of first pitch with lineup data posted.
     # Replaces pitcher-probables body and team-records section with batting orders.
     _is_lineup_mode = (
         game_data.get('detailed_state') in ('Scheduled', 'Pre-Game', 'Warmup')
-        and _game_within_minutes_check(game_data, 45)
+        and _game_within_minutes_check(game_data, 120)
         and bool(game_data.get('away_lineup') or game_data.get('home_lineup'))
     )
 
@@ -942,44 +949,84 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # Two-column batting order in the cell body (replaces scores + pitcher probables)
             _lu_away = game_data.get('away_lineup') or []
             _lu_home = game_data.get('home_lineup') or []
-            _lu_away_sp = _last_name(game_data.get('away_probable') or '')
-            _lu_home_sp = _last_name(game_data.get('home_probable') or '')
-            _lu_cell_h  = 130 * s
-            _lu_body_y  = start_y + 21 * s   # one below header separator
-            _lu_team_h  = 11 * s
+            _lu_away_sp = _format_player_name(game_data.get('away_probable') or '')
+            _lu_home_sp = _format_player_name(game_data.get('home_probable') or '')
+            _lu_cell_h  = 150 * s
+            _lu_body_y0 = start_y + 31 * s   # one below header separator, +10px
+            _lu_logo_h  = 26 * s             # "logo vs logo" row, right below header
+            _lu_body_y  = _lu_body_y0 + _lu_logo_h
             _lu_sp_h    = 11 * s
             _lu_n_rows  = 9
             _lu_col_w   = (135 * s) // 2      # 67 at scale=1
             _lu_mid_x   = start_x + _lu_col_w
             _lu_pad     = 2 * s
 
-            # Vertical divider
+            # Away/home logos, each centered over its own column of names,
+            # with "vs" at the divider — no divider line runs through this row.
+            # Sized bigger than the logo row itself and nudged up 5px into the
+            # header-gap whitespace above, without moving the lineup rows below.
+            if use_logos:
+                # Bottom-anchored 2px above the batting rows — growing the size
+                # only extends the logo upward into the header-gap whitespace,
+                # never down into the rows below.
+                _lu_logo_bottom = _lu_body_y0 + _lu_logo_h - 2 * s
+                _lu_logo_sz = min(30 * s, _lu_col_w - 10 * s)
+                _lu_logo_y  = _lu_logo_bottom - _lu_logo_sz
+                _lu_away_logo = _logo_small(away_team_name, away_team_id, size=_lu_logo_sz)
+                _lu_home_logo = _logo_small(home_team_name, home_team_id, size=_lu_logo_sz)
+                if _lu_away_logo:
+                    _lu_alx = start_x + (_lu_col_w - _lu_away_logo.width) // 2
+                    Himage.paste(_lu_away_logo, (_lu_alx, _lu_logo_bottom - _lu_away_logo.height))
+                if _lu_home_logo:
+                    _lu_hlx = _lu_mid_x + (_lu_col_w - _lu_home_logo.width) // 2
+                    Himage.paste(_lu_home_logo, (_lu_hlx, _lu_logo_bottom - _lu_home_logo.height))
+                _lu_vs_txt = 'vs'
+                _lu_vs_w   = int(font11.getlength(_lu_vs_txt))
+                draw.text((_lu_mid_x - _lu_vs_w // 2, _lu_logo_y + (_lu_logo_sz - 11 * s) // 2), _lu_vs_txt, font=font11, fill=0)
+                draw = ImageDraw.Draw(Himage)
+
+            # Vertical divider — starts below the logo row
             draw.line([(_lu_mid_x, _lu_body_y), (_lu_mid_x, start_y + _lu_cell_h - s)], fill=0)
 
-            # Team abbreviation headers, bold
-            for _lu_abbr, _lu_cx in ((away_team_name, start_x), (home_team_name, _lu_mid_x)):
-                _lu_aw = int(font11.getlength(_lu_abbr))
-                _lu_ax = _lu_cx + (_lu_col_w - _lu_aw) // 2
-                draw.text((_lu_ax,       _lu_body_y + s), _lu_abbr, font=font11, fill=0)
-                draw.text((_lu_ax + s,   _lu_body_y + s), _lu_abbr, font=font11, fill=0)
+            # Ghost team logos in each column background, in place of the old
+            # abbreviation sub-header — frees that row's height for the rows below.
+            if use_logos and _cfg.get('lineup_logo_background', False):
+                _lu_body_h   = _lu_cell_h - (_lu_body_y0 - start_y) - _lu_logo_h - _lu_sp_h
+                _lu_ghost_sz = min(_lu_col_w - 4 * s, _lu_body_h - 4 * s)
+                for _lu_abbr, _lu_tid, _lu_cx in (
+                    (away_team_name, away_team_id, start_x),
+                    (home_team_name, home_team_id, _lu_mid_x),
+                ):
+                    _lu_ghost = _logo_ghost(_lu_abbr, _lu_tid, size=_lu_ghost_sz, lightness=160)
+                    if _lu_ghost:
+                        _lu_gw, _lu_gh = _lu_ghost.size
+                        _lu_gx = _lu_cx + (_lu_col_w - _lu_gw) // 2
+                        _lu_gy = _lu_body_y + (_lu_body_h - _lu_gh) // 2
+                        _paste_logo(Himage, _lu_ghost, (_lu_gx, _lu_gy))
+                draw = ImageDraw.Draw(Himage)
 
             # Batting order rows
-            _lu_row_top = _lu_body_y + _lu_team_h
-            _lu_avail_h = _lu_cell_h - 21 * s - _lu_team_h - _lu_sp_h
+            _lu_row_top = _lu_body_y
+            _lu_avail_h = _lu_cell_h - (_lu_body_y0 - start_y) - _lu_logo_h - _lu_sp_h
             _lu_row_h   = _lu_avail_h // _lu_n_rows
+
+            # Single global position-column width so both columns are symmetric
+            _lu_all_pos = [p.get('pos', '') for p in _lu_away + _lu_home]
+            _lu_gpw = max((int(font9.getlength(p)) for p in _lu_all_pos), default=0)
+            _lu_pos_gap = _lu_col_w - _lu_gpw - _lu_pad - s
 
             def _lu_render_col(lineup, col_x):
                 for _ri in range(_lu_n_rows):
                     _ry = _lu_row_top + _ri * _lu_row_h
                     if _ri < len(lineup):
-                        _rname = _last_name(lineup[_ri].get('name', ''))
+                        _rname = _format_player_name(lineup[_ri].get('name', ''))
                         _rpos  = lineup[_ri].get('pos', '')
                     else:
                         _rname, _rpos = '', ''
-                    _rpw = int(font9.getlength(_rpos))
-                    _rpx = col_x + _lu_col_w - _rpw - _lu_pad - s
-                    draw.text((_rpx, _ry), _rpos, font=font9, fill=0)
-                    _max_rw = _rpx - 2 * s - (col_x + _lu_pad)
+                    if _rpos:
+                        _rpw = int(font9.getlength(_rpos))
+                        draw.text((col_x + _lu_pos_gap + (_lu_gpw - _rpw), _ry), _rpos, font=font9, fill=0)
+                    _max_rw = _lu_pos_gap - 2 * s - _lu_pad
                     while _rname and int(font9.getlength(_rname)) > _max_rw:
                         _rname = _rname[:-1]
                     if _rname:
@@ -988,17 +1035,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _lu_render_col(_lu_away, start_x)
             _lu_render_col(_lu_home, _lu_mid_x)
 
-            # Starting pitcher strip
+            # Starting pitcher strip — same left-name/right-position layout as the
+            # batting order rows above, for visual consistency.
             _lu_sp_y = start_y + _lu_cell_h - _lu_sp_h
-            draw.line([(start_x, _lu_sp_y), (start_x + 135 * s - s, _lu_sp_y)], fill=0)
+            draw.line([(start_x, _lu_sp_y + s), (start_x + 135 * s - s, _lu_sp_y + s)], fill=0)
+            _lu_pw = int(font9.getlength('P'))
             for _lu_sp, _lu_sx in ((_lu_away_sp, start_x), (_lu_home_sp, _lu_mid_x)):
+                draw.text((_lu_sx + _lu_pos_gap + (_lu_gpw - _lu_pw), _lu_sp_y + s), 'P', font=font9, fill=0)
+                _max_sw = _lu_pos_gap - 2 * s - _lu_pad
                 _sp_trunc = _lu_sp
-                while _sp_trunc and int(font9.getlength(_sp_trunc)) > _lu_col_w - 2 * _lu_pad:
+                while _sp_trunc and int(font9.getlength(_sp_trunc)) > _max_sw:
                     _sp_trunc = _sp_trunc[:-1]
                 if _sp_trunc:
-                    _spw = int(font9.getlength(_sp_trunc))
-                    _spx = _lu_sx + (_lu_col_w - _spw) // 2
-                    draw.text((_spx, _lu_sp_y + s), _sp_trunc, font=font9, fill=0)
+                    draw.text((_lu_sx + _lu_pad, _lu_sp_y + s), _sp_trunc, font=font9, fill=0)
         else:
             def _draw_pitcher_era(name_part, stat_part, y_pos):
                 """Draw pitcher name left-aligned and stat right-anchored."""
@@ -1427,53 +1476,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                     Himage.paste(_ppd_logo, (_ppd_logo_x, _ppd_logo_y))
                     draw = ImageDraw.Draw(Himage)
                     _ser_content_left_x = _ppd_logo_x
-
-    # Series context for pre-game tiles: "Gm N/M" in the header right corner,
-    # with the current series leader's logo + score stacked above when the
-    # series is already in progress.  Mirrors the Postponed handling above.
-    if game_data['detailed_state'] in ('Scheduled', 'Pre-Game', 'Warmup'):
-        _pg_total = game_data.get('series_total_games') or 1
-        _pg_gnum  = game_data.get('series_game_number') or 0
-        if _pg_total > 1 and _pg_gnum:
-            _rx = start_x + horizonta_len - 2 * s
-            _gm_str = f'Gm {_pg_gnum}/{_pg_total}'
-            _gm_w   = int(font9.getlength(_gm_str))
-            _gm_x   = _rx - _gm_w
-            draw.text((_gm_x, start_y + 10 * s), _gm_str, font=font9, fill=0)
-            _ser_content_left_x = min(_ser_content_left_x, _gm_x)
-
-            _pg_sw     = game_data.get('series_wins',   0) or 0
-            _pg_sl     = game_data.get('series_losses', 0) or 0
-            _pg_result = (game_data.get('series_result') or '').strip()
-            _pg_parts  = _pg_result.split()
-            if _pg_sw + _pg_sl > 0:
-                if 'tied' in _pg_result.lower():
-                    _pg_score_str = f'{_pg_sw}-{_pg_sl}'
-                    _pgsw = int(font9.getlength(_pg_score_str))
-                    _pgsx = _gm_x - _pgsw - 2 * s
-                    draw.text((_pgsx, start_y + 4 * s), _pg_score_str, font=font9, fill=0)
-                    _ser_content_left_x = min(_ser_content_left_x, _pgsx)
-                elif len(_pg_parts) >= 3 and _pg_parts[1] == 'leads':
-                    _pg_score_str = _pg_parts[2]
-                    _pg_leader_upper = _pg_parts[0].upper()
-                    _pg_logo_abbr = _pg_logo_id = None
-                    if _pg_leader_upper == away_team_name.upper():
-                        _pg_logo_abbr, _pg_logo_id = away_team_name, str(game_data['away_team_id'])
-                    elif _pg_leader_upper == home_team_name.upper():
-                        _pg_logo_abbr, _pg_logo_id = home_team_name, str(game_data['home_team_id'])
-                    _pgsw = int(font9.getlength(_pg_score_str))
-                    _pgsx = _gm_x - _pgsw - 2 * s
-                    draw.text((_pgsx, start_y + 4 * s), _pg_score_str, font=font9, fill=0)
-                    _ser_content_left_x = min(_ser_content_left_x, _pgsx)
-                    if _pg_logo_abbr:
-                        _pg_logo = _logo_small(_pg_logo_abbr, _pg_logo_id, size=12 * s)
-                        if _pg_logo:
-                            _lw2, _lh2 = _pg_logo.size
-                            _pg_logo_x = _pgsx - 2 * s - _lw2
-                            _pg_logo_y = start_y + (20 * s - _lh2) // 2
-                            Himage.paste(_pg_logo, (_pg_logo_x, _pg_logo_y))
-                            draw = ImageDraw.Draw(Himage)
-                            _ser_content_left_x = min(_ser_content_left_x, _pg_logo_x)
 
     # Delay reason — right-anchored where the venue normally lives.
     _is_any_delay = (
@@ -1979,8 +1981,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 draw.line((home_px, BAR_Y, home_px, BAR_Y + BAR_H), fill=0)
 
     end_x = start_x + horizonta_len
-    end_y = start_y + vertical_len + 20 * s
-    draw.line((start_x, start_y + vertical_len + 20 * s, end_x, end_y), fill=0)
+    if not _is_lineup_mode:
+        end_y = start_y + vertical_len + 20 * s
+        draw.line((start_x, end_y, end_x, end_y), fill=0)
 
     # Next game preview — shown in the win-prob strip for Final games after final_linescore_minutes expires
     if _game_is_final and not _historical_mode:
@@ -2111,7 +2114,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            draw_tight_number(draw, _bcx, _bcy, _bnum, font13, 255)
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
             _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
             Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
@@ -2157,7 +2160,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                         _raw = game_data.get(_bkey)
                         _bnum = str(_raw) if _raw is not None else ''
                         if _bnum:
-                            draw_tight_number(draw, _bcx, _bcy, _bnum, font13, 255)
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
 
                 outs_list = [None] * 3
                 for i in range(1, 4):
@@ -2250,11 +2253,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             if game_data.get('home_team_is_winner'):
                 draw.text((start_x + 7 * s, start_y + 55 * s), home_team_name, font=font24, fill=0)
 
-    # Bold-offset score for winner (both modes)
-    if game_data.get('away_team_is_winner'):
-        draw.text((start_x + 69 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
-    if game_data.get('home_team_is_winner'):
-        draw.text((start_x + 69 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
+    # Bold-offset score for winner (both modes) — only when the score itself
+    # is shown; lineup mode replaces the score area with the batting order.
+    if not _is_lineup_mode:
+        if game_data.get('away_team_is_winner'):
+            draw.text((start_x + 69 * s + check_if_two_chars(away_runs), start_y + 25 * s), away_runs, font=font24, fill=0)
+        if game_data.get('home_team_is_winner'):
+            draw.text((start_x + 69 * s + check_if_two_chars(home_runs), start_y + 55 * s), home_runs, font=font24, fill=0)
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = game_data['detailed_state'] == 'In Progress' and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0

@@ -4,10 +4,11 @@ Shows both teams' batting orders side-by-side (Away left, Home right) with
 the starting pitchers in a strip at the bottom.  The header replicates the
 standard scheduled-game tile style: game time on the left, venue on the right.
 
-Only shown by image_grid when the game is within 45 minutes of first pitch.
+Only shown by image_grid when the game is within 2 hours of first pitch.
 """
 from image_assets import _get_font, ImageDraw, _logo_ghost, _paste_logo
 from image_utils import _clean_venue_name, _pitcher_line
+from util import load_yaml_file
 
 
 def _short_name(full_name):
@@ -44,8 +45,14 @@ def _find_primary_game(games_data, primary_abbr):
     return None
 
 
-def game_within_minutes(game, minutes=45):
-    """Return True when the game's UTC start time is within `minutes` of now."""
+def game_within_minutes(game, minutes=120):
+    """Return True once the game is within `minutes` of its scheduled start.
+
+    No lower bound: stays True past the scheduled start time too, so a game
+    running a few minutes late keeps showing the lineup panel instead of
+    reverting away right at the scheduled first-pitch time. The caller
+    checks detailed_state separately to know when the game actually goes live.
+    """
     from datetime import datetime, timezone, timedelta
     game_date = game.get('game_date') or ''
     if not game_date:
@@ -54,7 +61,7 @@ def game_within_minutes(game, minutes=45):
         gd    = game_date.replace('Z', '+00:00')
         start = datetime.fromisoformat(gd)
         now   = datetime.now(timezone.utc)
-        return timedelta(0) <= (start - now) <= timedelta(minutes=minutes)
+        return (start - now) <= timedelta(minutes=minutes)
     except (ValueError, TypeError):
         return False
 
@@ -139,13 +146,17 @@ def draw_lineup_cell(Himage, sx, sy, games_data, primary_abbr, team_data, use_lo
     draw.line([(mid_x, body_y), (mid_x, sy + _CELL_H - 1)], fill=0)
 
     # ── Ghost logos in each column background ──────────────────────────────
-    if use_logos:
+    if use_logos and load_yaml_file('config.yaml').get('lineup_logo_background', False):
+        abbr_map  = team_data.get('team_abbreviation', {})
         body_h    = _CELL_H - _HDR_H - _SP_H
         ghost_sz  = min(col_w - 4, body_h - 4)
-        for abbr, tid, col_x in (
-            (game.get('away_team_name'), str(game.get('away_team_id', '')), sx),
-            (game.get('home_team_name'), str(game.get('home_team_id', '')), mid_x),
+        for tid, col_x in (
+            (str(game.get('away_team_id', '')), sx),
+            (str(game.get('home_team_id', '')), mid_x),
         ):
+            abbr = abbr_map.get(tid)
+            if not abbr:
+                continue
             ghost = _logo_ghost(abbr, tid, size=ghost_sz, lightness=160)
             if ghost:
                 gw, gh = ghost.size

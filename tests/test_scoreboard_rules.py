@@ -3424,6 +3424,22 @@ class TestLineupMode:
         ), minimal_team_data)
         assert isinstance(img, Image.Image)
 
+    @needs_pil
+    def test_lineup_mode_with_logos(self, minimal_team_data):
+        """use_logos=True draws the away/home logo-vs-logo row above the batting order."""
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, self._lineup_game(), minimal_team_data, use_logos=True)
+        assert isinstance(img, Image.Image)
+
+    @needs_pil
+    def test_lineup_mode_with_logo_background(self, minimal_team_data):
+        """lineup_logo_background=True draws the ghost-logo watermark behind each column."""
+        img = Image.new('1', (800, 480), 255)
+        fake_cfg = {'final_linescore_minutes': 60, 'lineup_logo_background': True}
+        with patch('image_box.load_yaml_file', return_value=fake_cfg):
+            draw_box(img, 32, 30, self._lineup_game(), minimal_team_data, use_logos=True)
+        assert isinstance(img, Image.Image)
+
 
 # ===========================================================================
 # 16. Pre-game series context

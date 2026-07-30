@@ -1032,10 +1032,11 @@ def test_overflow_ticker_wins_over_playoff_bracket_when_games_dropped():
 
 
 @needs_pil
-def test_overflow_ticker_not_shown_for_tile_expansion_drops():
-    """When tile expansion (wide_cell_featured) bumps games off the grid but
-    total games are <= 15, the ticker does NOT activate — the header stays
-    available for the bracket/wildcard instead."""
+def test_overflow_ticker_shown_for_tile_expansion_drops():
+    """When tile expansion (wide_cell_featured) or hide_non_live_games bumps
+    games off the grid, even with total games <= 15, the ticker activates so
+    those games (finished or not-yet-started) aren't just hidden with no
+    visibility — it takes priority over the bracket/wildcard header."""
     import generate_image
     from datetime import datetime
 
@@ -1067,8 +1068,8 @@ def test_overflow_ticker_not_shown_for_tile_expansion_drops():
             bypass_cache=True, config=cfg,
         )
 
-    mock_ticker.assert_not_called()
-    mock_bracket.assert_called_once()
+    mock_ticker.assert_called_once()
+    mock_bracket.assert_not_called()
     assert result is not None
 
 

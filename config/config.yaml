@@ -163,7 +163,7 @@ triple_cell_live: false
 # favorite_team_first) is never hidden, regardless of its state.
 # Can also be set via the HIDE_NON_LIVE_GAMES environment variable
 # (true/1/yes), which overrides this value.
-hide_non_live_games: true
+hide_non_live_games: false
 
 # Season leaders panel: show HR / AVG / ERA leaders in an empty grid cell when
 # fewer than 15 games are on the slate. Rotates categories every 5 minutes.
@@ -183,6 +183,10 @@ transactions_lookback_days: 2
 # API lineups hydrate — lineup appears once the manager files the card (typically a
 # few hours before first pitch). Shows 'Not Yet Posted' before then.
 show_lineup_panel: false
+
+# Faint ghost team-logo watermark behind each column of a batting lineup panel
+# (both the standalone spare-cell panel and the in-cell 45-min lineup mode).
+lineup_logo_background: false
 
 # Trade deadline countdown panel: shows time remaining until the MLB trade deadline
 # plus recent transactions. Only appears in the two weeks before the deadline
@@ -216,7 +220,7 @@ show_magic_numbers: false
 # M# / E# / CL / OUT badge in the top-right corner of each team's logo in the
 # sidebar. Only shown when the number is ≤ 20 games (or already clinched/out).
 # Reuses standings.json — no extra API call.
-sidebar_magic_badges: false
+sidebar_magic_badges: true
 
 # Hot Hitters panel: show the top batting-average leaders over the last 14
 # days in an empty grid cell (position players only). The MLB Stats API does
