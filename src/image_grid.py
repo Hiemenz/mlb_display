@@ -331,7 +331,14 @@ def _find_tile_types(game_list, config, team_data):
     # to make room rather than us capping it to a single tile here.
     if not (config.get('wide_cell_always', False) or config.get('wide_cell_featured', False)):
         return {}
-    return {idx: 'triple' for idx in sorted_live[:_MAX_TRIPLE_TILES]}
+    tile_map = {idx: 'triple' for idx in sorted_live[:_MAX_TRIPLE_TILES]}
+    # Live games beyond the triple budget still get a wide (2-cell) tile
+    # rather than falling straight to normal — each of the 3 triple rows
+    # leaves exactly 2 leftover columns, enough for one wide tile apiece, and
+    # _pack_multi_triple_rows demotes any that don't fit back to normal.
+    for idx in sorted_live[_MAX_TRIPLE_TILES:2 * _MAX_TRIPLE_TILES]:
+        tile_map[idx] = 'wide'
+    return tile_map
 
 
 def _pack_multi_triple_rows(game_list, tile_type_map):

@@ -713,10 +713,10 @@ def _ov_game(pk, away_id=1, home_id=2, state='Scheduled', **overrides):
 
 
 class TestTickerStatus:
-    def test_final_family_normalizes_to_final(self):
-        """Final family normalizes to Final."""
+    def test_final_family_normalizes_to_f(self):
+        """Final family normalizes to the single-letter 'F'."""
         for state in ('Final', 'Game Over', 'Final: Tied'):
-            assert _ticker_status(_ov_game(1, state=state)) == 'Final'
+            assert _ticker_status(_ov_game(1, state=state)) == 'F'
 
     def test_postponed_family_normalizes_to_postponed(self):
         """Postponed family normalizes to Postponed."""
@@ -815,38 +815,73 @@ class TestDrawOverflowTicker:
         assert isinstance(result, Image.Image)
         assert any(px == 0 for px in result.getdata())
 
-    def test_final_entry_includes_score_and_status(self):
-        """A Final game draws both the score (digits + dash, each measured
-        and drawn separately at the bigger score font) and the status word —
-        verified via draw.text call args since font rendering itself isn't
-        pixel-inspectable at this granularity."""
+    def test_final_entry_includes_score_hits_errors_and_status(self):
+        """A Final game draws each team's R (row_font), H, and E digits plus
+        the trailing 'F' status — verified via draw.text call args since font
+        rendering itself isn't pixel-inspectable at this granularity."""
         canvas = self._white()
         team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
-        games = [_ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3)]
+        games = [_ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3,
+                           away_hits=9, home_hits=7, away_errors=1, home_errors=0)]
         with patch('image_standings._logo_small', return_value=None), \
              patch('image_standings.ImageDraw.ImageDraw.text') as mock_text:
             draw_overflow_ticker(canvas, games, team_data)
         drawn_strings = [call.args[1] for call in mock_text.call_args_list]
-        assert '5' in drawn_strings
-        assert '-' in drawn_strings
-        assert '3' in drawn_strings
-        assert 'Final' in drawn_strings
+        # R/H/E digits are bolded via a double-draw-offset-by-1px, so each
+        # appears twice.
+        assert drawn_strings.count('5') == 2  # away runs
+        assert drawn_strings.count('3') == 2  # home runs
+        assert drawn_strings.count('9') == 2  # away hits
+        assert drawn_strings.count('7') == 2  # home hits
+        assert drawn_strings.count('1') == 2  # away errors
+        assert drawn_strings.count('0') == 2  # home errors
+        assert 'F' in drawn_strings
 
-    def test_no_separator_lines_between_entries(self):
-        """The vertical '|' separators between entries have been removed —
-        only the top/bottom strip border lines remain."""
+    def test_missing_hits_errors_omits_that_column(self):
+        """A Final game with runs but no hits/errors data still renders (just
+        without the H/E columns) rather than raising."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+        games = [_ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3)]
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_overflow_ticker(canvas, games, team_data)
+        assert isinstance(result, Image.Image)
+
+    def test_no_border_or_vertical_entry_separator_lines(self):
+        """No top/bottom strip border and no vertical separator between
+        entries — only the horizontal away/home divider (always drawn) and
+        the in-entry R/H/E column dividers (added when a game has a score)
+        may appear."""
         canvas = self._white()
         team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS', '3': 'LAD', '4': 'SF'}}
         games = [
-            _ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3),
+            _ov_game(1, away_id=1, home_id=2, state='Scheduled'),
             _ov_game(2, away_id=3, home_id=4, state='Scheduled'),
         ]
         with patch('image_standings._logo_small', return_value=None), \
              patch('image_standings.ImageDraw.ImageDraw.line') as mock_line:
             draw_overflow_ticker(canvas, games, team_data)
-        # Only the two horizontal border lines (top + bottom of the strip) —
-        # no vertical separator between the two entries.
-        assert mock_line.call_count == 2
+        # Neither game has a score, so the only lines drawn are each entry's
+        # horizontal away/home divider — never a vertical or full-width one.
+        assert mock_line.call_count == len(games)
+        for call in mock_line.call_args_list:
+            (x0, y0, x1, y1) = call.args[0]
+            assert y0 == y1  # horizontal, not vertical
+            assert not (x0 == 0 and x1 == 799)  # never the old full-width border
+
+    def test_final_game_draws_column_dividers_not_border(self):
+        """A Final (scored) game draws its R column divider, but never the
+        old top/bottom strip border (y=0 or y=_WC_STRIP_H-1 full-width lines)."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+        games = [_ov_game(1, away_id=1, home_id=2, state='Final', away_runs=5, home_runs=3)]
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings.ImageDraw.ImageDraw.line') as mock_line:
+            draw_overflow_ticker(canvas, games, team_data)
+        assert mock_line.call_count >= 1
+        for call in mock_line.call_args_list:
+            (x0, y0, x1, y1) = call.args[0]
+            assert not (x0 == 0 and x1 == 799)  # never the old full-width border
 
     def test_multiple_entries_render_with_separators(self):
         """Multiple entries render with separators."""
