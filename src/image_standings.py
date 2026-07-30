@@ -546,16 +546,20 @@ def _aaa_divisions(standings_data, side):
     return [d for d in candidates if d in all_divs]
 
 
-_ME_BADGE_THRESHOLD = 50   # below this, the elimination number is dramatic
-                           # enough to badge instead of games back
+_ME_BADGE_THRESHOLD = 20   # at or below this, a trailing team's elimination
+                           # number is dramatic enough to badge instead of
+                           # games back; also gates the leader's magic number
+                           # (magic still above this shows nothing at all)
 _ME_MAGIC_BASE = 163       # 162 games + 1
 
 
 def _me_badge_value(team, leader, is_leader, rival_losses):
-    """Return badge text for a standings row: 'M5'/'CL' for the leader
-    (always shown), or games back for a trailing team until its elimination
-    number drops below _ME_BADGE_THRESHOLD, at which point 'E12'/'OUT' takes
-    over — mirrors image_magic._magic_or_elim's leader/trailer split."""
+    """Return badge text for a standings row: 'M5'/'CL' for the leader (only
+    once the magic number drops to _ME_BADGE_THRESHOLD or less — otherwise
+    the leader shows nothing), or games back for a trailing team until its
+    elimination number drops to _ME_BADGE_THRESHOLD or less, at which point
+    'E12'/'OUT' takes over — mirrors image_magic._magic_or_elim's
+    leader/trailer split."""
     clinch = (team.get('clinch_indicator') or '').strip().lower()
     if clinch in ('z', 'y'):
         return 'CL'
@@ -570,7 +574,9 @@ def _me_badge_value(team, leader, is_leader, rival_losses):
         if rival_losses is None:
             return 'CL'
         magic = _ME_MAGIC_BASE - lead_w - rival_losses
-        return 'CL' if magic <= 0 else f'M{magic}'
+        if magic <= 0:
+            return 'CL'
+        return f'M{magic}' if magic <= _ME_BADGE_THRESHOLD else ''
     else:
         team_l = team.get('league_record_losses')
         if team_l is None:
@@ -578,7 +584,7 @@ def _me_badge_value(team, leader, is_leader, rival_losses):
         elim = _ME_MAGIC_BASE - lead_w - team_l
         if elim <= 0:
             return 'OUT'
-        if elim < _ME_BADGE_THRESHOLD:
+        if elim <= _ME_BADGE_THRESHOLD:
             return f'E{elim}'
         return str(team.get('games_back') or '-')
 

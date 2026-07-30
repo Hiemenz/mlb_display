@@ -1126,15 +1126,15 @@ class TestMeBadgeValue:
         assert _me_badge_value({}, self._leader(wins=100), True, 63) == 'CL'
 
     def test_leader_magic_within_threshold(self):
-        # 163 - 90 - 40 = 33 ≤ 50
-        result = _me_badge_value({}, self._leader(wins=90), True, 40)
-        assert result == 'M33'
+        # 163 - 100 - 48 = 15 ≤ _ME_BADGE_THRESHOLD (20)
+        result = _me_badge_value({}, self._leader(wins=100), True, 48)
+        assert result == 'M15'
 
-    def test_leader_magic_above_threshold_still_shows_magic_number(self):
-        # 163 - 60 - 10 = 93 > threshold — the leader always shows its magic
-        # number, unlike a trailing team's badge.
+    def test_leader_magic_above_threshold_shows_nothing(self):
+        # 163 - 60 - 10 = 93, well above _ME_BADGE_THRESHOLD (20) —
+        # not meaningful yet, so the leader shows nothing.
         result = _me_badge_value({}, self._leader(wins=60), True, 10)
-        assert result == 'M93'
+        assert result == ''
 
     def test_trailer_losses_none_returns_empty(self):
         team = {}  # missing league_record_losses
@@ -1146,12 +1146,12 @@ class TestMeBadgeValue:
         assert _me_badge_value(team, self._leader(wins=100), False, 50) == 'OUT'
 
     def test_trailer_elim_within_threshold(self):
-        # 163 - 90 - 40 = 33 < 50
-        team = {'league_record_losses': 40}
-        assert _me_badge_value(team, self._leader(wins=90), False, 50) == 'E33'
+        # 163 - 100 - 44 = 19 ≤ 20
+        team = {'league_record_losses': 44}
+        assert _me_badge_value(team, self._leader(wins=100), False, 50) == 'E19'
 
     def test_trailer_elim_at_or_above_threshold_shows_games_back(self):
-        # 163 - 60 - 10 = 93 >= 50 → games back, not the elimination number
+        # 163 - 60 - 10 = 93 > 20 → games back, not the elimination number
         team = {'league_record_losses': 10, 'games_back': '15.5'}
         assert _me_badge_value(team, self._leader(wins=60), False, 50) == '15.5'
 
