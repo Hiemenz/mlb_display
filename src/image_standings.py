@@ -245,6 +245,9 @@ _TICKER_LIVE_STATES = {'In Progress', 'Player challenge', 'Manager challenge'}
 
 _TICKER_MAX_ENTRIES = 7   # entries shown per render before rotation kicks in
 _TICKER_SCORE_FONT_SIZE = 16   # bigger than the surrounding 9pt status text
+_TICKER_ROW_H = _WC_STRIP_H // 2     # two stacked rows (away on top, home below)
+_TICKER_LOGO_SZ = _TICKER_ROW_H - 2  # small enough to fit one row with a 1px margin
+_TICKER_ROW_FONT_SIZE = 11           # run digits, one per row
 # Font.ttc's glyphs have enough negative left-bearing at these odd pixel sizes
 # that the dash visually overlaps whatever getlength() alone measured as
 # "before" it — a small fixed gap on each side compensates (same technique as
@@ -285,6 +288,20 @@ def _ticker_score(game):
     return f'{away}-{home}'
 
 
+def _ticker_hits_errors(game):
+    """(away_hits, home_hits, away_errors, home_errors) as ints, or None if
+    the game has no score yet (Scheduled/Postponed) or the fields are
+    missing — same gating as _ticker_score, since H/E are only meaningful
+    once a game is actually underway."""
+    if not _ticker_score(game):
+        return None
+    vals = (game.get('away_hits'), game.get('home_hits'),
+            game.get('away_errors'), game.get('home_errors'))
+    if any(v is None for v in vals):
+        return None
+    return vals
+
+
 def _ticker_window(dropped_games, max_entries=_TICKER_MAX_ENTRIES, rotation_minutes=2):
     """Return up to ``max_entries`` games to show this render.
 
@@ -304,10 +321,11 @@ def _ticker_window(dropped_games, max_entries=_TICKER_MAX_ENTRIES, rotation_minu
 
 
 def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
-    """Draw games that couldn't fit on the grid as a compact 'Away v Home
-    <score> <status>' ticker across the top header strip (y=0..30). The score
-    is included for Final and live games (e.g. '5-3 Final', '5-3 Bot 7');
-    Scheduled/Postponed games have no score yet, so it's omitted for those.
+    """Draw games that couldn't fit on the grid as a compact scorebug ticker
+    across the top header strip (y=0..30): a stacked away-logo/home-logo pair
+    (one per 15px row) with each team's runs beside its own logo, then the
+    game status ('F' for final, else the live inning or start time) trailing
+    at the end of the entry.
 
     ``dropped_games`` are games compute_grid_layout couldn't place — bumped by
     live-game tile expansion, hide_non_live_games, or plain >15-game overflow.
@@ -328,9 +346,9 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
     draw = ImageDraw.Draw(Himage)
     font = _get_font(9)
     score_font = _get_font(_TICKER_SCORE_FONT_SIZE)
+    row_font = _get_font(_TICKER_ROW_FONT_SIZE)
     abbr_map = team_data.get('team_abbreviation', {})
     text_y = (_WC_STRIP_H - 9) // 2
-    score_y = (_WC_STRIP_H - _TICKER_SCORE_FONT_SIZE) // 2
 
     n = len(chunk)
     entry_w = 800 // n
@@ -345,13 +363,12 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
         score = _ticker_score(game)
         status = _ticker_status(game)
 
-        away_logo = _logo_small(away_abbr, away_id, size=_WC_LOGO_SZ)
-        home_logo = _logo_small(home_abbr, home_id, size=_WC_LOGO_SZ)
+        away_logo = _logo_small(away_abbr, away_id, size=_TICKER_LOGO_SZ)
+        home_logo = _logo_small(home_abbr, home_id, size=_TICKER_LOGO_SZ)
 
         away_w = away_logo.size[0] if away_logo else int(font.getlength(away_abbr))
         home_w = home_logo.size[0] if home_logo else int(font.getlength(home_abbr))
-        sep = ' v '
-        sep_w = int(font.getlength(sep))
+        logo_col_w = max(away_w, home_w)
 
         # 'F' (final) is drawn at the bigger score font for emphasis; every
         # other status (live inning, start time, 'Postponed') stays at the
@@ -359,55 +376,77 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
         status_font = score_font if status == 'F' else font
         status_w = int(status_font.getlength(status)) if status else 0
 
-        # Score digits/dash measured individually (at the bigger font) so the
-        # gap around the dash can be added explicitly rather than trusting
-        # getlength() on the combined string, which is what causes the
-        # overlap in the first place.
         if score:
             away_r, home_r = score.split('-')
-            away_r_w = int(score_font.getlength(away_r))
-            dash_w = int(score_font.getlength('-'))
-            home_r_w = int(score_font.getlength(home_r))
-            score_w = away_r_w + _TICKER_SCORE_GAP + dash_w + _TICKER_SCORE_GAP + home_r_w
+            row_w = max(int(row_font.getlength(away_r)), int(row_font.getlength(home_r)))
         else:
-            score_w = 0
+            away_r = home_r = None
+            row_w = 0
 
-        # Layout: away logo, then score-or-'v' between the two logos, home
-        # logo, then the status ('F' for final games, else the live/start
-        # time text) trailing at the end.
-        total_w = away_w + home_w
-        total_w += score_w if score else sep_w
+        # Hits/errors trail the runs column as two more stacked digit pairs —
+        # only present once the game actually has a score (see
+        # _ticker_hits_errors), same gating as the runs column itself.
+        he = _ticker_hits_errors(game)
+        if he:
+            away_h, home_h, away_e, home_e = (str(v) for v in he)
+            h_w = max(int(row_font.getlength(away_h)), int(row_font.getlength(home_h)))
+            e_w = max(int(row_font.getlength(away_e)), int(row_font.getlength(home_e)))
+        else:
+            away_h = home_h = away_e = home_e = None
+            h_w = e_w = 0
+
+        # Layout: stacked logos, a divider, each team's R/H/E stacked beside
+        # its own logo (each column separated by its own thin divider so the
+        # digits don't run together), then the trailing status.
+        total_w = logo_col_w
+        if score:
+            total_w += 2 + 1 + 2 + row_w
+        if he:
+            total_w += 2 + 1 + 2 + h_w + 2 + 1 + 2 + e_w
         if status:
             total_w += 4 + status_w
 
         cur_x = x0 + max(0, (entry_w - total_w) // 2)
 
+        row_text_y = (_TICKER_ROW_H - 9) // 2
         if away_logo:
-            Himage.paste(away_logo, (cur_x, (_WC_STRIP_H - away_logo.size[1]) // 2))
+            Himage.paste(away_logo, (cur_x, (_TICKER_ROW_H - away_logo.size[1]) // 2))
         else:
-            draw.text((cur_x, text_y), away_abbr, font=font, fill=0)
-        cur_x += away_w
+            draw.text((cur_x, row_text_y), away_abbr, font=font, fill=0)
+        if home_logo:
+            Himage.paste(home_logo, (cur_x, _TICKER_ROW_H + (_TICKER_ROW_H - home_logo.size[1]) // 2))
+        else:
+            draw.text((cur_x, _TICKER_ROW_H + row_text_y), home_abbr, font=font, fill=0)
+        cur_x += logo_col_w
+
+        row_top_y = (_TICKER_ROW_H - _TICKER_ROW_FONT_SIZE) // 2
+        row_bot_y = _TICKER_ROW_H + row_top_y
 
         if score:
-            draw.text((cur_x, score_y), away_r, font=score_font, fill=0)
-            cur_x += away_r_w + _TICKER_SCORE_GAP
-            draw.text((cur_x, score_y), '-', font=score_font, fill=0)
-            cur_x += dash_w + _TICKER_SCORE_GAP
-            draw.text((cur_x, score_y), home_r, font=score_font, fill=0)
-            cur_x += home_r_w
-        else:
-            draw.text((cur_x, text_y), sep, font=font, fill=0)
-            cur_x += sep_w
+            cur_x += 2
+            draw.line((cur_x, 1, cur_x, _WC_STRIP_H - 2), fill=0, width=1)
+            cur_x += 1 + 2
+            draw.text((cur_x, row_top_y), away_r, font=row_font, fill=0)
+            draw.text((cur_x, row_bot_y), home_r, font=row_font, fill=0)
+            cur_x += row_w
 
-        if home_logo:
-            Himage.paste(home_logo, (cur_x, (_WC_STRIP_H - home_logo.size[1]) // 2))
-        else:
-            draw.text((cur_x, text_y), home_abbr, font=font, fill=0)
-        cur_x += home_w
+        if he:
+            cur_x += 2
+            draw.line((cur_x, 1, cur_x, _WC_STRIP_H - 2), fill=0, width=1)
+            cur_x += 1 + 2
+            draw.text((cur_x, row_top_y), away_h, font=row_font, fill=0)
+            draw.text((cur_x, row_bot_y), home_h, font=row_font, fill=0)
+            cur_x += h_w
+            cur_x += 2
+            draw.line((cur_x, 1, cur_x, _WC_STRIP_H - 2), fill=0, width=1)
+            cur_x += 1 + 2
+            draw.text((cur_x, row_top_y), away_e, font=row_font, fill=0)
+            draw.text((cur_x, row_bot_y), home_e, font=row_font, fill=0)
+            cur_x += e_w
 
         if status:
             cur_x += 4
-            _status_y = score_y if status == 'F' else text_y
+            _status_y = (_WC_STRIP_H - _TICKER_SCORE_FONT_SIZE) // 2 if status == 'F' else text_y
             draw.text((cur_x, _status_y), status, font=status_font, fill=0)
 
     return Himage
