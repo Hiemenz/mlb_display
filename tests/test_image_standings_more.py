@@ -827,12 +827,14 @@ class TestDrawOverflowTicker:
              patch('image_standings.ImageDraw.ImageDraw.text') as mock_text:
             draw_overflow_ticker(canvas, games, team_data)
         drawn_strings = [call.args[1] for call in mock_text.call_args_list]
-        assert drawn_strings.count('5') == 1  # away runs
-        assert drawn_strings.count('3') == 1  # home runs
-        assert '9' in drawn_strings  # away hits
-        assert '7' in drawn_strings  # home hits
-        assert '1' in drawn_strings  # away errors
-        assert '0' in drawn_strings  # home errors
+        # R/H/E digits are bolded via a double-draw-offset-by-1px, so each
+        # appears twice.
+        assert drawn_strings.count('5') == 2  # away runs
+        assert drawn_strings.count('3') == 2  # home runs
+        assert drawn_strings.count('9') == 2  # away hits
+        assert drawn_strings.count('7') == 2  # home hits
+        assert drawn_strings.count('1') == 2  # away errors
+        assert drawn_strings.count('0') == 2  # home errors
         assert 'F' in drawn_strings
 
     def test_missing_hits_errors_omits_that_column(self):
@@ -845,10 +847,11 @@ class TestDrawOverflowTicker:
             result = draw_overflow_ticker(canvas, games, team_data)
         assert isinstance(result, Image.Image)
 
-    def test_no_border_or_entry_separator_lines(self):
+    def test_no_border_or_vertical_entry_separator_lines(self):
         """No top/bottom strip border and no vertical separator between
-        entries — only the in-entry R/H/E column dividers (added when a
-        game has a score) may be drawn."""
+        entries — only the horizontal away/home divider (always drawn) and
+        the in-entry R/H/E column dividers (added when a game has a score)
+        may appear."""
         canvas = self._white()
         team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS', '3': 'LAD', '4': 'SF'}}
         games = [
@@ -858,9 +861,13 @@ class TestDrawOverflowTicker:
         with patch('image_standings._logo_small', return_value=None), \
              patch('image_standings.ImageDraw.ImageDraw.line') as mock_line:
             draw_overflow_ticker(canvas, games, team_data)
-        # Neither game has a score, so no column dividers are drawn either —
-        # this isolates that no border/separator lines exist independent of them.
-        mock_line.assert_not_called()
+        # Neither game has a score, so the only lines drawn are each entry's
+        # horizontal away/home divider — never a vertical or full-width one.
+        assert mock_line.call_count == len(games)
+        for call in mock_line.call_args_list:
+            (x0, y0, x1, y1) = call.args[0]
+            assert y0 == y1  # horizontal, not vertical
+            assert not (x0 == 0 and x1 == 799)  # never the old full-width border
 
     def test_final_game_draws_column_dividers_not_border(self):
         """A Final (scored) game draws its R column divider, but never the
