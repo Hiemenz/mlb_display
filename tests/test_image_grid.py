@@ -624,29 +624,51 @@ class TestHideNonLiveGames:
         ordered, slots = compute_grid_layout(games, TEAM_DATA, BASE_CONFIG)
         assert len(ordered) == 5
 
-    def test_enabled_drops_final_games(self):
-        """With hide_non_live_games=True, Final games are dropped from the grid."""
+    def test_enabled_keeps_final_games_when_budget_already_sufficient(self):
+        """With hide_non_live_games=True, nothing is hidden if the grid already
+        has enough spare slot-units for the live game to go triple without it."""
         cfg = dict(BASE_CONFIG, hide_non_live_games=True)
         games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
-        assert len(ordered) == 1
-        assert all(g['game_pk'] != 0 or g['detailed_state'] == 'In Progress' for g in ordered)
+        assert len(ordered) == 5
+        assert any(s[0] == 'triple' for s in slots)
 
-    def test_enabled_drops_scheduled_games(self):
-        """With hide_non_live_games=True, not-yet-started games are also dropped."""
+    def test_enabled_keeps_scheduled_games_when_budget_already_sufficient(self):
+        """Same as above for not-yet-started games: nothing is dropped when
+        the live game already has room to expand without hiding anything."""
         cfg = dict(BASE_CONFIG, hide_non_live_games=True)
         games = [_game(0, state='In Progress')] + [_game(i + 1, state='Scheduled') for i in range(4)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
-        assert len(ordered) == 1
+        assert len(ordered) == 5
         assert ordered[0]['game_pk'] == 0
 
-    def test_enabled_lets_remaining_game_expand(self):
-        """Freeing up finished games' slots lets the sole remaining live game go triple."""
+    def test_enabled_hides_only_as_many_as_needed(self):
+        """With a tight slate, only enough Final games are hidden to give the
+        sole live game a triple tile — the rest stay on the grid."""
         cfg = dict(BASE_CONFIG, hide_non_live_games=True)
         games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(13)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
-        assert len(ordered) == 1
-        assert slots[0][0] == 'triple'
+        # 14 games → 1 spare slot-unit; a triple needs 2, so exactly 1 Final
+        # game is hidden (13 - 1 = 12 remain, alongside the live game).
+        assert len(ordered) == 13
+        triple_slots = [s for s in slots if s[0] == 'triple']
+        assert len(triple_slots) == 1
+
+    def test_enabled_hides_finals_before_scheduled(self):
+        """When both Final and Scheduled games are hideable, Final games are
+        dropped first (lowest _overflow_priority ranking)."""
+        cfg = dict(BASE_CONFIG, hide_non_live_games=True)
+        games = (
+            [_game(0, state='In Progress')]
+            + [_game(i + 1, state='Scheduled') for i in range(3)]
+            + [_game(i + 10, state='Final') for i in range(11)]
+        )
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        # 15 games → 0 spare budget; triple needs 2, so 2 Finals are hidden.
+        assert len(ordered) == 13
+        remaining_states = {g['detailed_state'] for g in ordered}
+        assert 'Scheduled' in remaining_states
+        assert sum(1 for g in ordered if g['detailed_state'] == 'Final') == 9
 
     def test_no_live_games_keeps_everything(self):
         """If no game is live (even if some are Final/Scheduled), nothing is dropped —
@@ -666,12 +688,15 @@ class TestHideNonLiveGames:
         assert ordered[0]['game_pk'] == 99
 
     def test_env_var_overrides_config_to_enable(self, monkeypatch):
-        """HIDE_NON_LIVE_GAMES=true overrides a false config value."""
+        """HIDE_NON_LIVE_GAMES=true overrides a false config value — with a
+        tight slate (14 games, 1 spare slot-unit), hiding one Final game
+        actually kicks in so the live game can go triple."""
         monkeypatch.setenv('HIDE_NON_LIVE_GAMES', 'true')
         cfg = dict(BASE_CONFIG, hide_non_live_games=False)
-        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(4)]
+        games = [_game(0, state='In Progress')] + [_game(i + 1, state='Final') for i in range(13)]
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
-        assert len(ordered) == 1
+        assert len(ordered) == 13
+        assert any(s[0] == 'triple' for s in slots)
 
     def test_env_var_overrides_config_to_disable(self, monkeypatch):
         """HIDE_NON_LIVE_GAMES=false overrides a true config value."""
@@ -723,7 +748,9 @@ class TestMultipleTripleTiles:
         assert 0 not in triple_pks
 
     def test_hide_non_live_games_combined_with_multi_triple(self):
-        """Hiding finished/scheduled games frees enough room for 3 live games to go triple."""
+        """Hiding only as many finished games as needed frees enough room for
+        3 live games to go triple, while the still-hideable Scheduled games
+        (not needed for the budget) stay visible on the grid."""
         cfg = dict(BASE_CONFIG, hide_non_live_games=True)
         games = (
             [_game(0, state='In Progress', inning=3)]
@@ -733,8 +760,14 @@ class TestMultipleTripleTiles:
             + [_game(i + 20, state='Final') for i in range(4)]
         )
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
-        assert len(ordered) == 3
-        assert all(s[0] == 'triple' for s in slots)
+        # 15 games → 0 spare budget; 3 triples need 6 extra units, so all 4
+        # Finals (lowest priority) plus 2 Scheduled games are hidden — 9 remain.
+        assert len(ordered) == 9
+        triple_slots = [s for s in slots if s[0] == 'triple']
+        assert len(triple_slots) == 3
+        remaining_states = {g['detailed_state'] for g in ordered}
+        assert 'Final' not in remaining_states
+        assert sum(1 for g in ordered if g['detailed_state'] == 'Scheduled') == 6
 
 
 # ---------------------------------------------------------------------------
