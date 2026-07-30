@@ -324,12 +324,14 @@ def _find_tile_types(game_list, config, team_data):
                 remaining -= 1
         return tile_map
 
-    # 15+ games: expanding forces a game off the grid — only do it if the
-    # config explicitly opts in (wide_cell_always or wide_cell_featured).
+    # 15+ games: expanding forces games off the grid — only do it if the
+    # config explicitly opts in (wide_cell_always or wide_cell_featured). Up
+    # to _MAX_TRIPLE_TILES live games still get a triple, same as the <15
+    # path — the packer (_pack_multi_triple_rows) drops lower-priority games
+    # to make room rather than us capping it to a single tile here.
     if not (config.get('wide_cell_always', False) or config.get('wide_cell_featured', False)):
         return {}
-    best = max(in_progress, key=_rank)
-    return {best: 'triple'}
+    return {idx: 'triple' for idx in sorted_live[:_MAX_TRIPLE_TILES]}
 
 
 def _pack_multi_triple_rows(game_list, tile_type_map):
