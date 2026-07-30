@@ -36,6 +36,17 @@ _NON_LIVE_HIDE_STATES = _FINAL_STATES | _PRE_GAME_STATES
 _MAX_TRIPLE_TILES = 3
 
 
+def _extra_slots_needed_for_live(live_count):
+    """Slot-units beyond one-each needed so every live game can reach its best
+    possible tile: up to _MAX_TRIPLE_TILES of them go triple (+2 units over a
+    normal cell), and any further live games go wide (+1 unit) instead of
+    being left as a plain single cell. Used to cap how many non-live games
+    hide_non_live_games actually needs to hide."""
+    triples = min(live_count, _MAX_TRIPLE_TILES)
+    wides = live_count - triples
+    return triples * 2 + wides
+
+
 def _hide_non_live_games_enabled(config):
     """Whether finished/not-yet-started games should be dropped from the grid,
     per config.yaml's hide_non_live_games key or the HIDE_NON_LIVE_GAMES env
@@ -641,18 +652,28 @@ def compute_grid_layout(game_state_data, team_data, config):
                     game_list.insert(0, game_list.pop(i))
                     break
 
-    # Hide finished and not-yet-started games so their slots free up for the
-    # remaining live games to expand into wide/triple tiles. Only applies
-    # while at least one game is actually live — otherwise there's nothing
-    # for the freed slots to expand into. The pinned favorite-team game
-    # (index 0) is exempt so it stays visible regardless of its state.
+    # Hide just enough finished/not-yet-started games to free the slot-units
+    # every live game needs to reach its best tile (triple, capped at
+    # _MAX_TRIPLE_TILES, else wide) — not the entire non-live set. If the
+    # grid already has enough spare budget without hiding anything, nothing
+    # is hidden. Least-valuable games (Final, per _overflow_priority) are
+    # hidden before scheduled/pre-game ones. Only applies while at least one
+    # game is actually live — otherwise there's nothing for freed slots to
+    # expand into. The pinned favorite-team game (index 0) is exempt so it
+    # stays visible regardless of its state.
     if _hide_non_live_games_enabled(config):
-        _live_exists_for_hide = any(g.get('detailed_state') in _LIVE_WIDE_STATES for g in game_list)
-        if _live_exists_for_hide:
+        _live_count_for_hide = sum(1 for g in game_list if g.get('detailed_state') in _LIVE_WIDE_STATES)
+        if _live_count_for_hide:
             _pinned_game = game_list[0] if (config.get('favorite_team_first', False) and game_list) else None
-            _kept = [g for g in game_list if g is _pinned_game or g.get('detailed_state') not in _NON_LIVE_HIDE_STATES]
-            if _kept:
-                game_list = _kept
+            _needed = _extra_slots_needed_for_live(_live_count_for_hide)
+            _current_budget = max(0, 15 - len(game_list))
+            _to_free = max(0, _needed - _current_budget)
+            if _to_free:
+                _hideable = [g for g in game_list if g is not _pinned_game and g.get('detailed_state') in _NON_LIVE_HIDE_STATES]
+                _hideable.sort(key=_overflow_priority, reverse=True)
+                _hide_ids = {id(g) for g in _hideable[:_to_free]}
+                if _hide_ids:
+                    game_list = [g for g in game_list if id(g) not in _hide_ids]
 
     # More games than the 15-slot grid can hold: games still In Progress must
     # not be bumped off (or drawn past the visible rows) in favor of games
@@ -749,14 +770,20 @@ def _free_grid_slots(slots):
 #     return Himage
 
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None):
-    """Render the full scoreboard grid of game boxes onto Himage."""
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None, suppress_date=False):
+    """Render the full scoreboard grid of game boxes onto Himage.
+
+    ``suppress_date`` skips the date label entirely — set by the caller when
+    the overflow ticker will take over the header strip afterward, since it
+    spans the full width with no reserved gap for the date (unlike wildcard
+    standings, which leaves a narrow center gap the label is sized to fit).
+    """
 
     draw = ImageDraw.Draw(Himage)
     config = load_yaml_file('config.yaml')
 
     # --- Date label: centered in the top strip, as large as possible, bold ---
-    if date_str:
+    if date_str and not suppress_date:
         from datetime import datetime as _dt
         try:
             _d = _dt.strptime(date_str, '%Y-%m-%d')

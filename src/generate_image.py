@@ -400,16 +400,27 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     # cells behind since the refresh regions would no longer match what was
     # actually drawn.
     _ordered, _slots = compute_grid_layout(game_state_data, team_data, config)
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots))
 
     # Games compute_grid_layout couldn't place on the grid (bumped by live-game
     # tile expansion, hide_non_live_games, or >15-game overflow) — surfaced in
     # the header strip via the overflow ticker below instead of just vanishing.
+    # Computed before the draw call below so it can tell the date label to
+    # get out of the way — the ticker takes over the header strip outright
+    # and has no reserved gap for it (unlike wildcard standings).
     _placed_pks = {g.get('game_pk') for g in _ordered[:len(_slots)]}
     _dropped_games = sorted(
         (g for g in game_state_data if g.get('game_pk') not in _placed_pks),
         key=_overflow_priority,
     )
+    _FINISHED_STATES = frozenset({
+        'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Cancelled', 'Cancelled: Rain',
+    })
+    _all_games_done = bool(game_state_data) and all(
+        g.get('detailed_state') in _FINISHED_STATES for g in game_state_data
+    )
+    _ticker_will_show = bool(_dropped_games and not _all_games_done)
+
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots), suppress_date=_ticker_will_show)
 
     standings_data = None
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
@@ -434,14 +445,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     #   2. Playoff bracket
     #   3. Wildcard standings
     #   4. Transactions (when show_transactions_ticker is on and strip is empty)
-    _FINISHED_STATES = frozenset({
-        'Final', 'Game Over', 'Final: Tied', 'Postponed', 'Cancelled', 'Cancelled: Rain',
-    })
-    _all_games_done = bool(game_state_data) and all(
-        g.get('detailed_state') in _FINISHED_STATES for g in game_state_data
-    )
-
-    if _dropped_games and not _all_games_done:
+    if _ticker_will_show:
         Himage = draw_overflow_ticker(
             Himage, _dropped_games, team_data,
             rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2),
@@ -528,7 +532,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         # changed_regions and so wouldn't reach the e-ink panel on a partial
         # refresh. Fingerprint whatever's currently showing there and add the
         # strip to changed_regions when it differs from the last poll.
-        if _dropped_games and not _all_games_done:
+        if _ticker_will_show:
             _header_key = [str(g.get('game_pk', '')) for g in _ticker_window(
                 _dropped_games, rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2))]
             _header_state = {'mode': 'ticker', 'key': _header_key}

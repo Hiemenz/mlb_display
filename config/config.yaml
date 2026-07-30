@@ -153,13 +153,16 @@ wide_cell_featured: false
 # always be placed at column 0 or 2 where a 3-unit tile fits.
 triple_cell_live: false
 
-# Hide non-live games: when true, games that are already finished (Final,
-# Game Over, Final: Tied) or haven't started yet (Scheduled, Pre-Game,
-# Warmup, Delayed Start) are dropped from the grid entirely, as long as at
-# least one other game is still in progress — freeing up their slots so the
-# live games can expand into wide (2-cell) or triple (3-cell) tiles instead.
-# Up to 3 live games (the ones farthest along) get a triple tile when the
-# freed-up slot budget allows it. The favorite team's pinned game (see
+# Hide non-live games: when true, just enough games that are already finished
+# (Final, Game Over, Final: Tied) or haven't started yet (Scheduled, Pre-Game,
+# Warmup, Delayed Start) are dropped from the grid — as long as at least one
+# other game is still in progress — to free the slots every live game needs
+# to reach its best tile: up to 3 live games (the ones farthest along) go
+# triple (3-cell), any further live games go wide (2-cell). If the grid
+# already has enough spare room without hiding anything, nothing is hidden.
+# Least-valuable games (Final) are dropped before scheduled/pre-game ones.
+# Games that get dropped aren't gone — they rotate through the header
+# overflow ticker instead. The favorite team's pinned game (see
 # favorite_team_first) is never hidden, regardless of its state.
 # Can also be set via the HIDE_NON_LIVE_GAMES environment variable
 # (true/1/yes), which overrides this value.
