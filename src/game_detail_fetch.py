@@ -863,9 +863,12 @@ def _extract_all_hit_coordinates(plays):
         abbr = _build_scorecard_notation(play) or _EVENT_ABBR.get(event, event[:2].upper() if event else '?')
         if cx is not None and cy is not None:
             distance = hit_data.get('totalDistance')
+            exit_velo = hit_data.get('launchSpeed')
+            launch_angle = hit_data.get('launchAngle')
             hits.append({'x': cx, 'y': cy, 'is_hr': is_hr, 'is_hit': is_hit, 'is_out': is_out,
                          'player': last_name, 'inning': hit_inning, 'half': hit_half,
-                         'abbr': abbr, 'distance': distance})
+                         'abbr': abbr, 'distance': distance,
+                         'exit_velo': exit_velo, 'launch_angle': launch_angle})
             continue
         # Fall back to playEvents
         for ev in play.get('playEvents', []):
@@ -874,9 +877,12 @@ def _extract_all_hit_coordinates(plays):
             cy = hit_data.get('coordinates', {}).get('coordY')
             if cx is not None and cy is not None:
                 distance = hit_data.get('totalDistance')
+                exit_velo = hit_data.get('launchSpeed')
+                launch_angle = hit_data.get('launchAngle')
                 hits.append({'x': cx, 'y': cy, 'is_hr': is_hr, 'is_hit': is_hit, 'is_out': is_out,
                              'player': last_name, 'inning': hit_inning, 'half': hit_half,
-                             'abbr': abbr, 'distance': distance})
+                             'abbr': abbr, 'distance': distance,
+                             'exit_velo': exit_velo, 'launch_angle': launch_angle})
                 break
     return hits
 

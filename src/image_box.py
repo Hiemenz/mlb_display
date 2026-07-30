@@ -2717,14 +2717,15 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
         ]
         _bat_y = rp_y + header_h + 10 * s
-        _bat_max_w = rp_w - 4 * s
+        _bat_max_w = rp_w - 4 * s - 3
         for _nm in _batter_names:
             if _nm:
                 _bat_str = _nm
                 while _bat_str and int(font11.getlength(_bat_str)) > _bat_max_w:
                     _bat_str = _bat_str[:-1]
                 if _bat_str:
-                    draw.text((rp_x + 2 * s, _bat_y), _bat_str, font=font11, fill=0)
+                    draw.text((rp_x + 2 * s + 3, _bat_y), _bat_str, font=font11, fill=0)
+                    draw.text((rp_x + 2 * s + 3 + 1 * s, _bat_y), _bat_str, font=font11, fill=0)
             _bat_y += 16 * s
 
     # ── Pitcher row (pushed below B/S indicators) ──────────────────────
@@ -2754,6 +2755,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         while _pit_str and int(font9.getlength(_pit_str)) > _pit_avail:
             _pit_str = _pit_str[:-1]
     draw.text((rp_x + 5 * s, _py), _pit_str, font=_pf, fill=0)
+    draw.text((rp_x + 5 * s + 1 * s, _py), _pit_str, font=_pf, fill=0)
     if _right_badge:
         draw.text((rp_x + rp_w - _rb_w, _py), _right_badge, font=font9, fill=0)
 
@@ -3399,7 +3401,9 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             _bezier_trajectory(HX, HY, *land_pt)
 
         # Play abbreviation label (F, L, G, HR, 1B, 2B, 3B …) at the landing spot.
-        # HR lands at the cell edge; keep text inside by clamping y.
+        # HR lands at the cell edge; keep text inside by clamping y. The most
+        # recent HR also gets a bold distance badge in the tile's bottom-right
+        # corner (see draw_triple_box), above the venue name.
         tw = max(int(font_tiny.getlength(abbr)), 1)
         _tx = max(_cx0, min(_cx1 - tw, land_pt[0] - tw // 2))
         _ty = max(_cy0 + 1, land_pt[1] - 9)
@@ -3469,6 +3473,59 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     # This gives ~13 px above CF and places home plate ~6 px into the footer.
     draw = ImageDraw.Draw(Himage)
     _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
+
+    # Batted-ball stat badge: right-aligned in the bottom-right corner of the
+    # field cell, directly above the venue name, for the most recent ball put
+    # in play (any outcome) — play type, exit velo, launch angle, and (for
+    # home runs) distance.
+    _recent_hits = game_data.get('recent_hits') or []
+    if not _recent_hits and game_data.get('last_hit_is_hr'):
+        _recent_hits = [{'is_hr': True}]
+    _last_hit = _recent_hits[-1] if _recent_hits else None
+    if _last_hit is not None:
+        _hit_is_hr = _last_hit.get('is_hr', False)
+        _hit_label = 'HR' if _hit_is_hr else (_last_hit.get('abbr') or '')
+        _hit_dist  = _last_hit.get('distance')
+        _hit_velo  = _last_hit.get('exit_velo')
+        _hit_angle = _last_hit.get('launch_angle')
+        _stat_lines = [p for p in [
+            f'{round(_hit_angle)}°' if _hit_angle is not None else '',
+            f'{round(_hit_velo)} Mph' if _hit_velo is not None else '',
+            f'{int(_hit_dist)} ft' if _hit_dist is not None else '',
+        ] if p]
+        if _stat_lines:
+            _hr_font = _get_font(round(10 * scale))
+            _line_h  = _hr_font.getbbox('Ay')[3]
+            _hr_y    = start_y + int(TOTAL_H) + 9 - _line_h - 1
+            for _line in reversed(_stat_lines):
+                _lw = int(_hr_font.getlength(_line))
+                _lx = int(fp_x + FIELD_W) - _lw - 1
+                draw.rectangle([_lx, _hr_y, _lx + _lw, _hr_y + _line_h], fill=255)
+                draw.text((_lx, _hr_y), _line, font=_hr_font, fill=0)
+                draw.text((_lx + 1 * scale, _hr_y), _line, font=_hr_font, fill=0)
+                _hr_y -= _line_h
+
+        # Result badge (HR, F9, 1B, …): bottom-left corner of the field cell,
+        # sized the same way the pitcher-K milestone badge in the footer strip
+        # is — largest point size (18pt down to 7pt) that fits the available
+        # width — so it reads as a matching bold "footer badge" style. Vertical
+        # placement is centred in the same 20px footer band the K badge uses.
+        if _hit_label:
+            _res_max_w = int(FIELD_W // 2) - 4 * scale
+            _res_font = _get_font(7 * scale)
+            for _px in range(18, 6, -1):
+                _f = _get_font(_px * scale)
+                if int(_f.getlength(_hit_label)) <= _res_max_w:
+                    _res_font = _f
+                    break
+            _res_h = _res_font.getbbox('Ay')[3]
+            _res_w = int(_res_font.getlength(_hit_label))
+            _res_x = fp_x + 2 * scale + 8
+            _res_y = (start_y + int(TOTAL_H)
+                      + (20 * scale - _res_h) // 2 - 1 * scale - 5)
+            draw.rectangle([_res_x, _res_y, _res_x + _res_w, _res_y + _res_h], fill=255)
+            draw.text((_res_x, _res_y), _hit_label, font=_res_font, fill=0)
+            draw.text((_res_x + 1 * scale, _res_y), _hit_label, font=_res_font, fill=0)
 
     # Venue name: right-aligned label in the footer gap below the cell border.
     # A tight white rectangle erases the infield polygon lines behind the glyphs.
