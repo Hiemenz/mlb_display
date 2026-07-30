@@ -910,7 +910,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             Himage, _tx_lx, _tx_ly, _tx_data, team_data, use_logos=use_logos,
         )
 
-    # Batting lineup panel — both teams' orders, shown within 30 min of first pitch.
+    # Batting lineup panel — both teams' orders, shown within 1 hour of first pitch.
     if config.get('show_lineup_panel', False) and _free_slots:
         _primary_abbr = config.get('primary', '')
         from image_lineup import _find_primary_game, game_within_minutes
@@ -918,7 +918,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         if (
             _lu_game
             and _lu_game.get('detailed_state') in ('Scheduled', 'Pre-Game', 'Warmup')
-            and game_within_minutes(_lu_game, minutes=120)
+            and game_within_minutes(_lu_game, minutes=60)
         ):
             _lu_col, _lu_row = _free_slots.pop(0)
             _lu_lx = _lu_col * 150 + x_start
