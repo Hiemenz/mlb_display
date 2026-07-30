@@ -420,13 +420,13 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
 
         row_text_y = (_TICKER_ROW_H - 9) // 2
         if away_logo:
-            Himage.paste(away_logo, (cur_x, (_TICKER_ROW_H - away_logo.size[1]) // 2))
+            Himage.paste(away_logo, (cur_x + (logo_col_w - away_w) // 2, (_TICKER_ROW_H - away_logo.size[1]) // 2))
         else:
-            draw.text((cur_x, row_text_y), away_abbr, font=font, fill=0)
+            draw.text((cur_x + (logo_col_w - away_w) // 2, row_text_y), away_abbr, font=font, fill=0)
         if home_logo:
-            Himage.paste(home_logo, (cur_x, _TICKER_ROW_H + (_TICKER_ROW_H - home_logo.size[1]) // 2))
+            Himage.paste(home_logo, (cur_x + (logo_col_w - home_w) // 2, _TICKER_ROW_H + (_TICKER_ROW_H - home_logo.size[1]) // 2))
         else:
-            draw.text((cur_x, _TICKER_ROW_H + row_text_y), home_abbr, font=font, fill=0)
+            draw.text((cur_x + (logo_col_w - home_w) // 2, _TICKER_ROW_H + row_text_y), home_abbr, font=font, fill=0)
         cur_x += logo_col_w
 
         row_top_y = (_TICKER_ROW_H - _TICKER_ROW_FONT_SIZE) // 2
