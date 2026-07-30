@@ -713,10 +713,10 @@ def _ov_game(pk, away_id=1, home_id=2, state='Scheduled', **overrides):
 
 
 class TestTickerStatus:
-    def test_final_family_normalizes_to_final(self):
-        """Final family normalizes to Final."""
+    def test_final_family_normalizes_to_f(self):
+        """Final family normalizes to the single-letter 'F'."""
         for state in ('Final', 'Game Over', 'Final: Tied'):
-            assert _ticker_status(_ov_game(1, state=state)) == 'Final'
+            assert _ticker_status(_ov_game(1, state=state)) == 'F'
 
     def test_postponed_family_normalizes_to_postponed(self):
         """Postponed family normalizes to Postponed."""
@@ -817,7 +817,7 @@ class TestDrawOverflowTicker:
 
     def test_final_entry_includes_score_and_status(self):
         """A Final game draws both the score (digits + dash, each measured
-        and drawn separately at the bigger score font) and the status word —
+        and drawn separately at the bigger score font) and the 'F' status —
         verified via draw.text call args since font rendering itself isn't
         pixel-inspectable at this granularity."""
         canvas = self._white()
@@ -830,11 +830,11 @@ class TestDrawOverflowTicker:
         assert '5' in drawn_strings
         assert '-' in drawn_strings
         assert '3' in drawn_strings
-        assert 'Final' in drawn_strings
+        assert 'F' in drawn_strings
 
-    def test_no_separator_lines_between_entries(self):
-        """The vertical '|' separators between entries have been removed —
-        only the top/bottom strip border lines remain."""
+    def test_no_separator_or_border_lines(self):
+        """No lines are drawn at all — no vertical separators between
+        entries, and no top/bottom strip border."""
         canvas = self._white()
         team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS', '3': 'LAD', '4': 'SF'}}
         games = [
@@ -844,9 +844,7 @@ class TestDrawOverflowTicker:
         with patch('image_standings._logo_small', return_value=None), \
              patch('image_standings.ImageDraw.ImageDraw.line') as mock_line:
             draw_overflow_ticker(canvas, games, team_data)
-        # Only the two horizontal border lines (top + bottom of the strip) —
-        # no vertical separator between the two entries.
-        assert mock_line.call_count == 2
+        mock_line.assert_not_called()
 
     def test_multiple_entries_render_with_separators(self):
         """Multiple entries render with separators."""

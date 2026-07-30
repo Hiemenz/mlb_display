@@ -243,7 +243,7 @@ _TICKER_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
 _TICKER_POSTPONED_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
 _TICKER_LIVE_STATES = {'In Progress', 'Player challenge', 'Manager challenge'}
 
-_TICKER_MAX_ENTRIES = 5   # entries shown per render before rotation kicks in
+_TICKER_MAX_ENTRIES = 7   # entries shown per render before rotation kicks in
 _TICKER_SCORE_FONT_SIZE = 16   # bigger than the surrounding 9pt status text
 # Font.ttc's glyphs have enough negative left-bearing at these odd pixel sizes
 # that the dash visually overlaps whatever getlength() alone measured as
@@ -254,10 +254,10 @@ _TICKER_SCORE_GAP = 2
 
 def _ticker_status(game):
     """Short status label for one overflow-ticker entry, based on game state:
-    start time (not started), 'Top 4'/'Bot 7' (live), 'Final', or 'Postponed'."""
+    start time (not started), 'Top 4'/'Bot 7' (live), 'F' (final), or 'Postponed'."""
     state = game.get('detailed_state', '')
     if state in _TICKER_FINAL_STATES:
-        return 'Final'
+        return 'F'
     if state in _TICKER_POSTPONED_STATES:
         return 'Postponed'
     if state in _TICKER_LIVE_STATES:
@@ -352,7 +352,12 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
         home_w = home_logo.size[0] if home_logo else int(font.getlength(home_abbr))
         sep = ' v '
         sep_w = int(font.getlength(sep))
-        status_w = int(font.getlength(status)) if status else 0
+
+        # 'F' (final) is drawn at the bigger score font for emphasis; every
+        # other status (live inning, start time, 'Postponed') stays at the
+        # small font.
+        status_font = score_font if status == 'F' else font
+        status_w = int(status_font.getlength(status)) if status else 0
 
         # Score digits/dash measured individually (at the bigger font) so the
         # gap around the dash can be added explicitly rather than trusting
@@ -367,9 +372,11 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
         else:
             score_w = 0
 
-        total_w = away_w + sep_w + home_w
-        if score:
-            total_w += 4 + score_w
+        # Layout: away logo, then score-or-'v' between the two logos, home
+        # logo, then the status ('F' for final games, else the live/start
+        # time text) trailing at the end.
+        total_w = away_w + home_w
+        total_w += score_w if score else sep_w
         if status:
             total_w += 4 + status_w
 
@@ -381,8 +388,16 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
             draw.text((cur_x, text_y), away_abbr, font=font, fill=0)
         cur_x += away_w
 
-        draw.text((cur_x, text_y), sep, font=font, fill=0)
-        cur_x += sep_w
+        if score:
+            draw.text((cur_x, score_y), away_r, font=score_font, fill=0)
+            cur_x += away_r_w + _TICKER_SCORE_GAP
+            draw.text((cur_x, score_y), '-', font=score_font, fill=0)
+            cur_x += dash_w + _TICKER_SCORE_GAP
+            draw.text((cur_x, score_y), home_r, font=score_font, fill=0)
+            cur_x += home_r_w
+        else:
+            draw.text((cur_x, text_y), sep, font=font, fill=0)
+            cur_x += sep_w
 
         if home_logo:
             Himage.paste(home_logo, (cur_x, (_WC_STRIP_H - home_logo.size[1]) // 2))
@@ -390,21 +405,10 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
             draw.text((cur_x, text_y), home_abbr, font=font, fill=0)
         cur_x += home_w
 
-        if score:
-            cur_x += 4
-            draw.text((cur_x, score_y), away_r, font=score_font, fill=0)
-            cur_x += away_r_w + _TICKER_SCORE_GAP
-            draw.text((cur_x, score_y), '-', font=score_font, fill=0)
-            cur_x += dash_w + _TICKER_SCORE_GAP
-            draw.text((cur_x, score_y), home_r, font=score_font, fill=0)
-            cur_x += home_r_w
-
         if status:
             cur_x += 4
-            draw.text((cur_x, text_y), status, font=font, fill=0)
-
-    draw.line((0, 0, 799, 0), fill=0, width=1)
-    draw.line((0, _WC_STRIP_H - 1, 799, _WC_STRIP_H - 1), fill=0, width=1)
+            _status_y = score_y if status == 'F' else text_y
+            draw.text((cur_x, _status_y), status, font=status_font, fill=0)
 
     return Himage
 
