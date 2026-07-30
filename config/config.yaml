@@ -138,11 +138,13 @@ scoreboard_live_details: true
 # even when there are 15+ games on the slate (one game will be dropped from the grid to make room).
 wide_cell_always: false
 
-# Wide cell featured team: when true, the wide (2-cell) tile always goes to the
-# featured (primary) team's game while it is live. If the featured team's game is
-# not live, the tile falls back to the in-progress game farthest along. Like
-# wide_cell_always, this shows a wide cell even with 15+ games on the slate.
-wide_cell_featured: false
+# Wide/triple cell featured team: when true, the featured (primary) team's game
+# always claims one of the expanded tiles while it is live — a triple (3-cell)
+# slot if the budget allows one, otherwise wide (2-cell). Remaining expanded
+# slots go to whichever other live games are farthest along. If the featured
+# team's game is not live, expansion falls back to game progress only. Like
+# wide_cell_always, this shows an expanded cell even with 15+ games on the slate.
+wide_cell_featured: true
 
 # Triple-cell live game: when true, the featured live game gets a 3-cell (435px)
 # tile — left cell (score/linescore), middle cell (pitch zone/situation), and a
