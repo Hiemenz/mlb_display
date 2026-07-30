@@ -851,12 +851,14 @@ class TestDrawOverflowTicker:
         """No top/bottom strip border and no vertical separator between
         entries — only the horizontal away/home divider (always drawn) and
         the in-entry R/H/E column dividers (added when a game has a score)
-        may appear."""
+        may appear. Uses live (not Scheduled) games since not-yet-started
+        games use the single-row logo-dash-logo layout, which draws no
+        divider at all."""
         canvas = self._white()
         team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS', '3': 'LAD', '4': 'SF'}}
         games = [
-            _ov_game(1, away_id=1, home_id=2, state='Scheduled'),
-            _ov_game(2, away_id=3, home_id=4, state='Scheduled'),
+            _ov_game(1, away_id=1, home_id=2, state='In Progress'),
+            _ov_game(2, away_id=3, home_id=4, state='In Progress'),
         ]
         with patch('image_standings._logo_small', return_value=None), \
              patch('image_standings.ImageDraw.ImageDraw.line') as mock_line:
@@ -917,6 +919,37 @@ class TestDrawOverflowTicker:
             result = draw_overflow_ticker(canvas, games, team_data)
         assert isinstance(result, Image.Image)
         assert any(px == 0 for px in result.getdata())
+
+    def test_not_started_game_renders_single_row_logo_dash_logo_time(self):
+        """A game that hasn't started yet (Scheduled/Pre-Game/Warmup/Delayed
+        Start) skips the stacked two-row live/final layout entirely — no R,
+        H, E, or divider line — and instead draws one row: away logo, a
+        dash, home logo, then the start time."""
+        canvas = self._white()
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+        games = [_ov_game(1, away_id=1, home_id=2, state='Scheduled', game_start='7:05 PM')]
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings.ImageDraw.ImageDraw.line') as mock_line, \
+             patch('image_standings.ImageDraw.ImageDraw.text') as mock_text:
+            draw_overflow_ticker(canvas, games, team_data)
+        mock_line.assert_not_called()
+        drawn_strings = [call.args[1] for call in mock_text.call_args_list]
+        assert 'NYY' in drawn_strings
+        assert 'BOS' in drawn_strings
+        assert ' - ' in drawn_strings
+        assert '7:05 PM' in drawn_strings
+
+    def test_not_started_game_pastes_logos_when_available(self):
+        """Pre-Game/Warmup/Delayed Start all share the not-yet-started single
+        row layout, not just Scheduled."""
+        team_data = {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+        fake_logo = Image.new('1', (28, 28), 0)
+        for state in ('Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start'):
+            games = [_ov_game(1, away_id=1, home_id=2, state=state)]
+            with patch('image_standings._logo_small', return_value=fake_logo):
+                result = draw_overflow_ticker(self._white(), games, team_data)
+            assert isinstance(result, Image.Image)
+            assert any(px == 0 for px in result.getdata())
 
 
 # ===========================================================================

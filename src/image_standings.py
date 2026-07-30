@@ -363,6 +363,50 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
         score = _ticker_score(game)
         status = _ticker_status(game)
 
+        def _draw_bold_status(xy, text, bold_font=font):
+            """Bold via the same double-draw-offset-by-1px technique used
+            for the live/final status below (and draw_wildcard_header's
+            prefix) — keeps the not-yet-started start time visually
+            consistent with 'Bot 7' / 'F'."""
+            draw.text(xy, text, font=bold_font, fill=0)
+            draw.text((xy[0] + 1, xy[1]), text, font=bold_font, fill=0)
+
+        state = game.get('detailed_state', '')
+        not_started = (
+            state not in _TICKER_FINAL_STATES
+            and state not in _TICKER_POSTPONED_STATES
+            and state not in _TICKER_LIVE_STATES
+        )
+        if not_started:
+            # Nothing to score yet — a single row is enough: away logo, a
+            # dash, home logo, then the start time trailing (no stacked
+            # rows/dividers, unlike the live/final layout below).
+            _sched_logo_sz = _WC_STRIP_H - 2
+            _a_logo = _logo_small(away_abbr, away_id, size=_sched_logo_sz)
+            _h_logo = _logo_small(home_abbr, home_id, size=_sched_logo_sz)
+            _a_w = _a_logo.size[0] if _a_logo else int(font.getlength(away_abbr))
+            _h_w = _h_logo.size[0] if _h_logo else int(font.getlength(home_abbr))
+            _dash_w = int(font.getlength(' - '))
+            _time_w = int(font.getlength(status)) if status else 0
+            _total_w = _a_w + _dash_w + _h_w + (4 + _time_w if status else 0)
+            _cx = x0 + max(0, (entry_w - _total_w) // 2)
+            if _a_logo:
+                Himage.paste(_a_logo, (_cx, (_WC_STRIP_H - _a_logo.size[1]) // 2))
+            else:
+                draw.text((_cx, text_y), away_abbr, font=font, fill=0)
+            _cx += _a_w
+            draw.text((_cx, text_y), ' - ', font=font, fill=0)
+            _cx += _dash_w
+            if _h_logo:
+                Himage.paste(_h_logo, (_cx, (_WC_STRIP_H - _h_logo.size[1]) // 2))
+            else:
+                draw.text((_cx, text_y), home_abbr, font=font, fill=0)
+            _cx += _h_w
+            if status:
+                _cx += 4
+                _draw_bold_status((_cx, text_y), status)
+            continue
+
         away_logo = _logo_small(away_abbr, away_id, size=_TICKER_LOGO_SZ)
         home_logo = _logo_small(home_abbr, home_id, size=_TICKER_LOGO_SZ)
 
