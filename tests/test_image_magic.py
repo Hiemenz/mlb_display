@@ -129,10 +129,18 @@ class TestMagicOrElim:
                 'clinch_indicator': clinch, 'games_back': games_back}
 
     def test_leader_magic_number(self):
+        leader = self._leader(wins=100)
+        # rival_losses=48 → M = 163-100-48 = 15, within _ELIM_THRESHOLD (20)
+        result = _magic_or_elim(leader, leader, is_leader=True, rival_losses=48)
+        assert result == 'M15'
+
+    def test_leader_magic_number_hidden_when_above_threshold(self):
+        """A magic number above _ELIM_THRESHOLD isn't meaningful yet, so the
+        leader shows nothing instead of a large 'M68'."""
         leader = self._leader(wins=60)
-        # rival_losses=35 → M = 163-60-35 = 68
+        # rival_losses=35 → M = 163-60-35 = 68, well above the threshold
         result = _magic_or_elim(leader, leader, is_leader=True, rival_losses=35)
-        assert result == 'M68'
+        assert result == ''
 
     def test_leader_clinched_when_magic_zero(self):
         # M = 163 - wins - rival_losses; CL when M <= 0

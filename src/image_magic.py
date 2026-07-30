@@ -29,9 +29,11 @@ _PAD = 2
 # rival can no longer tie it, i.e. when (162 + 1) - wins - rival_losses hits 0.
 _MAGIC_BASE = 163
 
-# Below this, a trailing team's elimination number is dramatic enough to show
-# instead of games back — early/mid-season elimination numbers (60+) aren't
-# meaningful, so games back is the more useful stat until the race tightens.
+# At or below this, a trailing team's elimination number is dramatic enough
+# to show instead of games back — early/mid-season elimination numbers (60+)
+# aren't meaningful, so games back is the more useful stat until the race
+# tightens. Also gates the leader's magic number (see _magic_or_elim): a
+# leader whose magic number is still above this shows nothing at all.
 _ELIM_THRESHOLD = 20
 
 # Collapse a division's full name into a compact header, e.g.
@@ -69,10 +71,12 @@ def _find_primary_division(standings, abbr_map, primary_abbr):
 
 
 def _magic_or_elim(team, leader, is_leader, rival_losses):
-    """Value string for one team's row: 'M4' (leader), 'E7' (trailing team
-    within _ELIM_THRESHOLD of elimination), games back (trailing team
-    otherwise), 'CL', 'OUT', or '' when the underlying win/loss data isn't
-    available yet."""
+    """Value string for one team's row: 'M4' (leader, only while the magic
+    number is _ELIM_THRESHOLD or less — a triple-digit magic number early in
+    the season isn't meaningful, so the leader shows nothing until then),
+    'E7' (trailing team within _ELIM_THRESHOLD of elimination), games back
+    (trailing team otherwise), 'CL', 'OUT', or '' when the underlying
+    win/loss data isn't available yet."""
     clinch = (team.get('clinch_indicator') or '').strip().lower()
     if clinch in ('z', 'y'):
         return 'CL'
@@ -87,7 +91,9 @@ def _magic_or_elim(team, leader, is_leader, rival_losses):
         if rival_losses is None:
             return 'CL'          # no rivals left to hold off
         magic = _MAGIC_BASE - lead_w - rival_losses
-        return 'CL' if magic <= 0 else f'M{magic}'
+        if magic <= 0:
+            return 'CL'
+        return f'M{magic}' if magic <= _ELIM_THRESHOLD else ''
 
     team_l = team.get('league_record_losses')
     if team_l is None:
@@ -95,7 +101,7 @@ def _magic_or_elim(team, leader, is_leader, rival_losses):
     elim = _MAGIC_BASE - lead_w - team_l
     if elim <= 0:
         return 'OUT'
-    if elim < _ELIM_THRESHOLD:
+    if elim <= _ELIM_THRESHOLD:
         return f'E{elim}'
     return str(team.get('games_back') or '-')
 
