@@ -363,6 +363,14 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
         score = _ticker_score(game)
         status = _ticker_status(game)
 
+        def _draw_bold_status(xy, text, bold_font=font):
+            """Bold via the same double-draw-offset-by-1px technique used
+            for the live/final status below (and draw_wildcard_header's
+            prefix) — keeps the not-yet-started start time visually
+            consistent with 'Bot 7' / 'F'."""
+            draw.text(xy, text, font=bold_font, fill=0)
+            draw.text((xy[0] + 1, xy[1]), text, font=bold_font, fill=0)
+
         state = game.get('detailed_state', '')
         not_started = (
             state not in _TICKER_FINAL_STATES
@@ -396,7 +404,7 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
             _cx += _h_w
             if status:
                 _cx += 4
-                draw.text((_cx, text_y), status, font=font, fill=0)
+                _draw_bold_status((_cx, text_y), status)
             continue
 
         away_logo = _logo_small(away_abbr, away_id, size=_TICKER_LOGO_SZ)
