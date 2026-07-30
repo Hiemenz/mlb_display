@@ -736,11 +736,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     font11 = _get_font(11 * s)   # also used for base-runner numbers
     font9 = _get_font(9 * s)
 
-    # Lineup mode: within 2 hours of first pitch with lineup data posted.
+    # Lineup mode: within 1 hour of first pitch with lineup data posted.
     # Replaces pitcher-probables body and team-records section with batting orders.
     _is_lineup_mode = (
         game_data.get('detailed_state') in ('Scheduled', 'Pre-Game', 'Warmup')
-        and _game_within_minutes_check(game_data, 120)
+        and _game_within_minutes_check(game_data, 60)
         and bool(game_data.get('away_lineup') or game_data.get('home_lineup'))
     )
 

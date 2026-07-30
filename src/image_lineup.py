@@ -4,7 +4,7 @@ Shows both teams' batting orders side-by-side (Away left, Home right) with
 the starting pitchers in a strip at the bottom.  The header replicates the
 standard scheduled-game tile style: game time on the left, venue on the right.
 
-Only shown by image_grid when the game is within 2 hours of first pitch.
+Only shown by image_grid when the game is within 1 hour of first pitch.
 """
 from image_assets import _get_font, ImageDraw, _logo_ghost, _paste_logo
 from image_utils import _clean_venue_name, _pitcher_line
@@ -45,7 +45,7 @@ def _find_primary_game(games_data, primary_abbr):
     return None
 
 
-def game_within_minutes(game, minutes=120):
+def game_within_minutes(game, minutes=60):
     """Return True once the game is within `minutes` of its scheduled start.
 
     No lower bound: stays True past the scheduled start time too, so a game
