@@ -910,3 +910,16 @@ def test_grid_cluster_fallback_with_live_games(white_image, team_data):
     }):
         result = draw_out_of_town_score_board(white_image, games, team_data)
     assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_pregame_state_no_crash(white_image, team_data):
+    """draw_wide_box with a Scheduled game exercises the pre-game lineup panel."""
+    from image_box import draw_wide_box
+    game = _base_game(
+        detailed_state='Scheduled',
+        inningState='Scheduled',
+        due_up=['Alice Smith', 'Bob Jones', 'Carol Lee'],
+    )
+    result = draw_wide_box(white_image, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)

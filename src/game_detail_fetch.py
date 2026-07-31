@@ -393,11 +393,11 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         current_at_bat_complete = bool(
             _current_play.get('result', {}).get('event')
         )
+        _matchup = _current_play.get('matchup', {})
         # Batter name from currentPlay.matchup — updates atomically with current_at_bat_complete,
         # so it never lags behind the linescore like linescore.offense.batter can.
-        current_play_batter = (
-            _current_play.get('matchup', {}).get('batter', {}).get('fullName') or None
-        )
+        current_play_batter = _matchup.get('batter', {}).get('fullName') or None
+        bat_side = _matchup.get('batSide', {}).get('code', '')
 
         # ABS max grows by 1 per extra inning (10th = 3 total, 11th = 4, ...)
         current_inning = linescore.get('currentInning') or 9
@@ -615,6 +615,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_hit_is_hr': last_hit_is_hr,
             'recent_hits': recent_hits,
             'all_game_hits': _all_game_hits,
+            'bat_side': bat_side,
             'ab_pitches': ab_pitches,
             'half_inning_plays': half_inning_plays,
             'away_pitcher_ks': away_pitcher_ks,
@@ -887,145 +888,6 @@ def _extract_all_hit_coordinates(plays):
                              'exit_velo': exit_velo, 'launch_angle': launch_angle})
                 break
     return hits
-
-
-def fetch_field_view_data(game_pk):
-    """Extract field view data from the live feed."""
-    data = fetch_live_feed(game_pk)
-    game_data = data.get('gameData', {})
-    live_data = data.get('liveData', {})
-    plays = live_data.get('plays', {})
-    linescore = live_data.get('linescore', {})
-    boxscore = live_data.get('boxscore', {})
-
-    status = game_data.get('status', {})
-    detailed_state = status.get('detailedState', '')
-
-    # Teams
-    teams = game_data.get('teams', {})
-    away_team = teams.get('away', {})
-    home_team = teams.get('home', {})
-
-    # Score
-    away_runs = linescore.get('teams', {}).get('away', {}).get('runs', 0)
-    home_runs = linescore.get('teams', {}).get('home', {}).get('runs', 0)
-    away_hits = linescore.get('teams', {}).get('away', {}).get('hits', 0)
-    home_hits = linescore.get('teams', {}).get('home', {}).get('hits', 0)
-    away_errors = linescore.get('teams', {}).get('away', {}).get('errors', 0)
-    home_errors = linescore.get('teams', {}).get('home', {}).get('errors', 0)
-
-    # Inning state
-    current_inning = linescore.get('currentInning', 0)
-    inning_ordinal = linescore.get('currentInningOrdinal', '')
-    inning_state = linescore.get('inningState', '')  # Top/Bottom/Middle/End
-
-    # Count and outs
-    balls = linescore.get('balls', 0) or 0
-    strikes = linescore.get('strikes', 0) or 0
-    outs = linescore.get('outs', 0) or 0
-
-    # Runners
-    offense = linescore.get('offense', {})
-    runner_first = bool(offense.get('first'))
-    runner_second = bool(offense.get('second'))
-    runner_third = bool(offense.get('third'))
-
-    # Current batter/pitcher
-    batter_id = offense.get('batter', {}).get('id')
-    pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
-
-    on_deck_id = offense.get('onDeck', {}).get('id')
-
-    batter_info = _get_player_info(boxscore, batter_id, 'batting')
-    pitcher_info = _get_player_info(boxscore, pitcher_id, 'pitching')
-    on_deck_info = _get_player_info(boxscore, on_deck_id, 'batting')
-
-    # Pitch locations and hit coordinates
-    pitches = _extract_pitches_detailed(plays)
-    # Keep only the last 7 batted balls so old markers are removed from the
-    # field diagram instead of accumulating for the whole game.
-    all_hits = _extract_all_hit_coordinates(plays)[-7:]
-    last_hit = all_hits[-1] if all_hits else None
-    hit_coords = (last_hit['x'], last_hit['y']) if last_hit else None
-
-    # Last play description — only show plays from the current half inning so the
-    # previous half inning's last play doesn't bleed into the new half inning header.
-    current_play = plays.get('currentPlay', {})
-    last_play_desc = current_play.get('result', {}).get('description', '')
-    if not last_play_desc:
-        all_plays = plays.get('allPlays', [])
-        if all_plays:
-            last_completed = all_plays[-1]
-            cur_half = 'bottom' if inning_state == 'Bottom' else 'top'
-            play_inning = last_completed.get('about', {}).get('inning')
-            play_half = last_completed.get('about', {}).get('halfInning', '')
-            if play_inning == current_inning and play_half == cur_half:
-                last_play_desc = last_completed.get('result', {}).get('description', '')
-
-    # Linescore innings for mini table
-    innings_list = linescore.get('innings', [])
-    innings = []
-    for inn in innings_list:
-        innings.append({
-            'num': inn.get('num', 0),
-            'away_runs': inn.get('away', {}).get('runs'),
-            'home_runs': inn.get('home', {}).get('runs'),
-        })
-
-    # Decisions (WP/LP/SV)
-    decisions = live_data.get('decisions', {})
-    winner = decisions.get('winner', {}).get('fullName', '')
-    loser = decisions.get('loser', {}).get('fullName', '')
-    save = decisions.get('save', {}).get('fullName', '')
-
-    # Probable pitchers
-    away_probable = game_data.get('probablePitchers', {}).get('away', {}).get('fullName', '')
-    home_probable = game_data.get('probablePitchers', {}).get('home', {}).get('fullName', '')
-
-    # Game time
-    game_date = game_data.get('datetime', {}).get('dateTime', '')
-
-    # Venue
-    venue = game_data.get('venue', {}).get('name', '')
-
-    return {
-        'detailed_state': detailed_state,
-        'away_abbr': away_team.get('abbreviation', ''),
-        'home_abbr': home_team.get('abbreviation', ''),
-        'away_id': away_team.get('id', 0),
-        'home_id': home_team.get('id', 0),
-        'away_runs': away_runs,
-        'home_runs': home_runs,
-        'away_hits': away_hits,
-        'home_hits': home_hits,
-        'away_errors': away_errors,
-        'home_errors': home_errors,
-        'current_inning': current_inning,
-        'inning_ordinal': inning_ordinal,
-        'inning_state': inning_state,
-        'balls': balls,
-        'strikes': strikes,
-        'outs': outs,
-        'runner_first': runner_first,
-        'runner_second': runner_second,
-        'runner_third': runner_third,
-        'batter': batter_info,
-        'pitcher': pitcher_info,
-        'on_deck': on_deck_info,
-        'pitches': pitches,
-        'hit_coords': hit_coords,
-        'all_hits': all_hits,
-        'venue_id': game_data.get('venue', {}).get('id', 0),
-        'last_play': last_play_desc,
-        'innings': innings,
-        'winner': winner,
-        'loser': loser,
-        'save': save,
-        'away_probable': away_probable,
-        'home_probable': home_probable,
-        'game_date': game_date,
-        'venue': venue,
-    }
 
 
 def _get_player_info(boxscore, player_id, stat_type):
