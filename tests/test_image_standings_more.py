@@ -28,6 +28,7 @@ from image_standings import (
     draw_standings_sidebar,
     draw_standings_sidebar_fullscreen,
     draw_overflow_ticker,
+    draw_transactions_header,
     _ticker_status,
     _ticker_score,
     _ticker_window,
@@ -1263,3 +1264,63 @@ class TestDrawStandingsSidebarMagicBadges:
             draw_standings_sidebar(img, standings, {}, side='left',
                                    league_mode='aaa', show_magic_badges=True)
         assert img is not None
+
+
+# ===========================================================================
+# draw_transactions_header
+# ===========================================================================
+
+def _TX_ENTRY(abbr, name, type_desc):
+    return {'team_abbr': abbr, 'player_name': name, 'type_desc': type_desc}
+
+
+@needs_pil
+class TestDrawTransactionsHeader:
+    def _render(self, entries, rotation_minutes=3):
+        img = _blank()
+        return draw_transactions_header(img, entries, {}, rotation_minutes=rotation_minutes)
+
+    def test_no_entries_returns_unchanged(self):
+        img = _blank()
+        result = draw_transactions_header(img, [], {})
+        assert result is img
+
+    def test_none_entries_returns_unchanged(self):
+        img = _blank()
+        result = draw_transactions_header(img, None, {})
+        assert result is img
+
+    def test_single_entry_renders(self):
+        result = self._render([_TX_ENTRY('NYY', 'Aaron Judge', 'Status Change')])
+        assert isinstance(result, Image.Image)
+
+    def test_multiple_entries_within_max_renders(self):
+        entries = [_TX_ENTRY('NYY', 'Judge', 'Status Change'),
+                   _TX_ENTRY('BOS', 'Devers', 'Trade'),
+                   _TX_ENTRY('LAD', 'Freeman', 'Signed')]
+        result = self._render(entries)
+        assert isinstance(result, Image.Image)
+
+    def test_more_than_max_rotates_chunk(self):
+        entries = [_TX_ENTRY(f'T{i}', f'Player {i}', 'Trade') for i in range(12)]
+        result = self._render(entries, rotation_minutes=1)
+        assert isinstance(result, Image.Image)
+
+    def test_unknown_type_desc_uses_raw_truncated(self):
+        result = self._render([_TX_ENTRY('CHC', 'Suzuki', 'SomethingUnknown')])
+        assert isinstance(result, Image.Image)
+
+    def test_separator_line_drawn_for_second_entry(self):
+        single = self._render([_TX_ENTRY('NYY', 'Judge', 'Trade')])
+        multi = self._render([_TX_ENTRY('NYY', 'Judge', 'Trade'),
+                              _TX_ENTRY('BOS', 'Devers', 'Trade')])
+        assert multi.tobytes() != single.tobytes()
+
+    def test_rotation_minutes_clamped_to_at_least_one(self):
+        entries = [_TX_ENTRY('SF', 'Webb', 'Signed')]
+        result = self._render(entries, rotation_minutes=0)
+        assert isinstance(result, Image.Image)
+
+    def test_empty_player_name_skips_last_name(self):
+        result = self._render([_TX_ENTRY('CLE', '', 'Released')])
+        assert isinstance(result, Image.Image)

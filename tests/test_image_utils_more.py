@@ -10,6 +10,7 @@ from image_utils import (
     _last_name,
     _render_linescore_row,
     _series_display_str,
+    draw_tight_number,
 )
 
 try:
@@ -222,3 +223,21 @@ class TestSeriesDisplayStr:
         """None series result treated as empty."""
         game = self._game(series_total_games=3, series_wins=2, series_losses=0, series_result=None)
         assert _series_display_str(game) is None
+
+
+# ===========================================================================
+# draw_tight_number — bold single-character path
+# ===========================================================================
+
+class TestDrawTightNumberBold:
+    @needs_pil
+    def test_single_char_bold_no_crash(self):
+        """draw_tight_number with bold=True on a single character must not raise."""
+        import os
+        from PIL import Image, ImageDraw, ImageFont
+        picdir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'pic')
+        font = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 14)
+        img = Image.new('1', (50, 50), 255)
+        draw = ImageDraw.Draw(img)
+        draw_tight_number(draw, 25, 25, '3', font, fill=0, bold=True)
+        assert any(p == 0 for p in img.getdata())

@@ -7,7 +7,7 @@ from collections import deque
 from util import load_json_file, load_yaml_file
 from image_assets import _get_font, ImageDraw
 from image_standings import _WC_STRIP_H
-from image_box import draw_box, draw_wide_box, draw_triple_box
+from image_box import draw_box, draw_wide_box, draw_triple_box, draw_fields_box
 from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
 from image_transactions import draw_transactions_cell
 from image_news import draw_news_cell
@@ -991,4 +991,40 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             )
 
     Himage.save('score_board.bmp')
+    return Himage
+
+
+def draw_fields_grid(Himage, game_state_data, team_data):
+    """Render a 5×3 grid of field-diagram cells (one per game, up to 15).
+
+    Each cell shows the venue field with spray chart, plus a compact header
+    strip with team abbreviations, score, inning, and out count.  Games are
+    shown in the order supplied by game_state_data; live games are placed
+    first so the most actionable cells occupy the top-left slots.
+    """
+    from PIL import Image
+    x_start = 32
+    y_start = 30
+    COLS = 5
+    ROWS = 3
+    MAX_GAMES = COLS * ROWS  # 15
+
+    # Prioritize in-progress games, then pre-game, then final
+    def _sort_key(g):
+        st = g.get('detailed_state', '')
+        if st == 'In Progress':
+            return 0
+        if st in ('Scheduled', 'Pre-Game', 'Warmup'):
+            return 1
+        return 2
+
+    games = sorted(game_state_data, key=_sort_key)[:MAX_GAMES]
+
+    for idx, game in enumerate(games):
+        col = idx % COLS
+        row = idx // COLS
+        sx = col * 150 + x_start
+        sy = row * 150 + y_start
+        Himage = draw_fields_box(Himage, sx, sy, game, team_data)
+
     return Himage

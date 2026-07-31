@@ -3236,6 +3236,36 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             (HX + hp,     hcy),
         ], fill=255, outline=0)
 
+        # Batter figure: stick person with bat on the correct side of home plate.
+        # RHB stands in the left (3B-side) box; LHB stands in the right (1B-side) box.
+        # Top-down view: bat is held back (away from plate), angling up toward the pitcher.
+        _bat_side = game_data.get('bat_side', '')
+        if _bat_side:
+            _fig_gap = max(round(2 * s), 1)   # px between plate edge and figure centre
+            _fig_off = max(round(3 * s), 2)   # half-width of figure footprint
+            _head_r  = max(round(1.5 * s), 1)
+            _fig_h   = max(round(9 * s), 7)   # total figure height (feet→head)
+            _bat_len = max(round(5 * s), 4)
+
+            def _draw_batter(cx, away_dir):
+                """Stick-figure batter centred at cx, feet at hcy. away_dir: ±1 from plate."""
+                _top = hcy - _fig_h           # head-centre y
+                draw.ellipse([cx - _head_r, _top - _head_r,
+                              cx + _head_r, _top + _head_r], fill=0)
+                draw.line([(cx, _top + _head_r + 1), (cx, hcy)], fill=0, width=1)
+                # Bat: from shoulder, angling away from plate and upward
+                _sy = _top + _head_r + max(round(2 * s), 1)
+                draw.line([(cx, _sy),
+                           (cx + away_dir * _bat_len,
+                            _sy - round(_bat_len * 0.7))], fill=0, width=1)
+
+            if _bat_side in ('R', 'S'):
+                # RHB: left of plate, bat held back toward 3B (−x)
+                _draw_batter(HX - hp - _fig_gap - _fig_off, away_dir=-1)
+            if _bat_side in ('L', 'S'):
+                # LHB: right of plate, bat held back toward 1B (+x)
+                _draw_batter(HX + hp + _fig_gap + _fig_off, away_dir=+1)
+
     for runner_key, (bx, by) in [
         ('runner_on_first',  FIRST),
         ('runner_on_second', SECOND),
@@ -3387,10 +3417,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         dx_, dy_ = p1x - p0x, p1y - p0y
         dist_ = _math.sqrt(dx_ ** 2 + dy_ ** 2) or 1
         # Steeper launch angle → taller arc
-        if launch_angle is not None:
-            curve = 0.05 + max(0.0, min(90.0, launch_angle)) / 90.0 * 0.35
-        else:
-            curve = 0.15
+        curve = 0.05 + max(0.0, min(90.0, launch_angle)) / 90.0 * 0.35
         # Right-field hits bow right; left-field hits bow left
         side = 1.0 if hx_ft >= 0 else -1.0
         ctrl_x = mx_ - dy_ / dist_ * dist_ * curve * side
@@ -3428,7 +3455,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             hx_ft, hy_ft = _d_final * _math.sin(_ang), _d_final * _math.cos(_ang)
         land_pt = _fpt(hx_ft, hy_ft)
 
-        if idx == most_recent_idx:
+        if h.get('launch_angle') is not None:
             _bezier_trajectory(HX, HY, *land_pt,
                                launch_angle=h.get('launch_angle'),
                                hx_ft=hx_ft)
@@ -3451,6 +3478,72 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
                 continue
         draw.rectangle([tx - 1, ty, tx + lw + 1, ty + lh], fill=255)
         draw.text((tx, ty), label, font=font_tiny, fill=0)
+
+    return Himage
+
+
+def draw_fields_box(Himage, start_x, start_y, game_data, team_data, scale=1):
+    """Single 150×130 field-diagram cell for the 'fields' scoreboard mode.
+
+    Shows the venue field diagram (with spray chart) plus a compact
+    header strip: away @ home, score, inning, and out count.
+    """
+    s = scale
+    W = 150 * s
+    HDR_H = 20 * s
+    CELL_H = 130 * s  # main cell body (matches standard box height)
+
+    away_id = str(game_data.get('away_team_id', ''))
+    home_id = str(game_data.get('home_team_id', ''))
+    abbrevs = team_data.get('team_abbreviation', {})
+    away = abbrevs.get(away_id, '???')
+    home = abbrevs.get(home_id, '???')
+
+    state = game_data.get('detailed_state', '')
+    # Normalize review/challenge states
+    if state in ('Player challenge', 'Manager challenge', 'Completed Early'):
+        state = 'In Progress'
+
+    inning = game_data.get('current_inning') or 0
+    ing_state = game_data.get('inningState', '')
+    outs = game_data.get('num_of_outs') or 0
+    away_r = game_data.get('away_runs')
+    home_r = game_data.get('home_runs')
+
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9 * s)
+
+    # Header strip: white background + border
+    draw.rectangle(
+        [start_x, start_y, start_x + W - 1, start_y + HDR_H - 1],
+        fill=255, outline=0,
+    )
+
+    if state in ('Final', 'Game Over', 'Final: Tied'):
+        score = f'{away_r}-{home_r}' if away_r is not None and home_r is not None else ''
+        hdr = f'{away} {score} {home} F' if score else f'{away} @ {home} F'
+    elif state in ('In Progress',):
+        score = f'{away_r}-{home_r}' if away_r is not None and home_r is not None else ''
+        _side = {'Top': 'T', 'Bottom': 'B', 'Middle': 'M', 'End': 'E'}.get(ing_state, '')
+        _ing = f'{_side}{inning}' if inning else ''
+        _outs = f' {outs}o' if _ing else ''
+        hdr = f'{away} {score} {home} {_ing}{_outs}'.strip() if score else f'{away} @ {home}'
+    else:
+        start_time = game_data.get('game_start', '')
+        hdr = f'{away} @ {home}' + (f' {start_time}' if start_time else '')
+
+    _hdr_w = int(font.getlength(hdr))
+    _hdr_x = start_x + max(0, (W - _hdr_w) // 2)
+    draw.text((_hdr_x, start_y + (HDR_H - font.getbbox('Ay')[3]) // 2), hdr, font=font, fill=0)
+
+    # Field diagram — fills the cell below the header
+    _draw_field_cell(
+        draw, Himage, start_x, start_y + HDR_H, W, CELL_H, game_data,
+        scale=s, vis_h=CELL_H,
+    )
+
+    # Outer border
+    draw.rectangle([start_x, start_y, start_x + W - 1, start_y + HDR_H + CELL_H - 1], outline=0)
 
     return Himage
 

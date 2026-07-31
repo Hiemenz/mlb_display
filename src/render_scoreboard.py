@@ -3,7 +3,7 @@ Render scoreboard image from cached data/games.json.
 Does NOT call the MLB API — run fetch_games.py first.
 
 Standalone CLI:
-    python src/render_scoreboard.py [--date 2025-04-01] [--mode field|scorecard|pitch|scoreboard]
+    python src/render_scoreboard.py [--date 2025-04-01] [--mode scorecard|pitch|scoreboard]
                                     [--output output/test.bmp] [--open] [--config PATH]
 """
 import os
@@ -17,20 +17,26 @@ from PIL import Image, ImageChops
 from util import load_json_file
 from config_loader import load_config, add_config_arg
 from generate_image import orchestrate_score_board
-from game_detail_fetch import select_game, fetch_field_view_data, fetch_scorecard_data, fetch_pitch_view_data
-from field_view import render_field_view
+from game_detail_fetch import select_game, fetch_scorecard_data, fetch_pitch_view_data
 from scorecard_view import render_scorecard_view
 from pitch_view import render_pitch_view
 from image_derby import render_derby_bracket
+from image_grid import draw_fields_grid
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
 
+_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields')
+
+
 def _get_display_mode(config):
-    """Determine display mode from config."""
+    """Determine display mode from config or DISPLAY_MODE env var (env wins)."""
+    env_mode = os.environ.get('DISPLAY_MODE', '').strip().lower()
+    if env_mode in _VALID_MODES:
+        return env_mode
     mode = config.get('display_mode')
-    if mode and mode in ('scoreboard', 'linescore', 'field', 'scorecard', 'pitch', 'derby'):
+    if mode and mode in _VALID_MODES:
         return mode
     if config.get('scoreboard', True):
         return 'scoreboard'
@@ -60,10 +66,7 @@ def _render_single_game_mode(mode, game_state_data, team_data, config, output_pa
     print(f"Selected game: {away_abbr} @ {home_abbr} (pk={game_pk}, mode={mode})")
 
     try:
-        if mode == 'field':
-            data = fetch_field_view_data(game_pk)
-            image = render_field_view(data, dark_mode=dark_mode)
-        elif mode == 'pitch':
+        if mode == 'pitch':
             data = fetch_pitch_view_data(game_pk)
             image = render_pitch_view(data, dark_mode=dark_mode)
         else:
@@ -171,7 +174,7 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
 
     mode = _get_display_mode(config)
 
-    if mode in ('field', 'scorecard', 'pitch'):
+    if mode in ('scorecard', 'pitch'):
         image = _render_single_game_mode(mode, game_state_data, team_data, config, output_path)
         if image:
             return (image, [(0, 0, image.width, image.height)])
@@ -188,6 +191,14 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
             image.save(output_path)
             print(f"Image saved to {output_path}")
         return (image, [(0, 0, image.width, image.height)])
+
+    if mode == 'fields':
+        image = Image.new('1', (800, 480), 255)
+        image = draw_fields_grid(image, game_state_data, team_data)
+        if output_path:
+            image.save(output_path)
+            print(f"Image saved to {output_path}")
+        return (image, [(0, 0, 800, 480)])
 
     # Snapshot the current saved image before overwriting so we can pixel-diff it.
     # Only used for the fullscreen single-game display where partial updates are
@@ -231,13 +242,13 @@ def main():
         epilog='''
 Examples:
   python src/render_scoreboard.py
-  python src/render_scoreboard.py --mode field
+  python src/render_scoreboard.py --mode scorecard
   python src/render_scoreboard.py --date 2025-04-01 --output output/test.bmp --open
         ''',
     )
     parser.add_argument('--date', type=str, help='Date string for scoreboard header')
     parser.add_argument('--mode', type=str,
-                        choices=['scoreboard', 'linescore', 'field', 'scorecard', 'pitch', 'derby'],
+                        choices=['scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields'],
                         help='Display mode override')
     parser.add_argument('--output', type=str, default=None,
                         help=f'Output image path (default: {_DEFAULT_OUTPUT})')

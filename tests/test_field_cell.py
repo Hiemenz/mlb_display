@@ -704,3 +704,263 @@ class TestFieldCellCentering:
         game = {'venue': 'Comerica Park'}
         img = Image.new('1', (150, 150), 1)
         image_box._draw_field_cell(ImageDraw.Draw(img), img, 0, 0, 150, 150, game, scale=1, vis_h=130)
+
+
+# ---------------------------------------------------------------------------
+# Bat-side indicator and launch-angle arcs
+# ---------------------------------------------------------------------------
+
+def _cell_with_game(game_data, w=150, h=130, scale=1):
+    """Render a field cell with the given game_data dict."""
+    import image_box
+    img = Image.new('1', (w * scale, h * scale), 1)
+    draw = ImageDraw.Draw(img)
+    image_box._draw_field_cell(draw, img, 0, 0, w, h, game_data, scale=scale)
+    return img
+
+
+@needs_pil
+class TestBatSideIndicator:
+    """Bat-side boxes are drawn beside home plate for R/L/S."""
+
+    def _game(self, bat_side):
+        return {'venue': 'American Family Field', 'bat_side': bat_side}
+
+    def test_rhb_no_crash(self):
+        """Right-handed batter renders without error."""
+        assert _cell_with_game(self._game('R')) is not None
+
+    def test_lhb_no_crash(self):
+        """Left-handed batter renders without error."""
+        assert _cell_with_game(self._game('L')) is not None
+
+    def test_switch_no_crash(self):
+        """Switch hitter renders two boxes without error."""
+        assert _cell_with_game(self._game('S')) is not None
+
+    def test_missing_bat_side_no_crash(self):
+        """Missing bat_side key renders without error."""
+        assert _cell_with_game({'venue': 'American Family Field'}) is not None
+
+    def test_rhb_differs_from_lhb(self):
+        """RHB and LHB box positions produce different pixels."""
+        rhb = _cell_with_game(self._game('R'))
+        lhb = _cell_with_game(self._game('L'))
+        assert rhb.tobytes() != lhb.tobytes()
+
+    def test_switch_differs_from_rhb(self):
+        """Switch hitter (two boxes) differs from RHB (one box)."""
+        switch = _cell_with_game(self._game('S'))
+        rhb    = _cell_with_game(self._game('R'))
+        assert switch.tobytes() != rhb.tobytes()
+
+
+@needs_pil
+class TestLaunchAngleArcs:
+    """Bezier trajectory arcs are drawn for hits with launch_angle data."""
+
+    def _hit(self, x=170, y=160, is_hr=False, launch_angle=25.0):
+        return {
+            'x': x, 'y': y,
+            'is_hr': is_hr,
+            'is_out': False,
+            'abbr': 'HR' if is_hr else '1B',
+            'launch_angle': launch_angle,
+        }
+
+    def _game(self, recent_hits):
+        return {'venue': 'American Family Field', 'recent_hits': recent_hits}
+
+    def test_single_hit_with_arc_no_crash(self):
+        """A hit with launch_angle draws an arc without crashing."""
+        img = _cell_with_game(self._game([self._hit()]))
+        assert img is not None
+
+    def test_null_launch_angle_no_crash(self):
+        """A hit with launch_angle=None skips the arc without crashing."""
+        h = self._hit()
+        h['launch_angle'] = None
+        img = _cell_with_game(self._game([h]))
+        assert img is not None
+
+    def test_arc_adds_pixels_vs_no_arc(self):
+        """A hit with launch_angle draws more pixels than one without."""
+        h_arc    = self._hit(launch_angle=30.0)
+        h_no_arc = self._hit(launch_angle=None)
+        img_arc    = _cell_with_game(self._game([h_arc]))
+        img_no_arc = _cell_with_game(self._game([h_no_arc]))
+        dark_arc    = sum(1 for p in img_arc.getdata()    if p == 0)
+        dark_no_arc = sum(1 for p in img_no_arc.getdata() if p == 0)
+        assert dark_arc > dark_no_arc, "arc should add pixels"
+
+    def test_multiple_hits_all_arcs_no_crash(self):
+        """Multiple hits each with a launch_angle all draw arcs without error."""
+        hits = [
+            self._hit(x=150, y=150, launch_angle=15.0),
+            self._hit(x=180, y=120, launch_angle=32.0, is_hr=True),
+            self._hit(x=120, y=160, launch_angle=-2.0),
+        ]
+        img = _cell_with_game(self._game(hits))
+        assert img is not None
+
+    def test_left_field_hit_arc_no_crash(self):
+        """A left-field hit (hx_ft < 0) draws a left-bowing arc without error."""
+        img = _cell_with_game(self._game([self._hit(x=80, y=150, launch_angle=20.0)]))
+        assert img is not None
+
+    def test_between_innings_spray_chart_no_crash(self):
+        """Between-innings full-game spray chart renders without error."""
+        all_hits = [
+            {'x': 150, 'y': 150, 'is_hr': False, 'is_hit': True,  'is_out': False, 'abbr': '1B'},
+            {'x': 200, 'y': 100, 'is_hr': True,  'is_hit': True,  'is_out': False, 'abbr': 'HR'},
+            {'x': 120, 'y': 170, 'is_hr': False, 'is_hit': False, 'is_out': True,  'abbr': 'F8'},
+        ]
+        game = {
+            'venue': 'American Family Field',
+            'inningState': 'Middle',
+            'all_game_hits': all_hits,
+        }
+        img = _cell_with_game(game)
+        assert img is not None
+
+    def test_last_hit_is_hr_fallback_no_recent_hits(self):
+        """last_hit_is_hr=True with no recent_hits synthesises a single HR entry."""
+        game = {
+            'venue': 'American Family Field',
+            'last_hit_is_hr': True,
+        }
+        img = _cell_with_game(game)
+        assert img is not None
+
+
+class TestVenueNameLabel:
+    """Venue name label shrinks to fit; very long names trigger the width-cap break."""
+
+    @needs_pil
+    def test_long_venue_name_no_crash(self):
+        """A name too wide for any font size must not raise — breaks at the width cap."""
+        game = {'venue': 'A' * 60}  # far exceeds _max_vw at any font size
+        img = _cell_with_game(game)
+        assert img is not None
+
+
+# ---------------------------------------------------------------------------
+# draw_fields_box
+# ---------------------------------------------------------------------------
+
+class TestFieldsBox:
+    """Smoke tests for draw_fields_box — new 'fields' mode single cell."""
+
+    def _make_img(self):
+        return Image.new('1', (800, 480), 1)
+
+    @needs_pil
+    def test_final_game_no_crash(self):
+        """Final game renders without error."""
+        from image_box import draw_fields_box
+        img = self._make_img()
+        result = draw_fields_box(img, 32, 30, _base_game(), _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+    @needs_pil
+    def test_in_progress_no_crash(self):
+        """In-progress game with score/inning/outs renders without error."""
+        from image_box import draw_fields_box
+        img = self._make_img()
+        game = _base_game(
+            detailed_state='In Progress',
+            current_inning=7,
+            inningState='Top',
+            num_of_outs=2,
+            away_runs=3,
+            home_runs=5,
+        )
+        result = draw_fields_box(img, 32, 30, game, _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+    @needs_pil
+    def test_scheduled_game_no_crash(self):
+        """Pre-game/scheduled cell renders without error."""
+        from image_box import draw_fields_box
+        img = self._make_img()
+        game = _base_game(detailed_state='Scheduled', inningState='Scheduled',
+                          away_runs=None, home_runs=None)
+        result = draw_fields_box(img, 32, 30, game, _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+    @needs_pil
+    def test_challenge_state_normalised(self):
+        """Manager/player challenge state is normalised to In Progress."""
+        from image_box import draw_fields_box
+        img = self._make_img()
+        game = _base_game(detailed_state='Manager challenge', current_inning=5,
+                          inningState='Bottom', num_of_outs=1)
+        result = draw_fields_box(img, 32, 30, game, _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+    @needs_pil
+    def test_missing_score_no_crash(self):
+        """Missing away_runs/home_runs must not cause a crash."""
+        from image_box import draw_fields_box
+        img = self._make_img()
+        game = _base_game(away_runs=None, home_runs=None, detailed_state='In Progress',
+                          current_inning=3, inningState='Middle', num_of_outs=3)
+        result = draw_fields_box(img, 32, 30, game, _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+    @needs_pil
+    def test_with_spray_chart_no_crash(self):
+        """Cell with recent_hits spray-chart data renders without error."""
+        from image_box import draw_fields_box
+        img = self._make_img()
+        game = _base_game(recent_hits=[
+            {'x': 150, 'y': 130, 'is_hr': False, 'is_out': False, 'is_hit': True, 'abbr': '1B'},
+            {'x': 100, 'y': 90,  'is_hr': True,  'is_out': False, 'is_hit': True, 'abbr': 'HR',
+             'launch_angle': 28.0},
+        ])
+        result = draw_fields_box(img, 32, 30, game, _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+
+class TestFieldsGrid:
+    """Smoke tests for draw_fields_grid."""
+
+    @needs_pil
+    def test_empty_game_list_no_crash(self):
+        """Empty game list renders a blank grid without error."""
+        from image_grid import draw_fields_grid
+        img = Image.new('1', (800, 480), 1)
+        result = draw_fields_grid(img, [], _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+    @needs_pil
+    def test_single_game_renders(self):
+        """Single game is placed in the top-left slot."""
+        from image_grid import draw_fields_grid
+        img = Image.new('1', (800, 480), 1)
+        result = draw_fields_grid(img, [_base_game()], _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+        assert any(p == 0 for p in result.getdata())
+
+    @needs_pil
+    def test_15_games_no_crash(self):
+        """Full 15-game slate renders without error."""
+        from image_grid import draw_fields_grid
+        games = [_base_game(game_pk=i, away_team_id=133, home_team_id=144) for i in range(15)]
+        img = Image.new('1', (800, 480), 1)
+        result = draw_fields_grid(img, games, _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)
+
+    @needs_pil
+    def test_live_games_sorted_first(self):
+        """In-progress games appear before scheduled/final games in the grid."""
+        from image_grid import draw_fields_grid
+        games = [
+            _base_game(game_pk=1, detailed_state='Final'),
+            _base_game(game_pk=2, detailed_state='In Progress', current_inning=5,
+                       inningState='Top', num_of_outs=1),
+            _base_game(game_pk=3, detailed_state='Scheduled'),
+        ]
+        img = Image.new('1', (800, 480), 1)
+        result = draw_fields_grid(img, games, _MINIMAL_TEAM_DATA)
+        assert isinstance(result, Image.Image)

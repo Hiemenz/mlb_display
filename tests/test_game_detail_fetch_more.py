@@ -21,7 +21,6 @@ from game_detail_fetch import (
     fetch_pitch_view_data,
     fetch_scoreboard_live_extras,
     fetch_between_inning_info,
-    fetch_field_view_data,
     fetch_scorecard_data,
     _extract_pitches_detailed,
     _count_abs_challenges_used,
@@ -1087,80 +1086,6 @@ class TestExtractAllHitCoordinates:
         }
         result = _extract_all_hit_coordinates({'allPlays': [play]})
         assert result[0]['player'] == ''
-
-
-# ===========================================================================
-# fetch_field_view_data
-# ===========================================================================
-
-class TestFetchFieldViewData:
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_happy_path_fields(self, mock_fetch):
-        """Happy path fields."""
-        mock_fetch.return_value = _live_feed()
-        result = fetch_field_view_data(123)
-        assert result['away_abbr'] == 'BOS'
-        assert result['home_abbr'] == 'NYY'
-        assert result['runner_first'] is True
-        assert result['runner_second'] is False
-        assert result['runner_third'] is False
-        assert result['venue'] == 'Yankee Stadium'
-        assert result['winner'] == 'Logan Webb'
-        assert result['loser'] == 'Reid Ray'
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_last_play_desc_from_current_play(self, mock_fetch):
-        """Last play desc from current play."""
-        mock_fetch.return_value = _live_feed(liveData={'plays': {'currentPlay': {
-            'result': {'description': 'Mookie Betts singles.'},
-        }}})
-        result = fetch_field_view_data(123)
-        assert result['last_play'] == 'Mookie Betts singles.'
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_last_play_desc_falls_back_to_matching_half_inning(self, mock_fetch):
-        """Last play desc falls back to matching half inning."""
-        completed = _play(event='Single', description='Fallback play.', inning=5, is_top=True, half='top')
-        mock_fetch.return_value = _live_feed(liveData={
-            'linescore': {'currentInning': 5, 'inningState': 'Top'},
-            'plays': {'currentPlay': {'result': {'description': ''}}, 'allPlays': [completed]},
-        })
-        result = fetch_field_view_data(123)
-        assert result['last_play'] == 'Fallback play.'
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_last_play_desc_not_shown_for_previous_half(self, mock_fetch):
-        """A completed play from a different inning/half must not bleed into the new half's header."""
-        completed = _play(event='Single', description='Old play.', inning=4, is_top=False, half='bottom')
-        mock_fetch.return_value = _live_feed(liveData={
-            'linescore': {'currentInning': 5, 'inningState': 'Top'},
-            'plays': {'currentPlay': {'result': {'description': ''}}, 'allPlays': [completed]},
-        })
-        result = fetch_field_view_data(123)
-        assert result['last_play'] == ''
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_hit_coords_from_last_hit(self, mock_fetch):
-        """Hit coords from last hit."""
-        hit_play = _play(event='Double', batter_name='Betts',
-                          hit_data={'coordinates': {'coordX': 33.0, 'coordY': 44.0}})
-        mock_fetch.return_value = _live_feed(liveData={'plays': {'allPlays': [hit_play]}})
-        result = fetch_field_view_data(123)
-        assert result['hit_coords'] == (33.0, 44.0)
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_no_hits_gives_none_hit_coords(self, mock_fetch):
-        """No hits gives none hit coords."""
-        mock_fetch.return_value = _live_feed()
-        result = fetch_field_view_data(123)
-        assert result['hit_coords'] is None
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_innings_list_built(self, mock_fetch):
-        """Innings list built."""
-        mock_fetch.return_value = _live_feed()
-        result = fetch_field_view_data(123)
-        assert result['innings'][0] == {'num': 1, 'away_runs': 0, 'home_runs': 1}
 
 
 # ===========================================================================
