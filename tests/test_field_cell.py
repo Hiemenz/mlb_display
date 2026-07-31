@@ -613,10 +613,10 @@ class TestFieldCellRecentHits:
         assert list(img1.getdata()) != list(img2.getdata()), \
             "HR with distance should render more pixels than HR without distance"
 
-    def test_hr_label_still_at_landing_spot(self):
-        """_draw_field_cell still draws the 'HR ###' text at the landing spot
-        for each recent HR, in addition to the bottom-right corner badge
-        draw_triple_box adds for the most recent one."""
+    def test_hr_label_at_landing_spot_ignores_distance(self):
+        """_draw_field_cell draws 'HR' at the landing spot regardless of distance.
+        Distance is no longer shown in the field cell (it moved to the draw_triple_box
+        footer badge), so renders with and without distance must be identical."""
         import image_box
         game_with_dist = {
             'venue': 'American Family Field',
@@ -632,8 +632,8 @@ class TestFieldCellRecentHits:
         image_box._draw_field_cell(ImageDraw.Draw(img1), img1, 0, 0, 150, 150, game_with_dist, scale=1, vis_h=150)
         img2 = Image.new('1', (150, 150), 1)
         image_box._draw_field_cell(ImageDraw.Draw(img2), img2, 0, 0, 150, 150, game_no_dist, scale=1, vis_h=150)
-        assert list(img1.getdata()) != list(img2.getdata()), \
-            "landing-spot HR label should still vary with distance"
+        assert list(img1.getdata()) == list(img2.getdata()), \
+            "landing-spot HR label must be 'HR' regardless of distance"
 
     @needs_pil
     def test_two_hits_more_pixels_than_one(self):
