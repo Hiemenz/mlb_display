@@ -3315,6 +3315,45 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         ty = max(_cy0 + 1, min(_cy1 - lh - 1, ty))
         _fence_labels.append((tx, ty, lw, lh, label))
 
+    # Between innings: show full-game spray chart (all batted balls as dots).
+    _between_innings = game_data.get('inningState') in ('Middle', 'End')
+    _all_game_hits   = game_data.get('all_game_hits') or []
+    if _between_innings and _all_game_hits:
+        for h in _all_game_hits:
+            hx_ft = (h['x'] - 125) * 2.0
+            hy_ft = (200 - h['y'])  * 2.0
+            is_hr  = h.get('is_hr',  False)
+            is_hit = h.get('is_hit', not h.get('is_out', False))
+            if is_hr:
+                _ang   = _math.atan2(hx_ft, hy_ft)
+                _d_ball = _math.hypot(hx_ft, hy_ft)
+                # _wall_dist_at_angle not yet defined here — approximate via
+                # the wall polygon directly
+                _wall_norm = _math.sqrt(hx_ft**2 + hy_ft**2) or 1
+                _ux, _uy = hx_ft / _wall_norm, hy_ft / _wall_norm
+                # push just past fence in screen coords
+                _pt_wall = _fpt(hx_ft, hy_ft)
+                px, py = int(_pt_wall[0] + _ux * 6 * s), int(_pt_wall[1] - _uy * 6 * s)
+                px = max(_cx0 + 1, min(_cx1 - 1, px))
+                py = max(_cy0 + 1, min(_cy1 - 1, py))
+                r = max(round(3 * s), 3)
+                draw.polygon([(px, py - r), (px + r, py), (px, py + r), (px - r, py)], fill=0)
+            else:
+                pt = _fpt(hx_ft, hy_ft)
+                px, py = int(pt[0]), int(pt[1])
+                px = max(_cx0 + 1, min(_cx1 - 1, px))
+                py = max(_cy0 + 1, min(_cy1 - 1, py))
+                r = max(round(2 * s), 2)
+                if is_hit:
+                    draw.ellipse([px - r, py - r, px + r, py + r], fill=0)
+                else:
+                    draw.ellipse([px - r, py - r, px + r, py + r], outline=0)
+        # Fence labels still show — no recent play label to conflict with
+        for tx, ty, lw, lh, label in _fence_labels:
+            draw.rectangle([tx - 1, ty, tx + lw + 1, ty + lh], fill=255)
+            draw.text((tx, ty), label, font=font_tiny, fill=0)
+        return Himage
+
     # Batted-ball markers — last 7 balls put in play (fair or foul).
     # API hit coordinates: home plate ≈ (125, 200); scale ≈ 2 ft per unit.
     # recent_hits is newest-last; fall back to single last_hit_x/y.

@@ -464,7 +464,8 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         # Last 7 batted balls in play (fair or foul) for the field diagram.
         # Uses the same coord extraction as _extract_all_hit_coordinates but
         # keeps only the most recent 7 and adds is_hr/is_out flags.
-        recent_hits = _extract_all_hit_coordinates(plays)[-7:]
+        _all_game_hits = _extract_all_hit_coordinates(plays)
+        recent_hits = _all_game_hits[-7:]
 
         # Wide-cell extras: current AB pitches (locations + type) and the last 5 game events.
         ab_pitches = _extract_pitches_detailed(plays)
@@ -613,6 +614,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'last_hit_is_out': last_hit_is_out,
             'last_hit_is_hr': last_hit_is_hr,
             'recent_hits': recent_hits,
+            'all_game_hits': _all_game_hits,
             'ab_pitches': ab_pitches,
             'half_inning_plays': half_inning_plays,
             'away_pitcher_ks': away_pitcher_ks,
