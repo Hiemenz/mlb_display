@@ -3289,45 +3289,31 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
 
     # Fence distance markers: 5 points evenly spaced by angle from home plate
     # (mirrors real outfield wall signage — LF pole, two power-alley gaps, CF, RF pole)
-    _wall_font_size = max(round(10 * s), 10)
+    _wall_font_size = max(round(9 * s), 9)
     font_tiny = _get_font(_wall_font_size)
     thetas = [_math.atan2(x_ft, y_ft) for x_ft, y_ft in wall_poly]
     theta_lo, theta_hi = thetas[0], thetas[-1]
     n_markers = 5
-    _label_offs = max(round(16 * s), 16)  # px to push label outside the fence arc
+    _label_offs = max(round(9 * s), 9)  # px to push label outside the fence arc
+    _fence_labels = []  # (tx, ty, lw, lh, label) — drawn after play labels
     for k in range(n_markers):
         target = theta_lo + (k / (n_markers - 1)) * (theta_hi - theta_lo)
         idx = min(range(len(thetas)), key=lambda i: abs(thetas[i] - target))
         x_ft, y_ft = wall_poly[idx]
         pt = wall_pts[idx]
         dist = round(_math.sqrt(x_ft**2 + y_ft**2))
-
-        # Radial unit vector pointing away from home plate (i.e. into the stands).
         norm = _math.sqrt(x_ft**2 + y_ft**2) or 1
         ux, uy = x_ft / norm, y_ft / norm
-        # Place label outside the wall: move further out along the same radial
-        # direction from home plate. At the foul poles this direction runs
-        # right along the fence/foul line, so the offset has to be large
-        # enough to clear the pole label past where the wall curves away —
-        # a small nudge leaves the label sitting on top of the line.
-        # x-pixel and x-field share the same sign; y-pixel is inverted vs y-field.
         lx_c = int(pt[0] + ux * _label_offs)
         ly_c = int(pt[1] - uy * _label_offs)
-
-        # Local wall angle at this point (screen-space), from the neighbouring
-        # fence points, so the label's baseline runs parallel to the fence.
-        i0, i1 = max(0, idx - 1), min(len(wall_pts) - 1, idx + 1)
-        (nx0, ny0), (nx1, ny1) = wall_pts[i0], wall_pts[i1]
-        wall_angle = _math.degrees(_math.atan2(ny1 - ny0, nx1 - nx0))
-        # A wall segment has two equivalent directions 180° apart; pick the one
-        # that keeps the label upright/readable instead of upside-down.
-        if wall_angle > 90:
-            wall_angle -= 180
-        elif wall_angle < -90:
-            wall_angle += 180
-
-        _draw_rotated_text(Himage, (lx_c, ly_c), str(dist), font_tiny, wall_angle,
-                            bounds=(_cx0, _cy0, _cx1, _cy1), font_size=_wall_font_size)
+        label = str(dist)
+        lw = int(font_tiny.getlength(label))
+        lh = font_tiny.getbbox('0')[3]
+        tx = lx_c - lw // 2
+        ty = ly_c - lh // 2
+        tx = max(_cx0 + 1, min(_cx1 - lw - 1, tx))
+        ty = max(_cy0 + 1, min(_cy1 - lh - 1, ty))
+        _fence_labels.append((tx, ty, lw, lh, label))
 
     # Batted-ball markers — last 7 balls put in play (fair or foul).
     # API hit coordinates: home plate ≈ (125, 200); scale ≈ 2 ft per unit.
@@ -3357,12 +3343,19 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
                 return d0 + (d1 - d0) * frac
         return _math.hypot(*wall_poly[-1])
 
-    def _bezier_trajectory(p0x, p0y, p1x, p1y):
+    def _bezier_trajectory(p0x, p0y, p1x, p1y, launch_angle=None, hx_ft=0.0):
         mx_, my_ = (p0x + p1x) / 2, (p0y + p1y) / 2
         dx_, dy_ = p1x - p0x, p1y - p0y
         dist_ = _math.sqrt(dx_ ** 2 + dy_ ** 2) or 1
-        ctrl_x = mx_ - dy_ / dist_ * dist_ * 0.15
-        ctrl_y = my_ + dx_ / dist_ * dist_ * 0.15
+        # Steeper launch angle → taller arc
+        if launch_angle is not None:
+            curve = 0.05 + max(0.0, min(90.0, launch_angle)) / 90.0 * 0.35
+        else:
+            curve = 0.15
+        # Right-field hits bow right; left-field hits bow left
+        side = 1.0 if hx_ft >= 0 else -1.0
+        ctrl_x = mx_ - dy_ / dist_ * dist_ * curve * side
+        ctrl_y = my_ + dx_ / dist_ * dist_ * curve * side
         pts = []
         for i in range(13):
             t = i / 12
@@ -3373,6 +3366,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
 
     # recent_hits is oldest-first; the last entry is the most recent play.
     most_recent_idx = len(recent_hits) - 1
+    _recent_play_rect = None  # bounding box of the most recent play label
 
     for idx, h in enumerate(recent_hits):
         hx_ft = (h['x'] - 125) * 2.0
@@ -3381,9 +3375,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         is_out = h.get('is_out', False)
         abbr   = h.get('abbr', 'HR' if is_hr else ('F' if is_out else '1B'))
         if is_hr:
-            dist_ft = h.get('distance')
-            if dist_ft is not None:
-                abbr = f'HR {int(dist_ft)}'
+            abbr = 'HR'
 
         # Landing spot: real hit coordinates for every ball. A confirmed HR must
         # clear the fence visually — if the API coordinates land short of the wall
@@ -3398,16 +3390,28 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         land_pt = _fpt(hx_ft, hy_ft)
 
         if idx == most_recent_idx:
-            _bezier_trajectory(HX, HY, *land_pt)
+            _bezier_trajectory(HX, HY, *land_pt,
+                               launch_angle=h.get('launch_angle'),
+                               hx_ft=hx_ft)
 
         # Play abbreviation label (F, L, G, HR, 1B, 2B, 3B …) at the landing spot.
-        # HR lands at the cell edge; keep text inside by clamping y. The most
-        # recent HR also gets a bold distance badge in the tile's bottom-right
-        # corner (see draw_triple_box), above the venue name.
         tw = max(int(font_tiny.getlength(abbr)), 1)
         _tx = max(_cx0, min(_cx1 - tw, land_pt[0] - tw // 2))
         _ty = max(_cy0 + 1, land_pt[1] - 9)
         draw.text((_tx, _ty), abbr, font=font_tiny, fill=0)
+        if idx == most_recent_idx:
+            lh = font_tiny.getbbox('Ay')[3]
+            _recent_play_rect = (_tx - 1, _ty, _tx + tw + 1, _ty + lh)
+
+    # Draw fence distance labels, suppressing any that overlap the most recent
+    # play label (they reappear once that play fades into an older hit).
+    for tx, ty, lw, lh, label in _fence_labels:
+        if _recent_play_rect is not None:
+            rx0, ry0, rx1, ry1 = _recent_play_rect
+            if not (tx + lw < rx0 or tx > rx1 or ty + lh < ry0 or ty > ry1):
+                continue
+        draw.rectangle([tx - 1, ty, tx + lw + 1, ty + lh], fill=255)
+        draw.text((tx, ty), label, font=font_tiny, fill=0)
 
     return Himage
 
@@ -3490,8 +3494,8 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         _hit_angle = _last_hit.get('launch_angle')
         _stat_lines = [p for p in [
             f'{round(_hit_angle)}°' if _hit_angle is not None else '',
-            f'{round(_hit_velo)} Mph' if _hit_velo is not None else '',
             f'{int(_hit_dist)} ft' if _hit_dist is not None else '',
+            f'{round(_hit_velo)} Mph' if _hit_velo is not None else '',
         ] if p]
         if _stat_lines:
             _hr_font = _get_font(round(10 * scale))
