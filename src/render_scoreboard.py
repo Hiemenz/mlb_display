@@ -27,10 +27,16 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
 
+_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields')
+
+
 def _get_display_mode(config):
-    """Determine display mode from config."""
+    """Determine display mode from config or DISPLAY_MODE env var (env wins)."""
+    env_mode = os.environ.get('DISPLAY_MODE', '').strip().lower()
+    if env_mode in _VALID_MODES:
+        return env_mode
     mode = config.get('display_mode')
-    if mode and mode in ('scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields'):
+    if mode and mode in _VALID_MODES:
         return mode
     if config.get('scoreboard', True):
         return 'scoreboard'

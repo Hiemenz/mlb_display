@@ -61,6 +61,24 @@ def test_get_display_mode_default_when_absent():
     assert render_scoreboard._get_display_mode({}) == 'scoreboard'
 
 
+def test_get_display_mode_env_var_overrides_config(monkeypatch):
+    """DISPLAY_MODE env var takes priority over config's display_mode."""
+    monkeypatch.setenv('DISPLAY_MODE', 'fields')
+    assert render_scoreboard._get_display_mode({'display_mode': 'scoreboard'}) == 'fields'
+
+
+def test_get_display_mode_env_var_invalid_falls_through(monkeypatch):
+    """An invalid DISPLAY_MODE env var is ignored; config takes over."""
+    monkeypatch.setenv('DISPLAY_MODE', 'bogus')
+    assert render_scoreboard._get_display_mode({'display_mode': 'pitch'}) == 'pitch'
+
+
+def test_get_display_mode_env_var_empty_falls_through(monkeypatch):
+    """Empty DISPLAY_MODE env var is treated as unset; config wins."""
+    monkeypatch.setenv('DISPLAY_MODE', '')
+    assert render_scoreboard._get_display_mode({'display_mode': 'derby'}) == 'derby'
+
+
 # ---------------------------------------------------------------------------
 # 2. _render_single_game_mode
 # ---------------------------------------------------------------------------
