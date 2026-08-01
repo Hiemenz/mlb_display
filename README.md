@@ -10,7 +10,7 @@ Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480
 
 ## Display Modes
 
-Switch modes any time via `display_mode` in `config/config.yaml` or via the Discord bot. Valid modes: `scoreboard`, `field`, `scorecard`, `pitch`, `derby` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
+Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `pitch`, `derby` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
 
 ### Scoreboard — 5×3 grid (15 games)
 
@@ -55,7 +55,7 @@ Wide-cell behavior is configurable:
 
 - `wide_cell_always` — always show a wide cell for the in-progress game farthest along, even with a full 15-game slate (one game is dropped to make room).
 - `wide_cell_featured` — reserve the wide cell for the primary team's game while it's live, falling back to the farthest-along game otherwise.
-- `triple_cell_live` — expand the featured live game to a **3-cell (435 px) tile**: score/linescore, pitch zone/situation, and a third cell with the venue outfield wall, infield diamond, and live runner positions. Falls back to a 2-cell tile when a 3-unit tile can't fit the column.
+- `triple_cell_live` — expand the featured live game to a **3-cell (435 px) tile**: score/linescore, pitch zone/situation, and a third cell with the venue outfield wall, infield diamond, live runner positions, and a **bat-side stick figure** at home plate indicating the batter's handedness (switch hitters draw both). Falls back to a 2-cell tile when a 3-unit tile can't fit the column.
 - `hide_non_live_games` — when at least one game is live, drop finished and not-yet-started games from the grid so live games can expand into wide/triple tiles (up to 3 live games get triple tiles). The pinned favorite game is never hidden.
 
 ---
@@ -118,11 +118,13 @@ Single-game focus mode for your primary team. Enable by setting `FEATURED_TEAM_F
 
 ---
 
-### Field View
+### Fields Mode
 
-Single-game display with a venue-accurate outfield diagram. All 30 MLB parks are supported — the fence is drawn as a multi-segment wall with LF/LCF/CF/RCF/RF distance labels. Every batted ball is plotted on the field (most recent: filled circle with crosshair; earlier hits: open circles). A mini strike zone overlay shows pitches for the current at-bat. The right panel shows score, inning, count, outs, batter/pitcher matchup, last play text, and a mini per-inning linescore.
+A 5×3 grid where every cell shows a **venue-accurate outfield diagram** and spray chart instead of the usual scoreboard tile. Live games are placed in the top-left slots; pre-game and final games fill the rest. Each cell has a compact header strip with team abbreviations, score, inning, and out count.
 
-![Field View](docs/field_mode.png)
+The field diagram itself is the same venue-accurate renderer used in the triple-cell mode — all 30 MLB parks are supported, with the fence drawn as a multi-segment wall and LF/LCF/CF/RCF/RF distance labels. During a game: recent batted balls are plotted as markers with Bézier flight arcs for balls with launch-angle data. Between half-innings: the full-game spray chart is shown for all batted balls.
+
+![Fields Mode](docs/fields_mode.png)
 
 ---
 
@@ -182,7 +184,8 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 | **Standings sidebar** | AL East/Central/West on left edge, NL on right — 1st through 5th |
 | **Streak badge** | `W7` / `L3` displayed below each team's logo in the standings sidebar |
 | **Movement indicator** | Line on sidebar outer edge when a team changed rank in the last 20 hours |
-| **Wide / triple cell** | Featured game gets a 2- or 3-slot tile with pitch zone, K strip, BSO, and outfield wall |
+| **Fields mode** | 5×3 grid of venue field diagrams + spray charts; live games top-left |
+| **Wide / triple cell** | Featured game gets a 2- or 3-slot tile with pitch zone, K strip, BSO, outfield wall, and bat-side batter figure |
 | **Hide non-live** | Drop finished/upcoming games so live games expand into wide/triple tiles |
 | **No-hitter alert** | Header inverts (white-on-black) when a no-hitter or perfect game is active ≥ 6th inning |
 | **Win probability** | Live bar with logos at their real-time win % position |
@@ -215,7 +218,8 @@ Edit `config/config.yaml`:
 
 ```yaml
 # ── Display mode ──────────────────────────────────────────────
-# scoreboard | linescore | field | scorecard | pitch | derby
+# scoreboard | linescore | fields | scorecard | pitch | derby
+# DISPLAY_MODE env var overrides this (useful for one-off mode switches without editing YAML)
 display_mode: scoreboard
 auto_derby_mode: true        # auto-show the Derby bracket on Derby day when no games
 
@@ -327,6 +331,9 @@ poetry run python main.py --sport-id 8   # World Baseball Classic
 
 # Fullscreen featured game (primary team, single-game focus)
 FEATURED_TEAM_FULLSCREEN=true poetry run python main.py
+
+# Override display mode for one run without editing config.yaml
+DISPLAY_MODE=fields poetry run python main.py
 ```
 
 **Crontab** — run every 14 minutes:
@@ -420,7 +427,6 @@ mlb_display/
 │   ├── image_box.py              # Per-tile drawing (draw_box)
 │   ├── image_featured.py         # Fullscreen featured-game renderer (draw_featured_game_fullscreen)
 │   ├── image_standings.py        # Standings sidebar + wildcard strip
-│   ├── field_view.py             # Field diagram renderer
 │   ├── scorecard_view.py         # At-bat scorecard renderer
 │   ├── pitch_view.py             # Pitch location renderer
 │   ├── image_derby.py            # Home Run Derby bracket renderer
