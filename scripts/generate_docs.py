@@ -15,7 +15,7 @@ Produces:
     docs/tile_live_detail.png       — single live tile between-innings (cropped)
     docs/tile_final.png             — single final tile (cropped)
     docs/wide_cell.png              — wide (2-slot) live cell with pitch zone
-    docs/field_mode.png             — field diagram view
+    docs/fields_mode.png            — 5×3 fields-mode grid
     docs/pitch_mode.png             — pitch zone view
     docs/scorecard_mode.png         — at-bat scorecard view
     docs/standings_sidebar.png      — standings sidebar strip with streak badges
@@ -713,14 +713,50 @@ def generate_wide_cell():
     _save(wide, 'wide_cell.png', scale=3)
 
 
-def generate_field_mode():
-    """Generate field mode."""
-    print("Generating field_mode.png ...")
-    from field_view import render_field_view
+def generate_fields_mode():
+    """Generate fields mode — 5×3 grid of field-diagram cells."""
+    print("Generating fields_mode.png ...")
+    from image_grid import draw_fields_grid
 
+    def _with_hits(game, venue, hits, inning_state='Middle'):
+        g = dict(game)
+        g['venue'] = venue
+        g['inningState'] = inning_state
+        g['all_game_hits'] = hits
+        return g
+
+    _hits_yankee = [
+        {'x': 160, 'y': 170, 'is_hr': False, 'is_hit': True},
+        {'x':  80, 'y': 100, 'is_hr': True,  'is_hit': True},
+        {'x': 200, 'y': 195, 'is_hr': False, 'is_hit': False},
+        {'x': 175, 'y': 155, 'is_hr': False, 'is_hit': True},
+    ]
+    _hits_oracle = [
+        {'x': 150, 'y': 180, 'is_hr': False, 'is_hit': True},
+        {'x':  60, 'y': 120, 'is_hr': True,  'is_hit': True},
+        {'x': 220, 'y': 210, 'is_hr': False, 'is_hit': False},
+        {'x': 170, 'y': 160, 'is_hr': False, 'is_hit': True},
+        {'x': 100, 'y': 140, 'is_hr': False, 'is_hit': False},
+    ]
+    _hits_truist = [
+        {'x': 140, 'y': 175, 'is_hr': False, 'is_hit': True},
+        {'x': 185, 'y': 130, 'is_hr': True,  'is_hit': True},
+        {'x':  70, 'y': 145, 'is_hr': False, 'is_hit': False},
+    ]
+
+    games = (
+        [_with_hits(LIVE_GAMES[0], 'Yankee Stadium', _hits_yankee)]
+        + [_with_hits(LIVE_GAMES[1], 'Oracle Park', _hits_oracle)]
+        + [_with_hits(LIVE_GAMES[2], 'Truist Park', _hits_truist)]
+        + LIVE_GAMES[3:]
+        + FINAL_GAMES[:5]
+        + PREGAME_GAMES[:3]
+    )
+
+    img = Image.new('1', (800, 480), 255)
     with _NO_NETWORK:
-        img = render_field_view(_field_fixture())
-    _save(img, 'field_mode.png', scale=1)
+        img = draw_fields_grid(img, games, TEAM_DATA)
+    _save(img, 'fields_mode.png', scale=1)
 
 
 def generate_pitch_mode():
@@ -773,7 +809,6 @@ def generate_demo_gif():
     from image_grid import draw_out_of_town_score_board
     from image_box import draw_wide_box
     from image_standings import draw_standings_sidebar, draw_wildcard_header
-    from field_view import render_field_view
     from pitch_view import render_pitch_view
 
     frames = []
@@ -828,8 +863,10 @@ def generate_demo_gif():
         img = draw_standings_sidebar(img, STANDINGS_DATA, TEAM_DATA, side='right')
         _add(img, 4)
 
-        # Frame 5: Field view
-        img = render_field_view(_field_fixture())
+        # Frame 5: Fields mode grid
+        from image_grid import draw_fields_grid as _dfg
+        img = Image.new('1', (800, 480), 255)
+        img = _dfg(img, LIVE_GAMES * 3, TEAM_DATA)
         _add(img, 3)
 
         # Frame 6: Pitch view
@@ -867,7 +904,7 @@ def main():
     generate_tile_live_detail()
     generate_tile_final()
     generate_wide_cell()
-    generate_field_mode()
+    generate_fields_mode()
     generate_pitch_mode()
     generate_scorecard_mode()
     generate_standings_sidebar()
