@@ -524,6 +524,65 @@ class TestFieldCellRunners:
 
 
 # ---------------------------------------------------------------------------
+# hit-coordinate → feet transform
+# ---------------------------------------------------------------------------
+
+class TestHitCoordTransform:
+    """The batted-ball transform must share the fence polygons' coordinate system.
+
+    data/mlbam_walls.json and data/mlbam_infield.json were built by
+    src/extract_infield_polygons.py with scale 2.495671 and origin (125.0,
+    199.0).  Plotting hits with any other constants puts balls in a different
+    coordinate space than the fence they are drawn against — the symptom being
+    that real home runs land short of the wall, on the warning track.
+    """
+
+    def test_constants_match_polygon_extraction(self):
+        import extract_infield_polygons as eip
+        import image_box
+        assert image_box._HC_SCALE == eip._SCALE
+        assert image_box._HC_X_CENTER == eip._HC_X_CENTER
+        assert image_box._HC_Y_CENTER == eip._HC_Y_CENTER
+
+    def test_transform_matches_extraction_formula(self):
+        import extract_infield_polygons as eip
+        from image_box import _hit_coord_to_feet
+        for cx, cy in [(125.0, 199.0), (44.78, 55.02), (205.63, 68.46), (150.0, 120.0)]:
+            assert _hit_coord_to_feet(cx, cy) == pytest.approx(
+                (eip._SCALE * (cx - eip._HC_X_CENTER),
+                 eip._SCALE * (eip._HC_Y_CENTER - cy)))
+
+    def test_home_plate_is_origin(self):
+        from image_box import _hit_coord_to_feet
+        assert _hit_coord_to_feet(125.0, 199.0) == pytest.approx((0.0, 0.0))
+
+    def test_real_home_runs_clear_the_fence(self):
+        """Real MLB coordinates must convert to distances that clear the wall.
+
+        (coordX, coordY, MLB API totalDistance) for home runs from the
+        2025-07-29 slate.  The converted radial distance must land within 5%
+        of the distance the API itself reported — the old `* 2.0` transform
+        was ~20% short on every one of these, which is what put home runs on
+        the warning track.
+        """
+        import math
+        from image_box import _hit_coord_to_feet
+        real_hrs = [
+            (115.29, 26.23, 428.0),
+            (87.97,  34.63, 401.0),
+            (137.36, 36.91, 402.0),
+            (150.65, 32.02, 417.0),
+            (44.78,  55.02, 407.0),
+            (205.63, 68.46, 377.0),
+            (157.66, 43.12, 394.0),
+            (33.45,  67.79, 399.0),
+        ]
+        for cx, cy, api_dist in real_hrs:
+            x_ft, y_ft = _hit_coord_to_feet(cx, cy)
+            assert math.hypot(x_ft, y_ft) == pytest.approx(api_dist, rel=0.05)
+
+
+# ---------------------------------------------------------------------------
 # recent_hits multi-ball rendering
 # ---------------------------------------------------------------------------
 
@@ -575,7 +634,7 @@ class TestFieldCellRecentHits:
     def test_hr_uses_ray_end_not_fpt(self):
         """HR marker must appear at the cell edge (ray_end), not clipped by _fpt."""
         import image_box
-        # 400 ft HR straight to CF: landing at api (125, 0) → hy_ft = 400 ft.
+        # HR straight to CF: landing at api (125, 0) → hy_ft ≈ 497 ft.
         # _fpt clips to cy0=1 (top edge centre).  _ray_end also hits (75, 1) for this
         # direction (straight up), so the real test is that the filled diamond IS there.
         game = {

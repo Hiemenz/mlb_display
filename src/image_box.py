@@ -2987,6 +2987,25 @@ def _draw_rotated_text(Himage, center_xy, text, font, angle_deg, bounds=None, fo
     Himage.paste(black_img, (px, py), rotated)
 
 
+# MLBAM hit-coordinate → field-feet transform. These constants MUST match the
+# ones used to build the wall/infield polygons in data/mlbam_walls.json and
+# data/mlbam_infield.json (see src/extract_infield_polygons.py) — otherwise
+# batted balls are plotted in a different coordinate system than the fence they
+# are drawn against, and every ball lands short of where it really was.
+_HC_SCALE    = 2.495671   # ft per hc unit
+_HC_X_CENTER = 125.0
+_HC_Y_CENTER = 199.0
+
+
+def _hit_coord_to_feet(cx, cy):
+    """Convert MLBAM hit coordinates (coordX, coordY) to field feet.
+
+    Home plate at (0, 0); +x toward RF, +y toward CF.
+    """
+    return (_HC_SCALE * (cx - _HC_X_CENTER),
+            _HC_SCALE * (_HC_Y_CENTER - cy))
+
+
 # Generic outfield wall used when venue is unknown (symmetric 330-400-330 park).
 _FIELD_FALLBACK_POLY = [
     (-233.3,  233.3),
@@ -3345,29 +3364,38 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         ty = max(_cy0 + 1, min(_cy1 - lh - 1, ty))
         _fence_labels.append((tx, ty, lw, lh, label))
 
+    def _wall_dist_at_angle(theta):
+        """Fence distance (ft) at a given angle from home plate, interpolated
+        along wall_poly (same theta = atan2(x_ft, y_ft) convention as `thetas` above)."""
+        t = max(thetas[0], min(thetas[-1], theta))
+        for i in range(len(thetas) - 1):
+            if thetas[i] <= t <= thetas[i + 1]:
+                x0, y0 = wall_poly[i]
+                x1, y1 = wall_poly[i + 1]
+                d0, d1 = _math.hypot(x0, y0), _math.hypot(x1, y1)
+                span = thetas[i + 1] - thetas[i]
+                frac = (t - thetas[i]) / span if span else 0
+                return d0 + (d1 - d0) * frac
+        return _math.hypot(*wall_poly[-1])
+
     # Between innings: show full-game spray chart (all batted balls as dots).
     _between_innings = game_data.get('inningState') in ('Middle', 'End')
     _all_game_hits   = game_data.get('all_game_hits') or []
     if _between_innings and _all_game_hits:
         for h in _all_game_hits:
-            hx_ft = (h['x'] - 125) * 2.0
-            hy_ft = (200 - h['y'])  * 2.0
+            hx_ft, hy_ft = _hit_coord_to_feet(h['x'], h['y'])
             is_hr  = h.get('is_hr',  False)
             is_hit = h.get('is_hit', not h.get('is_out', False))
             if is_hr:
-                _ang   = _math.atan2(hx_ft, hy_ft)
-                _d_ball = _math.hypot(hx_ft, hy_ft)
-                # _wall_dist_at_angle not yet defined here — approximate via
-                # the wall polygon directly
-                _wall_norm = _math.sqrt(hx_ft**2 + hy_ft**2) or 1
-                _ux, _uy = hx_ft / _wall_norm, hy_ft / _wall_norm
-                # push just past fence in screen coords
-                _pt_wall = _fpt(hx_ft, hy_ft)
-                px, py = int(_pt_wall[0] + _ux * 6 * s), int(_pt_wall[1] - _uy * 6 * s)
+                _ang = _math.atan2(hx_ft, hy_ft)
+                _d_final = max(_math.hypot(hx_ft, hy_ft), _wall_dist_at_angle(_ang) + 8)
+                hx_ft, hy_ft = _d_final * _math.sin(_ang), _d_final * _math.cos(_ang)
+                pt = _fpt(hx_ft, hy_ft)
+                px, py = int(pt[0]), int(pt[1])
                 px = max(_cx0 + 1, min(_cx1 - 1, px))
                 py = max(_cy0 + 1, min(_cy1 - 1, py))
-                r = max(round(3 * s), 3)
-                draw.polygon([(px, py - r), (px + r, py), (px, py + r), (px - r, py)], fill=0)
+                r = max(round(2 * s), 2)
+                draw.ellipse([px - r, py - r, px + r, py + r], fill=0)
             else:
                 pt = _fpt(hx_ft, hy_ft)
                 px, py = int(pt[0]), int(pt[1])
@@ -3385,7 +3413,8 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
         return Himage
 
     # Batted-ball markers — last 7 balls put in play (fair or foul).
-    # API hit coordinates: home plate ≈ (125, 200); scale ≈ 2 ft per unit.
+    # API hit coordinates are converted with _hit_coord_to_feet(), the same
+    # transform the fence polygons were built with.
     # recent_hits is newest-last; fall back to single last_hit_x/y.
     recent_hits = game_data.get('recent_hits') or []
     if not recent_hits:
@@ -3397,20 +3426,6 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
                 'is_hr':  bool(game_data.get('last_hit_is_hr')),
                 'is_out': bool(game_data.get('last_hit_is_out')),
             }]
-
-    def _wall_dist_at_angle(theta):
-        """Fence distance (ft) at a given angle from home plate, interpolated
-        along wall_poly (same theta = atan2(x_ft, y_ft) convention as `thetas` above)."""
-        t = max(thetas[0], min(thetas[-1], theta))
-        for i in range(len(thetas) - 1):
-            if thetas[i] <= t <= thetas[i + 1]:
-                x0, y0 = wall_poly[i]
-                x1, y1 = wall_poly[i + 1]
-                d0, d1 = _math.hypot(x0, y0), _math.hypot(x1, y1)
-                span = thetas[i + 1] - thetas[i]
-                frac = (t - thetas[i]) / span if span else 0
-                return d0 + (d1 - d0) * frac
-        return _math.hypot(*wall_poly[-1])
 
     def _bezier_trajectory(p0x, p0y, p1x, p1y, launch_angle=None, hx_ft=0.0):
         mx_, my_ = (p0x + p1x) / 2, (p0y + p1y) / 2
@@ -3435,8 +3450,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     _recent_play_rect = None  # bounding box of the most recent play label
 
     for idx, h in enumerate(recent_hits):
-        hx_ft = (h['x'] - 125) * 2.0
-        hy_ft = (200  - h['y']) * 2.0
+        hx_ft, hy_ft = _hit_coord_to_feet(h['x'], h['y'])
         is_hr  = h.get('is_hr',  False)
         is_out = h.get('is_out', False)
         abbr   = h.get('abbr', 'HR' if is_hr else ('F' if is_out else '1B'))
@@ -3455,7 +3469,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             hx_ft, hy_ft = _d_final * _math.sin(_ang), _d_final * _math.cos(_ang)
         land_pt = _fpt(hx_ft, hy_ft)
 
-        if h.get('launch_angle') is not None:
+        if idx == most_recent_idx and h.get('launch_angle') is not None:
             _bezier_trajectory(HX, HY, *land_pt,
                                launch_angle=h.get('launch_angle'),
                                hx_ft=hx_ft)
