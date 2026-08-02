@@ -1058,7 +1058,8 @@ class TestExtractAllHitCoordinates:
     def test_fallback_to_play_events_hit_data(self):
         """Fallback to play events hit data."""
         play = _play(event='Double', batter_name='Y', hit_data={},
-                      play_events=[{'hitData': {'coordinates': {'coordX': 5.0, 'coordY': 6.0}}}])
+                      play_events=[{'details': {'isInPlay': True},
+                                    'hitData': {'coordinates': {'coordX': 5.0, 'coordY': 6.0}}}])
         result = _extract_all_hit_coordinates({'allPlays': [play]})
         assert len(result) == 1
         assert result[0]['x'] == 5.0

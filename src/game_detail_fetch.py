@@ -873,8 +873,11 @@ def _extract_all_hit_coordinates(plays):
                          'abbr': abbr, 'distance': distance,
                          'exit_velo': exit_velo, 'launch_angle': launch_angle})
             continue
-        # Fall back to playEvents
+        # Fall back to playEvents — only take an event marked isInPlay so we
+        # don't accidentally grab hitData from a foul ball mid-at-bat.
         for ev in play.get('playEvents', []):
+            if not ev.get('details', {}).get('isInPlay', False):
+                continue
             hit_data = ev.get('hitData', {})
             cx = hit_data.get('coordinates', {}).get('coordX')
             cy = hit_data.get('coordinates', {}).get('coordY')
