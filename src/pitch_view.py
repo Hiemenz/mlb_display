@@ -91,7 +91,8 @@ def _draw_pitches(draw, fonts, pitches):
         elif code == 'F':
             # Foul — open circle with 'F' inside
             draw.ellipse([bx - r, by - r, bx + r, by + r], outline=0, width=2)
-            draw.text((bx - 3, by - 5), 'F', font=fonts['f9'], fill=0)
+            _fb = fonts['f9'].getbbox('F')
+            draw.text((bx - (_fb[0] + _fb[2]) // 2, by - (_fb[1] + _fb[3]) // 2), 'F', font=fonts['f9'], fill=0)
         elif code == 'X':
             # In play — filled square, seq to the right
             draw.rectangle([bx - r, by - r, bx + r, by + r], fill=0)
@@ -99,7 +100,8 @@ def _draw_pitches(draw, fonts, pitches):
         else:
             # Ball — open circle with seq number inside
             draw.ellipse([bx - r, by - r, bx + r, by + r], outline=0, width=2)
-            draw.text((bx - 3, by - 5), seq, font=fonts['f9'], fill=0)
+            _sb = fonts['f9'].getbbox(seq)
+            draw.text((bx - (_sb[0] + _sb[2]) // 2, by - (_sb[1] + _sb[3]) // 2), seq, font=fonts['f9'], fill=0)
 
 
 def _draw_right_panel(img, draw, fonts, data):

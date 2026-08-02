@@ -2616,13 +2616,15 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             filled = _code in _BALL_CODES
             box = [bx - PITCH_R, by - PITCH_R, bx + PITCH_R, by + PITCH_R]
             seq_str = str(pitch_num)
-            sw = int(font7.getlength(seq_str))
+            _sb = font7.getbbox(seq_str)
+            _tx = bx - (_sb[0] + _sb[2]) // 2
+            _ty = by - (_sb[1] + _sb[3]) // 2
             if filled:
                 draw.ellipse(box, fill=0, outline=0)
-                draw.text((bx - sw // 2, by - 4 * s), seq_str, font=font7, fill=255)
+                draw.text((_tx, _ty), seq_str, font=font7, fill=255)
             else:
                 draw.ellipse(box, fill=255, outline=0)
-                draw.text((bx - sw // 2, by - 4 * s), seq_str, font=font7, fill=0)
+                draw.text((_tx, _ty), seq_str, font=font7, fill=0)
 
         # ── Bases: left side of panel ──────────────────────────────────
         _outs_count = game_data.get('num_of_outs') or 0
@@ -3408,10 +3410,6 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
                     draw.ellipse([px - r, py - r, px + r, py + r], fill=0)
                 else:
                     draw.ellipse([px - r, py - r, px + r, py + r], outline=0)
-        # Fence labels still show — no recent play label to conflict with
-        for tx, ty, lw, lh, label in _fence_labels:
-            draw.rectangle([tx - 1, ty, tx + lw + 1, ty + lh], fill=255)
-            draw.text((tx, ty), label, font=font_tiny, fill=0)
         return Himage
 
     # Batted-ball markers — last 7 balls put in play (fair or foul).
