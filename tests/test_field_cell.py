@@ -818,7 +818,7 @@ class TestBatSideIndicator:
 class TestLaunchAngleArcs:
     """Bezier trajectory arcs are drawn for hits with launch_angle data."""
 
-    def _hit(self, x=170, y=160, is_hr=False, launch_angle=25.0):
+    def _hit(self, x=155, y=100, is_hr=False, launch_angle=25.0):
         return {
             'x': x, 'y': y,
             'is_hr': is_hr,

@@ -3384,6 +3384,8 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     if _between_innings and _all_game_hits:
         for h in _all_game_hits:
             hx_ft, hy_ft = _hit_coord_to_feet(h['x'], h['y'])
+            if _lf_foul(hx_ft, hy_ft) or _rf_foul(hx_ft, hy_ft):
+                continue
             is_hr  = h.get('is_hr',  False)
             is_hit = h.get('is_hit', not h.get('is_out', False))
             if is_hr:
@@ -3451,6 +3453,8 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
 
     for idx, h in enumerate(recent_hits):
         hx_ft, hy_ft = _hit_coord_to_feet(h['x'], h['y'])
+        if _lf_foul(hx_ft, hy_ft) or _rf_foul(hx_ft, hy_ft):
+            continue
         is_hr  = h.get('is_hr',  False)
         is_out = h.get('is_out', False)
         abbr   = h.get('abbr', 'HR' if is_hr else ('F' if is_out else '1B'))
