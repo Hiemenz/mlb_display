@@ -299,7 +299,10 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
                 fnt = font11 if int(font11.getlength(val)) <= COL_W - 1 else font9
                 _draw_centered(fnt, val, cx, cy)
             elif _is_final and _has_linescore and idx <= 8:
-                _draw_centered(font11, 'X', cx, cy)
+                hx = 2 * s  # narrow horizontal spread → skinny X
+                hy = 4 * s  # taller vertical spread
+                draw.line((cx - hx, cy - hy, cx + hx, cy + hy), fill=0)
+                draw.line((cx + hx, cy - hy, cx - hx, cy + hy), fill=0)
 
     _draw_row(away_inn, y1)
     _draw_row(home_inn, y2)
