@@ -120,6 +120,43 @@ def test_linescore_grid_x_mark_when_bottom_not_played(white_image, team_data):
 
 
 @needs_pil
+def test_linescore_grid_trailing_innings_show_x_when_final_early(white_image, team_data):
+    """Game called before 9 innings: unplayed trailing columns show 'X' for both teams,
+    plus the home row's own last inning if it didn't bat (walk-off/leading-after-top)."""
+    from image_box import _draw_linescore_grid
+    draw = ImageDraw.Draw(white_image)
+    game = _base_game(
+        detailed_state='Final',
+        current_inning=6,
+        away_inning_runs=[0, 0, 2, 2, 1, 3],
+        home_inning_runs=[0, 0, 0, 0, 0],  # home didn't bat in the 6th
+    )
+    _draw_linescore_grid(draw, white_image, 32, 30, game, team_data, use_logos=False)
+
+    px = white_image.load()
+
+    def _has_ink(cx, cy, r=5):
+        for x in range(cx - r, cx + r):
+            for y in range(cy - r, cy + r):
+                if 0 <= x < white_image.width and 0 <= y < white_image.height and px[x, y] == 0:
+                    return True
+        return False
+
+    def _col_cx(k):
+        return 39 + 12 + k * 12 + 6  # grid_x0(39) + LOGO_COL_W(12) + k*COL_W(12) + COL_W//2
+
+    away_cy, home_cy = 135, 151
+
+    # Innings 7-9 (k=6,7,8) never happened -> X in both rows.
+    for k in (6, 7, 8):
+        assert _has_ink(_col_cx(k), away_cy), f"expected 'X' in away row, inning {k + 1}"
+        assert _has_ink(_col_cx(k), home_cy), f"expected 'X' in home row, inning {k + 1}"
+
+    # Home didn't bat in inning 6 (k=5) -> X there too, even though away has a value.
+    assert _has_ink(_col_cx(5), home_cy), "expected 'X' in home row, inning 6 (didn't bat)"
+
+
+@needs_pil
 def test_linescore_grid_use_logos_found(white_image, team_data):
     """use_logos=True with a logo present exercises the logo-paste branch."""
     from image_box import _draw_linescore_grid
