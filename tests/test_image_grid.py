@@ -113,6 +113,25 @@ class TestComputeGridLayout:
         triple_count = sum(1 for s in slots if s[0] == 'triple')
         assert triple_count == 1
 
+    def test_wide_cell_always_forces_triple_at_15_games_regardless_of_live_game_position(self):
+        """A single live game among 15 gets its triple tile no matter where
+        in the slate it happens to sit — regression test for a bug where
+        _pack_grid's 15+-game row-major layout would silently strand the
+        live game back to 'normal' if it landed in one of the last couple
+        list positions (no later token left for the swap-forward rescue),
+        even though the live game was correctly selected for a triple."""
+        cfg = dict(BASE_CONFIG, wide_cell_always=True)
+        for live_pos in (0, 13, 14):
+            games = [_game(i) for i in range(15)]
+            games[live_pos]['detailed_state'] = 'In Progress'
+            ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+            triple_count = sum(1 for s in slots if s[0] == 'triple')
+            assert triple_count == 1, f"live_pos={live_pos}"
+            live_slot_types = [
+                slots[j][0] for j, g in enumerate(ordered) if g.get('detailed_state') == 'In Progress'
+            ]
+            assert live_slot_types == ['triple'], f"live_pos={live_pos}"
+
     def test_postponed_evicted_to_make_room_for_triple(self):
         """Postponed games are removed when they block triple expansion."""
         # 14 games (1 live + 1 postponed + 12 final) → normally only 1 free slot (wide).
@@ -570,6 +589,18 @@ class TestTripleTilePacking:
             assert 0 <= col <= 4 and 0 <= row <= 2
             if slot_type == 'triple':
                 assert col <= 2
+
+    def test_pack_grid_15_plus_no_expansion_uses_plain_row_major(self):
+        """15+ games with no triple/wide requested (empty tile_type_map)
+        still use the plain row-major passthrough, trimmed to 15 slots —
+        the dedicated reserve-first packer is only needed once an expand
+        tile is actually requested."""
+        game_list = [self._g(i) for i in range(18)]
+        ordered, positions = _pack_grid(game_list, {})
+        assert len(ordered) == len(positions) == 15
+        for slot_type, col, row in positions:
+            assert slot_type == 'normal'
+            assert 0 <= col <= 4 and 0 <= row <= 2
 
 
 class TestClusterLiveGames:

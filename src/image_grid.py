@@ -335,72 +335,85 @@ def _find_tile_types(game_list, config, team_data):
     # Live games beyond the triple budget still get a wide (2-cell) tile
     # rather than falling straight to normal — each of the 3 triple rows
     # leaves exactly 2 leftover columns, enough for one wide tile apiece, and
-    # _pack_multi_triple_rows demotes any that don't fit back to normal.
+    # _pack_multi_triple_rows only falls back to normal for one that
+    # genuinely has nowhere left to go.
     for idx in sorted_live[_MAX_TRIPLE_TILES:2 * _MAX_TRIPLE_TILES]:
         tile_map[idx] = 'wide'
     return tile_map
 
 
 def _pack_multi_triple_rows(game_list, tile_type_map):
-    """Pack the grid when 2+ games need a triple (3-cell) tile.
+    """Pack the grid when 1+ games need a triple/wide tile via a reserve-first
+    strategy, guaranteeing every expand-tagged game gets its tile regardless
+    of where it happens to sit in ``game_list``.
 
-    _pack_grid's bucket packer assumes at most one triple tile ever exists
-    (true before multiple live games could all rank for a triple); its
-    row_caps bucketing silently strands extra triples when 2+ are requested
-    in the same packing pass. This function is the safe alternative: each
-    triple claims its own row outright (column 0-2) up front, in original
-    relative order — the grid has exactly 3 rows, matching
-    _MAX_TRIPLE_TILES, so this never runs out of rows in practice. Every
-    other (wide/normal) game is then packed row-major into whatever's left —
-    starting with the 2 leftover columns of each triple's row, then any
-    fully-free rows — demoting wide to normal in place when a row has just
-    1 column left, so no game's slot capacity is ever wasted and nothing
-    gets dropped.
+    Used for 2+ triples (_pack_grid's bucket packer assumes at most one ever
+    exists and would silently strand the extras) and, since _pack_grid
+    routes 15+-game slates with any expansion here too, for a single
+    triple/wide as well — _lay_out_row_major's swap-forward rescue only
+    works if a later token exists to trade places with, so an expand tile
+    landing near the end of the list would otherwise get silently demoted
+    back to normal instead of bumping a lower-priority filler game.
+
+    Each triple claims its own row outright (columns 0-2) up front, in
+    original relative order — the grid has exactly 3 rows, matching
+    _MAX_TRIPLE_TILES, so this never runs out of rows in practice. Each wide
+    tile (plus any triple beyond the 3-row budget, demoted to wide) then
+    claims the first row with 2+ free columns — a triple's row has exactly 2
+    left over, sized for one wide apiece. Normal games fill whatever's left,
+    row-major; any that don't fit are dropped rather than costing an
+    expand-tagged game its tile (dropped games resurface via the overflow
+    ticker instead of vanishing).
+
+    Index 0 is always kept first in the output list (independent of the grid
+    slot its own tile type lands in) — a stable sort moves its entry to the
+    front at the end without disturbing anyone else's relative placement
+    order. Callers (e.g. favorite_team_first) rely on a pinned game staying
+    first, matching _pack_grid's <15-game path.
 
     Returns (new_game_list, positions).
     """
-    _STEP = {'triple': 3, 'wide': 2, 'normal': 1}
     n_rows = 3
 
     triple_idxs = [i for i in range(len(game_list)) if tile_type_map.get(i) == 'triple']
-    other_idxs = [i for i in range(len(game_list)) if tile_type_map.get(i) != 'triple']
+    wide_idxs = [i for i in range(len(game_list)) if tile_type_map.get(i) == 'wide']
+    normal_idxs = [i for i in range(len(game_list)) if tile_type_map.get(i, 'normal') == 'normal']
 
     # _find_tile_types caps triples at _MAX_TRIPLE_TILES (== n_rows), so this
     # only trims in the impossible case of a mismatched tile_type_map.
     n_triple_rows = min(len(triple_idxs), n_rows)
-    demoted = set(triple_idxs[n_triple_rows:])
+    demoted_triples = triple_idxs[n_triple_rows:]
     triple_idxs = triple_idxs[:n_triple_rows]
-    if demoted:
-        other_idxs = list(demoted) + other_idxs
+    wide_idxs = demoted_triples + wide_idxs
 
-    new_order = []
-    positions = []
     row_next_col = [0] * n_rows
+    placed = []  # (original_index, slot_type, col, row)
 
     for row_i, gi in enumerate(triple_idxs):
-        new_order.append(game_list[gi])
-        positions.append(('triple', 0, row_i))
+        placed.append((gi, 'triple', 0, row_i))
         row_next_col[row_i] = 3
 
-    cur_row = 0
-    for gi in other_idxs:
-        slot_type = 'wide' if gi in demoted else tile_type_map.get(gi, 'normal')
-        needed = _STEP[slot_type]
-        while cur_row < n_rows:
-            cap_left = 5 - row_next_col[cur_row]
-            if cap_left >= needed:
-                break
-            if slot_type == 'wide' and cap_left >= 1:
-                slot_type, needed = 'normal', 1
-                break
-            cur_row += 1
-        if cur_row >= n_rows:
-            break  # grid is genuinely full
-        col = row_next_col[cur_row]
-        new_order.append(game_list[gi])
-        positions.append((slot_type, col, cur_row))
-        row_next_col[cur_row] += needed
+    demoted_wide = []
+    for gi in wide_idxs:
+        row = next((r for r in range(n_rows) if 5 - row_next_col[r] >= 2), None)
+        if row is None:
+            demoted_wide.append(gi)  # no 2-col gap anywhere; try as normal below
+            continue
+        col = row_next_col[row]
+        placed.append((gi, 'wide', col, row))
+        row_next_col[row] += 2
 
+    for gi in demoted_wide + normal_idxs:
+        row = next((r for r in range(n_rows) if row_next_col[r] < 5), None)
+        if row is None:
+            break  # grid is genuinely full — remaining games are dropped
+        col = row_next_col[row]
+        placed.append((gi, 'normal', col, row))
+        row_next_col[row] += 1
+
+    placed.sort(key=lambda p: p[0] != 0)
+    new_order = [game_list[gi] for gi, _t, _c, _r in placed]
+    positions = [(t, c, r) for _gi, t, c, r in placed]
     return new_order, positions
 
 
@@ -432,7 +445,19 @@ def _pack_grid(game_list, tile_type_map):
     if sum(1 for i in range(len(game_list)) if _tile_type(i) == 'triple') >= 2:
         return _pack_multi_triple_rows(game_list, tile_type_map)
 
-    # With 15+ games, use simple row-major layout to preserve order
+    # With 15+ games and at least one expanded (triple/wide) tile requested,
+    # use the same dedicated packer: _lay_out_row_major places tiles in
+    # original list order and only rescues a stranded triple/wide by
+    # swapping with a *later* token, so an expand tile landing near the end
+    # of the list (no later token left to swap with) gets silently demoted
+    # back to normal instead of bumping a lower-priority filler game off the
+    # grid. _pack_multi_triple_rows reserves room for expand tiles up front,
+    # so the priority-selected game always gets its tile.
+    if len(game_list) >= 15 and tile_type_map:
+        return _pack_multi_triple_rows(game_list, tile_type_map)
+
+    # With 15+ games and no expansion requested, use simple row-major layout
+    # to preserve order while trimming down to the 15-slot limit.
     if len(game_list) >= 15:
         tokens = [(_tile_type(i), game_list[i]) for i in range(len(game_list))]
         ordered, positions, slot_idx = _lay_out_row_major(tokens, 0)
