@@ -279,39 +279,30 @@ def _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, u
     _place(away_abbr, away_id, y1)
     _place(home_abbr, home_id, y2)
 
+    # A Final game that didn't reach a given inning (called early, or a half not
+    # needed — e.g. a walk-off, or the home team already leading after the top half)
+    # shows 'X' in that team's cell instead of leaving it blank.
+    _is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
+    _has_linescore = bool(away_inn or home_inn)
+
     # --- per-inning scores ---
     def _draw_row(inn_runs, row_y):
         """Draw row."""
         for k in range(N_COLS):
             idx = first_inn - 1 + k
+            cell_x = grid_x0 + LOGO_COL_W + k * COL_W
+            cx = cell_x + COL_W // 2
+            cy = row_y + ROW_H_TEAM // 2
             if idx < len(inn_runs) and inn_runs[idx] is not None:
                 val = str(inn_runs[idx])
-                cell_x = grid_x0 + LOGO_COL_W + k * COL_W
                 # Use font9 for double-digit values that won't fit in font11
                 fnt = font11 if int(font11.getlength(val)) <= COL_W - 1 else font9
-                cx = cell_x + COL_W // 2
-                cy = row_y + ROW_H_TEAM // 2
                 _draw_centered(fnt, val, cx, cy)
+            elif _is_final and _has_linescore and idx <= 8:
+                _draw_centered(font11, 'X', cx, cy)
 
     _draw_row(away_inn, y1)
     _draw_row(home_inn, y2)
-
-    # X mark in the home team's last column when the bottom half wasn't played.
-    _is_final = game_data.get('detailed_state') in ('Final', 'Game Over', 'Final: Tied')
-    if _is_final and away_inn:
-        last_idx = len(away_inn) - 1
-        away_last = away_inn[last_idx]
-        home_last = home_inn[last_idx] if last_idx < len(home_inn) else None
-        if home_last is None and away_last is not None:
-            col_k = last_idx - (first_inn - 1)
-            if 0 <= col_k < N_COLS:
-                cell_x = grid_x0 + LOGO_COL_W + col_k * COL_W
-                cx = cell_x + COL_W // 2
-                cy = y2 + ROW_H_TEAM // 2
-                hx = 2 * s  # narrow horizontal spread → skinny X
-                hy = 4 * s  # taller vertical spread
-                draw.line((cx - hx, cy - hy, cx + hx, cy + hy), fill=0)
-                draw.line((cx + hx, cy - hy, cx - hx, cy + hy), fill=0)
 
     return draw, Himage
 
