@@ -225,14 +225,40 @@ transactions.**
 `image_box.py` is the largest module in the repo, and `draw_box()` is the largest
 function in it (~1300 lines). This is acknowledged debt, being reduced incrementally.
 
-The reason it resists decomposition: it renders a single 150×150 tile whose every
+The reason it resisted decomposition: it renders a single 150×150 tile whose every
 element — header text, score, bases, count, ghosts, banners, footers — is positioned
 relative to shared geometry (`start_x`, `start_y`, `s`, `horizonta_len`) and gated on the
-same set of state flags. Extracting a block usually means threading eight to twelve
-parameters through it, which can cost more clarity than it buys.
+same set of state flags. Extracting a block meant threading eight to twelve parameters
+through it, which cost more clarity than it bought.
 
-The approach that has worked is to pull out pieces that are genuinely self-contained,
-where the parameter list stays honest:
+### `_TileCtx`
+
+The unlock was a per-tile context object holding what every helper needs anyway:
+
+```python
+ctx = _TileCtx(Himage, start_x, start_y, scale, use_logos, logo_x_offset)
+ctx.x, ctx.y, ctx.s        # origin and scale
+ctx.w, ctx.h               # tile size (135×110, scaled)
+ctx.font24 … ctx.font9     # the five sizes, pre-loaded at this scale
+ctx.bold(xy, text, font)   # the 1px-offset bold effect
+ctx.bold_centred(...)      # centred horizontally in the tile
+ctx.paste(img, xy)         # paste AND refresh ctx.draw
+```
+
+Helpers now take two or three arguments instead of ten-plus, which is what makes further
+extraction cheap rather than a net loss.
+
+**`ctx.paste()` exists specifically because pasting invalidates the current `ImageDraw`.**
+Routing pastes through the context refreshes the handle centrally, so a helper can't
+silently draw into a stale one — previously that had to be remembered at every call site,
+and forgetting it produces drawing that goes nowhere with no error.
+
+`draw_box` still keeps local aliases (`draw`, `font14`, `start_x`, …) for the body it has
+not yet absorbed; new code should use `ctx` directly.
+
+### What has been extracted
+
+Pieces that are genuinely self-contained, where the parameter list stays honest:
 
 - `_normalize_game_state` / `_game_has_started` — collapse API states into the handful
   the renderer branches on. Pure, and copies before mutating.
@@ -241,17 +267,23 @@ where the parameter list stays honest:
 - `_draw_background_ghosts` — the postponed/suspended emoji and winner-logo watermarks.
 - `_in_final_linescore_window` / `_final_linescore_window_expired` — the two ends of the
   Final-game linescore window.
+- `_compute_series_state` — the series-context flags. Regular-season and postseason
+  series complete on different conditions (see §9), so the shared "is this series over"
+  test is computed once rather than repeated across the sweep and overline conditions.
 - `_draw_win_probability_bar`, `_draw_game_end_time`, `_draw_duration_and_dh_labels`.
+- `_draw_live_situation_panel` — bases, count, outs and the next-batters panel.
+- `_draw_header_right_text` — the right-anchored, shrink-to-fit header label. Venue and
+  delay-reason were the same shape with different fit strategies (shrink vs truncate).
 - `_draw_bold_text` — the 1-bit panel has no synthetic font weight, so "bold" is the same
   string drawn twice one pixel apart. This pattern appeared ~30 times inline.
 
-**Anything that pastes onto the image invalidates the current `ImageDraw`**, so helpers
-that paste (`_draw_background_ghosts`, `_draw_win_probability_bar`) return a fresh
-`draw` for the caller to keep using. Forgetting this produces drawing that silently goes
-nowhere.
+`draw_box` is now ~1,090 lines, down from 1,630. The largest block left is the Final-state
+body (linescore grid vs pitchers of record), which shares more local state with its
+surroundings than anything extracted so far.
 
 Golden-image tests make this refactoring safe: any extraction that changes a single pixel
-fails immediately.
+fails immediately. They are the reason a mechanical, script-driven extraction is viable
+here at all.
 
 ---
 
