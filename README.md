@@ -6,6 +6,12 @@ Real-time MLB scoreboard for a **Waveshare 7.5″ V2 e-paper display** (800×480
 
 > Screenshots are auto-regenerated nightly and on every push to `main` that touches a rendering source file.
 
+**Documentation:** this README covers features, configuration and setup.
+For how the pipeline fits together and why — the fetch → render → display stages,
+e-ink partial-refresh strategy, change detection, and the gotchas that have caused real
+bugs — see **[ARCHITECTURE.md](ARCHITECTURE.md)**. Contributor workflow and CI rules live
+in [CLAUDE.md](CLAUDE.md).
+
 ---
 
 ## Display Modes
@@ -247,14 +253,17 @@ sport_id_priority:           # only used when league_mode is "mlb"
   - 11   # Triple-A
 
 # ── Night / morning modes ─────────────────────────────────────
+# Windows may wrap past midnight (e.g. 22 → 7). Setting start == end is an
+# EMPTY window, not a 24-hour one — use night_mode: false to turn it off.
 night_mode: true
 night_start: 2               # hour (24h) to stop refreshing
 night_end: 7                 # hour (24h) to resume
-morning_alternate_games: true
+morning_alternate_games: true  # alternate yesterday/today every 5 min in the morning window
 morning_end: 9               # weekday hour when "yesterday" gives way to today
 morning_end_weekend: 11      # weekend cutoff
 
 # ── Auto dark mode ────────────────────────────────────────────
+# Independent of the night window above, and follows the same start == end rule.
 dark_start: 20               # 8pm — display goes white-on-black
 dark_end: 7                  # 7am — display returns to light
 use_team_logos: true
@@ -415,48 +424,69 @@ WantedBy=multi-user.target
 
 ## Project Structure
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how these fit together.
+
 ```
 mlb_display/
-├── main.py                       # Pipeline orchestrator: fetch → render → display
+├── main.py                       # Pipeline orchestrator: scheduling, polling, refresh gates
+├── ARCHITECTURE.md               # Design, data flow, and gotchas
 ├── config/
 │   └── config.yaml               # All settings
 ├── src/
+│   │                             # ── Fetch: network in, data/*.json out ──
 │   ├── fetch_games.py            # MLB Stats API fetcher → data/games.json
-│   ├── render_scoreboard.py      # Render image from cached data (CLI)
-│   ├── generate_image.py         # Core rendering logic (orchestrate_score_board)
-│   ├── image_box.py              # Per-tile drawing (draw_box)
-│   ├── image_featured.py         # Fullscreen featured-game renderer (draw_featured_game_fullscreen)
-│   ├── image_standings.py        # Standings sidebar + wildcard strip
-│   ├── scorecard_view.py         # At-bat scorecard renderer
-│   ├── pitch_view.py             # Pitch location renderer
-│   ├── image_derby.py            # Home Run Derby bracket renderer
-│   ├── image_idle.py             # Idle "Recent Moves" screen + bouncing mascot
-│   ├── image_leaders.py          # Season-leaders panel cell
-│   ├── image_transactions.py     # Transactions ticker cell
-│   ├── image_standings.py        # Standings sidebar + wildcard / playoff strip
 │   ├── fetch_derby.py            # Derby bracket fetcher → data/derby_bracket.json
 │   ├── fetch_leaders.py          # Season-leaders fetcher (MLB Stats API)
+│   ├── fetch_streaks.py          # Hot Hitters / Hot Arms rolling streaks
+│   ├── fetch_news.py             # Team or league headlines
 │   ├── fetch_idle.py             # Historical game fetcher for the idle screen
 │   ├── game_detail_fetch.py      # MLB live feed API (pitch-by-pitch)
-│   ├── standings.py              # Standings + transactions fetcher + cache
-│   ├── weather.py                # Open-Meteo forecast fetcher
+│   ├── standings.py              # Standings, playoff bracket, transactions + cache
+│   ├── weather.py                # Open-Meteo forecast fetcher (own TTL cache)
+│   │                             # ── Render: data/*.json in, PIL.Image out ──
+│   ├── render_scoreboard.py      # Render image from cached data (CLI)
+│   ├── generate_image.py         # Core orchestrator: change detection, refresh regions
+│   ├── image_grid.py             # Grid packing — which game gets which cell, at what size
+│   ├── image_box.py              # Per-tile drawing (normal / wide / triple / fields)
+│   ├── image_featured.py         # Fullscreen featured-game renderer
+│   ├── image_standings.py        # Standings sidebar + wildcard / playoff / ticker strips
+│   ├── image_idle.py             # Idle "Recent Moves" screen + bouncing mascot
+│   ├── image_derby.py            # Home Run Derby bracket renderer
+│   ├── image_assets.py           # Font, logo and mascot loading + caching
+│   ├── image_utils.py            # Shared pure helpers (names, geometry, magic numbers)
+│   ├── image_leaders.py          # Season-leaders panel cell
+│   ├── image_streaks.py          # Hot Hitters / Hot Arms panel cell
+│   ├── image_scoreless.py        # Scoreless-streak panel cell
+│   ├── image_magic.py            # Magic / elimination number panel cell
+│   ├── image_news.py             # News headlines panel cell
+│   ├── image_transactions.py     # Transactions ticker cell
+│   ├── image_lineup.py           # Pre-game batting-order cell
+│   ├── image_deadline.py         # Trade-deadline countdown cell
+│   ├── scorecard_view.py         # At-bat scorecard renderer
+│   ├── pitch_view.py             # Pitch location renderer
+│   ├── stadium_polygons.py       # Per-park field geometry for the spray chart
+│   │                             # ── Display + support ──
+│   ├── display.py                # CLI wrapper for display_eink
+│   ├── display_eink.py           # Waveshare driver wrapper (macOS-safe)
+│   ├── refresh_tracker.py        # Full-refresh interval tracker (burn-in prevention)
 │   ├── timelapse.py              # End-of-day .gif / .mp4 generator
 │   ├── config_server.py          # Mobile-first config web server
+│   ├── config_loader.py          # load_config() — canonical config loader
 │   ├── download_logos.py         # Bulk logo downloader (MLB + WBC)
 │   ├── download_mascots.py       # Mascot image downloader (idle screen)
-│   ├── display_eink.py           # Waveshare driver wrapper (macOS-safe)
-│   ├── display.py                # CLI wrapper for display_eink
-│   ├── refresh_tracker.py        # Full-refresh interval tracker (burn-in prevention)
-│   ├── config_loader.py          # load_config() — canonical config loader
-│   └── util.py                   # JSON/YAML helpers, repo-root-relative paths
+│   └── util.py                   # JSON/YAML helpers, repo-root paths, hour windows
 ├── templates/
 │   └── config_server.html        # Mobile-first form for config_server.py
 ├── data/                         # Runtime cache (gitignored)
 │   ├── games.json                # Cached game state from last fetch
 │   ├── teams.json                # Team abbreviation cache
 │   ├── standings.json            # Standings cache (refreshed on Final)
+│   ├── tomorrow_games.json       # Next-day schedules for preview strips (multi-day)
 │   ├── derby_bracket.json        # Home Run Derby bracket state
-│   └── schedule_state.json       # Next game date (smart polling)
+│   ├── schedule_state.json       # Smart-polling state: last fetch, next game date
+│   └── old_*.json                # Previous-frame snapshots for partial-refresh diffing
+├── tests/
+│   └── golden/                   # Byte-exact reference renders (see ARCHITECTURE.md §8)
 ├── docs/                         # README screenshots
 ├── pic/
 │   ├── Font.ttc                  # Display font

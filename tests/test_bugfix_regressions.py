@@ -525,3 +525,121 @@ class TestTomorrowGamesMultiDayCache:
         assert image_box._load_tomorrow_games('2025-06-03')['games'] == [{'game_pk': 1}]
         # Drawn game on 06-04 -> wants 06-05, also cached.
         assert image_box._load_tomorrow_games('2025-06-04')['games'] == [{'game_pk': 2}]
+
+
+class TestDrawBoxHelpers:
+    """Unit coverage for the blocks extracted from draw_box()."""
+
+    def test_bold_text_draws_twice_offset_by_scale(self):
+        from image_box import _draw_bold_text
+
+        calls = []
+
+        class _Rec:
+            def text(self, xy, text, font=None, fill=None):
+                calls.append(xy)
+
+        _draw_bold_text(_Rec(), (10, 20), 'HI', font=None, s=2)
+        assert calls == [(10, 20), (12, 20)]
+
+    def test_duration_corner_x_shifts_for_logos(self):
+        from image_box import _duration_corner_x
+        assert _duration_corner_x(0, 1, use_logos=False, logo_x_offset=2) == 8
+        # With logos the slot clears the away logo instead.
+        assert _duration_corner_x(0, 1, use_logos=True, logo_x_offset=2) == 35
+
+    def test_win_prob_bar_returns_draw_when_data_missing(self):
+        from PIL import Image as _Img, ImageDraw as _ID
+        from image_box import _draw_win_probability_bar
+        from image_assets import _get_font
+
+        img = _Img.new('1', (800, 480), 255)
+        draw = _ID.Draw(img)
+        assert _draw_win_probability_bar(
+            img, draw, 0, 0, {}, 135, 110, 1, _get_font(18), False,
+            ('NYY', 147), ('BOS', 111)) is draw
+
+    def test_win_prob_bar_renders_with_probabilities(self):
+        from PIL import Image as _Img, ImageDraw as _ID
+        from image_box import _draw_win_probability_bar
+        from image_assets import _get_font
+
+        img = _Img.new('1', (800, 480), 255)
+        before = img.tobytes()
+        _draw_win_probability_bar(
+            img, _ID.Draw(img), 0, 0,
+            {'away_win_probability': 70, 'home_win_probability': 30},
+            135, 110, 1, _get_font(18), False, ('NYY', 147), ('BOS', 111))
+        assert img.tobytes() != before
+
+    def test_win_prob_bar_accepts_fractional_probabilities(self):
+        """The API sometimes returns 0-1 fractions rather than percentages."""
+        from PIL import Image as _Img, ImageDraw as _ID
+        from image_box import _draw_win_probability_bar
+        from image_assets import _get_font
+
+        img = _Img.new('1', (800, 480), 255)
+        before = img.tobytes()
+        _draw_win_probability_bar(
+            img, _ID.Draw(img), 0, 0,
+            {'away_win_probability': 0.7, 'home_win_probability': 0.3},
+            135, 110, 1, _get_font(18), False, ('NYY', 147), ('BOS', 111))
+        assert img.tobytes() != before
+
+    def test_end_time_skipped_outside_linescore_window(self):
+        from PIL import Image as _Img, ImageDraw as _ID
+        from image_box import _draw_game_end_time
+        from image_assets import _get_font
+
+        img = _Img.new('1', (800, 480), 255)
+        before = img.tobytes()
+        _draw_game_end_time(_ID.Draw(img), 0, 0, '2025-06-03T22:00:00Z',
+                            in_linescore_window=False,
+                            horizonta_len=135, vertical_len=110, s=1,
+                            font=_get_font(14))
+        assert img.tobytes() == before
+
+    def test_end_time_drawn_inside_linescore_window(self):
+        from PIL import Image as _Img, ImageDraw as _ID
+        from image_box import _draw_game_end_time
+        from image_assets import _get_font
+
+        img = _Img.new('1', (800, 480), 255)
+        before = img.tobytes()
+        _draw_game_end_time(_ID.Draw(img), 0, 0, '2025-06-03T22:00:00Z',
+                            in_linescore_window=True,
+                            horizonta_len=135, vertical_len=110, s=1,
+                            font=_get_font(14))
+        assert img.tobytes() != before
+
+    def test_end_time_ignores_malformed_timestamp(self):
+        from PIL import Image as _Img, ImageDraw as _ID
+        from image_box import _draw_game_end_time
+        from image_assets import _get_font
+
+        img = _Img.new('1', (800, 480), 255)
+        before = img.tobytes()
+        _draw_game_end_time(_ID.Draw(img), 0, 0, 'garbage',
+                            in_linescore_window=True,
+                            horizonta_len=135, vertical_len=110, s=1,
+                            font=_get_font(14))
+        assert img.tobytes() == before
+
+    def test_linescore_window_expiry_prefers_api_end_time(self):
+        import datetime as _dt
+        from image_box import _final_linescore_window_expired
+
+        recent = _dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        assert _final_linescore_window_expired(
+            {'game_end_time_utc': recent}, 3600) is False
+
+        old = (_dt.datetime.now(_dt.timezone.utc)
+               - _dt.timedelta(hours=4)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        assert _final_linescore_window_expired(
+            {'game_end_time_utc': old}, 3600) is True
+
+    def test_linescore_window_expiry_falls_back_to_game_date(self):
+        """A game dated before today is definitively over, regardless of clock."""
+        from image_box import _final_linescore_window_expired
+        assert _final_linescore_window_expired(
+            {'game_date': '2001-06-03'}, 3600) is True
