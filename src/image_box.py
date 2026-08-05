@@ -1222,6 +1222,189 @@ def _compute_layout_flags(game_data):
                         mid_inning_pc, game_ending_state)
 
 
+def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
+                              game_ending_state, pitching_change, force_linescore,
+                              ser_content_left_x):
+    """Draw the live-game situation area: bases, count, outs and next batters.
+
+    Which variant appears depends on where play currently is — an inning break
+    shows the upcoming half-inning's batters, a mid-inning pitching change shows
+    the linescore instead, and normal live play shows bases/count/outs. The else
+    branch covers every non-live state, which still needs the no-hitter banner.
+    """
+    # Names the body below reads; ctx owns the canvas and geometry.
+    Himage, draw = ctx.Himage, ctx.draw
+    start_x, start_y, s = ctx.x, ctx.y, ctx.s
+    scale = ctx.s
+    horizonta_len = ctx.w
+    font14, font11, font9 = ctx.font14, ctx.font11, ctx.font9
+    use_logos = ctx.use_logos
+    _between_innings = between_innings
+    _game_ending_state = game_ending_state
+    _pitching_change = pitching_change
+    _ser_content_left_x = ser_content_left_x
+
+    if game_data['detailed_state'] == 'In Progress' and not force_linescore:
+        if _between_innings and _game_ending_state:
+            pass  # end of 9th+ with a lead — linescore shown, no next-batters panel
+        elif _between_innings:
+            # Between-innings break (including pitching changes announced during the break):
+            # show the next three batters for the upcoming half-inning and the pitcher.
+            _right_x = start_x + horizonta_len - 2 * s
+            _left_x = start_x + 88 * s
+            _max_name_w = _right_x - _left_x
+            # Next half-inning order: leadoff first (top), on-deck, in-hole (bottom)
+            _batter_names = [
+                _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
+                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
+                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
+            ]
+            # If there's a pitching change announced between innings, use that pitcher name.
+            _pc_raw = (game_data.get('sub_event') or '')[3:].strip() if _pitching_change else ''
+            _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
+            _name_y = start_y + 21 * s
+            for _nm in _batter_names:
+                if _nm:
+                    _nm_disp = _nm
+                    while _nm_disp and int(font14.getlength(_nm_disp)) > _max_name_w:
+                        _nm_disp = _nm_disp[:-1]
+                    draw.text((_left_x, _name_y), _nm_disp, font=font14, fill=0)
+                _name_y += 12 * s
+            # Separator line + pitcher name (no outs shown between innings)
+            _sep_y = _name_y + 5 * s
+            draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
+            _pit_max_w = _max_name_w
+            if _pit_name:
+                _pit_fnt = font14
+                if int(font14.getlength(_pit_name)) > _pit_max_w:
+                    _pit_fnt = font11
+                    if int(font11.getlength(_pit_name)) > _pit_max_w:
+                        _pit_fnt = font9
+                        while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
+                            _pit_name = _pit_name[:-1]
+                draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
+        elif _pitching_change:
+            # Mid-inning PC: bases + outs at normal positions, new pitcher name below.
+            _pc_outs = game_data.get('num_of_outs') or 0
+            if _pc_outs < 3:
+                _hi_third  = isinstance(game_data['runner_on_third'],  str)
+                _hi_second = isinstance(game_data['runner_on_second'], str)
+                _hi_first  = isinstance(game_data['runner_on_first'],  str)
+                Himage = draw_diamond(Himage, (start_x + 97 * s,  start_y + 52 * s), 10 * s, _hi_third)
+                Himage = draw_diamond(Himage, (start_x + 109 * s, start_y + 40 * s), 10 * s, _hi_second)
+                Himage = draw_diamond(Himage, (start_x + 121 * s, start_y + 52 * s), 10 * s, _hi_first)
+                draw = ImageDraw.Draw(Himage)
+                for _bfill, _bcx, _bcy, _bkey in (
+                    (_hi_third,  start_x + 97 * s,  start_y + 52 * s, 'runner_third_number'),
+                    (_hi_second, start_x + 109 * s, start_y + 40 * s, 'runner_second_number'),
+                    (_hi_first,  start_x + 121 * s, start_y + 52 * s, 'runner_first_number'),
+                ):
+                    if _bfill:
+                        _raw = game_data.get(_bkey)
+                        _bnum = str(_raw) if _raw is not None else ''
+                        if _bnum:
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
+            _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
+            Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
+            Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
+            Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, _pc_outs_list[2], outline_width=2)
+            draw = ImageDraw.Draw(Himage)
+            # New pitcher name from sub_event
+            _pc_name = (game_data.get('sub_event') or '')[3:].strip()
+            if _pc_name:
+                _right_x   = start_x + horizonta_len - 2 * s
+                _left_x    = start_x + 88 * s
+                _pc_name_w = _right_x - _left_x
+                _pit_fnt   = font14
+                if int(font14.getlength(_pc_name)) > _pc_name_w:
+                    _pit_fnt = font11
+                    if int(font11.getlength(_pc_name)) > _pc_name_w:
+                        _pit_fnt = font9
+                        while _pc_name and int(font9.getlength(_pc_name)) > _pc_name_w:
+                            _pc_name = _pc_name[:-1]
+                draw.text((_left_x, start_y + 83 * s), _pc_name, font=_pit_fnt, fill=0)
+        else:
+            # If 3 outs are recorded but inningState hasn't flipped to Middle/End yet
+            # (API lag), show the linescore instead — prevents filled base diamonds
+            # with no runner numbers from appearing at the end of a half-inning.
+            if (game_data.get('num_of_outs') or 0) >= 3:
+                draw, Himage = _draw_linescore_grid(
+                    draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale
+                )
+            else:
+                _hi_third = isinstance(game_data['runner_on_third'], str)
+                _hi_second = isinstance(game_data['runner_on_second'], str)
+                _hi_first = isinstance(game_data['runner_on_first'], str)
+
+                Himage = draw_diamond(Himage, (start_x + 97 * s,  start_y + 52 * s), 10 * s, _hi_third)
+                Himage = draw_diamond(Himage, (start_x + 109 * s, start_y + 40 * s), 10 * s, _hi_second)
+                Himage = draw_diamond(Himage, (start_x + 121 * s, start_y + 52 * s), 10 * s, _hi_first)
+                draw = ImageDraw.Draw(Himage)
+                for _bfill, _bcx, _bcy, _bkey in (
+                    (_hi_third,  start_x + 97 * s,  start_y + 52 * s, 'runner_third_number'),
+                    (_hi_second, start_x + 109 * s, start_y + 40 * s, 'runner_second_number'),
+                    (_hi_first,  start_x + 121 * s, start_y + 52 * s, 'runner_first_number'),
+                ):
+                    if _bfill:
+                        _raw = game_data.get(_bkey)
+                        _bnum = str(_raw) if _raw is not None else ''
+                        if _bnum:
+                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
+
+                outs_list = [None] * 3
+                for i in range(1, 4):
+                    outs_list[i-1] = i <= game_data['num_of_outs']
+                Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, outs_list[0], outline_width=2)
+                Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, outs_list[1], outline_width=2)
+                Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, outs_list[2], outline_width=2)
+
+                balls_list = [None] * 4
+                for i in range(1, 4):
+                    balls_list[i-1] = i <= game_data['balls']
+
+                draw.text((start_x + 2 * s, start_y + 25 * s + 59 * s), 'B', font=font14, fill=0)
+                Himage = draw_circle(Himage, (start_x + 19 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[0])
+                Himage = draw_circle(Himage, (start_x + 31 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[1])
+                Himage = draw_circle(Himage, (start_x + 43 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[2])
+
+                _num_strikes = game_data.get('strikes') or 0
+                strikes_list = [i + 1 <= _num_strikes for i in range(2)]
+                _strike_calls = game_data.get('strike_calls', [])
+
+                draw.text((start_x + 19 * s + 39 * s, start_y + 25 * s + 59 * s), 'S', font=font14, fill=0)
+                for _si, (_scx, _scy) in enumerate([
+                    (start_x + 19 * s + 55 * s, start_y + 25 * s + 68 * s),
+                    (start_x + 31 * s + 55 * s, start_y + 25 * s + 68 * s),
+                ]):
+                    _call = _strike_calls[_si] if _si < len(_strike_calls) else None
+                    if strikes_list[_si] and _call in ('S', 'F'):
+                        # Swinging or foul: outline ring with ~80%-filled center
+                        _ir = 4 * s - 2
+                        Himage = draw_circle(Himage, (_scx, _scy), 4 * s, False)
+                        draw = ImageDraw.Draw(Himage)
+                        draw.ellipse([_scx - _ir, _scy - _ir, _scx + _ir, _scy + _ir], fill='black', outline='black')
+                    else:
+                        # Looking / empty: solid filled circle
+                        Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
+                        draw = ImageDraw.Draw(Himage)
+
+        if game_data.get('save_situation') and not _between_innings and not _pitching_change:
+            _sv_w = int(font9.getlength('SV'))
+            _sv_x = start_x + horizonta_len - _sv_w - 2 * s
+            _draw_bold_text(draw, (_sv_x, start_y + 25 * s), 'SV', font9, s)
+    else:
+
+        # Perfect game takes precedence over no-hitter display — right-aligned in header
+        if game_data.get('perfect_game') or game_data.get('no_hitter'):
+            _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
+            _nh_lw = int(font14.getlength(_nh_label))
+            _nh_lx = (_ser_content_left_x - 2 * s) - _nh_lw
+            _draw_bold_text(draw, (_nh_lx, start_y + 3 * s), _nh_label, font14, s)
+
+    # _draw_linescore_grid returns a new canvas/draw pair; hand both back.
+    ctx.Himage, ctx.draw = Himage, draw
+
+
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
     """Render a single game score box onto Himage at (start_x, start_y)."""
     s = scale
@@ -2240,162 +2423,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown).
     # force_linescore (wide-cell mode) suppresses this block — the right panel handles live context.
-    if game_data['detailed_state'] == 'In Progress' and not force_linescore:
-        if _between_innings and _game_ending_state:
-            pass  # end of 9th+ with a lead — linescore shown, no next-batters panel
-        elif _between_innings:
-            # Between-innings break (including pitching changes announced during the break):
-            # show the next three batters for the upcoming half-inning and the pitcher.
-            _right_x = start_x + horizonta_len - 2 * s
-            _left_x = start_x + 88 * s
-            _max_name_w = _right_x - _left_x
-            # Next half-inning order: leadoff first (top), on-deck, in-hole (bottom)
-            _batter_names = [
-                _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
-                _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
-                _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
-            ]
-            # If there's a pitching change announced between innings, use that pitcher name.
-            _pc_raw = (game_data.get('sub_event') or '')[3:].strip() if _pitching_change else ''
-            _pit_name = _pc_raw or _last_name(game_data.get('next_pitcher') or game_data.get('current_pitcher') or '')
-            _name_y = start_y + 21 * s
-            for _nm in _batter_names:
-                if _nm:
-                    _nm_disp = _nm
-                    while _nm_disp and int(font14.getlength(_nm_disp)) > _max_name_w:
-                        _nm_disp = _nm_disp[:-1]
-                    draw.text((_left_x, _name_y), _nm_disp, font=font14, fill=0)
-                _name_y += 12 * s
-            # Separator line + pitcher name (no outs shown between innings)
-            _sep_y = _name_y + 5 * s
-            draw.line((start_x + 87 * s, _sep_y, _right_x, _sep_y), fill=0)
-            _pit_max_w = _max_name_w
-            if _pit_name:
-                _pit_fnt = font14
-                if int(font14.getlength(_pit_name)) > _pit_max_w:
-                    _pit_fnt = font11
-                    if int(font11.getlength(_pit_name)) > _pit_max_w:
-                        _pit_fnt = font9
-                        while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
-                            _pit_name = _pit_name[:-1]
-                draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
-        elif _pitching_change:
-            # Mid-inning PC: bases + outs at normal positions, new pitcher name below.
-            _pc_outs = game_data.get('num_of_outs') or 0
-            if _pc_outs < 3:
-                _hi_third  = isinstance(game_data['runner_on_third'],  str)
-                _hi_second = isinstance(game_data['runner_on_second'], str)
-                _hi_first  = isinstance(game_data['runner_on_first'],  str)
-                Himage = draw_diamond(Himage, (start_x + 97 * s,  start_y + 52 * s), 10 * s, _hi_third)
-                Himage = draw_diamond(Himage, (start_x + 109 * s, start_y + 40 * s), 10 * s, _hi_second)
-                Himage = draw_diamond(Himage, (start_x + 121 * s, start_y + 52 * s), 10 * s, _hi_first)
-                draw = ImageDraw.Draw(Himage)
-                for _bfill, _bcx, _bcy, _bkey in (
-                    (_hi_third,  start_x + 97 * s,  start_y + 52 * s, 'runner_third_number'),
-                    (_hi_second, start_x + 109 * s, start_y + 40 * s, 'runner_second_number'),
-                    (_hi_first,  start_x + 121 * s, start_y + 52 * s, 'runner_first_number'),
-                ):
-                    if _bfill:
-                        _raw = game_data.get(_bkey)
-                        _bnum = str(_raw) if _raw is not None else ''
-                        if _bnum:
-                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
-            _pc_outs_list = [i + 1 <= _pc_outs for i in range(3)]
-            Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, _pc_outs_list[0], outline_width=2)
-            Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
-            Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, _pc_outs_list[2], outline_width=2)
-            draw = ImageDraw.Draw(Himage)
-            # New pitcher name from sub_event
-            _pc_name = (game_data.get('sub_event') or '')[3:].strip()
-            if _pc_name:
-                _right_x   = start_x + horizonta_len - 2 * s
-                _left_x    = start_x + 88 * s
-                _pc_name_w = _right_x - _left_x
-                _pit_fnt   = font14
-                if int(font14.getlength(_pc_name)) > _pc_name_w:
-                    _pit_fnt = font11
-                    if int(font11.getlength(_pc_name)) > _pc_name_w:
-                        _pit_fnt = font9
-                        while _pc_name and int(font9.getlength(_pc_name)) > _pc_name_w:
-                            _pc_name = _pc_name[:-1]
-                draw.text((_left_x, start_y + 83 * s), _pc_name, font=_pit_fnt, fill=0)
-        else:
-            # If 3 outs are recorded but inningState hasn't flipped to Middle/End yet
-            # (API lag), show the linescore instead — prevents filled base diamonds
-            # with no runner numbers from appearing at the end of a half-inning.
-            if (game_data.get('num_of_outs') or 0) >= 3:
-                draw, Himage = _draw_linescore_grid(
-                    draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale
-                )
-            else:
-                _hi_third = isinstance(game_data['runner_on_third'], str)
-                _hi_second = isinstance(game_data['runner_on_second'], str)
-                _hi_first = isinstance(game_data['runner_on_first'], str)
+    _draw_live_situation_panel(
+        ctx, game_data, team_data,
+        between_innings=_between_innings, game_ending_state=_game_ending_state,
+        pitching_change=_pitching_change, force_linescore=force_linescore,
+        ser_content_left_x=_ser_content_left_x)
+    Himage, draw = ctx.Himage, ctx.draw
 
-                Himage = draw_diamond(Himage, (start_x + 97 * s,  start_y + 52 * s), 10 * s, _hi_third)
-                Himage = draw_diamond(Himage, (start_x + 109 * s, start_y + 40 * s), 10 * s, _hi_second)
-                Himage = draw_diamond(Himage, (start_x + 121 * s, start_y + 52 * s), 10 * s, _hi_first)
-                draw = ImageDraw.Draw(Himage)
-                for _bfill, _bcx, _bcy, _bkey in (
-                    (_hi_third,  start_x + 97 * s,  start_y + 52 * s, 'runner_third_number'),
-                    (_hi_second, start_x + 109 * s, start_y + 40 * s, 'runner_second_number'),
-                    (_hi_first,  start_x + 121 * s, start_y + 52 * s, 'runner_first_number'),
-                ):
-                    if _bfill:
-                        _raw = game_data.get(_bkey)
-                        _bnum = str(_raw) if _raw is not None else ''
-                        if _bnum:
-                            draw_tight_number(draw, _bcx, _bcy, _bnum, font11, 255, bold=True)
-
-                outs_list = [None] * 3
-                for i in range(1, 4):
-                    outs_list[i-1] = i <= game_data['num_of_outs']
-                Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, outs_list[0], outline_width=2)
-                Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, outs_list[1], outline_width=2)
-                Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, outs_list[2], outline_width=2)
-
-                balls_list = [None] * 4
-                for i in range(1, 4):
-                    balls_list[i-1] = i <= game_data['balls']
-
-                draw.text((start_x + 2 * s, start_y + 25 * s + 59 * s), 'B', font=font14, fill=0)
-                Himage = draw_circle(Himage, (start_x + 19 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[0])
-                Himage = draw_circle(Himage, (start_x + 31 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[1])
-                Himage = draw_circle(Himage, (start_x + 43 * s, start_y + 25 * s + 68 * s), 4 * s, balls_list[2])
-
-                _num_strikes = game_data.get('strikes') or 0
-                strikes_list = [i + 1 <= _num_strikes for i in range(2)]
-                _strike_calls = game_data.get('strike_calls', [])
-
-                draw.text((start_x + 19 * s + 39 * s, start_y + 25 * s + 59 * s), 'S', font=font14, fill=0)
-                for _si, (_scx, _scy) in enumerate([
-                    (start_x + 19 * s + 55 * s, start_y + 25 * s + 68 * s),
-                    (start_x + 31 * s + 55 * s, start_y + 25 * s + 68 * s),
-                ]):
-                    _call = _strike_calls[_si] if _si < len(_strike_calls) else None
-                    if strikes_list[_si] and _call in ('S', 'F'):
-                        # Swinging or foul: outline ring with ~80%-filled center
-                        _ir = 4 * s - 2
-                        Himage = draw_circle(Himage, (_scx, _scy), 4 * s, False)
-                        draw = ImageDraw.Draw(Himage)
-                        draw.ellipse([_scx - _ir, _scy - _ir, _scx + _ir, _scy + _ir], fill='black', outline='black')
-                    else:
-                        # Looking / empty: solid filled circle
-                        Himage = draw_circle(Himage, (_scx, _scy), 4 * s, strikes_list[_si])
-                        draw = ImageDraw.Draw(Himage)
-
-        if game_data.get('save_situation') and not _between_innings and not _pitching_change:
-            _sv_w = int(font9.getlength('SV'))
-            _sv_x = start_x + horizonta_len - _sv_w - 2 * s
-            _draw_bold_text(draw, (_sv_x, start_y + 25 * s), 'SV', font9, s)
-    else:
-
-        # Perfect game takes precedence over no-hitter display — right-aligned in header
-        if game_data.get('perfect_game') or game_data.get('no_hitter'):
-            _nh_label = 'Perfect Game' if game_data.get('perfect_game') else 'No-Hitter'
-            _nh_lw = int(font14.getlength(_nh_label))
-            _nh_lx = (_ser_content_left_x - 2 * s) - _nh_lw
-            _draw_bold_text(draw, (_nh_lx, start_y + 3 * s), _nh_label, font14, s)
 
 
 
