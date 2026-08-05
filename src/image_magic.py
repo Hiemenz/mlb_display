@@ -18,6 +18,9 @@ Mirrors image_leaders.draw_leaders_cell's layout so it drops into a grid
 slot identically.
 """
 from image_assets import _get_font, ImageDraw, _logo_small
+from image_utils import (
+    division_rank, magic_or_elim_value, MAGIC_BASE, ELIM_THRESHOLD,
+)
 
 # Matches the visible footprint of a normal single-game grid box
 # (mirrors image_leaders / image_transactions).
@@ -25,16 +28,10 @@ _CELL_W = 135
 _CELL_H = 130
 _PAD = 2
 
-# A full MLB season is 162 games; a team clinches over a rival the moment the
-# rival can no longer tie it, i.e. when (162 + 1) - wins - rival_losses hits 0.
-_MAGIC_BASE = 163
-
-# At or below this, a trailing team's elimination number is dramatic enough
-# to show instead of games back — early/mid-season elimination numbers (60+)
-# aren't meaningful, so games back is the more useful stat until the race
-# tightens. Also gates the leader's magic number (see _magic_or_elim): a
-# leader whose magic number is still above this shows nothing at all.
-_ELIM_THRESHOLD = 20
+# Magic/elimination arithmetic lives in image_utils so the sidebar badges
+# (image_standings._me_badge_value) and this cell can't drift apart.
+_MAGIC_BASE = MAGIC_BASE
+_ELIM_THRESHOLD = ELIM_THRESHOLD
 
 # Collapse a division's full name into a compact header, e.g.
 # "American League East" → "AL EAST".
@@ -63,47 +60,15 @@ def _find_primary_division(standings, abbr_map, primary_abbr):
             if abbr_map.get(str(team.get('team_id'))) == primary_abbr:
                 ordered = sorted(
                     teams,
-                    key=lambda t: (t.get('divisionRank') is None,
-                                   int(t.get('divisionRank') or 99)),
+                    key=lambda t: (t.get('divisionRank') is None, division_rank(t)),
                 )
                 return division_name, ordered
     return None, None
 
 
 def _magic_or_elim(team, leader, is_leader, rival_losses):
-    """Value string for one team's row: 'M4' (leader, only while the magic
-    number is _ELIM_THRESHOLD or less — a triple-digit magic number early in
-    the season isn't meaningful, so the leader shows nothing until then),
-    'E7' (trailing team within _ELIM_THRESHOLD of elimination), games back
-    (trailing team otherwise), 'CL', 'OUT', or '' when the underlying
-    win/loss data isn't available yet."""
-    clinch = (team.get('clinch_indicator') or '').strip().lower()
-    if clinch in ('z', 'y'):
-        return 'CL'
-    if clinch == 'e':
-        return 'OUT'
-
-    lead_w = leader.get('league_record_wins')
-    if lead_w is None:
-        return ''
-
-    if is_leader:
-        if rival_losses is None:
-            return 'CL'          # no rivals left to hold off
-        magic = _MAGIC_BASE - lead_w - rival_losses
-        if magic <= 0:
-            return 'CL'
-        return f'M{magic}' if magic <= _ELIM_THRESHOLD else ''
-
-    team_l = team.get('league_record_losses')
-    if team_l is None:
-        return ''
-    elim = _MAGIC_BASE - lead_w - team_l
-    if elim <= 0:
-        return 'OUT'
-    if elim <= _ELIM_THRESHOLD:
-        return f'E{elim}'
-    return str(team.get('games_back') or '-')
+    """Value string for one team's row — see image_utils.magic_or_elim_value."""
+    return magic_or_elim_value(team, leader, is_leader, rival_losses)
 
 
 def draw_magic_cell(Himage, sx, sy, standings_data, team_data, primary_abbr, use_logos=False):
@@ -160,7 +125,7 @@ def draw_magic_cell(Himage, sx, sy, standings_data, team_data, primary_abbr, use
 
     # Fixed columns computed once so logos/records/values line up per row.
     rank_col_w = max(
-        (int(font_row.getlength(str(t.get('divisionRank', i + 1)) + '.'))
+        (int(font_row.getlength(str(division_rank(t, default=i + 1)) + '.'))
          for i, t in enumerate(teams)),
         default=0,
     )
@@ -170,7 +135,7 @@ def draw_magic_cell(Himage, sx, sy, standings_data, team_data, primary_abbr, use
     for i, team in enumerate(teams):
         ry = sy + 20 + i * row_h
 
-        rank = str(team.get('divisionRank', i + 1))
+        rank = str(division_rank(team, default=i + 1))
         team_id = team.get('team_id')
         abbr = abbr_map.get(str(team_id), '')
         wins = team.get('league_record_wins')

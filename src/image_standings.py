@@ -5,6 +5,9 @@ from image_assets import _get_font, _logo_small
 import time as _time
 
 from util import load_json_file, save_off_results
+from image_utils import (
+    division_rank, magic_or_elim_value, MAGIC_BASE, ELIM_THRESHOLD,
+)
 
 _AL_DIV_ORDER = [
     'American League East',
@@ -60,7 +63,7 @@ def derive_wildcard_from_standings(standings_data):
         teams = []
         for div in div_names:
             for t in divisions.get(div, []):
-                if str(t.get('divisionRank', '')) == '1':
+                if division_rank(t, default=None) == 1:
                     continue  # skip division leaders — they aren't competing for the wildcard
                 team_id = str(t.get('team_id', ''))
                 abbr = abbr_map.get(team_id, t.get('team_name', '???')[:3].upper())
@@ -590,47 +593,15 @@ def _aaa_divisions(standings_data, side):
     return [d for d in candidates if d in all_divs]
 
 
-_ME_BADGE_THRESHOLD = 20   # at or below this, a trailing team's elimination
-                           # number is dramatic enough to badge instead of
-                           # games back; also gates the leader's magic number
-                           # (magic still above this shows nothing at all)
-_ME_MAGIC_BASE = 163       # 162 games + 1
+# Magic/elimination arithmetic lives in image_utils so this and the magic-number
+# grid cell (image_magic._magic_or_elim) can't drift apart.
+_ME_BADGE_THRESHOLD = ELIM_THRESHOLD
+_ME_MAGIC_BASE = MAGIC_BASE
 
 
 def _me_badge_value(team, leader, is_leader, rival_losses):
-    """Return badge text for a standings row: 'M5'/'CL' for the leader (only
-    once the magic number drops to _ME_BADGE_THRESHOLD or less — otherwise
-    the leader shows nothing), or games back for a trailing team until its
-    elimination number drops to _ME_BADGE_THRESHOLD or less, at which point
-    'E12'/'OUT' takes over — mirrors image_magic._magic_or_elim's
-    leader/trailer split."""
-    clinch = (team.get('clinch_indicator') or '').strip().lower()
-    if clinch in ('z', 'y'):
-        return 'CL'
-    if clinch == 'e':
-        return 'OUT'
-
-    lead_w = leader.get('league_record_wins')
-    if lead_w is None:
-        return ''
-
-    if is_leader:
-        if rival_losses is None:
-            return 'CL'
-        magic = _ME_MAGIC_BASE - lead_w - rival_losses
-        if magic <= 0:
-            return 'CL'
-        return f'M{magic}' if magic <= _ME_BADGE_THRESHOLD else ''
-    else:
-        team_l = team.get('league_record_losses')
-        if team_l is None:
-            return ''
-        elim = _ME_MAGIC_BASE - lead_w - team_l
-        if elim <= 0:
-            return 'OUT'
-        if elim <= _ME_BADGE_THRESHOLD:
-            return f'E{elim}'
-        return str(team.get('games_back') or '-')
+    """Badge text for a standings row — see image_utils.magic_or_elim_value."""
+    return magic_or_elim_value(team, leader, is_leader, rival_losses)
 
 
 def draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode='mlb',
@@ -692,7 +663,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
         div_teams = [
             sorted(
                 standings_data.get('standings', {}).get(d, []),
-                key=lambda t: int(t.get('divisionRank', 99))
+                key=lambda t: division_rank(t)
             )
             for d in divisions
         ]
@@ -710,7 +681,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
 
     for row_idx, div_name in enumerate(divisions):
         teams = standings_data.get('standings', {}).get(div_name, [])
-        teams = sorted(teams, key=lambda t: int(t.get('divisionRank', 99)))
+        teams = sorted(teams, key=lambda t: division_rank(t))
         y_section = row_y_list[row_idx]
         n_show    = len(teams) if max_per_section is None else min(len(teams), max_per_section)
         slot_h    = _SLOT_H_STD
@@ -722,7 +693,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
             tid = str(team.get('team_id', ''))
             if tid not in prev_rank:
                 continue
-            cur_rank = int(team.get('divisionRank', 99))
+            cur_rank = division_rank(team)
             prev_r, prev_w, prev_l = prev_rank[tid]
             cur_w = int(team.get('league_record_wins') or 0)
             cur_l = int(team.get('league_record_losses') or 0)
@@ -735,7 +706,7 @@ def draw_standings_sidebar(Himage, standings_data, team_data, side='left', leagu
                 tid = str(team.get('team_id', ''))
                 if tid not in prev_rank or tid in movers:
                     continue
-                cur_rank = int(team.get('divisionRank', 99))
+                cur_rank = division_rank(team)
                 prev_r, _, _ = prev_rank[tid]
                 if cur_rank != prev_r:
                     movers.add(tid)
@@ -955,7 +926,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
     display_movers = set()
     for _div_name in divisions:
         _div_teams = standings_data.get('standings', {}).get(_div_name, [])
-        _div_teams = sorted(_div_teams, key=lambda t: int(t.get('divisionRank', 99)))
+        _div_teams = sorted(_div_teams, key=lambda t: division_rank(t))
         _n = min(len(_div_teams), n_teams)
 
         movers = set()
@@ -963,7 +934,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
             tid = str(team.get('team_id', ''))
             if tid not in prev_rank:
                 continue
-            cur_rank = int(team.get('divisionRank', 99))
+            cur_rank = division_rank(team)
             prev_r, prev_w, prev_l = prev_rank[tid]
             cur_w = int(team.get('league_record_wins') or 0)
             cur_l = int(team.get('league_record_losses') or 0)
@@ -975,7 +946,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                 tid = str(team.get('team_id', ''))
                 if tid not in prev_rank or tid in movers:
                     continue
-                cur_rank = int(team.get('divisionRank', 99))
+                cur_rank = division_rank(team)
                 prev_r, _, _ = prev_rank[tid]
                 if cur_rank != prev_r:
                     movers.add(tid)
@@ -1017,7 +988,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
         col_x = x_anchor + col_idx * col_w
 
         teams = standings_data.get('standings', {}).get(div_name, [])
-        teams = sorted(teams, key=lambda t: int(t.get('divisionRank', 99)))
+        teams = sorted(teams, key=lambda t: division_rank(t))
 
         for slot_idx, team in enumerate(teams[:n_teams]):
             team_id = str(team.get('team_id', ''))

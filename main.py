@@ -10,6 +10,7 @@ import json
 import platform
 import argparse
 import time
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 
 import pytz
@@ -172,139 +173,117 @@ def _maybe_generate_video(date_str, config):
 
 _STANDINGS_MAX_AGE_HOURS = 20  # refresh if standings.json is older than this
 _LEADERS_MAX_AGE_HOURS = 24    # refresh if leaders.json is older than this
+_STREAKS_MAX_AGE_HOURS = 24    # refresh if streaks.json is older than this
 _TRANSACTIONS_MAX_AGE_HOURS = 3  # refresh if transactions.json is older than this
 _NEWS_MAX_AGE_HOURS = 6         # refresh if news.json is older than this
 _PLAYOFF_BRACKET_MAX_AGE_HOURS = 1  # refresh cadence during an active postseason
 
 
-def _should_refresh_leaders(sched, force=False):
-    """Return True if leaders.json needs a refresh.
+def _cache_age_hours(filename):
+    """Hours since data/<filename> was last written, or None if it doesn't exist."""
+    path = _data_path(filename)
+    if not os.path.exists(path):
+        return None
+    return (time.time() - os.path.getmtime(path)) / 3600
 
-    Mirrors _should_refresh_standings: season stat leaders barely move
-    mid-game, so we only refetch when the cache is missing/stale (catches
-    the once-a-day / offline-for-a-day cases) or a game that is now Final
-    wasn't Final during the last leaders refresh — i.e. once games wrap up.
 
-    force=True (--full-refresh) always refreshes regardless of cache state.
-    """
-    if force:
-        return True
-
-    leaders_path = _data_path('leaders.json')
-    if not os.path.exists(leaders_path):
-        return True
-
-    import time as _t
-    age_hours = (_t.time() - os.path.getmtime(leaders_path)) / 3600
-    if age_hours >= _LEADERS_MAX_AGE_HOURS:
-        print(f"Leaders stale ({age_hours:.1f}h old) — refreshing")
-        return True
-
+def _current_final_pks():
+    """Set of game_pk strings currently in a terminal state, or None if unreadable."""
     try:
         games = load_json_file('games.json').get('games', [])
     except Exception:
-        return False
-    current_finals = {
+        return None
+    return {
         str(g['game_pk']) for g in games
         if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
     }
-    known_finals = set(sched.get('leaders_final_pks', []))
-    return bool(current_finals - known_finals)
 
 
-def _should_refresh_transactions(force=False):
-    """Return True if transactions.json needs a refresh.
+def _should_refresh(label, filename, max_age_hours, force=False,
+                    sched=None, final_pks_key=None):
+    """Return True when a cached data file needs refetching.
 
-    Unlike standings/leaders, transactions aren't tied to games going Final —
-    just a simple age check (missing or older than _TRANSACTIONS_MAX_AGE_HOURS).
+    Two independent triggers:
+      * the cache is missing, or older than ``max_age_hours`` (catches the
+        once-a-day / offline-for-a-day cases);
+      * a game that is now Final wasn't Final at the last refresh of *this*
+        file — only when ``sched`` and ``final_pks_key`` are supplied.
+
+    Each caller must pass its own ``final_pks_key``. Sharing one key across two
+    panels means whichever refreshes first records the Finals and starves the
+    other for the rest of the day.
 
     force=True (--full-refresh) always refreshes regardless of cache state.
     """
     if force:
         return True
 
-    transactions_path = _data_path('transactions.json')
-    if not os.path.exists(transactions_path):
+    age_hours = _cache_age_hours(filename)
+    if age_hours is None:
+        return True
+    if age_hours >= max_age_hours:
+        print(f"{label} stale ({age_hours:.1f}h old) — refreshing")
         return True
 
-    import time as _t
-    age_hours = (_t.time() - os.path.getmtime(transactions_path)) / 3600
-    if age_hours >= _TRANSACTIONS_MAX_AGE_HOURS:
-        print(f"Transactions stale ({age_hours:.1f}h old) — refreshing")
-        return True
-    return False
+    if sched is None or final_pks_key is None:
+        return False
+    current_finals = _current_final_pks()
+    if current_finals is None:
+        return False
+    return bool(current_finals - set(sched.get(final_pks_key, [])))
+
+
+def _record_refreshed_finals(sched, final_pks_key):
+    """Remember which games were Final at this refresh, so the next poll only
+    re-triggers when a *new* game goes Final."""
+    current_finals = _current_final_pks()
+    if current_finals is not None:
+        sched[final_pks_key] = sorted(current_finals)
+        _save_schedule_state(sched)
+
+
+def _should_refresh_leaders(sched, force=False):
+    """Return True if leaders.json needs a refresh."""
+    return _should_refresh('Leaders', 'leaders.json', _LEADERS_MAX_AGE_HOURS,
+                           force, sched, 'leaders_final_pks')
+
+
+def _should_refresh_streaks(sched, force=False):
+    """Return True if streaks.json needs a refresh.
+
+    Keyed on its own cache file and its own Finals marker rather than piggybacking
+    on the leaders gate — sharing that gate meant a successful leaders refresh
+    consumed the trigger and the streaks panel never updated.
+    """
+    return _should_refresh('Streaks', 'streaks.json', _STREAKS_MAX_AGE_HOURS,
+                           force, sched, 'streaks_final_pks')
+
+
+def _should_refresh_standings(sched, force=False):
+    """Return True if standings.json needs a refresh."""
+    return _should_refresh('Standings', 'standings.json', _STANDINGS_MAX_AGE_HOURS,
+                           force, sched, 'standings_final_pks')
+
+
+def _should_refresh_transactions(force=False):
+    """Return True if transactions.json needs a refresh (simple age check)."""
+    return _should_refresh('Transactions', 'transactions.json',
+                           _TRANSACTIONS_MAX_AGE_HOURS, force)
 
 
 def _should_refresh_news(force=False):
     """Return True if news.json needs a refresh (simple age check)."""
-    if force:
-        return True
-    news_path = _data_path('news.json')
-    if not os.path.exists(news_path):
-        return True
-    import time as _t
-    age_hours = (_t.time() - os.path.getmtime(news_path)) / 3600
-    if age_hours >= _NEWS_MAX_AGE_HOURS:
-        print(f"News stale ({age_hours:.1f}h old) — refreshing")
-        return True
-    return False
+    return _should_refresh('News', 'news.json', _NEWS_MAX_AGE_HOURS, force)
 
 
 def _should_refresh_playoff_bracket(force=False):
-    """Return True if playoff_bracket.json needs a refresh.
+    """Return True if playoff_bracket.json needs a refresh (simple age check).
 
-    Simple age check — series win counts only change once per completed
-    game, so hourly is frequent enough even during an active series.
-
-    force=True (--full-refresh) always refreshes regardless of cache state.
+    Series win counts only change once per completed game, so hourly is
+    frequent enough even during an active series.
     """
-    if force:
-        return True
-
-    bracket_path = _data_path('playoff_bracket.json')
-    if not os.path.exists(bracket_path):
-        return True
-
-    import time as _t
-    age_hours = (_t.time() - os.path.getmtime(bracket_path)) / 3600
-    if age_hours >= _PLAYOFF_BRACKET_MAX_AGE_HOURS:
-        print(f"Playoff bracket stale ({age_hours:.1f}h old) — refreshing")
-        return True
-    return False
-
-
-def _should_refresh_standings(sched, force=False):
-    """Return True if standings.json needs a refresh.
-
-    Triggers when: the file is missing, the file is older than 20 hours
-    (catches the case where the program was offline for a day or more),
-    or a game that is now Final was not Final during the last standings refresh.
-
-    force=True (--full-refresh) always refreshes regardless of cache state.
-    """
-    if force:
-        return True
-
-    standings_path = _data_path('standings.json')
-    if not os.path.exists(standings_path):
-        return True
-
-    import time as _t
-    age_hours = (_t.time() - os.path.getmtime(standings_path)) / 3600
-    if age_hours >= _STANDINGS_MAX_AGE_HOURS:
-        print(f"Standings stale ({age_hours:.1f}h old) — refreshing")
-        return True
-
-    try:
-        games = load_json_file('games.json').get('games', [])
-    except Exception:
-        return False
-    current_finals = {
-        str(g['game_pk']) for g in games
-        if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
-    }
-    known_finals = set(sched.get('standings_final_pks', []))
-    return bool(current_finals - known_finals)
+    return _should_refresh('Playoff bracket', 'playoff_bracket.json',
+                           _PLAYOFF_BRACKET_MAX_AGE_HOURS, force)
 
 
 def _should_skip_poll(date_str, config, sched):
@@ -465,7 +444,7 @@ def _maybe_show_derby_bracket(config, no_throttle=False, auto_open=False):
     return True
 
 
-def _show_idle_screen(config, sched, auto_open=False):
+def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen with recent transactions."""
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
@@ -522,13 +501,69 @@ def _show_idle_screen(config, sched, auto_open=False):
         subprocess.run(['open', output_path], check=False)
 
 
+_DateContext = namedtuple(
+    '_DateContext', ['date_str', 'showing_previous_day', 'morning_block', 'now'])
+
+
+def _local_now(config):
+    """Current time in the configured display timezone.
+
+    Every date decision in the pipeline must go through this rather than a bare
+    datetime.now(): a Pi running on UTC with timezone: America/Chicago would
+    otherwise roll over to "tomorrow" six hours early, fetching the wrong
+    next-game schedule and mislabelling the scoreboard date.
+    """
+    return datetime.now(pytz.timezone(config.get('timezone', 'America/Chicago')))
+
+
+def _resolve_target_date(args, config):
+    """Pick which date's games to show, returning a _DateContext.
+
+    * ``--date`` wins outright and flips the renderer into historical mode.
+    * After the morning cutoff (9am, 11am at weekends) → today.
+    * Inside the morning window → the previous day, so last night's finals stay
+      up through breakfast. With ``morning_alternate_games`` enabled the window
+      instead alternates between yesterday and today every 5 minutes;
+      ``morning_block`` carries that block index (None when not alternating, and
+      the only thing the morning throttle may key on).
+    """
+    if args.date:
+        set_historical_mode(True)
+        print(f"Using specified date: {args.date}")
+        return _DateContext(args.date, False, None, _local_now(config))
+
+    now = _local_now(config)
+    today = now.date().strftime('%Y-%m-%d')
+    yesterday = (now.date() - timedelta(days=1)).strftime('%Y-%m-%d')
+
+    is_weekend = now.weekday() >= 5  # 5=Sat, 6=Sun
+    morning_end = (config.get('morning_end_weekend', 11) if is_weekend
+                   else config.get('morning_end', 9))
+    morning_start = config.get('night_end', 7)
+
+    if now.hour >= morning_end:
+        print(f"Using today's date: {today}")
+        return _DateContext(today, False, None, now)
+
+    if now.hour >= morning_start and config.get('morning_alternate_games', True):
+        block = (now.hour * 60 + now.minute) // 5
+        if block % 2 == 0:
+            print(f"Morning alternating (block {block}) — showing previous day: {yesterday}")
+            return _DateContext(yesterday, True, block, now)
+        print(f"Morning alternating (block {block}) — showing today: {today}")
+        return _DateContext(today, True, block, now)
+
+    print(f"Before {morning_end}am — showing previous day: {yesterday}")
+    return _DateContext(yesterday, True, None, now)
+
+
 def _update_schedule_state(game_state_data, date_str, config, sched):
     """Update schedule state."""
     sched['last_game_fetch'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
     sched['last_fetch_date'] = date_str
     if not game_state_data:
         priority = config.get('sport_id_priority', [1, 8, 16])
-        tomorrow = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
+        tomorrow = (_local_now(config).date() + timedelta(days=1)).strftime('%Y-%m-%d')
         next_date = find_next_game_date(priority, tomorrow)
         sched['next_game_date'] = next_date
         _save_schedule_state(sched)
@@ -554,6 +589,287 @@ def _update_schedule_state(game_state_data, date_str, config, sched):
             sched.pop('all_done_refreshed', None)
         _save_schedule_state(sched)
         return False
+
+
+
+def _resolve_league_mode(config):
+    """Effective league mode — LEAGUE_MODE env var wins over config."""
+    return (os.environ.get('LEAGUE_MODE', '').lower().strip()
+            or config.get('league_mode', 'mlb'))
+
+
+def _resolve_sport(args, config):
+    """Resolve (sport_id, league_mode, handled) from args + config.
+
+    sport_id is None when a sport_id_priority list is configured — that tells
+    fetch_scoreboard_for_date to walk the priority list instead of pinning one
+    sport. ``handled`` is True when --fetch-teams already did its work and the
+    caller should exit.
+    """
+    league_mode = _resolve_league_mode(config)
+
+    if args.sport_id:
+        sport_id = args.sport_id
+        print(f"Using specified sport: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
+        if sport_id == 11 and league_mode != 'aaa':
+            league_mode = 'aaa'
+            config['league_mode'] = 'aaa'
+        if args.fetch_teams:
+            fetch_all_team_abbreviations(sport_id)
+            return sport_id, league_mode, True
+        return sport_id, league_mode, False
+
+    if league_mode == 'aaa':
+        print("League mode: AAA (Triple-A)")
+        if args.fetch_teams:
+            fetch_all_team_abbreviations(11)
+            return 11, league_mode, True
+        return 11, league_mode, False
+
+    sport_id_priority = config.get('sport_id_priority')
+    if sport_id_priority and isinstance(sport_id_priority, list):
+        print("Using sport priority: "
+              + ' > '.join(SPORT_NAMES.get(sid, str(sid)) for sid in sport_id_priority))
+        sport_id = None
+    else:
+        sport_id = config.get('sport_id', 1)
+        print(f"Tracking: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
+
+    if args.fetch_teams:
+        target = sport_id if sport_id else (sport_id_priority[0] if sport_id_priority else 1)
+        fetch_all_team_abbreviations(target)
+        return sport_id, league_mode, True
+    return sport_id, league_mode, False
+
+
+def _primary_sport_id(sport_id, config):
+    """A concrete sport id for the season-stat fetchers, which can't take None."""
+    return sport_id if sport_id else (config.get('sport_id_priority', [1]) or [1])[0]
+
+
+
+# ---------------------------------------------------------------------------
+# Support-data refresh — standings, bracket, transactions, news, leaders, streaks.
+#
+# These run from three places with different subsets and force flags: the
+# poll-skip path (game poll throttled, panels must still stay current), the
+# no-games path, and the normal post-fetch path. One function per source keeps
+# the gate, the fetch and the error message together instead of repeating the
+# same try/except shape at each call site.
+# ---------------------------------------------------------------------------
+
+def _standings_league_ids(league_mode):
+    """League ids to request standings for (AAA uses its own two leagues)."""
+    return [117, 112] if league_mode == 'aaa' else [103, 104]
+
+
+def _needs_standings(config, is_fullscreen):
+    """True when some enabled panel actually consumes standings.json."""
+    return bool(
+        config.get('show_standings_sidebar', False)
+        or config.get('show_wildcard_standings', False)
+        or is_fullscreen
+    )
+
+
+def _refresh_standings(config, sched, league_mode, is_fullscreen, force=False, context=''):
+    """Refetch today's + yesterday's standings when the cache is stale."""
+    if not _needs_standings(config, is_fullscreen):
+        return
+    if not _should_refresh_standings(sched, force=force):
+        return
+    if not context:
+        print("Refreshing standings (new Finals detected or no cache)...")
+    league_ids = _standings_league_ids(league_mode)
+    try:
+        today = _local_now(config)
+        get_standings(league_ids, season=today.year)
+        prev_day = today - timedelta(days=1)
+        get_standings(league_ids, season=prev_day.year,
+                      date=prev_day.strftime('%m/%d/%Y'), save_as='standings_prev')
+        _record_refreshed_finals(sched, 'standings_final_pks')
+    except Exception as e:
+        print(f"Warning: standings refresh{context} failed: {e}")
+
+
+def _refresh_historical_standings(config, date_str, league_mode):
+    """Fetch standings as of a replayed --date, so the sidebar matches that day."""
+    print(f"Fetching historical standings for {date_str}...")
+    league_ids = _standings_league_ids(league_mode)
+    try:
+        hist = datetime.strptime(date_str, '%Y-%m-%d')
+        get_standings(league_ids, season=hist.year, date=hist.strftime('%m/%d/%Y'))
+        prev = hist - timedelta(days=1)
+        get_standings(league_ids, season=prev.year,
+                      date=prev.strftime('%m/%d/%Y'), save_as='standings_prev')
+    except Exception as e:
+        print(f"Warning: historical standings fetch failed: {e}")
+
+
+def _refresh_playoff_bracket(config, league_mode, force=False, context=''):
+    """Refetch the postseason bracket during the postseason calendar window."""
+    if not (config.get('show_playoff_bracket', True) and league_mode != 'aaa'):
+        return
+    if not (is_postseason_window() and _should_refresh_playoff_bracket(force=force)):
+        return
+    try:
+        fetch_playoff_bracket()
+    except Exception as e:
+        print(f"Warning: playoff bracket fetch{context} failed: {e}")
+
+
+def _refresh_transactions(config, force=False, context=''):
+    """Refetch recent transactions when the ticker or deadline panel needs them."""
+    if not (config.get('show_transactions_ticker', False)
+            or config.get('show_deadline_panel', False)):
+        return
+    if not _should_refresh_transactions(force=force):
+        return
+    try:
+        fetch_transactions(config.get('transactions_lookback_days', 2))
+    except Exception as e:
+        print(f"Warning: transactions fetch{context} failed: {e}")
+
+
+def _refresh_news(config, force=False, context=''):
+    """Refetch news headlines for the news panel."""
+    if not (config.get('show_news_panel', False) and _should_refresh_news(force=force)):
+        return
+    try:
+        fetch_news(primary_abbr=config.get('primary'),
+                   team_only=config.get('news_team_only', True),
+                   force=force)
+    except Exception as e:
+        print(f"Warning: news fetch{context} failed: {e}")
+
+
+def _refresh_leaders(config, sched, league_mode, sport_id, force=False, context=''):
+    """Refetch season stat leaders once games go Final or the cache goes stale."""
+    if not (config.get('show_leaders_panel', False) and league_mode != 'aaa'):
+        return
+    if not _should_refresh_leaders(sched, force=force):
+        return
+    print(f"Refreshing leaders{context} (new Finals detected or no cache)...")
+    try:
+        fetch_leaders(sport_id=_primary_sport_id(sport_id, config), force=force)
+        _record_refreshed_finals(sched, 'leaders_final_pks')
+    except Exception as e:
+        print(f"Warning: leaders fetch{context} failed: {e}")
+
+
+def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=''):
+    """Refetch Hot Hitters / Hot Arms data for the streaks and scoreless panels.
+
+    Same TTL and trigger shape as leaders, but gated on its own cache file and
+    its own Finals marker — sharing the leaders gate let whichever ran first
+    consume the trigger and starve the other.
+    """
+    if not (config.get('show_streaks_panel', False)
+            or config.get('show_scoreless_panel', False)):
+        return
+    if league_mode == 'aaa' or not _should_refresh_streaks(sched, force=force):
+        return
+    try:
+        fetch_streaks(sport_id=_primary_sport_id(sport_id, config), force=force)
+        _record_refreshed_finals(sched, 'streaks_final_pks')
+    except Exception as e:
+        print(f"Warning: streaks fetch{context} failed: {e}")
+
+
+
+_NEXT_DAY_CACHE_TTL_SECONDS = 3600
+
+
+def _fetch_next_day_schedule(config, showing_previous_day, force=False):
+    """Refresh tomorrow_games.json, the source for next-game preview strips.
+
+    While the morning window is showing yesterday's games, the "next" day
+    relative to last night is *today*, so today is fetched instead of actual
+    tomorrow — keeping image_box._load_tomorrow_games in sync rather than
+    missing the cache on every render.
+    """
+    cache = load_json_file('tomorrow_games.json') or {}
+    local_today = _local_now(config).date()
+    today_str = local_today.strftime('%Y-%m-%d')
+    tomorrow_str = (local_today + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    target = today_str if showing_previous_day else tomorrow_str
+    # None → fetch_tomorrow_games picks tomorrow itself
+    for_date = today_str if showing_previous_day else None
+
+    age = time.time() - cache.get('fetched_at', 0)
+    if cache.get('date') == target and age <= _NEXT_DAY_CACHE_TTL_SECONDS and not force:
+        return
+    try:
+        fetch_tomorrow_games(config, for_date=for_date)
+    except Exception as e:
+        print(f"Warning: fetch_tomorrow_games failed: {e}")
+
+
+
+def _apply_dark_mode(config, sched, track_transition):
+    """Set config['dark_mode'] for this run and report whether it just flipped.
+
+    A day↔night flip inverts the whole image even when the game data is
+    byte-identical, so the caller uses the return value to force both a data
+    refresh and a full (flashing) panel refresh. ``last_dark_mode`` unset means
+    first run after a boot/state reset, which counts as a transition so the
+    display is guaranteed to start in the right polarity without ghosting.
+    """
+    is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
+    config['dark_mode'] = is_dark
+    if not track_transition:
+        return False
+
+    last_dark = sched.get('last_dark_mode')
+    transitioned = last_dark is None or last_dark != is_dark
+    if transitioned:
+        label = ('first-run' if last_dark is None
+                 else ('light→dark' if is_dark else 'dark→light'))
+        print(f"Dark mode transition: {label} — forcing full refresh")
+    sched['last_dark_mode'] = is_dark
+    _save_schedule_state(sched)
+    return transitioned
+
+
+def _render_and_display(config, date_str, output_path, no_throttle,
+                        dark_transitioned, morning_block):
+    """Render the scoreboard and push it to the panel. False if nothing changed.
+
+    On a dark-mode transition the image inverts even when the game data is
+    byte-identical, but render()'s unchanged-data cache only compares game JSON
+    — it would return None and the forced full refresh below would be silently
+    skipped (last_dark_mode is already saved, so no later run re-detects the
+    flip). Cells whose games never change again that night would then keep the
+    old polarity until the hourly full-refresh timer fired, leaving a washed-out
+    light-mode band on an otherwise dark screen. Bypass the cache so the
+    transition always renders and reaches the display.
+    """
+    result = render(config, date_str=date_str, output_path=output_path,
+                    bypass_cache=no_throttle or dark_transitioned)
+    if not result:
+        print("No display update needed - image unchanged")
+        return False
+
+    _image, changed_regions = result
+
+    # Force a full (flashing) refresh rather than a partial one when:
+    #  * morning alternating mode swapped the whole screen between last night's
+    #    results and today's schedule — a partial refresh can't clear residual
+    #    charge across a change that large, so it ghosts;
+    #  * the grid packing moved a game to a different cell (flagged by
+    #    orchestrate_score_board in force_full_refresh.json) — a game whose own
+    #    data is unchanged never gets a partial-refresh region, so its old cell
+    #    would keep showing the stale game behind it;
+    #  * the display just flipped between light and dark mode.
+    layout_changed = load_json_file('force_full_refresh.json').get('needed', False)
+    force_full = morning_block is not None or layout_changed or dark_transitioned
+
+    refresh_mode = send_to_display(output_path, changed_regions, force_full=force_full)
+    print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
+    print("\n✓ Display updated successfully!")
+    print(f"  Image: {output_path}")
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -626,83 +942,34 @@ Examples:
                         auto_open=args.local and system_platform == 'Darwin')
         return
 
-    league_mode = (os.environ.get('LEAGUE_MODE', '').lower().strip()
-                   or config.get('league_mode', 'mlb'))
-
-    # Handle --sport-id / --fetch-teams
-    if args.sport_id:
-        sport_id = args.sport_id
-        print(f"Using specified sport: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
-        if sport_id == 11 and league_mode != 'aaa':
-            league_mode = 'aaa'
-            config['league_mode'] = 'aaa'
-        if args.fetch_teams:
-            fetch_all_team_abbreviations(sport_id)
-            return
-    elif league_mode == 'aaa':
-        sport_id = 11
-        print("League mode: AAA (Triple-A)")
-        if args.fetch_teams:
-            fetch_all_team_abbreviations(sport_id)
-            return
-    else:
-        sport_id_priority = config.get('sport_id_priority')
-        if sport_id_priority and isinstance(sport_id_priority, list):
-            print(f"Using sport priority: {' > '.join([SPORT_NAMES.get(sid, str(sid)) for sid in sport_id_priority])}")
-            sport_id = None
-        else:
-            sport_id = config.get('sport_id', 1)
-            print(f"Tracking: {SPORT_NAMES.get(sport_id, f'Sport ID {sport_id}')}")
-        if args.fetch_teams:
-            target = sport_id if sport_id else (sport_id_priority[0] if sport_id_priority else 1)
-            fetch_all_team_abbreviations(target)
-            return
+    sport_id, league_mode, done = _resolve_sport(args, config)
+    if done:
+        return  # --fetch-teams: cache abbreviations and exit
 
     # Determine date
-    _pre9am = False
-    _morning_block = None  # set only in morning alternating mode
-    if args.date:
-        date_str = args.date
-        set_historical_mode(True)
-        print(f"Using specified date: {date_str}")
-    else:
-        tz = config.get('timezone', 'America/Chicago')
-        _now = datetime.now(pytz.timezone(tz))
-        _is_weekend = _now.weekday() >= 5  # 5=Sat, 6=Sun
-        _morning_end = (config.get('morning_end_weekend', 11) if _is_weekend
-                        else config.get('morning_end', 9))
-        _morning_start = config.get('night_end', 7)
-        if _now.hour >= _morning_end:
-            date_str = _now.date().strftime('%Y-%m-%d')
-            print(f"Using today's date: {date_str}")
-        elif _now.hour >= _morning_start and config.get('morning_alternate_games', True):
-            # 7am–9am: alternate between yesterday and today every 5 minutes
-            _pre9am = True
-            _morning_block = (_now.hour * 60 + _now.minute) // 5
-            if _morning_block % 2 == 0:
-                date_str = (_now.date() - timedelta(days=1)).strftime('%Y-%m-%d')
-                print(f"Morning alternating (block {_morning_block}) — showing previous day: {date_str}")
-            else:
-                date_str = _now.date().strftime('%Y-%m-%d')
-                print(f"Morning alternating (block {_morning_block}) — showing today: {date_str}")
-        else:
-            date_str = (_now.date() - timedelta(days=1)).strftime('%Y-%m-%d')
-            _pre9am = True
-            print(f"Before 9am — showing previous day: {date_str}")
+    _date_ctx = _resolve_target_date(args, config)
+    date_str = _date_ctx.date_str
+    _pre9am = _date_ctx.showing_previous_day
+    _morning_block = _date_ctx.morning_block
+    _now = _date_ctx.now
 
     # 5. Smart polling gate
     _is_fullscreen = os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes')
     sched = {}
     if not args.date and not _no_throttle:
         sched = _load_schedule_state()
-        if _pre9am:
+        # Gate on morning_block, not showing_previous_day: with
+        # morning_alternate_games off we still show the previous day during the
+        # morning window but there is no block to throttle on, so that path has
+        # to fall through to the normal smart-polling gate below rather than
+        # skipping every check and refetching on every cron tick.
+        if _morning_block is not None:
             # Morning alternating mode: only fetch/render when the 5-minute block changes.
             # Each block switch toggles the display between yesterday and today, so there
             # is nothing new to show within the same block.
             _today_key = _now.date().isoformat()
             if (
-                _morning_block is not None
-                and sched.get('last_morning_block') == _morning_block
+                sched.get('last_morning_block') == _morning_block
                 and sched.get('last_morning_block_date') == _today_key
             ):
                 print(f"Morning: same 5-min block ({_morning_block}) — skipping")
@@ -715,105 +982,55 @@ Examples:
                     if not _maybe_show_derby_bracket(
                             config, no_throttle=_no_throttle,
                             auto_open=args.local and system_platform == 'Darwin'):
-                        _show_idle_screen(config, sched,
-                                          auto_open=args.local and system_platform == 'Darwin')
+                        _show_idle_screen(
+                            config, auto_open=args.local and system_platform == 'Darwin')
                     return
-                # Still refresh standings if needed — sidebar/fullscreen must stay current
-                # even when the game-data poll is throttled.
-                _sl_needs = (
-                    config.get('show_standings_sidebar', False) or
-                    config.get('show_wildcard_standings', False) or
-                    _is_fullscreen
-                )
-                _sl_ids = [117, 112] if league_mode == 'aaa' else [103, 104]
-                if _sl_needs and _should_refresh_standings(sched):
-                    try:
-                        _sl_today = datetime.now()
-                        get_standings(_sl_ids, season=_sl_today.year)
-                        _sl_prev = _sl_today - timedelta(days=1)
-                        get_standings(_sl_ids, season=_sl_prev.year,
-                                      date=_sl_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
-                    except Exception as _sl_e:
-                        print(f"Warning: standings refresh on poll-skip: {_sl_e}")
-                if config.get('show_playoff_bracket', True) and league_mode != 'aaa' \
-                        and is_postseason_window() and _should_refresh_playoff_bracket():
-                    try:
-                        fetch_playoff_bracket()
-                    except Exception as _bp_e:
-                        print(f"Warning: playoff bracket fetch on poll-skip: {_bp_e}")
-                if (config.get('show_transactions_ticker', False) or config.get('show_deadline_panel', False)) \
-                        and _should_refresh_transactions():
-                    try:
-                        fetch_transactions(config.get('transactions_lookback_days', 2))
-                    except Exception as _tx_e:
-                        print(f"Warning: transactions fetch on poll-skip: {_tx_e}")
-                if config.get('show_news_panel', False) and _should_refresh_news():
-                    try:
-                        fetch_news(primary_abbr=config.get('primary'),
-                                   team_only=config.get('news_team_only', True))
-                    except Exception as _nx_e:
-                        print(f"Warning: news fetch on poll-skip: {_nx_e}")
+                # The game poll is throttled, but the panels around the grid
+                # must still stay current — refresh them on their own gates.
+                _ctx = ' on poll-skip'
+                _refresh_standings(config, sched, league_mode, _is_fullscreen, context=_ctx)
+                _refresh_playoff_bracket(config, league_mode, context=_ctx)
+                _refresh_transactions(config, context=_ctx)
+                _refresh_news(config, context=_ctx)
                 return
 
     # 6. Fetch
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
-    # 6b. Fetch the "next-day" schedule for next-game preview strips (cached, refreshes hourly).
-    # In morning mode (showing yesterday's games) the "next" day relative to last night is
-    # today, so we fetch today instead of actual tomorrow — keeping image_box._load_tomorrow_games
-    # in sync and avoiding a silent cache-miss every render.
+    # 6b. Next-day schedule for the next-game preview strips.
     if not args.date:
-        import time as _tm_mod
-        _tmrw_cache = load_json_file('tomorrow_games.json') or {}
-        _today_str  = datetime.now().date().strftime('%Y-%m-%d')
-        _tmrw_str   = (datetime.now().date() + timedelta(days=1)).strftime('%Y-%m-%d')
-        _tmrw_target = _today_str if _pre9am else _tmrw_str
-        _for_date_arg = _today_str if _pre9am else None   # None → fetch_tomorrow_games uses tomorrow
-        _tmrw_age = _tm_mod.time() - _tmrw_cache.get('fetched_at', 0)
-        if _tmrw_cache.get('date') != _tmrw_target or _tmrw_age > 3600 or args.full_refresh:
-            try:
-                fetch_tomorrow_games(config, for_date=_for_date_arg)
-            except Exception as _e:
-                print(f"Warning: fetch_tomorrow_games failed: {_e}")
+        _fetch_next_day_schedule(config, showing_previous_day=_pre9am,
+                                 force=args.full_refresh)
 
     # 7. Update schedule state
     if not args.date and not _no_throttle:
-        if _pre9am:
+        # Mirrors the poll gate above: only true morning-alternating runs do
+        # block bookkeeping. Every other path — including the morning window
+        # with morning_alternate_games off — must fall through and record
+        # last_game_fetch, or _should_skip_poll has no timestamp to throttle on
+        # and refetches on every cron tick.
+        if _morning_block is not None:
             # Record which block just ran so the next cron tick within the same
             # 5-minute window is skipped (morning gate above).
-            if _morning_block is not None:
-                sched['last_morning_block'] = _morning_block
-                sched['last_morning_block_date'] = _now.date().isoformat()
-                _save_schedule_state(sched)
+            sched['last_morning_block'] = _morning_block
+            sched['last_morning_block_date'] = _now.date().isoformat()
+            _save_schedule_state(sched)
         else:
             game_state_data = load_json_file('games.json').get('games', [])
             no_games = _update_schedule_state(game_state_data, date_str, config, sched)
             if no_games:
-                # Leaders only otherwise refresh once games go Final, so a
-                # multi-day gap (All-Star break, rainouts) leaves the cache
-                # frozen.  Run the staleness check here too.
-                if config.get('show_leaders_panel', False) and league_mode != 'aaa' \
-                        and _should_refresh_leaders(sched, force=args.full_refresh):
-                    print("Refreshing leaders during no-games gap (stale cache)...")
-                    try:
-                        _leaders_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
-                        fetch_leaders(sport_id=_leaders_sport)
-                    except Exception as _e:
-                        print(f"Warning: leaders fetch failed: {_e}")
-                _ng_needs_streaks = (
-                    config.get('show_streaks_panel', False) or config.get('show_scoreless_panel', False)
-                )
-                if _ng_needs_streaks and league_mode != 'aaa' \
-                        and _should_refresh_leaders(sched, force=args.full_refresh):
-                    try:
-                        _streaks_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
-                        fetch_streaks(sport_id=_streaks_sport)
-                    except Exception as _e:
-                        print(f"Warning: streaks fetch failed: {_e}")
+                # Leaders/streaks otherwise only refresh once games go Final, so a
+                # multi-day gap (All-Star break, rainouts) leaves the cache frozen.
+                # Run their staleness checks here too.
+                _ctx = ' during no-games gap'
+                _refresh_leaders(config, sched, league_mode, sport_id,
+                                 force=args.full_refresh, context=_ctx)
+                _refresh_streaks(config, sched, league_mode, sport_id,
+                                 force=args.full_refresh, context=_ctx)
                 if not _maybe_show_derby_bracket(config, no_throttle=_no_throttle,
                                                  auto_open=args.local and system_platform == 'Darwin'):
-                    _show_idle_screen(config, sched,
-                                      auto_open=args.local and system_platform == 'Darwin')
+                    _show_idle_screen(
+                        config, auto_open=args.local and system_platform == 'Darwin')
                 return
 
     # 7a. Auto dark/light mode: day = light, night = dark.
@@ -824,162 +1041,33 @@ Examples:
     # (7b-7d) — since a mode flip is exactly the kind of moment stale data
     # would be most visible (e.g. a fresh light-mode morning screen showing
     # last night's leaders).
-    _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
-    config['dark_mode'] = _is_dark
-    _dark_transitioned = False
-    if not _no_throttle and not args.date:
-        _last_dark = sched.get('last_dark_mode')
-        if _last_dark is None or _last_dark != _is_dark:
-            # None = first run after Pi boot/state reset — force a full refresh so the
-            # display is guaranteed to start in the correct mode without ghosting.
-            label = 'first-run' if _last_dark is None else ('light→dark' if _is_dark else 'dark→light')
-            print(f"Dark mode transition: {label} — forcing full refresh")
-            _dark_transitioned = True
-        sched['last_dark_mode'] = _is_dark
-        _save_schedule_state(sched)
+    _dark_transitioned = _apply_dark_mode(
+        config, sched, track_transition=not _no_throttle and not args.date)
     _force_data_refresh = args.full_refresh or _dark_transitioned
 
-    # 7b. Standings refresh
-    _needs_standings = (
-        config.get('show_standings_sidebar', False) or
-        config.get('show_wildcard_standings', False) or
-        _is_fullscreen
-    )
-    _standings_league_ids = [117, 112] if league_mode == 'aaa' else [103, 104]
-    if _needs_standings:
-        if args.date:
-            # Historical replay: fetch standings as of that specific date so the sidebar
-            # reflects what the standings actually looked like on that day.
-            print(f"Fetching historical standings for {date_str}...")
-            try:
-                _hist = datetime.strptime(date_str, '%Y-%m-%d')
-                get_standings(_standings_league_ids, season=_hist.year,
-                              date=_hist.strftime('%m/%d/%Y'))
-                _prev = _hist - timedelta(days=1)
-                get_standings(_standings_league_ids, season=_prev.year,
-                              date=_prev.strftime('%m/%d/%Y'), save_as='standings_prev')
-            except Exception as e:
-                print(f"Warning: historical standings fetch failed: {e}")
-        elif _should_refresh_standings(sched, force=_force_data_refresh):
-            print("Refreshing standings (new Finals detected or no cache)...")
-            try:
-                today = datetime.now()
-                get_standings(_standings_league_ids, season=today.year)
-                prev_day = today - timedelta(days=1)
-                get_standings(_standings_league_ids, season=prev_day.year,
-                              date=prev_day.strftime('%m/%d/%Y'), save_as='standings_prev')
-                games = load_json_file('games.json').get('games', [])
-                sched['standings_final_pks'] = [
-                    str(g['game_pk']) for g in games
-                    if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
-                ]
-                _save_schedule_state(sched)
-            except Exception as e:
-                print(f"Warning: standings refresh failed: {e}")
+    # 7b-7e. Support-data refresh — standings, playoff bracket, transactions,
+    # news, leaders and streaks, each on its own staleness/Finals gate so a
+    # panel nobody has enabled never costs an API call.
+    if args.date:
+        # Historical replay: standings as of that specific date.
+        if _needs_standings(config, _is_fullscreen):
+            _refresh_historical_standings(config, date_str, league_mode)
+    else:
+        _refresh_standings(config, sched, league_mode, _is_fullscreen,
+                           force=_force_data_refresh)
+    _refresh_playoff_bracket(config, league_mode, force=_force_data_refresh)
+    _refresh_transactions(config, force=_force_data_refresh)
+    _refresh_news(config, force=_force_data_refresh)
+    _refresh_leaders(config, sched, league_mode, sport_id, force=_force_data_refresh)
+    _refresh_streaks(config, sched, league_mode, sport_id, force=_force_data_refresh)
 
-    # 7c. Playoff bracket refresh — auto-detects postseason via the calendar
-    # window (mid-Sept to mid-Nov) rather than requiring a manual config
-    # toggle each year; show_playoff_bracket now just lets a user force it
-    # off entirely if they never want the header taken over.
-    if config.get('show_playoff_bracket', True) and league_mode != 'aaa' \
-            and is_postseason_window() and _should_refresh_playoff_bracket(force=_force_data_refresh):
-        try:
-            fetch_playoff_bracket()
-        except Exception as e:
-            print(f"Warning: playoff bracket fetch failed: {e}")
-
-    # 7c2. Transactions ticker refresh — recent IL moves/call-ups/signings,
-    # only when a panel that uses them is enabled (ticker or deadline
-    # countdown), and only when the cache is stale (transactions don't
-    # change fast enough to warrant fetching every poll).
-    if (config.get('show_transactions_ticker', False) or config.get('show_deadline_panel', False)) \
-            and _should_refresh_transactions(force=_force_data_refresh):
-        try:
-            fetch_transactions(config.get('transactions_lookback_days', 2))
-        except Exception as e:
-            print(f"Warning: transactions fetch failed: {e}")
-
-    # 7c3. News headlines refresh — team-scoped or league-wide, every 6 hours.
-    if config.get('show_news_panel', False) and _should_refresh_news(force=_force_data_refresh):
-        try:
-            fetch_news(primary_abbr=config.get('primary'),
-                       team_only=config.get('news_team_only', True),
-                       force=_force_data_refresh)
-        except Exception as e:
-            print(f"Warning: news fetch failed: {e}")
-
-    # 7d. Season leaders refresh (HR/AVG/ERA/Saves/Hits) — only when panel is
-    # enabled, and only once games have gone Final (or cache is stale/missing),
-    # not on every poll — leaders barely move mid-game.
-    if config.get('show_leaders_panel', False) and league_mode != 'aaa' \
-            and _should_refresh_leaders(sched, force=_force_data_refresh):
-        print("Refreshing leaders (new Finals detected or no cache)...")
-        try:
-            _leaders_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
-            fetch_leaders(sport_id=_leaders_sport, force=_force_data_refresh)
-            games = load_json_file('games.json').get('games', [])
-            sched['leaders_final_pks'] = [
-                str(g['game_pk']) for g in games
-                if g.get('detailed_state') in _STANDINGS_FINAL_STATES and g.get('game_pk')
-            ]
-            _save_schedule_state(sched)
-        except Exception as e:
-            print(f"Warning: leaders fetch failed: {e}")
-
-    # 7e. Hot Hitters / Hot Arms panels — piggybacked on the same refresh gate
-    # as leaders (same TTL, same trigger: new Finals or stale/missing cache).
-    _needs_streaks = (
-        (config.get('show_streaks_panel', False) or config.get('show_scoreless_panel', False))
-        and league_mode != 'aaa'
-        and _should_refresh_leaders(sched, force=_force_data_refresh)
-    )
-    if _needs_streaks:
-        try:
-            _streaks_sport = sport_id if sport_id else (config.get('sport_id_priority', [1])[0])
-            fetch_streaks(sport_id=_streaks_sport, force=_force_data_refresh)
-        except Exception as e:
-            print(f"Warning: streaks fetch failed: {e}")
-
-    # 9. Render
-    # On a dark-mode transition the rendered image inverts even when the game
-    # data is byte-identical, but render()'s unchanged-data cache only compares
-    # game JSON — it would return None and the forced full refresh below would
-    # be silently skipped (with last_dark_mode already saved above, no later
-    # run re-detects the flip). Cells whose games never change again that
-    # night (e.g. long-final games) would then keep the old polarity until the
-    # hourly full-refresh timer fired, leaving a washed-out light-mode band on
-    # an otherwise dark screen. Bypass the cache so the transition always
-    # renders and reaches the display.
+    # 9. Render and push to the panel.
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
-    result = render(config, date_str=date_str, output_path=output_path,
-                    bypass_cache=_no_throttle or _dark_transitioned)
-
-    if not result:
-        print("No display update needed - image unchanged")
+    if not _render_and_display(config, date_str, output_path,
+                               no_throttle=_no_throttle,
+                               dark_transitioned=_dark_transitioned,
+                               morning_block=_morning_block):
         return
-
-    image, changed_regions = result
-
-    # 9. Send to display
-    # Morning alternating mode swaps the entire screen between last night's
-    # results and today's schedule every 5 minutes — a partial refresh can't
-    # fully clear the previous frame's residual charge across a change that
-    # large, causing visible ghosting/bleeding. Force a full (flashing)
-    # refresh on every render during this window instead.
-    #
-    # Also force a full refresh whenever the scoreboard grid packing shifted
-    # a game to a different cell (e.g. another game going live repacked the
-    # wide-cell layout) — orchestrate_score_board flags this in
-    # force_full_refresh.json since a game whose own data is unchanged never
-    # gets a partial-refresh region, leaving its old cell showing a stale
-    # game behind.
-    _layout_changed = load_json_file('force_full_refresh.json').get('needed', False)
-    _force_full = _morning_block is not None or _layout_changed or _dark_transitioned
-    refresh_mode = send_to_display(output_path, changed_regions, force_full=_force_full)
-    print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
-
-    print("\n✓ Display updated successfully!")
-    print(f"  Image: {output_path}")
 
     # 10. --local: auto-open on macOS
     if args.local and system_platform == 'Darwin':
