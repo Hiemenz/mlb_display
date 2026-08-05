@@ -420,39 +420,53 @@ def _draw_weather_footer(draw, start_x, start_y, horiz_len, game_data, fnt, show
                 return
 
 
-def _load_tomorrow_games():
-    """Load the next-day schedule, fetching from the API if the cache is missing or stale.
+def _next_preview_date(after_date=None):
+    """The date whose schedule the 'next game' strip should show.
 
-    In the morning window (before 9am local time) the 'next game' relative to
-    last night's results is today, so we accept today's date and fall back to
-    fetching today rather than actual tomorrow.
+    Derived from the date of the game being drawn — the next game after a game
+    played on D is on D+1 — rather than from the wall clock. Guessing from the
+    clock got the morning alternating window wrong: on the blocks showing
+    *today's* games it still targeted today, so a game postponed earlier that
+    day advertised its own date as the next one.
+
+    Falls back to tomorrow when the game carries no usable date.
     """
     from datetime import date as _date, timedelta as _td, datetime as _dt
-    today    = _date.today().strftime('%Y-%m-%d')
-    tomorrow = (_date.today() + _td(days=1)).strftime('%Y-%m-%d')
+    if after_date:
+        try:
+            base = _dt.strptime(str(after_date)[:10], '%Y-%m-%d').date()
+            return (base + _td(days=1)).strftime('%Y-%m-%d')
+        except (ValueError, TypeError):
+            pass
+    return (_date.today() + _td(days=1)).strftime('%Y-%m-%d')
 
-    # Determine whether we're in the morning window (before morning_end local)
-    try:
-        _cfg = load_yaml_file('config.yaml')
-        _tz_str = _cfg.get('timezone', 'America/Chicago')
-        _now_local = _dt.now(pytz.timezone(_tz_str))
-        _is_wkend = _now_local.weekday() >= 5
-        _morning_end = (_cfg.get('morning_end_weekend', 11) if _is_wkend
-                        else _cfg.get('morning_end', 9))
-        _is_morning = _now_local.hour < _morning_end
-    except Exception:
-        _is_morning = False
-    _target = today if _is_morning else tomorrow
+
+def _load_tomorrow_games(after_date=None):
+    """Load the schedule for the day after ``after_date``, fetching if not cached.
+
+    Reads the multi-day ``by_date`` map written by fetch_games, so the morning
+    alternating window can flip between two target dates without refetching on
+    every 5-minute block change.
+    """
+    target = _next_preview_date(after_date)
 
     try:
         data = load_json_file('tomorrow_games.json') or {}
-        if data.get('date') == _target and data.get('games') is not None:
+
+        cached = (data.get('by_date') or {}).get(target)
+        if cached and cached.get('games') is not None:
+            return {'date': target, 'games': cached['games'],
+                    'fetched_at': cached.get('fetched_at', 0)}
+        if data.get('date') == target and data.get('games') is not None:
             return data
-        # Cache is missing or has wrong date — fetch for the right target date
+
+        # Not cached for this date — fetch it.
         from fetch_games import fetch_tomorrow_games
-        fetch_tomorrow_games(for_date=_target)
+        fetch_tomorrow_games(for_date=target)
         data = load_json_file('tomorrow_games.json') or {}
-        return data if data.get('games') is not None else None
+        if data.get('date') == target and data.get('games') is not None:
+            return data
+        return None
     except Exception as _e:
         print(f"Warning: could not load tomorrow's games: {_e}")
         return None
@@ -2078,7 +2092,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 _fts = _get_or_set_final_time(game_data.get('game_pk'))
                 _window_expired = (_time.time() - _fts) >= _FINAL_LINESCORE_SECS
         if _window_expired:
-            _tmrw = _load_tomorrow_games()
+            _tmrw = _load_tomorrow_games(game_data.get('game_date'))
             if _tmrw and _tmrw.get('games'):
                 # GM label is now in the header, so the full strip width is available.
                 _draw_next_game_preview(
@@ -2090,7 +2104,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Next game preview — shown immediately for postponed games (game will not be played today)
     elif game_data['detailed_state'] == 'Postponed' and not _historical_mode:
-        _tmrw = _load_tomorrow_games()
+        _tmrw = _load_tomorrow_games(game_data.get('game_date'))
         if _tmrw and _tmrw.get('games'):
             _draw_next_game_preview(
                 draw, Himage, start_x, start_y, _tmrw['games'],

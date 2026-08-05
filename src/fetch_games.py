@@ -843,6 +843,38 @@ def parse_games(data, sport_id=None, config=None):
     save_off_results({'team_abbreviation': team_abbreviations}, 'teams')
 
 
+_TOMORROW_CACHE_KEEP_DAYS = 3
+
+
+def _save_tomorrow_games(target_date, games):
+    """Write data/tomorrow_games.json, retaining recently fetched days.
+
+    The top-level date/games keys always describe the most recent fetch, so
+    older readers keep working. Alongside them, ``by_date`` retains the last few
+    days' schedules: the morning alternating window flips the preview target
+    between today and tomorrow every 5 minutes, and a single-slot cache would
+    refetch on every flip.
+    """
+    import time as _tm
+    existing = load_json_file('tomorrow_games.json') or {}
+    by_date = existing.get('by_date') or {}
+
+    # Carry a pre-existing single-slot entry into the map on first upgrade.
+    prev_date = existing.get('date')
+    if prev_date and prev_date not in by_date and existing.get('games') is not None:
+        by_date[prev_date] = {'fetched_at': existing.get('fetched_at', 0),
+                              'games': existing['games']}
+
+    now = _tm.time()
+    by_date[target_date] = {'fetched_at': now, 'games': games}
+    for stale in sorted(by_date)[:-_TOMORROW_CACHE_KEEP_DAYS]:
+        by_date.pop(stale, None)
+
+    save_off_results(
+        {'date': target_date, 'fetched_at': now, 'games': games, 'by_date': by_date},
+        'tomorrow_games')
+
+
 def fetch_tomorrow_games(config=None, for_date=None):
     """Fetch a day's schedule and save minimal data to data/tomorrow_games.json.
 
@@ -882,7 +914,7 @@ def fetch_tomorrow_games(config=None, for_date=None):
         data = resp.json()
         game_dates = data.get('dates', [])
         if not game_dates:
-            save_off_results({'date': target_date, 'fetched_at': _tm.time(), 'games': []}, 'tomorrow_games')
+            _save_tomorrow_games(target_date, [])
             return
 
         games_raw = game_dates[0].get('games', [])
@@ -903,7 +935,7 @@ def fetch_tomorrow_games(config=None, for_date=None):
                 'game_pk': g.get('gamePk'),
             })
 
-        save_off_results({'date': target_date, 'fetched_at': _tm.time(), 'games': games}, 'tomorrow_games')
+        _save_tomorrow_games(target_date, games)
         print(f"✓ Schedule for {target_date} ({len(games)} games) written to data/tomorrow_games.json")
     except Exception as e:
         print(f"Warning: failed to fetch schedule for {target_date}: {e}")

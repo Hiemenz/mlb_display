@@ -7,6 +7,24 @@ _DATA_DIR = os.path.join(_REPO_ROOT, 'data')
 _CONFIG_DIR = os.path.join(_REPO_ROOT, 'config')
 
 
+def in_hour_window(start_hour, end_hour, hour):
+    """True when ``hour`` falls inside the [start, end) window of a 24h clock.
+
+    Windows may wrap past midnight (start 20, end 7 covers 20:00–06:59).
+
+    ``start == end`` is an EMPTY window, not a 24-hour one. Treating it as
+    always-inside would let a single config value (e.g. night_start and
+    night_end both 0) suppress every refresh and freeze the display
+    indefinitely, with no obvious cause. Disabling a window is what the
+    explicit night_mode: false flag is for, so the harmless reading wins.
+    """
+    if start_hour == end_hour:
+        return False
+    if start_hour > end_hour:  # wraps past midnight
+        return hour >= start_hour or hour < end_hour
+    return start_hour <= hour < end_hour
+
+
 def load_json_file(file_name, file_path=None):
     """Load a JSON file from the data directory (or file_path if given), returning {} on missing/error."""
     base = file_path if file_path is not None else _DATA_DIR

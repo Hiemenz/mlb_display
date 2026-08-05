@@ -26,7 +26,7 @@ from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from render_scoreboard import render
 from display import send_to_display
-from util import load_json_file
+from util import load_json_file, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
 from image_idle import draw_idle_screen
@@ -67,16 +67,28 @@ def _data_path(filename):
     return os.path.join(_REPO_ROOT, 'data', filename)
 
 
+def _local_now(config):
+    """Current time in the configured display timezone.
+
+    Every date decision in the pipeline must go through this rather than a bare
+    datetime.now(): a Pi running on UTC with timezone: America/Chicago would
+    otherwise roll over to "tomorrow" six hours early, fetching the wrong
+    next-game schedule and mislabelling the scoreboard date.
+    """
+    return datetime.now(pytz.timezone(config.get('timezone', 'America/Chicago')))
+
+
 def _in_night_window(config):
-    """Return True if we are currently inside the configured night mode window."""
-    night_start = config.get('night_start', 0)
-    night_end = config.get('night_end', 7)
-    tz = config.get('timezone', 'America/Chicago')
-    local_tz = pytz.timezone(tz)
-    current_hour = datetime.now(local_tz).hour
-    if night_start >= night_end:
-        return current_hour >= night_start or current_hour < night_end
-    return night_start <= current_hour < night_end
+    """Return True if we are currently inside the configured night mode window.
+
+    night_start == night_end is an empty window (see util.in_hour_window), so a
+    misconfigured pair can't silently freeze the display all day.
+    """
+    return in_hour_window(
+        config.get('night_start', 0),
+        config.get('night_end', 7),
+        _local_now(config).hour,
+    )
 
 
 def _in_dark_window(config):
@@ -86,14 +98,11 @@ def _in_dark_window(config):
     display colour scheme is independent of the refresh-suppression night window.
     Falls back to night_start / night_end if the dark_* keys are absent.
     """
-    dark_start = config.get('dark_start', config.get('night_start', 20))
-    dark_end = config.get('dark_end', config.get('night_end', 7))
-    tz = config.get('timezone', 'America/Chicago')
-    local_tz = pytz.timezone(tz)
-    current_hour = datetime.now(local_tz).hour
-    if dark_start >= dark_end:
-        return current_hour >= dark_start or current_hour < dark_end
-    return dark_start <= current_hour < dark_end
+    return in_hour_window(
+        config.get('dark_start', config.get('night_start', 20)),
+        config.get('dark_end', config.get('night_end', 7)),
+        _local_now(config).hour,
+    )
 
 
 def _load_schedule_state():
@@ -505,17 +514,6 @@ _DateContext = namedtuple(
     '_DateContext', ['date_str', 'showing_previous_day', 'morning_block', 'now'])
 
 
-def _local_now(config):
-    """Current time in the configured display timezone.
-
-    Every date decision in the pipeline must go through this rather than a bare
-    datetime.now(): a Pi running on UTC with timezone: America/Chicago would
-    otherwise roll over to "tomorrow" six hours early, fetching the wrong
-    next-game schedule and mislabelling the scoreboard date.
-    """
-    return datetime.now(pytz.timezone(config.get('timezone', 'America/Chicago')))
-
-
 def _resolve_target_date(args, config):
     """Pick which date's games to show, returning a _DateContext.
 
@@ -780,28 +778,32 @@ def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=
 _NEXT_DAY_CACHE_TTL_SECONDS = 3600
 
 
-def _fetch_next_day_schedule(config, showing_previous_day, force=False):
+def _fetch_next_day_schedule(config, date_str, force=False):
     """Refresh tomorrow_games.json, the source for next-game preview strips.
 
-    While the morning window is showing yesterday's games, the "next" day
-    relative to last night is *today*, so today is fetched instead of actual
-    tomorrow — keeping image_box._load_tomorrow_games in sync rather than
-    missing the cache on every render.
+    The target is the day after ``date_str`` — the date actually being rendered
+    — matching how image_box._load_tomorrow_games derives it per game. While the
+    morning window shows yesterday's results the target is therefore today, not
+    actual tomorrow.
+
+    The cache keeps several days (see fetch_games._save_tomorrow_games), so the
+    morning alternating window flipping between two targets does not refetch on
+    every block change.
     """
+    target = (datetime.strptime(date_str, '%Y-%m-%d').date()
+              + timedelta(days=1)).strftime('%Y-%m-%d')
+
     cache = load_json_file('tomorrow_games.json') or {}
-    local_today = _local_now(config).date()
-    today_str = local_today.strftime('%Y-%m-%d')
-    tomorrow_str = (local_today + timedelta(days=1)).strftime('%Y-%m-%d')
+    entry = (cache.get('by_date') or {}).get(target)
+    if entry is None and cache.get('date') == target:
+        entry = cache
+    if entry is not None and not force:
+        age = time.time() - entry.get('fetched_at', 0)
+        if age <= _NEXT_DAY_CACHE_TTL_SECONDS:
+            return
 
-    target = today_str if showing_previous_day else tomorrow_str
-    # None → fetch_tomorrow_games picks tomorrow itself
-    for_date = today_str if showing_previous_day else None
-
-    age = time.time() - cache.get('fetched_at', 0)
-    if cache.get('date') == target and age <= _NEXT_DAY_CACHE_TTL_SECONDS and not force:
-        return
     try:
-        fetch_tomorrow_games(config, for_date=for_date)
+        fetch_tomorrow_games(config, for_date=target)
     except Exception as e:
         print(f"Warning: fetch_tomorrow_games failed: {e}")
 
@@ -999,8 +1001,7 @@ Examples:
 
     # 6b. Next-day schedule for the next-game preview strips.
     if not args.date:
-        _fetch_next_day_schedule(config, showing_previous_day=_pre9am,
-                                 force=args.full_refresh)
+        _fetch_next_day_schedule(config, date_str, force=args.full_refresh)
 
     # 7. Update schedule state
     if not args.date and not _no_throttle:
