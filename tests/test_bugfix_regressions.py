@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from image_utils import division_rank  # noqa: E402
 from image_magic import draw_magic_cell  # noqa: E402
+from image_box import _draw_win_probability_bar, _draw_game_end_time  # noqa: E402
 from image_standings import (  # noqa: E402
     draw_standings_sidebar, draw_standings_sidebar_fullscreen,
 )
@@ -548,82 +549,74 @@ class TestDrawBoxHelpers:
         # With logos the slot clears the away logo instead.
         assert _duration_corner_x(0, 1, use_logos=True, logo_x_offset=2) == 35
 
-    def test_win_prob_bar_returns_draw_when_data_missing(self):
-        from PIL import Image as _Img, ImageDraw as _ID
-        from image_box import _draw_win_probability_bar
-        from image_assets import _get_font
+    @staticmethod
+    def _ctx(use_logos=False):
+        from PIL import Image as _Img
+        from image_box import _TileCtx
+        return _TileCtx(_Img.new('1', (800, 480), 255), 0, 0, 1, use_logos, 2)
 
-        img = _Img.new('1', (800, 480), 255)
-        draw = _ID.Draw(img)
-        assert _draw_win_probability_bar(
-            img, draw, 0, 0, {}, 135, 110, 1, _get_font(18), False,
-            ('NYY', 147), ('BOS', 111)) is draw
+    def test_ctx_exposes_tile_geometry(self):
+        from PIL import Image as _Img
+        from image_box import _TileCtx
+        assert (self._ctx().w, self._ctx().h) == (135, 110)
+        # Geometry and fonts scale together.
+        scaled = _TileCtx(_Img.new('1', (800, 480), 255), 0, 0, 2, False, 2)
+        assert (scaled.w, scaled.h) == (270, 220)
+
+    def test_ctx_paste_refreshes_draw_handle(self):
+        """Pasting invalidates the ImageDraw; ctx.paste must hand back a fresh one."""
+        from PIL import Image as _Img
+        ctx = self._ctx()
+        before = ctx.draw
+        ctx.paste(_Img.new('1', (4, 4), 0), (0, 0))
+        assert ctx.draw is not before
+
+    def test_ctx_centres_text(self):
+        ctx = self._ctx()
+        text = 'ABC'
+        expected = ctx.x + ctx.w // 2 - int(ctx.font14.getlength(text)) // 2
+        assert ctx.centred_x(text, ctx.font14) == expected
+
+    def test_win_prob_bar_no_op_when_data_missing(self):
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_win_probability_bar(ctx, {}, ('NYY', 147), ('BOS', 111))
+        assert ctx.Himage.tobytes() == before
 
     def test_win_prob_bar_renders_with_probabilities(self):
-        from PIL import Image as _Img, ImageDraw as _ID
-        from image_box import _draw_win_probability_bar
-        from image_assets import _get_font
-
-        img = _Img.new('1', (800, 480), 255)
-        before = img.tobytes()
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
         _draw_win_probability_bar(
-            img, _ID.Draw(img), 0, 0,
-            {'away_win_probability': 70, 'home_win_probability': 30},
-            135, 110, 1, _get_font(18), False, ('NYY', 147), ('BOS', 111))
-        assert img.tobytes() != before
+            ctx, {'away_win_probability': 70, 'home_win_probability': 30},
+            ('NYY', 147), ('BOS', 111))
+        assert ctx.Himage.tobytes() != before
 
     def test_win_prob_bar_accepts_fractional_probabilities(self):
         """The API sometimes returns 0-1 fractions rather than percentages."""
-        from PIL import Image as _Img, ImageDraw as _ID
-        from image_box import _draw_win_probability_bar
-        from image_assets import _get_font
-
-        img = _Img.new('1', (800, 480), 255)
-        before = img.tobytes()
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
         _draw_win_probability_bar(
-            img, _ID.Draw(img), 0, 0,
-            {'away_win_probability': 0.7, 'home_win_probability': 0.3},
-            135, 110, 1, _get_font(18), False, ('NYY', 147), ('BOS', 111))
-        assert img.tobytes() != before
+            ctx, {'away_win_probability': 0.7, 'home_win_probability': 0.3},
+            ('NYY', 147), ('BOS', 111))
+        assert ctx.Himage.tobytes() != before
 
     def test_end_time_skipped_outside_linescore_window(self):
-        from PIL import Image as _Img, ImageDraw as _ID
-        from image_box import _draw_game_end_time
-        from image_assets import _get_font
-
-        img = _Img.new('1', (800, 480), 255)
-        before = img.tobytes()
-        _draw_game_end_time(_ID.Draw(img), 0, 0, '2025-06-03T22:00:00Z',
-                            in_linescore_window=False,
-                            horizonta_len=135, vertical_len=110, s=1,
-                            font=_get_font(14))
-        assert img.tobytes() == before
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_game_end_time(ctx, '2025-06-03T22:00:00Z', in_linescore_window=False)
+        assert ctx.Himage.tobytes() == before
 
     def test_end_time_drawn_inside_linescore_window(self):
-        from PIL import Image as _Img, ImageDraw as _ID
-        from image_box import _draw_game_end_time
-        from image_assets import _get_font
-
-        img = _Img.new('1', (800, 480), 255)
-        before = img.tobytes()
-        _draw_game_end_time(_ID.Draw(img), 0, 0, '2025-06-03T22:00:00Z',
-                            in_linescore_window=True,
-                            horizonta_len=135, vertical_len=110, s=1,
-                            font=_get_font(14))
-        assert img.tobytes() != before
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_game_end_time(ctx, '2025-06-03T22:00:00Z', in_linescore_window=True)
+        assert ctx.Himage.tobytes() != before
 
     def test_end_time_ignores_malformed_timestamp(self):
-        from PIL import Image as _Img, ImageDraw as _ID
-        from image_box import _draw_game_end_time
-        from image_assets import _get_font
-
-        img = _Img.new('1', (800, 480), 255)
-        before = img.tobytes()
-        _draw_game_end_time(_ID.Draw(img), 0, 0, 'garbage',
-                            in_linescore_window=True,
-                            horizonta_len=135, vertical_len=110, s=1,
-                            font=_get_font(14))
-        assert img.tobytes() == before
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_game_end_time(ctx, 'garbage', in_linescore_window=True)
+        assert ctx.Himage.tobytes() == before
 
     def test_linescore_window_expiry_prefers_api_end_time(self):
         import datetime as _dt
@@ -643,3 +636,108 @@ class TestDrawBoxHelpers:
         from image_box import _final_linescore_window_expired
         assert _final_linescore_window_expired(
             {'game_date': '2001-06-03'}, 3600) is True
+
+
+class TestSeriesState:
+    """Regular-season and postseason series end differently: a regular-season
+    series is complete only once every scheduled game is played, whereas a
+    postseason series ends the moment one side clinches. series_is_over is
+    authoritative for one and not the other."""
+
+    @staticmethod
+    def _state(**game):
+        from image_box import _compute_series_state
+        game.setdefault('detailed_state', 'Final')
+        return _compute_series_state(game)
+
+    def test_no_series_flags_when_game_not_final(self):
+        st = self._state(detailed_state='In Progress', series_total_games=3,
+                         series_wins=3, series_losses=0, series_is_over=True)
+        assert not (st.is_sweep or st.clinched or st.tied or st.leading)
+        assert st.show_overline is False
+
+    def test_single_game_series_has_no_context(self):
+        st = self._state(series_total_games=1, series_wins=1)
+        assert not (st.is_sweep or st.clinched or st.leading)
+
+    def test_regular_season_sweep_needs_all_games_played(self):
+        played = dict(series_total_games=3, series_wins=3, series_losses=0,
+                      series_description='Regular Season')
+        assert self._state(**played).is_sweep is True
+        # 2-0 with a game still to play is not yet a sweep.
+        partial = dict(played, series_wins=2)
+        assert self._state(**partial).is_sweep is False
+
+    def test_postseason_sweep_uses_series_is_over(self):
+        """A 3-0 postseason sweep ends a 5-game series before all games needed."""
+        st = self._state(series_total_games=5, series_wins=3, series_losses=0,
+                         series_description='Division Series', series_is_over=True)
+        assert st.is_sweep is True
+        assert st.show_overline is True
+
+    def test_clinched_is_a_non_sweep_finished_series(self):
+        st = self._state(series_total_games=5, series_wins=3, series_losses=1,
+                         series_description='Division Series', series_is_over=True)
+        assert st.clinched is True
+        assert st.is_sweep is False
+
+    def test_tied_and_leading_are_mid_series(self):
+        tied = self._state(series_total_games=3, series_wins=1, series_losses=1,
+                           series_is_tied=True)
+        assert tied.tied is True and tied.leading is False
+
+        leading = self._state(series_total_games=3, series_wins=1, series_losses=0)
+        assert leading.leading is True and leading.tied is False
+
+    def test_active_no_hitter_requires_six_innings(self):
+        assert self._state(detailed_state='In Progress', no_hitter=True,
+                           current_inning=6).active_no_no is True
+        assert self._state(detailed_state='In Progress', no_hitter=True,
+                           current_inning=5).active_no_no is False
+
+
+class TestHeaderRightText:
+    @staticmethod
+    def _ctx():
+        from PIL import Image as _Img
+        from image_box import _TileCtx
+        return _TileCtx(_Img.new('1', (800, 480), 255), 0, 0, 1, False, 2)
+
+    def test_nothing_drawn_without_text_or_width(self):
+        from image_box import _draw_header_right_text, _VENUE_FONT_LADDER
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_header_right_text(ctx, '', 130, 100, _VENUE_FONT_LADDER)
+        _draw_header_right_text(ctx, 'Wrigley Field', 130, 0, _VENUE_FONT_LADDER)
+        assert ctx.Himage.tobytes() == before
+
+    def test_venue_renders_and_is_right_anchored(self):
+        from image_box import _draw_header_right_text, _VENUE_FONT_LADDER
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_header_right_text(ctx, 'Wrigley Field', 130, 120, _VENUE_FONT_LADDER)
+        assert ctx.Himage.tobytes() != before
+
+    def test_venue_falls_back_to_smallest_rather_than_clipping(self):
+        """A long stadium name shrinks rather than being cut short."""
+        from image_box import _draw_header_right_text, _VENUE_FONT_LADDER
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_header_right_text(ctx, 'A Very Long Stadium Name Indeed', 130, 20,
+                                _VENUE_FONT_LADDER)
+        assert ctx.Himage.tobytes() != before
+
+    def test_delay_reason_truncates_to_fit(self):
+        from image_box import _draw_header_right_text, _DELAY_FONT_LADDER
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_header_right_text(ctx, 'Rain delay in progress', 130, 40,
+                                _DELAY_FONT_LADDER, truncate=True)
+        assert ctx.Himage.tobytes() != before
+
+    def test_delay_reason_draws_nothing_when_no_character_fits(self):
+        from image_box import _draw_header_right_text, _DELAY_FONT_LADDER
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_header_right_text(ctx, 'Rain', 130, 1, _DELAY_FONT_LADDER, truncate=True)
+        assert ctx.Himage.tobytes() == before
