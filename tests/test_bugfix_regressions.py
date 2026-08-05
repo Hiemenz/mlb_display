@@ -371,3 +371,157 @@ class TestFinalLinescoreWindow:
         monkeypatch.setattr(image_box, '_historical_mode', False)
         monkeypatch.setattr(image_box, '_get_or_set_final_time', lambda pk: None)
         assert image_box._in_final_linescore_window({'game_pk': 1}, 3600) is False
+
+
+class TestHourWindow:
+    """night_start == night_end used to mean 'always inside', so a single
+    misconfigured pair (e.g. both 0) suppressed every refresh and froze the
+    display all day with no obvious cause."""
+
+    @staticmethod
+    def _fn():
+        from util import in_hour_window
+        return in_hour_window
+
+    def test_equal_bounds_is_an_empty_window(self):
+        in_window = self._fn()
+        assert all(in_window(0, 0, h) is False for h in range(24))
+        assert all(in_window(7, 7, h) is False for h in range(24))
+
+    def test_normal_window(self):
+        in_window = self._fn()
+        assert in_window(0, 7, 3) is True
+        assert in_window(0, 7, 0) is True    # inclusive start
+        assert in_window(0, 7, 7) is False   # exclusive end
+        assert in_window(0, 7, 12) is False
+
+    def test_window_wrapping_past_midnight(self):
+        in_window = self._fn()
+        assert in_window(20, 7, 22) is True
+        assert in_window(20, 7, 3) is True
+        assert in_window(20, 7, 20) is True   # inclusive start
+        assert in_window(20, 7, 7) is False   # exclusive end
+        assert in_window(20, 7, 12) is False
+
+    def test_night_mode_not_frozen_by_equal_bounds(self, monkeypatch):
+        import main as m
+        cfg = {'night_start': 0, 'night_end': 0, 'timezone': 'America/Chicago'}
+        for hour in (0, 3, 9, 15, 23):
+            monkeypatch.setattr(
+                m, '_local_now',
+                lambda c, _h=hour: __import__('datetime').datetime(2025, 6, 3, _h))
+            assert m._in_night_window(cfg) is False
+
+    def test_dark_window_honours_equal_bounds(self, monkeypatch):
+        import datetime as _dt
+        import main as m
+        monkeypatch.setattr(m, '_local_now',
+                            lambda c: _dt.datetime(2025, 6, 3, 22))
+        assert m._in_dark_window({'dark_start': 0, 'dark_end': 0}) is False
+        assert m._in_dark_window({'dark_start': 20, 'dark_end': 7}) is True
+
+
+class TestNextPreviewDate:
+    """The 'next game' strip guessed its target date from the wall clock, so in
+    the morning alternating window the blocks showing *today's* games still
+    targeted today — a game postponed earlier that day advertised its own date
+    as the next one."""
+
+    @staticmethod
+    def _fn(after_date):
+        from image_box import _next_preview_date
+        return _next_preview_date(after_date)
+
+    def test_target_is_day_after_the_drawn_game(self):
+        assert self._fn('2025-06-03') == '2025-06-04'
+
+    def test_accepts_a_full_iso_timestamp(self):
+        assert self._fn('2025-06-03T18:10:00Z') == '2025-06-04'
+
+    def test_postponed_game_today_points_at_tomorrow(self):
+        """The specific regression: previously this resolved to today."""
+        assert self._fn('2025-06-03') != '2025-06-03'
+
+    def test_month_and_year_rollover(self):
+        assert self._fn('2025-06-30') == '2025-07-01'
+        assert self._fn('2025-12-31') == '2026-01-01'
+
+    def test_falls_back_to_tomorrow_without_a_date(self):
+        import datetime as _dt
+        expected = (_dt.date.today() + _dt.timedelta(days=1)).strftime('%Y-%m-%d')
+        assert self._fn(None) == expected
+        assert self._fn('') == expected
+        assert self._fn('not-a-date') == expected
+
+
+class TestTomorrowGamesMultiDayCache:
+    """A single-slot cache made the morning alternating window refetch the
+    schedule on every 5-minute block flip once the two blocks stopped agreeing
+    on a target date."""
+
+    def test_retains_multiple_days(self, tmp_path, monkeypatch):
+        import fetch_games
+        saved = {}
+        monkeypatch.setattr(fetch_games, 'save_off_results',
+                            lambda data, name: saved.update({name: data}))
+        monkeypatch.setattr(fetch_games, 'load_json_file',
+                            lambda name: saved.get('tomorrow_games', {}))
+
+        fetch_games._save_tomorrow_games('2025-06-04', [{'game_pk': 1}])
+        fetch_games._save_tomorrow_games('2025-06-05', [{'game_pk': 2}])
+
+        cache = saved['tomorrow_games']
+        # Most recent fetch stays at the top level for older readers.
+        assert cache['date'] == '2025-06-05'
+        # Both days remain retrievable, so flipping back doesn't refetch.
+        assert cache['by_date']['2025-06-04']['games'] == [{'game_pk': 1}]
+        assert cache['by_date']['2025-06-05']['games'] == [{'game_pk': 2}]
+
+    def test_prunes_to_the_retention_limit(self, monkeypatch):
+        import fetch_games
+        saved = {}
+        monkeypatch.setattr(fetch_games, 'save_off_results',
+                            lambda data, name: saved.update({name: data}))
+        monkeypatch.setattr(fetch_games, 'load_json_file',
+                            lambda name: saved.get('tomorrow_games', {}))
+
+        for day in range(1, 8):
+            fetch_games._save_tomorrow_games(f'2025-06-0{day}', [{'game_pk': day}])
+
+        by_date = saved['tomorrow_games']['by_date']
+        assert len(by_date) == fetch_games._TOMORROW_CACHE_KEEP_DAYS
+        assert '2025-06-07' in by_date      # newest kept
+        assert '2025-06-01' not in by_date  # oldest pruned
+
+    def test_upgrades_a_legacy_single_slot_file(self, monkeypatch):
+        import fetch_games
+        saved = {'tomorrow_games': {'date': '2025-06-04', 'fetched_at': 111,
+                                    'games': [{'game_pk': 1}]}}
+        monkeypatch.setattr(fetch_games, 'save_off_results',
+                            lambda data, name: saved.update({name: data}))
+        monkeypatch.setattr(fetch_games, 'load_json_file',
+                            lambda name: saved.get('tomorrow_games', {}))
+
+        fetch_games._save_tomorrow_games('2025-06-05', [{'game_pk': 2}])
+        by_date = saved['tomorrow_games']['by_date']
+        # The pre-existing day is carried into the map rather than dropped.
+        assert by_date['2025-06-04']['games'] == [{'game_pk': 1}]
+        assert by_date['2025-06-05']['games'] == [{'game_pk': 2}]
+
+    def test_loader_reads_by_date_without_refetching(self, monkeypatch):
+        import image_box
+        monkeypatch.setattr(image_box, 'load_json_file', lambda name: {
+            'date': '2025-06-05',
+            'games': [{'game_pk': 2}],
+            'by_date': {'2025-06-04': {'fetched_at': 1, 'games': [{'game_pk': 1}]},
+                        '2025-06-05': {'fetched_at': 2, 'games': [{'game_pk': 2}]}},
+        })
+
+        def _boom(*a, **k):  # pragma: no cover - must not be reached
+            raise AssertionError('refetched a date already in the cache')
+        monkeypatch.setattr('fetch_games.fetch_tomorrow_games', _boom)
+
+        # Drawn game on 06-03 -> wants 06-04, which is cached.
+        assert image_box._load_tomorrow_games('2025-06-03')['games'] == [{'game_pk': 1}]
+        # Drawn game on 06-04 -> wants 06-05, also cached.
+        assert image_box._load_tomorrow_games('2025-06-04')['games'] == [{'game_pk': 2}]

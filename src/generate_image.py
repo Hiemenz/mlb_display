@@ -3,7 +3,7 @@ import json
 import time as _time_mod
 from datetime import datetime, timezone
 import pytz
-from util import load_json_file, load_yaml_file, save_off_results
+from util import load_json_file, load_yaml_file, save_off_results, in_hour_window
 from collections import OrderedDict
 
 # NOTE: several names imported below are unused here but re-exported for
@@ -87,16 +87,10 @@ def _fetch_skip_is_expected(config, sched):
     # Night window check
     if config.get('night_mode', False):
         try:
-            night_start = config.get('night_start', 0)
-            night_end = config.get('night_end', 7)
             tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
-            hour = datetime.now(tz).hour
-            in_night = (
-                hour >= night_start or hour < night_end
-                if night_start >= night_end
-                else night_start <= hour < night_end
-            )
-            if in_night:
+            if in_hour_window(config.get('night_start', 0),
+                              config.get('night_end', 7),
+                              datetime.now(tz).hour):
                 return True
         except Exception:
             pass
