@@ -2,6 +2,7 @@ import math as _math
 import re as _re
 import time as _time
 import pytz
+from collections import namedtuple
 from datetime import datetime as _datetime
 
 from PIL import Image, ImageDraw, ImageOps
@@ -664,61 +665,206 @@ def _game_within_minutes_check(game_data, minutes=30):
         return False
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
-    """Render a single game score box onto Himage at (start_x, start_y)."""
-    s = scale
-    _is_walkoff = bool(game_data.get('walk_off'))
-    # Normalize early-completion states (e.g. spring training games called after 6 innings)
+def _game_has_started(game_data):
+    """True once there's evidence a pitch has actually been thrown.
+
+    The API reports 'In Progress' from the scheduled start time, before first
+    pitch. Evidence of play: a ball/strike in the current at-bat, any out, any
+    run, a runner on base, an inning break, a last-play description, or the game
+    being past the 1st.
+
+    away_hits/home_hits are deliberately excluded: in the GIF replay path they
+    are inherited from the final box score and are always non-zero, which would
+    make every pre-game frame look live.
+    """
+    return bool(
+        (game_data.get('balls') or 0) > 0
+        or (game_data.get('strikes') or 0) > 0
+        or (game_data.get('num_of_outs') or 0) > 0
+        or (game_data.get('away_runs') or 0) > 0
+        or (game_data.get('home_runs') or 0) > 0
+        or game_data.get('inningState') in ('Middle', 'End')
+        or (game_data.get('current_inning') or 1) > 1
+        or game_data.get('runner_on_first')
+        or game_data.get('runner_on_second')
+        or game_data.get('runner_on_third')
+        or game_data.get('last_play')
+    )
+
+
+def _normalize_game_state(game_data):
+    """Collapse API states into the handful the renderer actually branches on.
+
+    Returns ``(game_data, challenge_abbr, original_detailed_state)``. game_data is
+    copied before any write, so the caller's dict is never mutated.
+
+    * 'Completed Early' (e.g. spring games called after 6) → 'Final'
+    * 'Player challenge' / 'Manager challenge' → 'In Progress', with the label
+      written into sub_event so it outranks last_play (stopping a "PC: Name"
+      from overriding the challenge banner)
+    * 'Delayed Start' → 'Pre-Game' (the game hasn't begun)
+    * 'In Progress' before first pitch → 'Pre-Game'
+
+    original_detailed_state is captured after the challenge normalization but
+    before the pre-game ones, matching what the header renderer expects.
+    """
+    challenge_abbr = ''
+
     if game_data.get('detailed_state', '').startswith('Completed Early'):
         game_data = dict(game_data)
         game_data['detailed_state'] = 'Final'
 
-    # Normalize mid-game review/challenge states to In Progress
-    _challenge_abbr = ''
     if game_data.get('detailed_state') in ('Player challenge', 'Manager challenge'):
         game_data = dict(game_data)
-        _chal_prefix = 'ABS CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
-        _challenge_abbr = game_data.get('challenge_team_abbr', '')
-        # Write into sub_event so the challenge label has highest display priority
-        # (sub_event wins over last_play, preventing "PC: Name" from overriding it).
-        # Logo rendering shows the team; keep text label as prefix only.
-        game_data['sub_event'] = _chal_prefix
-        game_data['last_play'] = _chal_prefix
+        prefix = 'ABS CHAL' if game_data['detailed_state'] == 'Player challenge' else 'M CHAL'
+        challenge_abbr = game_data.get('challenge_team_abbr', '')
+        # Logo rendering shows the team; keep the text label as a prefix only.
+        game_data['sub_event'] = prefix
+        game_data['last_play'] = prefix
         game_data['detailed_state'] = 'In Progress'
 
-    # Preserve original state before any normalization (used for header rendering).
-    _original_detailed_state = game_data.get('detailed_state', '')
+    original_detailed_state = game_data.get('detailed_state', '')
 
-    # Delayed Start = game hasn't begun yet; treat like Pre-Game for body/score rendering
     if game_data.get('detailed_state') == 'Delayed Start':
         game_data = dict(game_data)
         game_data['detailed_state'] = 'Pre-Game'
 
-    # Only show score once the first pitch has been thrown. Evidence of play:
-    # a ball/strike in the current at-bat, any out, any hit, a runner on base,
-    # an inning break, or the game past inning 1. If none of these are present
-    # the game hasn't officially started despite the API saying "In Progress".
-    if game_data.get('detailed_state') == 'In Progress':
-        # Only show score once the first pitch has been thrown.
-        # away_hits/home_hits are intentionally excluded: in the GIF path they
-        # are inherited from the final game box score and are always non-zero,
-        # causing false positives before the game starts.
-        _has_play = (
-            (game_data.get('balls') or 0) > 0
-            or (game_data.get('strikes') or 0) > 0
-            or (game_data.get('num_of_outs') or 0) > 0
-            or (game_data.get('away_runs') or 0) > 0
-            or (game_data.get('home_runs') or 0) > 0
-            or game_data.get('inningState') in ('Middle', 'End')
-            or (game_data.get('current_inning') or 1) > 1
-            or game_data.get('runner_on_first')
-            or game_data.get('runner_on_second')
-            or game_data.get('runner_on_third')
-            or game_data.get('last_play')
+    if game_data.get('detailed_state') == 'In Progress' and not _game_has_started(game_data):
+        game_data = dict(game_data)
+        game_data['detailed_state'] = 'Pre-Game'
+
+    return game_data, challenge_abbr, original_detailed_state
+
+
+def _draw_background_ghosts(Himage, draw, start_x, start_y, game_data,
+                            horizonta_len, vertical_len, s,
+                            use_logos, show_winner_logo, away_team, home_team):
+    """Paste the large faded background graphic for this game state, if any.
+
+    Postponed and Suspended games get a rotating weather emoji; a finished game
+    gets the winning team's logo. Called before any text so everything else
+    renders on top. Returns the ImageDraw to keep using — pasting invalidates
+    the previous one.
+    """
+    state = game_data['detailed_state']
+
+    emoji_codepoints = None
+    if state == 'Postponed':
+        emoji_codepoints = _PPD_EMOJI_CODEPOINTS
+    elif state == 'Suspended':
+        emoji_codepoints = _SUSP_EMOJI_CODEPOINTS
+
+    if emoji_codepoints:
+        import random as _random
+        # Seeded per game and per minute, so the icon rotates but stays stable
+        # within a single minute's renders rather than flickering every poll.
+        seed = game_data.get('game_pk', 0) ^ int(_time.time() // 60)
+        codepoint = _random.Random(seed).choice(emoji_codepoints)
+        ghost = _load_codepoint_ghost(codepoint, size=90 * s)
+        if ghost:
+            gw, gh = ghost.size
+            gx = start_x + (horizonta_len - gw) // 2
+            gy = start_y + (vertical_len + 20 * s - gh) // 2
+            Himage.paste(ghost, (gx, gy))
+            draw = ImageDraw.Draw(Himage)
+        return draw
+
+    if show_winner_logo and use_logos and state in ('Final', 'Game Over', 'Final: Tied'):
+        winner = None
+        if game_data.get('away_team_is_winner'):
+            winner = away_team
+        elif game_data.get('home_team_is_winner'):
+            winner = home_team
+        if winner and winner[0]:
+            ghost = _logo_ghost(winner[0], winner[1], size=110 * s)
+            if ghost:
+                gw, gh = ghost.size
+                gx = start_x + (135 * s - gw) // 2
+                gy = start_y + 20 * s + (vertical_len - gh) // 2
+                Himage.paste(ghost, (gx, gy))
+                draw = ImageDraw.Draw(Himage)
+
+    return draw
+
+
+def _in_final_linescore_window(game_data, final_linescore_secs):
+    """True while a finished game should still show its linescore grid.
+
+    Anchored to the actual game end time when the API supplies one, falling back
+    to when this app first observed the game as Final. Always False in historical
+    mode, where "now" bears no relation to when the game ended.
+    """
+    if _historical_mode:
+        return False
+
+    game_pk = game_data.get('game_pk')
+    final_ts = _get_or_set_final_time(game_pk) if game_pk else None
+
+    end_utc_str = game_data.get('game_end_time_utc')
+    if end_utc_str:
+        try:
+            end_dt = pytz.utc.localize(
+                _datetime.strptime(end_utc_str[:19], "%Y-%m-%dT%H:%M:%S"))
+            elapsed = (_datetime.now(pytz.utc) - end_dt).total_seconds()
+            return elapsed < final_linescore_secs
+        except Exception:
+            pass  # fall back to the first-seen-Final timestamp
+
+    return final_ts is not None and (_time.time() - final_ts) < final_linescore_secs
+
+
+_LayoutFlags = namedtuple('_LayoutFlags', [
+    'delayed_with_score', 'between_innings', 'pitching_change',
+    'mid_inning_pc', 'game_ending_state',
+])
+
+
+def _compute_layout_flags(game_data):
+    """Derive the layout decisions that select the linescore grid over the
+    normal score layout, as a _LayoutFlags tuple."""
+    state = game_data.get('detailed_state')
+
+    delayed_with_score = (
+        state == 'Delayed' and (game_data.get('current_inning') or 0) > 0
+    )
+    between_innings = (
+        state == 'In Progress' and game_data.get('inningState') in ('Middle', 'End')
+    )
+    # Any pitching change shows the linescore grid.
+    pitching_change = (
+        state == 'In Progress' and (game_data.get('sub_event') or '').startswith('PC:')
+    )
+    # A PC during a live half-inning: fewer than 3 outs and the inning has
+    # already started (an out recorded, or a pitch already thrown).
+    mid_inning_pc = bool(
+        pitching_change and not between_innings
+        and (
+            (game_data.get('num_of_outs') or 0) > 0
+            or (game_data.get('at_bat_pitch_count') or 0) > 0
         )
-        if not _has_play:
-            game_data = dict(game_data)
-            game_data['detailed_state'] = 'Pre-Game'
+    )
+    # End of 9th+ with one team leading, or Mid 9th+ with the home team ahead —
+    # the game is effectively over.
+    inn_state = game_data.get('inningState') or ''
+    away_runs = game_data.get('away_runs') or 0
+    home_runs = game_data.get('home_runs') or 0
+    game_ending_state = bool(
+        (game_data.get('current_inning') or 0) >= 9
+        and (
+            (inn_state == 'End' and away_runs != home_runs)
+            or (inn_state == 'Middle' and home_runs > away_runs)
+        )
+    )
+
+    return _LayoutFlags(delayed_with_score, between_innings, pitching_change,
+                        mid_inning_pc, game_ending_state)
+
+
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
+    """Render a single game score box onto Himage at (start_x, start_y)."""
+    s = scale
+    _is_walkoff = bool(game_data.get('walk_off'))
+    game_data, _challenge_abbr, _original_detailed_state = _normalize_game_state(game_data)
 
     draw = ImageDraw.Draw(Himage)
     font24 = _get_font(24 * s)
@@ -742,42 +888,19 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     horizonta_len = 135 * s
     max_text_width = horizonta_len - 14 * s
 
-    # Needed by the elif chain below — define early so all branches can reference it
-    _delayed_with_score = (
-        game_data['detailed_state'] == 'Delayed'
-        and (game_data.get('current_inning') or 0) > 0
-    )
-
-    # True when we should show the linescore grid instead of the normal score layout
-    _between_innings = (
-        game_data['detailed_state'] == 'In Progress'
-        and game_data.get('inningState') in ('Middle', 'End')
-    )
-    # Any pitching change — always show linescore grid.
-    _pitching_change = (
-        game_data['detailed_state'] == 'In Progress'
-        and (game_data.get('sub_event') or '').startswith('PC:')
-    )
-    # True when the PC happens during a live half-inning (< 3 outs AND the inning
-    # has already started — at least one out recorded or a pitch already thrown).
-    _mid_inning_pc = (
-        _pitching_change and not _between_innings
-        and (
-            (game_data.get('num_of_outs') or 0) > 0
-            or (game_data.get('at_bat_pitch_count') or 0) > 0
-        )
-    )
-    # End of 9th+ with one team leading, or Mid 9th+ with home team winning — game is effectively over
-    _inn_state_ge = game_data.get('inningState') or ''
-    _game_ending_state = (
-        (game_data.get('current_inning') or 0) >= 9 and
-        (
-            (_inn_state_ge == 'End' and (game_data.get('away_runs') or 0) != (game_data.get('home_runs') or 0)) or
-            (_inn_state_ge == 'Middle' and (game_data.get('home_runs') or 0) > (game_data.get('away_runs') or 0))
-        )
-    )
+    # Layout flags consumed by the elif chain below — computed up front so every
+    # branch can reference them.
+    _flags = _compute_layout_flags(game_data)
+    _delayed_with_score = _flags.delayed_with_score
+    _between_innings = _flags.between_innings
+    _pitching_change = _flags.pitching_change
+    _mid_inning_pc = _flags.mid_inning_pc
+    _game_ending_state = _flags.game_ending_state
 
     _in_linescore_window = False  # set True inside Final block when within the linescore window
+    # Read unconditionally: the end-time footer and the next-game preview below
+    # both use it, and it used to be defined only inside the Final branch.
+    _end_utc_str = game_data.get('game_end_time_utc')
 
     def fit_text(text, max_w):
         """Fit text."""
@@ -801,45 +924,13 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     away_team_name = _TEAM_ID_ABBR_OVERRIDE.get(away_team_id) or abbr_map.get(away_team_id, f'T{away_team_id}')
     home_team_name = _TEAM_ID_ABBR_OVERRIDE.get(home_team_id) or abbr_map.get(home_team_id, f'T{home_team_id}')
 
-    # Postponed rain emoji ghost — drawn first so all content renders on top
-    if game_data['detailed_state'] == 'Postponed':
-        import random as _random
-        _ppd_cp = _random.Random(game_data.get('game_pk', 0) ^ int(_time.time() // 60)).choice(_PPD_EMOJI_CODEPOINTS)
-        _ppd_ghost = _load_codepoint_ghost(_ppd_cp, size=90 * s)
-        if _ppd_ghost:
-            _gw, _gh = _ppd_ghost.size
-            _gx = start_x + (horizonta_len - _gw) // 2
-            _gy = start_y + (vertical_len + 20 * s - _gh) // 2
-            Himage.paste(_ppd_ghost, (_gx, _gy))
-            draw = ImageDraw.Draw(Himage)
-
-    # Suspended lightning emoji ghost
-    if game_data['detailed_state'] == 'Suspended':
-        import random as _random
-        _susp_cp = _random.Random(game_data.get('game_pk', 0) ^ int(_time.time() // 60)).choice(_SUSP_EMOJI_CODEPOINTS)
-        _susp_ghost = _load_codepoint_ghost(_susp_cp, size=90 * s)
-        if _susp_ghost:
-            _gw, _gh = _susp_ghost.size
-            _gx = start_x + (horizonta_len - _gw) // 2
-            _gy = start_y + (vertical_len + 20 * s - _gh) // 2
-            Himage.paste(_susp_ghost, (_gx, _gy))
-            draw = ImageDraw.Draw(Himage)
-
-    # Winner ghost logo — drawn first so all text/scores render on top of it
-    if show_winner_logo and use_logos and game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
-        winner_abbr = winner_id = None
-        if game_data.get('away_team_is_winner'):
-            winner_abbr, winner_id = away_team_name, away_team_id
-        elif game_data.get('home_team_is_winner'):
-            winner_abbr, winner_id = home_team_name, home_team_id
-        if winner_abbr:
-            ghost = _logo_ghost(winner_abbr, winner_id, size=110 * s)
-            if ghost:
-                gw, gh = ghost.size
-                gx = start_x + (135 * s - gw) // 2 + 0
-                gy = start_y + 20 * s + (vertical_len - gh) // 2
-                Himage.paste(ghost, (gx, gy))
-                draw = ImageDraw.Draw(Himage)
+    # Background ghosts — drawn first so all content renders on top.
+    draw = _draw_background_ghosts(
+        Himage, draw, start_x, start_y, game_data, horizonta_len, vertical_len, s,
+        use_logos=use_logos, show_winner_logo=show_winner_logo,
+        away_team=(away_team_name, away_team_id),
+        home_team=(home_team_name, home_team_id),
+    )
 
     # inning or game state
     if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied'):
@@ -850,24 +941,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
         # Anchor the 60-min linescore window to the actual game end time when available,
         # falling back to when the app first saw this game as Final.
-        _game_pk = game_data.get('game_pk')
-        _final_ts = _get_or_set_final_time(_game_pk) if _game_pk else None
-        _end_utc_str = game_data.get('game_end_time_utc')
-        if _end_utc_str:
-            try:
-                _end_utc_dt = pytz.utc.localize(_datetime.strptime(_end_utc_str[:19], "%Y-%m-%dT%H:%M:%S"))
-                _elapsed = (_datetime.now(pytz.utc) - _end_utc_dt).total_seconds()
-                _in_linescore_window = not _historical_mode and _elapsed < _FINAL_LINESCORE_SECS
-            except Exception:
-                _in_linescore_window = (
-                    not _historical_mode and _final_ts is not None and
-                    (_time.time() - _final_ts) < _FINAL_LINESCORE_SECS
-                )
-        else:
-            _in_linescore_window = (
-                not _historical_mode and _final_ts is not None and
-                (_time.time() - _final_ts) < _FINAL_LINESCORE_SECS
-            )
+        _in_linescore_window = _in_final_linescore_window(game_data, _FINAL_LINESCORE_SECS)
 
         _decisions_ready = bool(winner_name and loser_name)
         _show_linescore = (away_inning_runs or home_inning_runs) and (

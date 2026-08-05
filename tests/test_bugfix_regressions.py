@@ -224,3 +224,150 @@ class TestLocalTimezone:
     def test_local_now_defaults_to_chicago(self):
         import main as m
         assert str(m._local_now({}).tzinfo) == 'America/Chicago'
+
+
+class TestGameStateNormalization:
+    """Unit coverage for the state-normalization and layout-flag logic pulled
+    out of the 1600-line draw_box()."""
+
+    @staticmethod
+    def _norm(**game):
+        from image_box import _normalize_game_state
+        return _normalize_game_state(game)
+
+    def test_completed_early_becomes_final(self):
+        gd, _, _ = self._norm(detailed_state='Completed Early: Rain')
+        assert gd['detailed_state'] == 'Final'
+
+    def test_delayed_start_becomes_pregame(self):
+        gd, _, original = self._norm(detailed_state='Delayed Start')
+        assert gd['detailed_state'] == 'Pre-Game'
+        assert original == 'Delayed Start'
+
+    def test_challenge_normalizes_and_captures_abbr(self):
+        gd, abbr, original = self._norm(
+            detailed_state='Player challenge', challenge_team_abbr='NYY')
+        assert gd['detailed_state'] == 'In Progress'
+        assert gd['sub_event'] == 'ABS CHAL'
+        assert gd['last_play'] == 'ABS CHAL'
+        assert abbr == 'NYY'
+        # Captured after the challenge normalization, as the header expects.
+        assert original == 'In Progress'
+
+    def test_manager_challenge_uses_its_own_prefix(self):
+        gd, _, _ = self._norm(detailed_state='Manager challenge')
+        assert gd['sub_event'] == 'M CHAL'
+
+    def test_in_progress_before_first_pitch_is_pregame(self):
+        gd, _, _ = self._norm(detailed_state='In Progress')
+        assert gd['detailed_state'] == 'Pre-Game'
+
+    @pytest.mark.parametrize('evidence', [
+        {'balls': 1}, {'strikes': 2}, {'num_of_outs': 1}, {'away_runs': 1},
+        {'home_runs': 3}, {'inningState': 'Middle'}, {'current_inning': 4},
+        {'runner_on_first': True}, {'runner_on_second': True},
+        {'runner_on_third': True}, {'last_play': 'Single'},
+    ])
+    def test_in_progress_stays_live_with_evidence_of_play(self, evidence):
+        gd, _, _ = self._norm(detailed_state='In Progress', **evidence)
+        assert gd['detailed_state'] == 'In Progress'
+
+    def test_hits_alone_do_not_count_as_started(self):
+        """Excluded deliberately: the GIF path inherits them from the final box
+        score, so they are non-zero on every pre-game frame."""
+        gd, _, _ = self._norm(
+            detailed_state='In Progress', away_hits=9, home_hits=7)
+        assert gd['detailed_state'] == 'Pre-Game'
+
+    def test_caller_dict_is_never_mutated(self):
+        from image_box import _normalize_game_state
+        original = {'detailed_state': 'Delayed Start'}
+        _normalize_game_state(original)
+        assert original['detailed_state'] == 'Delayed Start'
+
+
+class TestLayoutFlags:
+    @staticmethod
+    def _flags(**game):
+        from image_box import _compute_layout_flags
+        return _compute_layout_flags(game)
+
+    def test_delayed_with_score_requires_an_inning(self):
+        assert self._flags(detailed_state='Delayed', current_inning=5).delayed_with_score
+        assert not self._flags(detailed_state='Delayed').delayed_with_score
+
+    def test_between_innings(self):
+        assert self._flags(
+            detailed_state='In Progress', inningState='Middle').between_innings
+        assert not self._flags(
+            detailed_state='In Progress', inningState='Top').between_innings
+
+    def test_pitching_change_and_mid_inning_variant(self):
+        mid = self._flags(detailed_state='In Progress', sub_event='PC: Smith',
+                          inningState='Top', num_of_outs=1)
+        assert mid.pitching_change and mid.mid_inning_pc
+
+        between = self._flags(detailed_state='In Progress', sub_event='PC: Smith',
+                              inningState='Middle', num_of_outs=1)
+        assert between.pitching_change and not between.mid_inning_pc
+
+        start_of_inning = self._flags(detailed_state='In Progress',
+                                      sub_event='PC: Smith', inningState='Top')
+        assert not start_of_inning.mid_inning_pc
+
+    def test_game_ending_state(self):
+        # End of 9th with a leader
+        assert self._flags(current_inning=9, inningState='End',
+                           away_runs=3, home_runs=2).game_ending_state
+        # End of 9th tied -> extra innings, not ending
+        assert not self._flags(current_inning=9, inningState='End',
+                               away_runs=2, home_runs=2).game_ending_state
+        # Middle of 9th with home ahead -> home doesn't bat
+        assert self._flags(current_inning=9, inningState='Middle',
+                           away_runs=1, home_runs=5).game_ending_state
+        # Middle of 9th with home behind -> they still bat
+        assert not self._flags(current_inning=9, inningState='Middle',
+                               away_runs=5, home_runs=1).game_ending_state
+        # Too early
+        assert not self._flags(current_inning=7, inningState='End',
+                               away_runs=3, home_runs=2).game_ending_state
+
+
+class TestFinalLinescoreWindow:
+    def test_historical_mode_is_always_closed(self, monkeypatch):
+        import image_box
+        monkeypatch.setattr(image_box, '_historical_mode', True)
+        assert image_box._in_final_linescore_window(
+            {'game_end_time_utc': '2025-06-03T22:00:00Z'}, 3600) is False
+
+    def test_recent_end_time_is_inside_the_window(self, monkeypatch):
+        import datetime as _dt
+        import image_box
+        monkeypatch.setattr(image_box, '_historical_mode', False)
+        recent = _dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+        assert image_box._in_final_linescore_window(
+            {'game_end_time_utc': recent}, 3600) is True
+
+    def test_old_end_time_is_outside_the_window(self, monkeypatch):
+        import datetime as _dt
+        import image_box
+        monkeypatch.setattr(image_box, '_historical_mode', False)
+        old = (_dt.datetime.now(_dt.timezone.utc)
+               - _dt.timedelta(hours=5)).strftime('%Y-%m-%dT%H:%M:%S')
+        assert image_box._in_final_linescore_window(
+            {'game_end_time_utc': old}, 3600) is False
+
+    def test_falls_back_to_first_seen_final_time(self, monkeypatch):
+        import time as _t
+        import image_box
+        monkeypatch.setattr(image_box, '_historical_mode', False)
+        monkeypatch.setattr(image_box, '_get_or_set_final_time', lambda pk: _t.time())
+        # Unparseable end time -> falls through to the first-seen timestamp
+        assert image_box._in_final_linescore_window(
+            {'game_pk': 1, 'game_end_time_utc': 'not-a-date'}, 3600) is True
+
+    def test_no_end_time_and_no_final_timestamp(self, monkeypatch):
+        import image_box
+        monkeypatch.setattr(image_box, '_historical_mode', False)
+        monkeypatch.setattr(image_box, '_get_or_set_final_time', lambda pk: None)
+        assert image_box._in_final_linescore_window({'game_pk': 1}, 3600) is False
