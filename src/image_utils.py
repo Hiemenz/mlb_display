@@ -92,7 +92,78 @@ def check_if_two_chars(num):
     return 0
 
 
+# Sorts unranked teams last, matching int(...) fallbacks used across the sidebars.
+_UNRANKED = 99
+
+
+def division_rank(team, default=_UNRANKED):
+    """Return a team's divisionRank as an int, falling back to ``default``.
+
+    standings.py always writes the 'divisionRank' key, storing None whenever the
+    MLB Stats API omits a rank (preseason, spring training, some minor-league
+    responses). A plain ``team.get('divisionRank', 99)`` therefore yields None
+    rather than the default — ``int(None)`` raises TypeError and ``str(None)``
+    renders a literal 'None'. Always go through this helper.
+    """
+    raw = (team or {}).get('divisionRank')
+    if raw is None or raw == '':
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 _NAME_SUFFIXES = {'jr', 'sr', 'ii', 'iii', 'iv', 'v'}
+
+
+# Magic / elimination numbers. A full MLB season is 162 games; a team clinches
+# over a rival the moment the rival can no longer tie it, i.e. when
+# (162 + 1) - wins - rival_losses hits 0.
+MAGIC_BASE = 163
+# At or below this, a trailing team's elimination number is dramatic enough to
+# show instead of games back — early/mid-season elimination numbers (60+) aren't
+# meaningful. Also gates the leader's magic number: a leader whose magic number
+# is still above this shows nothing at all.
+ELIM_THRESHOLD = 20
+
+
+def magic_or_elim_value(team, leader, is_leader, rival_losses):
+    """Value string for one standings row: 'M4' / 'E7' / 'CL' / 'OUT' / games back.
+
+    Shared by the magic-number grid cell (image_magic) and the standings sidebar
+    badges (image_standings) — both render the same statistic and must agree.
+
+    Returns '' when the underlying win/loss data isn't available yet, or when
+    the number isn't meaningful yet (magic still above ELIM_THRESHOLD).
+    """
+    clinch = (team.get('clinch_indicator') or '').strip().lower()
+    if clinch in ('z', 'y'):
+        return 'CL'
+    if clinch == 'e':
+        return 'OUT'
+
+    lead_w = leader.get('league_record_wins')
+    if lead_w is None:
+        return ''
+
+    if is_leader:
+        if rival_losses is None:
+            return 'CL'          # no rivals left to hold off
+        magic = MAGIC_BASE - lead_w - rival_losses
+        if magic <= 0:
+            return 'CL'
+        return f'M{magic}' if magic <= ELIM_THRESHOLD else ''
+
+    team_l = team.get('league_record_losses')
+    if team_l is None:
+        return ''
+    elim = MAGIC_BASE - lead_w - team_l
+    if elim <= 0:
+        return 'OUT'
+    if elim <= ELIM_THRESHOLD:
+        return f'E{elim}'
+    return str(team.get('games_back') or '-')
 
 
 def _format_player_name(name):
