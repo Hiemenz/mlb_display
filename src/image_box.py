@@ -2180,9 +2180,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _header_right = _ser_content_left_x - 2 * s
 
         def _draw_play_right(text, fnt=None, y_off=4):
-            """Draw play right."""
+            """Draw a right-anchored header label, shrinking it to the space left
+            of the series block. Returns the drawn (x, width), or None if it
+            didn't fit — callers that decorate the label need its extent."""
             if not text:  # pragma: no cover
-                return
+                return None
             _fnt = fnt or _get_font(12 * s)
             _max_w = max(_header_right - start_x - _total_time_w - 10 * s, 0)
             _t = text
@@ -2207,6 +2209,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                             if _i < len(_parts) - 1:
                                 _draw_backwards_k(Himage, _cx, _py, _fnt)
                                 _cx += int(_fnt.getlength('K'))
+                return _px, _pw
+            return None  # pragma: no cover - only when the label can't be shrunk to fit
 
         if hide_last_play:
             # Wide cell: events live in the spanning header, not the left cell.
@@ -2217,8 +2221,23 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             _nh_lw = int(font14.getlength(_nh_label))
             _nh_lx = _header_right - _nh_lw
             _draw_bold_text(draw, (_nh_lx, start_y + 3 * s), _nh_label, font14, s)
+        elif _mid_inning_pc:
+            # A change with the half-inning still live is an event, not the
+            # routine between-innings swap: the out count says why the manager
+            # came out, and the inverted chip separates the two at a glance.
+            # Never labelled 'Mid' — that reads as the Middle-of-inning break
+            # the header shows on the left, which is the opposite state.
+            _pc_label = f'PC {game_data.get("num_of_outs") or 0} OUT'
+            _pc_span = _draw_play_right(_pc_label)
+            if _pc_span:
+                # Right edge stops 1px past the text (the bold offset) rather than
+                # padding symmetrically — the series block starts 2px further right.
+                _chip = (_pc_span[0] - 2 * s, start_y + 2 * s, _header_right + 1 * s, start_y + 19 * s)
+                ctx.paste(ImageOps.invert(Himage.crop(_chip).convert('L')).convert('1'),
+                          (_chip[0], _chip[1]))
+                draw = ctx.draw
         elif _pitching_change:
-            _draw_play_right('Mid PC' if _mid_inning_pc else 'P.CHG')
+            _draw_play_right('P.CHG')
         elif _between_innings and play_display:
             # Mid-inning break: show abbreviated play that ended the half-inning
             _draw_play_right(play_display)

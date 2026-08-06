@@ -2838,8 +2838,12 @@ class TestArrowSuppression:
 # ===========================================================================
 
 class TestMidInningPC:
-    """'Mid PC' label appears only when the PC occurs during a live half-inning
-    (≥1 out recorded OR ≥1 pitch thrown in the current AB).  Otherwise 'P.CHG'."""
+    """The inverted 'PC <n> OUT' chip appears only when the PC occurs during a
+    live half-inning (≥1 out recorded OR ≥1 pitch thrown in the current AB).
+    Otherwise the routine 'P.CHG' label, drawn plain."""
+
+    # Right portion of the header row, where the label and its chip are drawn.
+    _CHIP_BAND = (32 + 67, 30 + 2, 32 + 136, 30 + 19)
 
     def _render(self, game, team_data):
         """Render."""
@@ -2847,10 +2851,16 @@ class TestMidInningPC:
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
 
+    def _chip_darkness(self, img):
+        """Fraction of the header's label area that is ink — an inverted chip
+        fills most of it, a plain label only its glyphs."""
+        px = list(img.crop(self._CHIP_BAND).getdata())
+        return sum(1 for p in px if p == 0) / len(px)
+
     @needs_pil
     def test_mid_pc_differs_from_start_of_inning_pc(self, minimal_team_data):
         """A PC with 1 out (mid-inning) renders differently than a PC with 0 outs
-        (start of inning) — the header label changes from 'P.CHG' to 'Mid PC'."""
+        (start of inning) — the header label changes from 'P.CHG' to 'PC 1 OUT'."""
         common = dict(
             inningState='Top', current_inning=4,
             current_pitcher='Smith', current_hitter='Jones',
@@ -2861,7 +2871,7 @@ class TestMidInningPC:
         img_mid = self._render(mid, minimal_team_data)
         img_start = self._render(start, minimal_team_data)
         assert list(img_mid.getdata()) != list(img_start.getdata()), \
-            "Mid-inning PC ('Mid PC') must render differently from start-of-inning PC ('P.CHG')"
+            "Mid-inning PC ('PC 1 OUT') must render differently from start-of-inning PC ('P.CHG')"
 
     @needs_pil
     def test_pc_with_pitch_count_is_mid_inning(self, minimal_team_data):
@@ -2881,7 +2891,7 @@ class TestMidInningPC:
 
     @needs_pil
     def test_between_innings_pc_uses_pchg_not_midpc(self, minimal_team_data):
-        """A PC between innings (Middle state) must use 'P.CHG', not 'Mid PC'."""
+        """A PC between innings (Middle state) must use 'P.CHG', not the chip."""
         between = _in_progress_game(
             inningState='Middle', current_inning=4,
             current_pitcher='Smith', current_hitter='Jones',
@@ -2895,7 +2905,45 @@ class TestMidInningPC:
         img_between = self._render(between, minimal_team_data)
         img_mid = self._render(mid, minimal_team_data)
         assert list(img_between.getdata()) != list(img_mid.getdata()), \
-            "Between-innings PC ('P.CHG') must render differently from mid-inning PC ('Mid PC')"
+            "Between-innings PC ('P.CHG') must render differently from mid-inning PC"
+
+    @needs_pil
+    def test_mid_pc_label_carries_the_out_count(self, minimal_team_data):
+        """The label states how many are out, so 1-out and 2-out changes differ.
+        Without it the two are indistinguishable — the out count is the whole
+        reason the manager is walking out mid-inning."""
+        common = dict(
+            inningState='Top', current_inning=4,
+            current_pitcher='Smith', current_hitter='Jones', sub_event='PC: Smith',
+        )
+        one = self._render(_in_progress_game(num_of_outs=1, **common), minimal_team_data)
+        two = self._render(_in_progress_game(num_of_outs=2, **common), minimal_team_data)
+        assert list(one.getdata()) != list(two.getdata()), \
+            "'PC 1 OUT' and 'PC 2 OUT' must render differently"
+
+    @needs_pil
+    def test_mid_pc_chip_is_inverted_between_innings_is_not(self, minimal_team_data):
+        """The mid-inning label sits in an inverted chip; the routine
+        between-innings one is plain text. This is the signal that survives a
+        glance at the wall — the two labels alone are the same size and weight."""
+        common = dict(
+            current_inning=4, current_pitcher='Smith',
+            current_hitter='Jones', sub_event='PC: Smith',
+        )
+        mid = self._render(
+            _in_progress_game(inningState='Top', num_of_outs=1, **common), minimal_team_data)
+        between = self._render(
+            _in_progress_game(inningState='Middle', num_of_outs=3, **common), minimal_team_data)
+        start = self._render(
+            _in_progress_game(inningState='Top', num_of_outs=0,
+                              at_bat_pitch_count=0, **common), minimal_team_data)
+
+        assert self._chip_darkness(mid) > 0.5, \
+            'mid-inning PC label must be drawn in an inverted chip'
+        assert self._chip_darkness(between) < 0.25, \
+            'between-innings P.CHG must stay plain text'
+        assert self._chip_darkness(start) < 0.25, \
+            'start-of-inning PC is routine too — no chip'
 
     @needs_pil
     def test_no_crash_pc_with_zero_outs_zero_pitches(self, minimal_team_data):
