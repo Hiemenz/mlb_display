@@ -1405,6 +1405,68 @@ def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
     ctx.Himage, ctx.draw = Himage, draw
 
 
+def _draw_pitchers_of_record(ctx, game_data, is_walkoff):
+    """Draw the WP/LP/SV decision lines for a completed game.
+
+    The block is anchored to the bottom of the tile and built upward, so a game
+    with no save decision leaves whitespace above the two pitcher lines rather
+    than moving them.
+    """
+    draw = ctx.draw
+    s = ctx.s
+    font14 = ctx.font14
+
+    LINE_H = 15 * s
+    BOTTOM_Y = ctx.y + ctx.h + 20 * s - 3 * s  # 3px margin above the bottom border
+    max_w = ctx.w - 2 * s
+
+    def _truncate_keep_suffix(text):
+        """Fit ``text`` to the tile width, preferring to keep a trailing record."""
+        if int(font14.getlength(text)) <= max_w:
+            return text
+        # Try dropping the first initial: "WP: W. Warren (2-2)" → "WP: Warren (2-2)"
+        for _pfx in ('WP: ', 'LP: ', 'SV: '):
+            if text.startswith(_pfx):
+                _rest = text[len(_pfx):]
+                if len(_rest) > 2 and _rest[1:3] == '. ':
+                    _no_init = _pfx + _rest[3:]
+                    if int(font14.getlength(_no_init)) <= max_w:
+                        return _no_init
+                    text = _no_init
+                break
+        # Still too wide: eat into the name and keep the record intact.
+        paren = text.rfind(' (')
+        if paren != -1:
+            suffix = text[paren:]
+            prefix = text[:paren]
+            avail = max_w - int(font14.getlength(suffix))
+            while prefix and int(font14.getlength(prefix)) > avail:
+                prefix = prefix[:-1]
+            return prefix + suffix
+        while text and int(font14.getlength(text)) > max_w:
+            text = text[:-1]
+        return text
+
+    winner_record = game_data.get('winner_record')
+    loser_record = game_data.get('loser_record')
+    wp_name = _format_player_name(game_data.get('winner_name') or '')
+    lp_name = _format_player_name(game_data.get('loser_name') or '')
+    lines = [
+        f'LP: {lp_name} ({loser_record})' if loser_record else f'LP: {lp_name}',
+        f'WP: {wp_name} ({winner_record})' if winner_record else f'WP: {wp_name}',
+    ]
+    # A walk-off ends the game on the winning run, so there is no save to show.
+    saver = game_data.get('saver_name')
+    if saver and not is_walkoff:
+        sv_name = _format_player_name(saver)
+        saver_saves = game_data.get('saver_saves')
+        lines.append(f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}')
+
+    for i, txt in enumerate(reversed(lines)):
+        draw.text((ctx.x + 2 * s, BOTTOM_Y - LINE_H * (i + 1)),
+                  _truncate_keep_suffix(txt), font=font14, fill=0)
+
+
 def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
     """Render a single game score box onto Himage at (start_x, start_y)."""
     s = scale
@@ -1499,61 +1561,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # has elapsed AND decisions are posted.
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
         else:
-            # Pitchers of record — anchored to bottom of box, working upward.
-            # bottom border is at start_y + vertical_len + 20 = start_y + 130
-            LINE_H = 15 * s
-            BOTTOM_Y = start_y + vertical_len + 20 * s - 3 * s  # 3px margin above bottom border
-            saver = game_data.get('saver_name')
-            winner_record = game_data.get('winner_record')
-            loser_record = game_data.get('loser_record')
-            saver_saves = game_data.get('saver_saves')
-            lines = []
-            wp_name = _format_player_name(winner_name or '')
-            lp_name = _format_player_name(loser_name or '')
-            wp_str = f'WP: {wp_name} ({winner_record})' if winner_record else f'WP: {wp_name}'
-            lp_str = f'LP: {lp_name} ({loser_record})' if loser_record else f'LP: {lp_name}'
-            lines.append((lp_str, font14, False))
-            lines.append((wp_str, font14, False))
-            if saver and not _is_walkoff:
-                sv_name = _format_player_name(saver)
-                sv_str = f'SV: {sv_name} (S{saver_saves})' if saver_saves is not None else f'SV: {sv_name}'
-                lines.append((sv_str, font14, False))
-
-            _wpname_max_w = horizonta_len - 2 * s
-
-            def _truncate_keep_suffix(s):
-                """Truncate keep suffix."""
-                if int(font14.getlength(s)) <= _wpname_max_w:
-                    return s
-                # Try dropping first initial: "WP: W. Warren (2-2)" → "WP: Warren (2-2)"
-                for _pfx in ('WP: ', 'LP: ', 'SV: '):
-                    if s.startswith(_pfx):
-                        _rest = s[len(_pfx):]
-                        if len(_rest) > 2 and _rest[1:3] == '. ':
-                            _no_init = _pfx + _rest[3:]
-                            if int(font14.getlength(_no_init)) <= _wpname_max_w:
-                                return _no_init
-                            s = _no_init
-                        break
-                paren = s.rfind(' (')
-                if paren != -1:
-                    suffix = s[paren:]
-                    prefix = s[:paren]
-                    suffix_w = int(font14.getlength(suffix))
-                    avail = _wpname_max_w - suffix_w
-                    while prefix and int(font14.getlength(prefix)) > avail:
-                        prefix = prefix[:-1]
-                    return prefix + suffix
-                while s and int(font14.getlength(s)) > _wpname_max_w:
-                    s = s[:-1]
-                return s
-
-            for i, (txt, fnt, bold) in enumerate(reversed(lines)):
-                y = BOTTOM_Y - LINE_H * (i + 1)
-                t = _truncate_keep_suffix(txt)
-                draw.text((start_x + 2 * s, y), t, font=fnt, fill=0)
-                if bold:  # pragma: no cover
-                    draw.text((start_x + 3 * s, y), t, font=fnt, fill=0)
+            _draw_pitchers_of_record(ctx, game_data, _is_walkoff)
 
     elif game_data['detailed_state'] == 'Warmup' or game_data['detailed_state'] == 'Pre-Game' or  game_data['detailed_state'] == 'Scheduled':
         if _is_lineup_mode:

@@ -272,14 +272,16 @@ Pieces that are genuinely self-contained, where the parameter list stays honest:
   test is computed once rather than repeated across the sweep and overline conditions.
 - `_draw_win_probability_bar`, `_draw_game_end_time`, `_draw_duration_and_dh_labels`.
 - `_draw_live_situation_panel` — bases, count, outs and the next-batters panel.
+- `_draw_pitchers_of_record` — the WP/LP/SV lines on a completed game, including the
+  fit strategy that shortens the name before it drops the (W-L) record.
 - `_draw_header_right_text` — the right-anchored, shrink-to-fit header label. Venue and
   delay-reason were the same shape with different fit strategies (shrink vs truncate).
 - `_draw_bold_text` — the 1-bit panel has no synthetic font weight, so "bold" is the same
   string drawn twice one pixel apart. This pattern appeared ~30 times inline.
 
-`draw_box` is now ~1,090 lines, down from 1,630. The largest block left is the Final-state
-body (linescore grid vs pitchers of record), which shares more local state with its
-surroundings than anything extracted so far.
+`draw_box` is now ~1,060 lines, down from 1,630. The largest block left is the live
+score/pitch-detail body (~180 lines), which shares more local state with its surroundings
+than anything extracted so far.
 
 Golden-image tests make this refactoring safe: any extraction that changes a single pixel
 fails immediately. They are the reason a mechanical, script-driven extraction is viable
