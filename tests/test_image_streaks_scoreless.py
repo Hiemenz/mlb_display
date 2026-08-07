@@ -82,19 +82,19 @@ class TestDrawStreaksCell:
 
     def test_use_logos_true_attempts_logo(self):
         fake_logo = Image.new('1', (16, 16), 255)
-        with patch('image_streaks._logo_small', return_value=fake_logo):
+        with patch('panel_cell._logo_small', return_value=fake_logo):
             img = _img()
             result = draw_streaks_cell(img, 0, 0, _STREAKS_DATA, _TEAMS, use_logos=True)
         assert result is not None
 
     def test_use_logos_exception_is_swallowed(self):
-        with patch('image_streaks._logo_small', side_effect=OSError('no file')):
+        with patch('panel_cell._logo_small', side_effect=OSError('no file')):
             img = _img()
             result = draw_streaks_cell(img, 0, 0, _STREAKS_DATA, _TEAMS, use_logos=True)
         assert result is not None
 
     def test_use_logos_returns_none_logo(self):
-        with patch('image_streaks._logo_small', return_value=None):
+        with patch('panel_cell._logo_small', return_value=None):
             img = _img()
             result = draw_streaks_cell(img, 0, 0, _STREAKS_DATA, _TEAMS, use_logos=True)
         assert result is not None
@@ -171,19 +171,19 @@ class TestDrawScorelessCell:
 
     def test_use_logos_true_attempts_logo(self):
         fake_logo = Image.new('1', (16, 16), 255)
-        with patch('image_scoreless._logo_small', return_value=fake_logo):
+        with patch('panel_cell._logo_small', return_value=fake_logo):
             img = _img()
             result = draw_scoreless_cell(img, 0, 0, _STREAKS_DATA, _TEAMS, use_logos=True)
         assert result is not None
 
     def test_use_logos_exception_is_swallowed(self):
-        with patch('image_scoreless._logo_small', side_effect=OSError('no file')):
+        with patch('panel_cell._logo_small', side_effect=OSError('no file')):
             img = _img()
             result = draw_scoreless_cell(img, 0, 0, _STREAKS_DATA, _TEAMS, use_logos=True)
         assert result is not None
 
     def test_use_logos_returns_none_logo(self):
-        with patch('image_scoreless._logo_small', return_value=None):
+        with patch('panel_cell._logo_small', return_value=None):
             img = _img()
             result = draw_scoreless_cell(img, 0, 0, _STREAKS_DATA, _TEAMS, use_logos=True)
         assert result is not None

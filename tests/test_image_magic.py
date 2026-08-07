@@ -254,13 +254,13 @@ class TestDrawMagicCell:
     def test_renders_with_use_logos_true(self):
         img = _make_image()
         fake_logo = Image.new('1', (18, 18), 0)
-        with patch('image_magic._logo_small', return_value=fake_logo):
+        with patch('panel_cell._logo_small', return_value=fake_logo):
             result = draw_magic_cell(img, 32, 30, _STANDINGS, _TEAM_DATA, 'NYY', use_logos=True)
         assert result is not None
 
     def test_renders_with_logo_failure(self):
         img = _make_image()
-        with patch('image_magic._logo_small', side_effect=OSError('missing')):
+        with patch('panel_cell._logo_small', side_effect=OSError('missing')):
             result = draw_magic_cell(img, 32, 30, _STANDINGS, _TEAM_DATA, 'NYY', use_logos=True)
         assert result is not None
 

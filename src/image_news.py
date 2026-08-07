@@ -5,13 +5,9 @@ Shows the most recent MLB headlines fetched by fetch_news.fetch_news()
 panels, headlines are variable-length, so each is word-wrapped to the cell
 width and drawn as a small bulleted block until the cell runs out of room.
 """
+import panel_cell
 from image_assets import _get_font, ImageDraw
 
-# Matches the visible footprint of a normal single-game grid box
-# (mirrors image_leaders / image_transactions).
-_CELL_W = 135
-_CELL_H = 130
-_PAD = 2
 _HEADER = 'News'
 
 _LINE_H = 13          # per-line height at row font size 11
@@ -52,29 +48,18 @@ def draw_news_cell(Himage, sx, sy, news_data, team_data, use_logos=False):
     else:
         articles = list(news_data or [])
 
-    font_hdr = _get_font(14)
     # 9pt fuses adjacent thin strokes on the 1-bit render — never below 10pt.
     font_row = _get_font(11)
-
-    # Top border + header separator + centered bold header (matches draw_box).
-    draw.line([(sx, sy), (sx + _CELL_W - 1, sy)], fill=0)
-    draw.line([(sx, sy + 20), (sx + _CELL_W - 1, sy + 20)], fill=0)
-    hdr_w = int(font_hdr.getlength(_HEADER))
-    hdr_x = sx + (_CELL_W - hdr_w) // 2
-    draw.text((hdr_x, sy + 3), _HEADER, font=font_hdr, fill=0)
-    draw.text((hdr_x + 1, sy + 3), _HEADER, font=font_hdr, fill=0)
-
-    # Bottom border
-    draw.line([(sx, sy + _CELL_H - 1), (sx + _CELL_W - 1, sy + _CELL_H - 1)], fill=0, width=1)
+    panel_cell.draw_chrome(draw, sx, sy, _HEADER)
 
     if not articles:
-        draw.text((sx + _PAD, sy + 60), 'No news', font=font_row, fill=0)
+        panel_cell.draw_empty(draw, sx, sy, 'No news', font_row)
         return Himage
 
     body_top = sy + 23
-    body_bottom = sy + _CELL_H - 2
-    text_x = sx + _PAD + _INDENT
-    max_w = _CELL_W - _PAD - _INDENT - _PAD
+    body_bottom = sy + panel_cell.CELL_H - 2
+    text_x = sx + panel_cell.PAD + _INDENT
+    max_w = panel_cell.CELL_W - panel_cell.PAD - _INDENT - panel_cell.PAD
 
     y = body_top
     for art in articles:
@@ -88,7 +73,7 @@ def draw_news_cell(Himage, sx, sy, news_data, team_data, use_logos=False):
 
         # bullet dot aligned to the first line's text baseline-ish
         by = y + _LINE_H // 2
-        draw.ellipse([(sx + _PAD, by - _BULLET_R), (sx + _PAD + 2 * _BULLET_R, by + _BULLET_R)], fill=0)
+        draw.ellipse([(sx + panel_cell.PAD, by - _BULLET_R), (sx + panel_cell.PAD + 2 * _BULLET_R, by + _BULLET_R)], fill=0)
 
         for ln in lines:
             if y + _LINE_H > body_bottom:

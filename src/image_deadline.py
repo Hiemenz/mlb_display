@@ -14,6 +14,7 @@ must be updated there once MLB announces the date each season.
 from datetime import datetime, timedelta, timezone
 import pytz
 from image_assets import _get_font, ImageDraw
+from image_utils import TRANSACTION_TYPE_ABBR
 
 _CELL_W = 135
 _CELL_H = 130
@@ -51,18 +52,6 @@ def in_countdown_window(now_utc=None, config=None):
     deadline = _deadline_utc(config)
     return deadline - timedelta(days=_SHOW_WINDOW_DAYS) <= now < deadline
 
-_TYPE_ABBR = {
-    'Status Change':              'IL',
-    'Recalled':                   'Recall',
-    'Optioned':                   'Option',
-    'Selected':                   'Select',
-    'Designated for Assignment':  'DFA',
-    'Released':                   'Release',
-    'Signed':                     'Sign',
-    'Trade':                      'Trade',
-    'Claimed off Waivers':        'Waiver',
-    'Outrighted':                 'Outright',
-}
 
 
 def _countdown(now_utc=None, config=None):
@@ -134,7 +123,7 @@ def draw_deadline_cell(Himage, sx, sy, transactions_data, team_data, use_logos=F
         abbr = entry.get('team_abbr', '')
         name = entry.get('player_name', '')
         type_desc = entry.get('type_desc', '')
-        tag = _TYPE_ABBR.get(type_desc, type_desc[:6] if type_desc else '')
+        tag = TRANSACTION_TYPE_ABBR.get(type_desc, type_desc[:6] if type_desc else '')
 
         abbr_w = int(font_row.getlength(abbr + ' '))
         tag_w  = int(font_row.getlength(tag))

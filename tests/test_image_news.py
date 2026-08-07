@@ -113,7 +113,6 @@ class TestDrawNewsCell:
 
     def test_multi_line_headline_inner_break(self):
         """Inner loop break is hit when a wrapped line would exceed body_bottom."""
-        from image_news import _CELL_H, _LINE_H
         img = _make_image()
         # Pack enough long headlines to fill the body so the inner per-line
         # y-overflow check fires during the multi-line wrap of a later headline.
