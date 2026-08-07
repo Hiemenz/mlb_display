@@ -87,6 +87,29 @@ def _render_box(draw_box, game):
     return canvas.tobytes()
 
 
+def _live_wide_game():
+    """A live game shaped for the wide tile, carrying win probabilities."""
+    return {
+        'game_pk': 3001,
+        'away_team_id': 147, 'home_team_id': 111,
+        'away_team_name': 'NYY', 'home_team_name': 'BOS',
+        'detailed_state': 'In Progress', 'inningState': 'Middle',
+        'current_inning': 7,
+        'away_runs': 4, 'home_runs': 3, 'away_hits': 8, 'home_hits': 6,
+        'away_errors': 0, 'home_errors': 1,
+        'num_of_outs': 3, 'balls': 0, 'strikes': 0,
+        'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+        'away_inning_runs': [1, 0, 2, 0, 0, 1, 0],
+        'home_inning_runs': [0, 1, 0, 2, 0, 0],
+        'away_team_record_wins': 60, 'away_team_record_losses': 40,
+        'home_team_record_wins': 55, 'home_team_record_losses': 45,
+        'away_win_probability': 62, 'home_win_probability': 38,
+        'game_start': '7:05 PM',
+        'no_hitter': False, 'perfect_game': False, 'walk_off': False,
+        'venue': 'Fenway Park', 'last_play': None,
+    }
+
+
 class TestDivisionRankNone:
     """standings.py always writes the 'divisionRank' key, storing None when the
     MLB Stats API omits a rank. dict.get(key, default) does NOT substitute the
@@ -640,6 +663,80 @@ class TestDrawBoxHelpers:
             ctx, {'away_win_probability': 0.7, 'home_win_probability': 0.3},
             ('NYY', 147), ('BOS', 111))
         assert ctx.Himage.tobytes() != before
+
+    @staticmethod
+    def _longest_run(image, y, x0, x1):
+        """Longest unbroken run of black pixels on row ``y``.
+
+        The rule has to be told apart from the ghosted LOSS/WIN watermark, which
+        also puts black pixels on that row. The watermark is dithered, so its
+        runs are a pixel or two; the rule is the full width of the strip.
+        """
+        px = image.load()
+        best = cur = 0
+        for x in range(x0, x1):
+            cur = cur + 1 if px[x, y] == 0 else 0
+            best = max(best, cur)
+        return best
+
+    @staticmethod
+    def _wp_ctx():
+        from image_box import _TileCtx
+        img = Image.new('1', (800, 480), 255)
+        return _TileCtx(img, 0, 0, 1, False, 2), img
+
+    @staticmethod
+    def _bar_y(ctx):
+        return ctx.y + ctx.h + 21 * ctx.s + (19 * ctx.s) // 2
+
+    def test_win_prob_center_line_suppressed_for_multi_cell_tiles(self):
+        """On a wide/triple tile the strip can only span the 135px left cell —
+        the rest of that gap belongs to the K-strikeout strip — so the rule ended
+        mid-tile and read as a stray line crossing the panel."""
+        ctx, img = self._wp_ctx()
+        _draw_win_probability_bar(
+            ctx, {'away_win_probability': 46, 'home_win_probability': 54},
+            ('NYY', 147), ('BOS', 111), center_line=False)
+        assert self._longest_run(img, self._bar_y(ctx), 0, ctx.x + ctx.w) <= 2
+
+    def test_win_prob_center_line_kept_by_default(self):
+        """Single cells are unaffected: the rule still spans the cell."""
+        ctx, img = self._wp_ctx()
+        _draw_win_probability_bar(
+            ctx, {'away_win_probability': 46, 'home_win_probability': 54},
+            ('NYY', 147), ('BOS', 111))
+        assert self._longest_run(img, self._bar_y(ctx), 0, ctx.x + ctx.w) >= 130
+
+    def test_win_prob_bar_never_reaches_the_k_strip(self):
+        """The K strip starts at the left cell's right edge in the same gap, so
+        nothing the win-probability bar draws may cross that boundary."""
+        ctx, img = self._wp_ctx()
+        _draw_win_probability_bar(
+            ctx, {'away_win_probability': 99, 'home_win_probability': 1},
+            ('NYY', 147), ('BOS', 111))
+        px = img.load()
+        bar_top = ctx.y + ctx.h + 21 * ctx.s
+        for y in range(bar_top, bar_top + 19 * ctx.s):
+            for x in range(ctx.x + ctx.w, img.width):
+                assert px[x, y] != 0, f'bar drew into the K strip at ({x}, {y})'
+
+    def test_wide_tile_suppresses_the_center_line_end_to_end(self):
+        """Pins the wiring, not just the helper: rendering a live wide tile must
+        leave no rule in the strip below it."""
+        from image_box import draw_wide_box
+        import image_box
+        game = _live_wide_game()
+        img = Image.new('1', (800, 480), 255)
+        with patch('image_box.load_yaml_file',
+                   return_value={'timezone': 'America/Chicago',
+                                 'final_linescore_minutes': 60}):
+            image_box.set_historical_mode(True)
+            try:
+                draw_wide_box(img, 32, 30, game, _TEAM_DATA, show_win_prob=True)
+            finally:
+                image_box.set_historical_mode(False)
+        # The strip's centre row, across the left cell only.
+        assert self._longest_run(img, 30 + 110 + 21 + 9, 33, 33 + 133) <= 2
 
     def test_end_time_skipped_outside_linescore_window(self):
         ctx = self._ctx()

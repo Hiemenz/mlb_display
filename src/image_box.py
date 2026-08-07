@@ -967,12 +967,17 @@ def _draw_game_end_time(ctx, end_utc_str, in_linescore_window, game_is_final):
     ctx.bold((x, strip_y + (strip_h - 14 * ctx.s) // 2), text, ctx.font14)
 
 
-def _draw_win_probability_bar(ctx, game_data, away_team, home_team):
+def _draw_win_probability_bar(ctx, game_data, away_team, home_team, center_line=True):
     """Draw the live win-probability strip below the box.
 
-    A 'LOSS'/'WIN' ghost watermark with a solid centre line, and each team
-    positioned along it by win probability — as logos when logos are enabled,
-    otherwise as tick marks.
+    A 'LOSS'/'WIN' ghost watermark with each team positioned along it by win
+    probability — as logos when logos are enabled, otherwise as tick marks.
+
+    ``center_line`` draws the solid rule the logos sit on. The wide and triple
+    tiles pass False: the strip cannot be widened past the left cell there,
+    because the space to its right in the same gap belongs to the K-strikeout
+    strip, and a rule that stops at the cell boundary reads as a stray line
+    crossing the tile rather than as a bar.
     """
     away_wp = game_data.get('away_win_probability')
     home_wp = game_data.get('home_win_probability')
@@ -1003,8 +1008,9 @@ def _draw_win_probability_bar(ctx, game_data, away_team, home_team):
     ghost_draw.text((BAR_W - win_w - 1 * s, (BAR_H - 18 * s) // 2), 'WIN',
                     font=ctx.font18, fill=0)
     ghost = ghost.point(lambda p: 255 if p > 180 else min(255, int(p * 0.35 + 155)))
-    # Centre line drawn after the ghost transform so it stays solid black.
-    ImageDraw.Draw(ghost).line((0, BAR_H // 2, BAR_W, BAR_H // 2), fill=0)
+    if center_line:
+        # Drawn after the ghost transform so it stays solid black.
+        ImageDraw.Draw(ghost).line((0, BAR_H // 2, BAR_W, BAR_H // 2), fill=0)
     ctx.paste(ghost.convert('1'), (BAR_X, BAR_Y))
 
     def _clamp(px):
@@ -1469,7 +1475,7 @@ def _draw_pitchers_of_record(ctx, game_data, is_walkoff):
                   _truncate_keep_suffix(txt), font=font14, fill=0)
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False, win_prob_center_line=True):
     """Render a single game score box onto Himage at (start_x, start_y)."""
     s = scale
     _is_walkoff = bool(game_data.get('walk_off'))
@@ -2415,6 +2421,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             ctx, game_data,
             away_team=(away_team_name, away_team_id),
             home_team=(home_team_name, home_team_id),
+            center_line=win_prob_center_line,
         )
         draw = ctx.draw
 
@@ -3135,6 +3142,10 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         always_show_hits=True,
         hide_last_play=True,
         skip_header_invert=True,   # the wide cell inverts the full header itself
+        # No centre rule: the bar can't extend past the left cell (the K strip
+        # owns the rest of this gap), and a rule ending mid-tile reads as a
+        # stray line rather than a bar.
+        win_prob_center_line=False,
     )
 
     # Extend top, header-separator, and bottom borders across the right panel (no center divider)
@@ -3792,6 +3803,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         always_show_hits=True,
         hide_last_play=True,
         skip_header_invert=True,
+        win_prob_center_line=False,   # same as the wide tile — see draw_wide_box
     )
 
     draw = ImageDraw.Draw(Himage)
