@@ -2,10 +2,11 @@ name: Auto-merge
 
 on:
   pull_request:
-    types: [opened, ready_for_review]
+    types: [opened, ready_for_review, synchronize]
 
 jobs:
   enable:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
