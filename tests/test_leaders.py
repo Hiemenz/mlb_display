@@ -218,7 +218,7 @@ def test_draw_leaders_cell_with_logos_pastes_logo():
     img = _make_image()
     fake_logo = Image.new('1', (18, 18), 0)
     with patch('image_leaders._current_category', return_value='homeRuns'), \
-         patch('image_leaders._logo_small', return_value=fake_logo) as mock_logo:
+         patch('panel_cell._logo_small', return_value=fake_logo) as mock_logo:
         result = draw_leaders_cell(img, 32, 30, SAMPLE_LEADERS, SAMPLE_TEAM_DATA, use_logos=True)
     assert result is not None
     assert mock_logo.called
@@ -229,7 +229,7 @@ def test_draw_leaders_cell_logo_lookup_failure_falls_back():
     # _logo_small raising must not crash the cell — falls back to no logo.
     img = _make_image()
     with patch('image_leaders._current_category', return_value='homeRuns'), \
-         patch('image_leaders._logo_small', side_effect=OSError('missing')):
+         patch('panel_cell._logo_small', side_effect=OSError('missing')):
         result = draw_leaders_cell(img, 32, 30, SAMPLE_LEADERS, SAMPLE_TEAM_DATA, use_logos=True)
     assert result is not None
 

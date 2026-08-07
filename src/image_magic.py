@@ -17,14 +17,9 @@ over the arithmetic: ``z``/``y`` → ``CL`` (clinched), ``e`` → ``OUT``.
 Mirrors image_leaders.draw_leaders_cell's layout so it drops into a grid
 slot identically.
 """
-from image_assets import _get_font, ImageDraw, _logo_small
+import panel_cell
+from image_assets import _get_font, ImageDraw
 from image_utils import division_rank, magic_or_elim_value
-
-# Matches the visible footprint of a normal single-game grid box
-# (mirrors image_leaders / image_transactions).
-_CELL_W = 135
-_CELL_H = 130
-_PAD = 2
 
 # Magic/elimination arithmetic lives in image_utils (magic_or_elim_value) so
 # the sidebar badges (image_standings._me_badge_value) and this cell can't
@@ -85,28 +80,16 @@ def draw_magic_cell(Himage, sx, sy, standings_data, team_data, primary_abbr, use
     division_name, teams = _find_primary_division(
         (standings_data or {}).get('standings', {}), abbr_map, primary_abbr)
 
-    font_hdr = _get_font(14)
     header = _division_header(division_name) if division_name else 'Magic #'
-
-    # Top border + header separator + centered bold header (matches draw_box).
-    draw.line([(sx, sy), (sx + _CELL_W - 1, sy)], fill=0)
-    draw.line([(sx, sy + 20), (sx + _CELL_W - 1, sy + 20)], fill=0)
-    hdr_w = int(font_hdr.getlength(header))
-    hdr_x = sx + (_CELL_W - hdr_w) // 2
-    draw.text((hdr_x, sy + 3), header, font=font_hdr, fill=0)
-    draw.text((hdr_x + 1, sy + 3), header, font=font_hdr, fill=0)
-
-    # Bottom border
-    draw.line([(sx, sy + _CELL_H - 1), (sx + _CELL_W - 1, sy + _CELL_H - 1)], fill=0, width=1)
+    panel_cell.draw_chrome(draw, sx, sy, header)
 
     if not teams:
-        font_row = _get_font(12)
-        draw.text((sx + _PAD, sy + 60), 'No standings', font=font_row, fill=0)
+        panel_cell.draw_empty(draw, sx, sy, 'No standings', _get_font(12))
         return Himage
 
-    # 9pt fuses adjacent thin strokes on the 1-bit render — never below 10pt.
-    row_font_size = 12 if len(teams) <= 5 else 11
-    font_row = _get_font(row_font_size)
+    # Steps down a row earlier than the other panels: these rows carry a third
+    # (record) column, so they run out of width sooner.
+    font_row = panel_cell.row_font(len(teams), dense_above=5)
 
     leader = teams[0]
     rivals = teams[1:]
@@ -116,23 +99,15 @@ def draw_magic_cell(Himage, sx, sy, standings_data, team_data, primary_abbr, use
         default=None,
     )
 
-    row_h = (_CELL_H - 20) // max(len(teams), 1)
-    row_pad = 2 if row_h >= 13 else 1
-    logo_size = min(18, row_h)
+    row_h, row_pad, logo_size = panel_cell.row_metrics(len(teams))
 
-    # Fixed columns computed once so logos/records/values line up per row.
-    rank_col_w = max(
-        (int(font_row.getlength(str(division_rank(t, default=i + 1)) + '.'))
-         for i, t in enumerate(teams)),
-        default=0,
-    )
-    logo_col_x = sx + _PAD + rank_col_w + 2
+    ranks = [str(division_rank(t, default=i + 1)) for i, t in enumerate(teams)]
+    logo_col_x = sx + panel_cell.PAD + panel_cell.rank_column_width(font_row, ranks) + 2
     rec_x = logo_col_x + (logo_size + 3 if use_logos else 0)
 
     for i, team in enumerate(teams):
-        ry = sy + 20 + i * row_h
+        ry = sy + panel_cell.HEADER_H + i * row_h
 
-        rank = str(division_rank(team, default=i + 1))
         team_id = team.get('team_id')
         abbr = abbr_map.get(str(team_id), '')
         wins = team.get('league_record_wins')
@@ -140,29 +115,20 @@ def draw_magic_cell(Himage, sx, sy, standings_data, team_data, primary_abbr, use
         record = f'{wins}-{losses}' if wins is not None and losses is not None else ''
         value = _magic_or_elim(team, leader, i == 0, rival_losses)
 
-        draw.text((sx + _PAD, ry + row_pad), rank + '.', font=font_row, fill=0)
+        draw.text((sx + panel_cell.PAD, ry + row_pad), ranks[i] + '.', font=font_row, fill=0)
 
         if use_logos and abbr:
-            try:
-                logo = _logo_small(abbr, team_id, size=logo_size)
-                if logo:
-                    logo_x = logo_col_x + (logo_size - logo.width) // 2
-                    logo_y = ry + (row_h - logo.height) // 2 + 2
-                    Himage.paste(logo, (logo_x, logo_y))
-            except Exception:
-                pass
+            panel_cell.paste_row_logo(Himage, abbr, team_id, logo_col_x, ry, logo_size, row_h)
         elif abbr:
+            # Without logos the abbreviation stands in for the team, in the
+            # column the logo would have occupied.
             draw.text((logo_col_x, ry + row_pad), abbr, font=font_row, fill=0)
 
-        # Value right-aligned; record fills the middle.
-        val_w = int(font_row.getlength(value))
-        val_x = sx + _CELL_W - val_w - _PAD
+        # Value right-aligned; the record fills whatever is left in the middle.
+        val_x = sx + panel_cell.CELL_W - int(font_row.getlength(value)) - panel_cell.PAD
         draw.text((val_x, ry + row_pad), value, font=font_row, fill=0)
 
-        max_rec_w = val_x - 2 - rec_x
-        rec = record
-        while rec and int(font_row.getlength(rec)) > max_rec_w:
-            rec = rec[:-1]
+        rec = panel_cell.truncate(font_row, record, val_x - 2 - rec_x)
         draw.text((rec_x, ry + row_pad), rec, font=font_row, fill=0)
 
     return Himage

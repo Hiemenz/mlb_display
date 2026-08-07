@@ -12,6 +12,7 @@ import random
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance
 
 from image_assets import _get_font, _load_logo_gray, _logo_small, _try_download_logo
+from image_utils import TRANSACTION_TYPE_ABBR
 
 _REPO_ROOT  = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 _MASCOT_DIR = os.path.join(_REPO_ROOT, 'pic', 'mascots')
@@ -27,18 +28,6 @@ _BOUNCE_X_MAX = 800 - _MASCOT_SIZE          # 640
 _BOUNCE_Y_MIN = _HEADER_H + 2               # just below header
 _BOUNCE_Y_MAX = 480 - _MASCOT_SIZE          # 320
 
-_TYPE_ABBR = {
-    'Status Change':            'IL',
-    'Recalled':                 'Recall',
-    'Optioned':                 'Option',
-    'Selected':                 'Select',
-    'Designated for Assignment':'DFA',
-    'Released':                 'Release',
-    'Signed':                   'Sign',
-    'Trade':                    'Trade',
-    'Claimed off Waivers':      'Waiver',
-    'Outrighted':               'Outright',
-}
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +161,7 @@ def draw_idle_screen(transactions, team_data, idle_state, config):
 
     # Measure the widest type tag across all shown entries
     tag_w = max(
-        (int(font_row.getlength(_TYPE_ABBR.get(e.get('type_desc', ''), e.get('type_desc', ''))))
+        (int(font_row.getlength(TRANSACTION_TYPE_ABBR.get(e.get('type_desc', ''), e.get('type_desc', ''))))
          for e in entries[:_TOTAL]),
         default=44,
     )
@@ -189,7 +178,7 @@ def draw_idle_screen(transactions, team_data, idle_state, config):
             team_id = entry.get('team_id', '')
             abbr    = entry.get('team_abbr', '') or abbr_map.get(str(team_id), '')
             name    = entry.get('player_name', '')
-            tag     = _TYPE_ABBR.get(entry.get('type_desc', ''), entry.get('type_desc', ''))
+            tag     = TRANSACTION_TYPE_ABBR.get(entry.get('type_desc', ''), entry.get('type_desc', ''))
 
             if abbr:
                 try:

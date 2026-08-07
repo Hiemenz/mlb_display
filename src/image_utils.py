@@ -311,3 +311,21 @@ def _is_game_effectively_over(game_data):
         if state == 'End' and home != away:
             return True
     return False
+
+
+# MLB's typeDesc strings are too verbose for a narrow ticker row. Shared by the
+# transactions panel, the deadline countdown and the idle screen, which all
+# render the same feed at different sizes and used to keep private copies that
+# had to be edited in lockstep.
+TRANSACTION_TYPE_ABBR = {
+    'Status Change':             'IL',
+    'Recalled':                  'Recall',
+    'Optioned':                  'Option',
+    'Selected':                  'Select',
+    'Designated for Assignment': 'DFA',
+    'Released':                  'Release',
+    'Signed':                    'Sign',
+    'Trade':                     'Trade',
+    'Claimed off Waivers':       'Waiver',
+    'Outrighted':                'Outright',
+}
