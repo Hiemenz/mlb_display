@@ -4,6 +4,7 @@ Each class pins one specific defect so it can't silently come back.
 """
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 from PIL import Image
@@ -44,6 +45,46 @@ def _standings(*ranks):
 
 
 _TEAM_DATA = {'team_abbreviation': {'147': 'NYY', '111': 'BOS'}}
+
+
+def _final_game_with_end_time():
+    """A Final game carrying the API's end timestamp, dated today so the
+    linescore window is still open."""
+    from datetime import datetime, timedelta, timezone
+    ended = datetime.now(timezone.utc) - timedelta(minutes=5)
+    return {
+        'game_pk': 2001,
+        'away_team_id': 147, 'home_team_id': 111,
+        'away_team_name': 'NYY', 'home_team_name': 'BOS',
+        'detailed_state': 'Final',
+        'away_runs': 3, 'home_runs': 5,
+        'away_hits': 8, 'home_hits': 10,
+        'away_errors': 0, 'home_errors': 1,
+        'away_team_is_winner': False, 'home_team_is_winner': True,
+        'current_inning': 9, 'inningState': 'End',
+        'away_inning_runs': [0, 1, 0, 0, 0, 2, 0, 0, 0],
+        'home_inning_runs': [1, 0, 2, 0, 0, 0, 1, 0, 1],
+        'away_team_record_wins': 10, 'away_team_record_losses': 5,
+        'home_team_record_wins': 12, 'home_team_record_losses': 3,
+        'num_of_outs': 3,
+        'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+        'game_start': '7:05 PM',
+        'no_hitter': False, 'perfect_game': False, 'walk_off': False,
+        'game_date': ended.strftime('%Y-%m-%d'),
+        'game_end_time_utc': ended.strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+
+
+def _render_box(draw_box, game):
+    """Render one tile and return its bytes."""
+    import image_box
+    canvas = Image.new('1', (800, 480), 255)
+    image_box.set_historical_mode(True)
+    try:
+        draw_box(canvas, 32, 30, game, _TEAM_DATA, scale=1)
+    finally:
+        image_box.set_historical_mode(False)
+    return canvas.tobytes()
 
 
 class TestDivisionRankNone:
@@ -603,20 +644,45 @@ class TestDrawBoxHelpers:
     def test_end_time_skipped_outside_linescore_window(self):
         ctx = self._ctx()
         before = ctx.Himage.tobytes()
-        _draw_game_end_time(ctx, '2025-06-03T22:00:00Z', in_linescore_window=False)
+        _draw_game_end_time(ctx, '2025-06-03T22:00:00Z', in_linescore_window=False,
+                            game_is_final=True)
         assert ctx.Himage.tobytes() == before
 
     def test_end_time_drawn_inside_linescore_window(self):
         ctx = self._ctx()
         before = ctx.Himage.tobytes()
-        _draw_game_end_time(ctx, '2025-06-03T22:00:00Z', in_linescore_window=True)
+        _draw_game_end_time(ctx, '2025-06-03T22:00:00Z', in_linescore_window=True,
+                            game_is_final=True)
         assert ctx.Himage.tobytes() != before
 
     def test_end_time_ignores_malformed_timestamp(self):
         ctx = self._ctx()
         before = ctx.Himage.tobytes()
-        _draw_game_end_time(ctx, 'garbage', in_linescore_window=True)
+        _draw_game_end_time(ctx, 'garbage', in_linescore_window=True, game_is_final=True)
         assert ctx.Himage.tobytes() == before
+
+    def test_end_time_skipped_while_game_still_in_progress(self):
+        """The strip below the box belongs to the live win-probability bar until
+        the game ends; PR #278 extracted this helper but dropped both the call
+        site and this guard, so the end time never rendered at all."""
+        ctx = self._ctx()
+        before = ctx.Himage.tobytes()
+        _draw_game_end_time(ctx, '2025-06-03T22:00:00Z', in_linescore_window=True,
+                            game_is_final=False)
+        assert ctx.Himage.tobytes() == before
+
+    def test_end_time_reaches_the_canvas_through_draw_box(self):
+        """Guards the regression itself: exercising the real draw_box path must
+        put the end time on the canvas, not just calling the helper directly."""
+        from image_box import draw_box
+        game = _final_game_with_end_time()
+        with patch('image_box.load_yaml_file',
+                   return_value={'timezone': 'America/Chicago',
+                                 'final_linescore_minutes': 60,
+                                 'show_game_end_time_always': True}):
+            with_end = _render_box(draw_box, game)
+            without_end = _render_box(draw_box, dict(game, game_end_time_utc=None))
+        assert with_end != without_end
 
     def test_linescore_window_expiry_prefers_api_end_time(self):
         import datetime as _dt
