@@ -932,13 +932,19 @@ def _draw_duration_and_dh_labels(ctx, game_data, game_is_final, is_sweep, is_wal
         # else: GM was already drawn with the duration above.
 
 
-def _draw_game_end_time(ctx, end_utc_str, in_linescore_window):
+def _draw_game_end_time(ctx, end_utc_str, in_linescore_window, game_is_final):
     """Right-align the game's local end time in the strip below the box.
 
     Shown only while the linescore window is active, so it disappears together
     with the linescore grid. Set show_game_end_time_always in config to keep it
     visible after the window closes.
+
+    ``game_is_final`` gates the whole thing: a game still in progress has an
+    end time only in the sense that the API hasn't set one, and the strip this
+    draws into belongs to the live win-probability bar until the game ends.
     """
+    if not game_is_final:
+        return
     cfg = load_yaml_file('config.yaml')
     if not (in_linescore_window or cfg.get('show_game_end_time_always', False)):
         return
@@ -2389,6 +2395,9 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_is_final=_game_is_final, is_sweep=_is_sweep, is_walkoff=_is_walkoff,
         dh_is_active=_dh_is_active, dh_scheduled=_dh_scheduled, gnum=_gnum,
     )
+
+    # End time — right-aligned in the strip below the box, beside the duration.
+    _draw_game_end_time(ctx, _end_utc_str, _in_linescore_window, _game_is_final)
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
