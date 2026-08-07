@@ -316,6 +316,82 @@ def test_live_fullscreen_sub_event_pitching_change():
     assert isinstance(img, Image.Image)
 
 
+# ---------------------------------------------------------------------------
+# Mid-inning pitching change: the live layout stays put
+# ---------------------------------------------------------------------------
+
+# The linescore grid's away-row divider spans x=211..588 — a long unbroken
+# horizontal run of ink that nothing in the live layout produces.
+_GRID_ROWS = range(300, 312)
+
+
+def _has_grid(img):
+    """True when the between-innings linescore grid is drawn."""
+    px = img.load()
+    for y in _GRID_ROWS:
+        run = best = 0
+        for x in range(200, 600):
+            run = run + 1 if px[x, y] == 0 else 0
+            best = max(best, run)
+        if best >= 300:
+            return True
+    return False
+
+
+def _pitcher_row(img):
+    """The 'P:' line's pixels, left of the AB:/OD: block."""
+    return list(img.crop((0, 325, 400, 380)).getdata())
+
+
+@needs_pil
+def test_mid_inning_pc_keeps_the_live_layout():
+    """A change made with the half-inning underway is not an inning break: the
+    featured view must keep bases/count/batter rather than swapping in the
+    linescore and a due-up list for a half-inning that is still being played."""
+    from image_featured import draw_live_fullscreen_game
+    common = dict(inningState='Top', sub_event='PC: King', current_pitcher='Austin Warren')
+    mid = draw_live_fullscreen_game(
+        _live_game(num_of_outs=1, **common), TEAM_DATA, CONFIG)
+    start = draw_live_fullscreen_game(
+        _live_game(num_of_outs=0, at_bat_pitch_count=0, **common), TEAM_DATA, CONFIG)
+
+    assert not _has_grid(mid), 'mid-inning PC must keep the live situation panel'
+    assert _has_grid(start), 'a PC before the half-inning starts still shows the linescore'
+
+
+@needs_pil
+def test_mid_inning_pc_names_both_pitchers():
+    """current_pitcher still reports the departing arm during a change, so the
+    'P:' line reads 'Warren→King' — showing current_pitcher alone would name
+    the pitcher who just left."""
+    from image_featured import draw_live_fullscreen_game
+    common = dict(inningState='Top', num_of_outs=1, current_pitcher='Austin Warren')
+    king  = draw_live_fullscreen_game(_live_game(sub_event='PC: King', **common), TEAM_DATA, CONFIG)
+    doval = draw_live_fullscreen_game(_live_game(sub_event='PC: Doval', **common), TEAM_DATA, CONFIG)
+    plain = draw_live_fullscreen_game(_live_game(**common), TEAM_DATA, CONFIG)
+
+    assert _pitcher_row(king) != _pitcher_row(plain), \
+        "the 'P:' line must reflect the pitching change"
+    assert _pitcher_row(king) != _pitcher_row(doval), \
+        "the 'P:' line must name the incoming pitcher, not just flag a change"
+
+
+@needs_pil
+def test_mid_inning_pc_pitcher_line_stays_clear_of_the_batter_block():
+    """Two names on one line runs long — it shrinks, then truncates, rather
+    than colliding with the AB:/OD: block that starts at x=400."""
+    from image_featured import draw_live_fullscreen_game
+    game = _live_game(
+        inningState='Top', num_of_outs=1,
+        current_pitcher='Bartholomew Longpitchernamefortruncation',
+        sub_event='PC: Ferdinandlongincomingpitchername',
+    )
+    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    px = img.load()
+    assert not any(px[x, y] == 0 for x in range(392, 400) for y in range(325, 380)), \
+        'the pitcher line must not reach the AB:/OD: column'
+
+
 @needs_pil
 def test_live_fullscreen_player_challenge_normalizes_sub_event():
     """detailed_state='Player challenge' is normalized to sub_event='ABS CHAL'

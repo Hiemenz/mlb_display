@@ -335,6 +335,31 @@ def test_wide_box_very_long_batter_name_truncates(white_image, team_data):
 
 
 @needs_pil
+def test_wide_panel_mid_inning_pc_names_both_pitchers(team_data):
+    """current_pitcher still reports the departing arm during a change, so the
+    right panel's 'P:' line reads 'Webb→King'. Left alone it credited the pitch
+    to the pitcher who had just walked off."""
+    from image_box import draw_wide_box
+    # The 'P:' row: rp_x = start_x + CELL_W (135), drawn at rp_y + 107.
+    pitcher_row = (135, 104, 260, 122)
+
+    def _row(**overrides):
+        """Pixels of the right panel's pitcher line."""
+        img = Image.new('1', (800, 480), 255)
+        draw_wide_box(img, 0, 0, _live_game(num_of_outs=1, **overrides), team_data)
+        return list(img.crop(pitcher_row).getdata())
+
+    king  = _row(sub_event='PC: King')
+    doval = _row(sub_event='PC: Doval')
+    plain = _row()
+
+    assert any(p == 0 for p in plain), 'the pitcher line should be drawn at all'
+    assert king != plain, "the 'P:' line must reflect the pitching change"
+    assert king != doval, \
+        "the 'P:' line must name the incoming pitcher, not just flag a change"
+
+
+@needs_pil
 def test_wide_box_between_innings_shows_batter_list(white_image, team_data):
     """Between innings (Middle) renders the due-up batter names via the
     batter-names section. A long last-name triggers the truncation loop (line 2427).

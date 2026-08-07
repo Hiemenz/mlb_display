@@ -2838,8 +2838,12 @@ class TestArrowSuppression:
 # ===========================================================================
 
 class TestMidInningPC:
-    """'Mid PC' label appears only when the PC occurs during a live half-inning
-    (≥1 out recorded OR ≥1 pitch thrown in the current AB).  Otherwise 'P.CHG'."""
+    """The inverted 'PC <n> OUT' chip appears only when the PC occurs during a
+    live half-inning (≥1 out recorded OR ≥1 pitch thrown in the current AB).
+    Otherwise the routine 'P.CHG' label, drawn plain."""
+
+    # Right portion of the header row, where the label and its chip are drawn.
+    _CHIP_BAND = (32 + 67, 30 + 2, 32 + 136, 30 + 19)
 
     def _render(self, game, team_data):
         """Render."""
@@ -2847,10 +2851,16 @@ class TestMidInningPC:
         draw_box(img, 32, 30, game, team_data, use_logos=False)
         return img
 
+    def _chip_darkness(self, img):
+        """Fraction of the header's label area that is ink — an inverted chip
+        fills most of it, a plain label only its glyphs."""
+        px = list(img.crop(self._CHIP_BAND).getdata())
+        return sum(1 for p in px if p == 0) / len(px)
+
     @needs_pil
     def test_mid_pc_differs_from_start_of_inning_pc(self, minimal_team_data):
         """A PC with 1 out (mid-inning) renders differently than a PC with 0 outs
-        (start of inning) — the header label changes from 'P.CHG' to 'Mid PC'."""
+        (start of inning) — the header label changes from 'P.CHG' to 'PC 1 OUT'."""
         common = dict(
             inningState='Top', current_inning=4,
             current_pitcher='Smith', current_hitter='Jones',
@@ -2861,7 +2871,7 @@ class TestMidInningPC:
         img_mid = self._render(mid, minimal_team_data)
         img_start = self._render(start, minimal_team_data)
         assert list(img_mid.getdata()) != list(img_start.getdata()), \
-            "Mid-inning PC ('Mid PC') must render differently from start-of-inning PC ('P.CHG')"
+            "Mid-inning PC ('PC 1 OUT') must render differently from start-of-inning PC ('P.CHG')"
 
     @needs_pil
     def test_pc_with_pitch_count_is_mid_inning(self, minimal_team_data):
@@ -2881,7 +2891,7 @@ class TestMidInningPC:
 
     @needs_pil
     def test_between_innings_pc_uses_pchg_not_midpc(self, minimal_team_data):
-        """A PC between innings (Middle state) must use 'P.CHG', not 'Mid PC'."""
+        """A PC between innings (Middle state) must use 'P.CHG', not the chip."""
         between = _in_progress_game(
             inningState='Middle', current_inning=4,
             current_pitcher='Smith', current_hitter='Jones',
@@ -2895,7 +2905,109 @@ class TestMidInningPC:
         img_between = self._render(between, minimal_team_data)
         img_mid = self._render(mid, minimal_team_data)
         assert list(img_between.getdata()) != list(img_mid.getdata()), \
-            "Between-innings PC ('P.CHG') must render differently from mid-inning PC ('Mid PC')"
+            "Between-innings PC ('P.CHG') must render differently from mid-inning PC"
+
+    @needs_pil
+    def test_mid_pc_label_carries_the_out_count(self, minimal_team_data):
+        """The label states how many are out, so 1-out and 2-out changes differ.
+        Without it the two are indistinguishable — the out count is the whole
+        reason the manager is walking out mid-inning."""
+        common = dict(
+            inningState='Top', current_inning=4,
+            current_pitcher='Smith', current_hitter='Jones', sub_event='PC: Smith',
+        )
+        one = self._render(_in_progress_game(num_of_outs=1, **common), minimal_team_data)
+        two = self._render(_in_progress_game(num_of_outs=2, **common), minimal_team_data)
+        assert list(one.getdata()) != list(two.getdata()), \
+            "'PC 1 OUT' and 'PC 2 OUT' must render differently"
+
+    @needs_pil
+    def test_mid_pc_chip_is_inverted_between_innings_is_not(self, minimal_team_data):
+        """The mid-inning label sits in an inverted chip; the routine
+        between-innings one is plain text. This is the signal that survives a
+        glance at the wall — the two labels alone are the same size and weight."""
+        common = dict(
+            current_inning=4, current_pitcher='Smith',
+            current_hitter='Jones', sub_event='PC: Smith',
+        )
+        mid = self._render(
+            _in_progress_game(inningState='Top', num_of_outs=1, **common), minimal_team_data)
+        between = self._render(
+            _in_progress_game(inningState='Middle', num_of_outs=3, **common), minimal_team_data)
+        start = self._render(
+            _in_progress_game(inningState='Top', num_of_outs=0,
+                              at_bat_pitch_count=0, **common), minimal_team_data)
+
+        assert self._chip_darkness(mid) > 0.5, \
+            'mid-inning PC label must be drawn in an inverted chip'
+        assert self._chip_darkness(between) < 0.25, \
+            'between-innings P.CHG must stay plain text'
+        assert self._chip_darkness(start) < 0.25, \
+            'start-of-inning PC is routine too — no chip'
+
+    # The pitch-count/speed line and the row just above it — the band the
+    # incoming pitcher's name used to be drawn into. Starts right of the strike
+    # circles, which the mid-inning layout legitimately omits.
+    _PITCH_BAND = (32 + 95, 30 + 80, 32 + 135, 30 + 98)
+    # The 'P:' line under the count.
+    _PITCHER_ROW = (32, 30 + 96, 32 + 135, 30 + 115)
+
+    def _ink(self, img, box):
+        """Number of black pixels in a region."""
+        return sum(1 for p in img.crop(box).getdata() if p == 0)
+
+    @needs_pil
+    def test_mid_pc_leaves_the_pitch_line_alone(self, minimal_team_data):
+        """A mid-inning PC keeps the live pitch-count/speed line legible. The
+        incoming pitcher used to be drawn across it ('Michael Ki' sitting on top
+        of '88P FB 95'), so that band must now match plain live play exactly."""
+        common = dict(
+            inningState='Top', current_inning=4, num_of_outs=1,
+            current_pitcher='Austin Warren', current_hitter='Jones',
+            pitch_count=88, last_pitch_type='FB', last_pitch_speed=95,
+        )
+        pc   = self._render(_in_progress_game(sub_event='PC: King', **common), minimal_team_data)
+        live = self._render(_in_progress_game(**common), minimal_team_data)
+        assert self._ink(live, self._PITCH_BAND) > 0, 'pitch line should be drawn at all'
+        assert list(pc.crop(self._PITCH_BAND).getdata()) == \
+               list(live.crop(self._PITCH_BAND).getdata()), \
+            'mid-inning PC must not draw over the pitch-count/speed line'
+
+    @needs_pil
+    def test_start_of_inning_pc_keeps_the_grid_clear(self, minimal_team_data):
+        """A PC before the half-inning is underway shows the linescore, and reads
+        exactly like the inning break it effectively is — the incoming pitcher
+        goes in the panel above the grid, not on top of it."""
+        common = dict(current_inning=4, current_pitcher='Austin Warren',
+                      current_hitter='Jones', next_pitcher='Michael King')
+        start = self._render(
+            _in_progress_game(inningState='Top', num_of_outs=0, at_bat_pitch_count=0,
+                              sub_event='PC: King', **common), minimal_team_data)
+        between = self._render(
+            _in_progress_game(inningState='Middle', num_of_outs=3, **common), minimal_team_data)
+        grid = (32, 30 + 83, 32 + 135, 30 + 130)
+        assert self._ink(between, grid) > 0, 'the linescore grid should be drawn at all'
+        assert list(start.crop(grid).getdata()) == list(between.crop(grid).getdata()), \
+            'start-of-inning PC must not draw the pitcher name over the linescore grid'
+
+    @needs_pil
+    def test_mid_pc_names_both_pitchers_on_the_p_line(self, minimal_team_data):
+        """current_pitcher still reports the departing arm during a change, so
+        the 'P:' line reads 'WARREN→KING' — naming the incoming pitcher only in
+        the panel above left the tile claiming two different pitchers at once."""
+        common = dict(
+            inningState='Top', current_inning=4, num_of_outs=1,
+            current_pitcher='Austin Warren', current_hitter='Jones',
+        )
+        king  = self._render(_in_progress_game(sub_event='PC: King', **common), minimal_team_data)
+        doval = self._render(_in_progress_game(sub_event='PC: Doval', **common), minimal_team_data)
+        live  = self._render(_in_progress_game(**common), minimal_team_data)
+
+        row = self._PITCHER_ROW
+        assert list(king.crop(row).getdata()) != list(live.crop(row).getdata()), \
+            "the 'P:' line must reflect the pitching change"
+        assert list(king.crop(row).getdata()) != list(doval.crop(row).getdata()), \
+            "the 'P:' line must name the incoming pitcher, not just flag a change"
 
     @needs_pil
     def test_no_crash_pc_with_zero_outs_zero_pitches(self, minimal_team_data):
@@ -2906,6 +3018,70 @@ class TestMidInningPC:
         )
         img = Image.new('1', (800, 480), 255)
         draw_box(img, 32, 30, game, minimal_team_data, use_logos=False)
+
+
+# ===========================================================================
+# 23b. LIVE PITCH COUNT PLACEMENT
+# ===========================================================================
+
+class TestLivePitchCountBadge:
+    """The game pitch count is a right badge on the pitcher's line. It cannot
+    share the speed line's row: that row also holds the B/S circles, and a
+    right-aligned count wide enough to reach back into them (two digits does,
+    three digits comfortably) drew straight over the strikes."""
+
+    # The two strike circles, centred at start_x + 74/86, start_y + 93, r=4.
+    _STRIKES = (32 + 66, 30 + 85, 32 + 96, 30 + 101)
+    # The speed line and the count's old home, right of the circles.
+    _SPEED_ROW = (32 + 96, 30 + 85, 32 + 135, 30 + 101)
+
+    def _render(self, team_data, **overrides):
+        """Live tile with pitch data."""
+        game = _in_progress_game(
+            inningState='Top', current_inning=7, num_of_outs=1,
+            balls=2, strikes=2, strike_calls=['C', 'S'],
+            current_pitcher='Austin Warren', current_hitter='Rafael Devers',
+            last_pitch_type='FB', last_pitch_speed=95,
+            **overrides,
+        )
+        img = Image.new('1', (800, 480), 255)
+        draw_box(img, 32, 30, game, team_data, use_logos=False)
+        return img
+
+    def _ink(self, img, box):
+        """Number of black pixels in a region."""
+        return sum(1 for p in img.crop(box).getdata() if p == 0)
+
+    @needs_pil
+    def test_pitch_count_never_touches_the_strike_circles(self, minimal_team_data):
+        """However wide the count grows, the strikes render identically."""
+        none_ = self._render(minimal_team_data, pitch_count=None, at_bat_pitch_count=0)
+        two   = self._render(minimal_team_data, pitch_count=88)
+        three = self._render(minimal_team_data, pitch_count=112)
+
+        assert self._ink(none_, self._STRIKES) > 0, 'strike circles should be drawn'
+        for label, img in (('two-digit', two), ('three-digit', three)):
+            assert list(img.crop(self._STRIKES).getdata()) == \
+                   list(none_.crop(self._STRIKES).getdata()), \
+                f'a {label} pitch count must not draw over the strike circles'
+
+    @needs_pil
+    def test_pitch_count_width_does_not_shift_the_speed_line(self, minimal_team_data):
+        """The speed line is right-aligned on its own; the count no longer
+        pushes it around, so '112P' and '88P' leave that row identical."""
+        two   = self._render(minimal_team_data, pitch_count=88)
+        three = self._render(minimal_team_data, pitch_count=112)
+        assert list(two.crop(self._SPEED_ROW).getdata()) == \
+               list(three.crop(self._SPEED_ROW).getdata())
+
+    @needs_pil
+    def test_pitch_count_is_still_shown(self, minimal_team_data):
+        """Moving it must not lose it — the count reads on the pitcher's line."""
+        row = (32, 30 + 96, 32 + 135, 30 + 115)
+        with_count = self._render(minimal_team_data, pitch_count=112)
+        without    = self._render(minimal_team_data, pitch_count=None, at_bat_pitch_count=0)
+        assert list(with_count.crop(row).getdata()) != list(without.crop(row).getdata()), \
+            'the pitch count must appear on the pitcher line'
 
 
 # ===========================================================================
