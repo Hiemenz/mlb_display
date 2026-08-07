@@ -1223,14 +1223,17 @@ def _compute_layout_flags(game_data):
 
 
 def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
-                              game_ending_state, pitching_change, force_linescore,
-                              ser_content_left_x):
+                              game_ending_state, pitching_change, mid_inning_pc,
+                              force_linescore, ser_content_left_x):
     """Draw the live-game situation area: bases, count, outs and next batters.
 
-    Which variant appears depends on where play currently is — an inning break
-    shows the upcoming half-inning's batters, a mid-inning pitching change shows
-    the linescore instead, and normal live play shows bases/count/outs. The else
-    branch covers every non-live state, which still needs the no-hitter banner.
+    Which variant appears depends on where play currently is. An inning break —
+    or a pitching change made before the half-inning is underway, which reads the
+    same way — shows the upcoming batters and the incoming pitcher above the
+    linescore grid. A mid-inning change keeps the live bases/outs and leaves the
+    incoming pitcher to the ``P:`` line below, which names both pitchers. Normal
+    live play shows bases/count/outs. The else branch covers every non-live
+    state, which still needs the no-hitter banner.
     """
     # Names the body below reads; ctx owns the canvas and geometry.
     Himage, draw = ctx.Himage, ctx.draw
@@ -1242,12 +1245,17 @@ def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
     _between_innings = between_innings
     _game_ending_state = game_ending_state
     _pitching_change = pitching_change
+    _mid_inning_pc = mid_inning_pc
     _ser_content_left_x = ser_content_left_x
+
+    # A pitching change made before the half-inning is underway sits above the
+    # linescore grid, exactly like the inning break itself — mirrors _pc_grid.
+    _break_panel = _between_innings or (_pitching_change and not _mid_inning_pc)
 
     if game_data['detailed_state'] == 'In Progress' and not force_linescore:
         if _between_innings and _game_ending_state:
             pass  # end of 9th+ with a lead — linescore shown, no next-batters panel
-        elif _between_innings:
+        elif _break_panel:
             # Between-innings break (including pitching changes announced during the break):
             # show the next three batters for the upcoming half-inning and the pitcher.
             _right_x = start_x + horizonta_len - 2 * s
@@ -1283,8 +1291,10 @@ def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
                         while _pit_name and int(font9.getlength(_pit_name)) > _pit_max_w:
                             _pit_name = _pit_name[:-1]
                 draw.text((_left_x, _sep_y + 2 * s), _pit_name, font=_pit_fnt, fill=0)
-        elif _pitching_change:
-            # Mid-inning PC: bases + outs at normal positions, new pitcher name below.
+        elif _mid_inning_pc:
+            # Mid-inning PC: bases + outs at normal positions. The incoming pitcher
+            # is named on the 'P:' line below (as "OUTGOING→INCOMING"), not here —
+            # this row is where the pitch-count/speed line lands.
             _pc_outs = game_data.get('num_of_outs') or 0
             if _pc_outs < 3:
                 _hi_third  = isinstance(game_data['runner_on_third'],  str)
@@ -1309,20 +1319,6 @@ def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, _pc_outs_list[2], outline_width=2)
             draw = ImageDraw.Draw(Himage)
-            # New pitcher name from sub_event
-            _pc_name = (game_data.get('sub_event') or '')[3:].strip()
-            if _pc_name:
-                _right_x   = start_x + horizonta_len - 2 * s
-                _left_x    = start_x + 88 * s
-                _pc_name_w = _right_x - _left_x
-                _pit_fnt   = font14
-                if int(font14.getlength(_pc_name)) > _pc_name_w:
-                    _pit_fnt = font11
-                    if int(font11.getlength(_pc_name)) > _pc_name_w:
-                        _pit_fnt = font9
-                        while _pc_name and int(font9.getlength(_pc_name)) > _pc_name_w:
-                            _pc_name = _pc_name[:-1]
-                draw.text((_left_x, start_y + 83 * s), _pc_name, font=_pit_fnt, fill=0)
         else:
             # If 3 outs are recorded but inningState hasn't flipped to Middle/End yet
             # (API lag), show the linescore instead — prevents filled base diamonds
@@ -1744,31 +1740,41 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # Game-level pitch count when available; fall back to per-at-bat for timelapse.
             _pc_disp = f'{_pc}P' if _pc is not None else (f'AB{_ab_pc}' if _ab_pc else None)
 
-            # Pitcher line — full width, no right badge (type moves to speed line)
-            _pitcher_name = _format_player_name(game_data.get("current_pitcher") or "")
-            _pit_str = f'P: {_pitcher_name}'
-            if font14.getlength(_pit_str) <= max_text_width:
+            # Pitcher line, with the pitch count as a right badge — it's his count,
+            # and it can't ride the speed line: that row is shared with the B/S
+            # circles, which a two- or three-digit count runs back into.
+            # Mid-inning change: name both ends of it ("P: WARREN→KING"). current_pitcher
+            # still reports the departing arm until the API catches up, so showing it
+            # alone would name the wrong pitcher.
+            _pc_incoming = (game_data.get('sub_event') or '')[3:].strip() if _mid_inning_pc else ''
+            if _pc_incoming:
+                _outgoing = _last_name(game_data.get('current_pitcher') or '')
+                _pit_str = f'P: {_outgoing}→{_pc_incoming}' if _outgoing else f'P: {_pc_incoming}'
+            else:
+                _pit_str = f'P: {_format_player_name(game_data.get("current_pitcher") or "")}'
+            _pit_y = start_y + 25 * s + 74 * s
+            _pcb_w = int(font11.getlength(_pc_disp)) + 2 * s if _pc_disp else 0
+            _pit_avail = max(1, max_text_width - _pcb_w)
+            if font14.getlength(_pit_str) <= _pit_avail:
                 pitcher_str, pitcher_font = _pit_str, font14
             else:
-                pitcher_str, pitcher_font = fit_text(_pit_str, max_text_width)
-            draw.text((start_x + 2 * s, start_y + 25 * s + 74 * s), pitcher_str, font=pitcher_font, fill=0)
+                pitcher_str, pitcher_font = fit_text(_pit_str, _pit_avail)
+            draw.text((start_x + 2 * s, _pit_y), pitcher_str, font=pitcher_font, fill=0)
+            if _pc_disp:
+                draw.text((start_x + horizonta_len - _pcb_w, _pit_y), _pc_disp, font=font11, fill=0)
 
-            # Speed line: "FB 95" right-aligned; pitch count left of that
+            # Speed line: "FB 95" right-aligned, on the B/S row
             _speed_y = start_y + 25 * s + 62 * s
             if _lps:
                 # Combine type+speed broadcast-style ("FB 95" or just "95" if no type)
                 _speed_str = f'{_pt} {int(_lps)}' if _pt else str(int(_lps))
                 _speed_w = int(font11.getlength(_speed_str)) + 2 * s
-                _speed_x = start_x + horizonta_len - _speed_w
-                _draw_bold_text(draw, (_speed_x, _speed_y), _speed_str, font11, s)
-                if _pc_disp:
-                    _pc_w = int(font11.getlength(_pc_disp))
-                    draw.text((_speed_x - _pc_w - 3 * s, _speed_y), _pc_disp, font=font11, fill=0)
-            elif _pt or _pc_disp:
-                # No speed: show "FB 47P", "FB AB3", "47P", or "AB3"
-                _no_speed_str = f'{_pt} {_pc_disp}' if _pt and _pc_disp else (_pt or _pc_disp or '')
-                _ns_w = int(font11.getlength(_no_speed_str)) + 2 * s
-                draw.text((start_x + horizonta_len - _ns_w, _speed_y), _no_speed_str, font=font11, fill=0)
+                _draw_bold_text(draw, (start_x + horizonta_len - _speed_w, _speed_y),
+                                _speed_str, font11, s)
+            elif _pt:
+                # No speed yet — the type alone still says what was thrown
+                _pt_w = int(font11.getlength(_pt)) + 2 * s
+                draw.text((start_x + horizonta_len - _pt_w, _speed_y), _pt, font=font11, fill=0)
 
             # Batter record for the night "2-4" right-anchored on hitter line
             _bh = game_data.get('batter_hits')
@@ -2453,7 +2459,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _draw_live_situation_panel(
         ctx, game_data, team_data,
         between_innings=_between_innings, game_ending_state=_game_ending_state,
-        pitching_change=_pitching_change, force_linescore=force_linescore,
+        pitching_change=_pitching_change, mid_inning_pc=_mid_inning_pc,
+        force_linescore=force_linescore,
         ser_content_left_x=_ser_content_left_x)
     Himage, draw = ctx.Himage, ctx.draw
 
@@ -2652,6 +2659,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     state = game_data.get('detailed_state', '')
     _between_innings = game_data.get('inningState') in ('Middle', 'End')
+    _mid_inning_pc = _compute_layout_flags(game_data).mid_inning_pc
 
     # ── Header: last 5 game events + count ─────────────────────────────
     # Events render in the same size as the single-cell last-play text (font12),
@@ -2977,7 +2985,14 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _ab_pc = game_data.get('at_bat_pitch_count') or 0
     _pt_last = game_data.get('last_pitch_type', '') or ''
     _lps = game_data.get('last_pitch_speed')
-    _pitcher_name = _format_player_name(game_data.get('current_pitcher') or '')
+    # Mid-inning change: name both ends of it ("P: Warren→King"). current_pitcher
+    # still reports the departing arm until the API catches up.
+    _pc_incoming = (game_data.get('sub_event') or '')[3:].strip() if _mid_inning_pc else ''
+    if _pc_incoming:
+        _outgoing = _last_name(game_data.get('current_pitcher') or '')
+        _pitcher_name = f'{_outgoing}→{_pc_incoming}' if _outgoing else _pc_incoming
+    else:
+        _pitcher_name = _format_player_name(game_data.get('current_pitcher') or '')
 
     # Game-level pitch count when available (live); fall back to per-at-bat count
     # for timelapse frames where only at_bat_pitch_count is reconstructed.

@@ -121,6 +121,16 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     _three_outs_lag = _inn_state in ('Top', 'Bottom') and (game_data.get('num_of_outs') or 0) >= 3
     _between_innings = _inn_state in ('Middle', 'End') or _three_outs_lag
     _pitching_change = (game_data.get('sub_event') or '').startswith('PC:')
+    # A PC during a live half-inning (an out recorded, or a pitch already thrown)
+    # keeps the active display; only pre-half-inning changes swap in the linescore.
+    # Mirrors _compute_layout_flags() in image_box.py.
+    _mid_inning_pc = bool(
+        _pitching_change and not _between_innings
+        and (
+            (game_data.get('num_of_outs') or 0) > 0
+            or (game_data.get('at_bat_pitch_count') or 0) > 0
+        )
+    )
 
     # ---- Layout constants -------------------------------------------------------
     HEADER_H   = 69
@@ -401,7 +411,7 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
     draw.line((0, DIV_Y, 799, DIV_Y), fill=0, width=2)
 
     # ---- BOTTOM SITUATION AREA ----------------------------------------------
-    if _between_innings or _pitching_change:
+    if _between_innings or (_pitching_change and not _mid_inning_pc):
         # ---- Between innings: pitcher (left) + linescore 1-9 (center) + due-up batters (right) ----
         _by = SIT_Y + 8
 
@@ -580,11 +590,33 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             draw.text((800 - _ptw - 8, _pty), _ptxt, font=f36, fill=0)
 
         # Pitcher (left, x=16) + AB/OD block (right of x=400)
-        _pb_y = _bso_y + 48
+        _lbl_x  = 400
+        _pb_y   = _bso_y + 48
         _pitcher_full = (game_data.get('current_pitcher') or '').strip()
-        if _pitcher_full and _pb_y + 42 <= WIN_PCT_Y:
-            draw.text((16, _pb_y),     f'P: {_pitcher_full}', font=f42, fill=0)
-            draw.text((17, _pb_y),     f'P: {_pitcher_full}', font=f42, fill=0)
+        # Mid-inning change: name both ends of it ("P: Warren→King"). current_pitcher
+        # still reports the departing arm until the API catches up.
+        _pc_incoming = (game_data.get('sub_event') or '')[3:].strip() if _mid_inning_pc else ''
+        if _pc_incoming:
+            _out_nm  = _last_name(_pitcher_full)
+            _pit_txt = f'P: {_out_nm}→{_pc_incoming}' if _out_nm else f'P: {_pc_incoming}'
+        else:
+            _pit_txt = f'P: {_pitcher_full}' if _pitcher_full else ''
+        if _pit_txt and _pb_y + 42 <= WIN_PCT_Y:
+            # Shrink to stay clear of the AB/OD block — the combined form runs long
+            _p_max_w = _lbl_x - 16 - 8
+            _f_pit   = _get_font(20)
+            for _fsize in (42, 36, 28, 24, 20):
+                _f = _get_font(_fsize)
+                if int(_f.getlength(_pit_txt)) <= _p_max_w:
+                    _f_pit = _f
+                    break
+            else:
+                # Still too wide at the floor size — trim rather than run into AB:
+                while _pit_txt and int(_f_pit.getlength(_pit_txt)) > _p_max_w:
+                    _pit_txt = _pit_txt[:-1]
+            _pit_ty = _pb_y + (42 - _f_pit.size)   # bottom-align with the AB row
+            draw.text((16, _pit_ty),     _pit_txt, font=_f_pit, fill=0)
+            draw.text((17, _pit_ty),     _pit_txt, font=_f_pit, fill=0)
 
         # Batter
         _ab_done = game_data.get('current_at_bat_complete', False)
@@ -600,7 +632,6 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
             _od_full = ''
 
         # AB: / OD: — right-align labels to a shared colon edge; names start after
-        _lbl_x   = 400
         _lbl_col = _lbl_x + max(int(f42.getlength('AB:')), int(f42.getlength('OD:')))
         _name_x  = _lbl_col + 8
 
