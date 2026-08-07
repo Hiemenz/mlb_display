@@ -1,8 +1,5 @@
 import os
 from collections import deque
-# import socket  # disabled with QR code feature
-
-# import qrcode  # disabled — not supported on this Pi build
 
 from util import load_json_file, load_yaml_file
 from image_assets import _get_font, ImageDraw
@@ -766,20 +763,6 @@ def compute_grid_layout(game_state_data, team_data, config):
     return game_list, _slots
 
 
-# def _get_lan_ip():
-#     """Best-effort local-network IP for this machine, for the config-server QR
-#     code. Doesn't actually send any packets (UDP connect() just picks a route)."""
-#     try:
-#         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-#             s.connect(('8.8.8.8', 80))
-#             return s.getsockname()[0]
-#     except OSError:
-#         try:
-#             return socket.gethostbyname(socket.gethostname())
-#         except OSError:
-#             return None
-
-
 def _free_grid_slots(slots):
     """Return every free (col, row) slot-unit in the 5x3 grid, in slot order,
     given the already-occupied slots (wide=2, triple=3 horizontal units)."""
@@ -791,17 +774,6 @@ def _free_grid_slots(slots):
         if slot_type == 'triple':
             occupied.add((col + 2, row))
     return [(_idx % 5, _idx // 5) for _idx in range(15) if (_idx % 5, _idx // 5) not in occupied]
-
-
-# def _draw_config_qr_cell(Himage, sx, sy, url):
-#     """Paste a QR code linking to the config web server into a normal
-#     (150x150) grid cell at (sx, sy)."""
-#     qr_img = qrcode.make(url).convert('1')
-#     _pad = 8
-#     _size = 150 - 2 * _pad
-#     qr_img = qr_img.resize((_size, _size), Image.NEAREST)
-#     Himage.paste(qr_img, (sx + _pad, sy + _pad))
-#     return Himage
 
 
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None, suppress_date=False):
@@ -1027,7 +999,6 @@ def draw_fields_grid(Himage, game_state_data, team_data):
     shown in the order supplied by game_state_data; live games are placed
     first so the most actionable cells occupy the top-left slots.
     """
-    from PIL import Image
     x_start = 32
     y_start = 30
     COLS = 5

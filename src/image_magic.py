@@ -7,7 +7,7 @@ call. For each team in the division:
   * Division leader → magic number ``M`` (games to clinch over the closest
     rival, i.e. the rival with the fewest losses).
   * Trailing team  → games back from the leader, until its elimination
-    number drops below ``_ELIM_THRESHOLD`` (elimination numbers are too
+    number drops below ``image_utils.ELIM_THRESHOLD`` (elimination numbers are too
     large to be meaningful for most of the season); once the race is
     actually close, the elimination number ``E`` takes over that same slot.
 
@@ -18,9 +18,7 @@ Mirrors image_leaders.draw_leaders_cell's layout so it drops into a grid
 slot identically.
 """
 from image_assets import _get_font, ImageDraw, _logo_small
-from image_utils import (
-    division_rank, magic_or_elim_value, MAGIC_BASE, ELIM_THRESHOLD,
-)
+from image_utils import division_rank, magic_or_elim_value
 
 # Matches the visible footprint of a normal single-game grid box
 # (mirrors image_leaders / image_transactions).
@@ -28,10 +26,9 @@ _CELL_W = 135
 _CELL_H = 130
 _PAD = 2
 
-# Magic/elimination arithmetic lives in image_utils so the sidebar badges
-# (image_standings._me_badge_value) and this cell can't drift apart.
-_MAGIC_BASE = MAGIC_BASE
-_ELIM_THRESHOLD = ELIM_THRESHOLD
+# Magic/elimination arithmetic lives in image_utils (magic_or_elim_value) so
+# the sidebar badges (image_standings._me_badge_value) and this cell can't
+# drift apart.
 
 # Collapse a division's full name into a compact header, e.g.
 # "American League East" → "AL EAST".

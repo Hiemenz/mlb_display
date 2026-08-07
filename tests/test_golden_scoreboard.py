@@ -59,7 +59,6 @@ _FIXED_CONFIG = {
     'wide_cell_featured': False,
     'scoreboard_live_details': True,
     'final_linescore_minutes': 60,
-    'show_config_qr': True,
     'config_server_port': 8080,
 }
 

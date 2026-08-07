@@ -2444,24 +2444,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
                 left_offset=0,
             )
 
-    # vertical line
-    end_x = start_x
-    end_y = start_y + vertical_len  # noqa: F841
-    # draw.line((start_x, start_y, end_x, end_y), fill = 0)
-
-    end_x = start_x + horizonta_len
-    end_y = start_y + vertical_len  # noqa: F841
-    # draw.line((start_x + horizonta_len , start_y, end_x, end_y), fill = 0)
-
-
-    # line down the middle
-    # vert_start_x =  start_x + horizonta_len / 2
-    # vert_start_y = start_y + 12
-    # end_x = vert_start_x
-    # end_y = vert_start_y + 85
-
-    # draw.line((vert_start_x, vert_start_y, end_x, end_y), fill = 0)
-
 
     # Show bases/outs/count only once the game is actually in progress (first pitch thrown).
     # force_linescore (wide-cell mode) suppresses this block — the right panel handles live context.
@@ -2559,16 +2541,6 @@ _WIDE_PITCH_TYPE = {
 _SZ_HALF_W = 0.708  # ±0.708 ft = 17-inch plate
 _SZ_PZ_LO  = 1.5
 _SZ_PZ_HI  = 3.5
-
-
-def _draw_backward_k(Himage, x, y, font):
-    """Paste a horizontally-mirrored K (looking strikeout) at (x, y)."""
-    bbox = font.getbbox('K')
-    w = max(bbox[2] - bbox[0] + 2, 4)
-    h = max(bbox[3] - bbox[1] + 4, 8)
-    tmp = Image.new('1', (w, h), 1)
-    ImageDraw.Draw(tmp).text((-bbox[0] + 1, -bbox[1] + 1), 'K', font=font, fill=0)
-    Himage.paste(tmp.transpose(Image.FLIP_LEFT_RIGHT), (int(x), int(y)))
 
 
 def _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, scale=1):
@@ -3212,43 +3184,6 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         Himage.paste(ImageOps.invert(header_box.convert('L')).convert('1'), (start_x, start_y))
 
     return Himage
-
-
-def _draw_rotated_text(Himage, center_xy, text, font, angle_deg, bounds=None, font_size=None):
-    """Draw text rotated to lie along angle_deg (screen-space, atan2(dy,dx) convention),
-    centered at center_xy. Used to align outfield wall distance labels with the fence.
-
-    Renders at 4x scale and rotates with bicubic resampling before downsampling —
-    rotating a tiny bitmap font directly (nearest-neighbor) produces illegible,
-    blocky glyphs at these font sizes.
-
-    bounds, if given, is (cx0, cy0, cx1, cy1) — the paste box is clamped to stay
-    fully inside it, rather than clamping center_xy itself, so a centered label
-    near an edge is pushed inward instead of spilling half off the edge.
-    """
-    SS = 4  # supersample factor
-    ss_font = _get_font(font_size * SS) if font_size else font
-    bbox = ss_font.getbbox(text)
-    tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
-    pad = 2 * SS
-    txt_img = Image.new('L', (tw + pad * 2, th + pad * 2), 0)
-    ImageDraw.Draw(txt_img).text((pad - bbox[0], pad - bbox[1]), text, font=ss_font, fill=255)
-    rotated = txt_img.rotate(-angle_deg, expand=True, fillcolor=0, resample=Image.BICUBIC)
-    rotated = rotated.resize((max(1, rotated.width // SS), max(1, rotated.height // SS)),
-                              resample=Image.LANCZOS)
-    # Threshold to pure black/white before pasting — Himage is mode '1' (bilevel),
-    # and a grayscale mask with anti-aliased edges blends to near-invisible gray.
-    rotated = rotated.point(lambda p: 255 if p > 80 else 0).convert('1')
-    black_img = Image.new('1', rotated.size, 0)
-    cx, cy = center_xy
-    px = int(cx - rotated.width / 2)
-    py = int(cy - rotated.height / 2)
-    if bounds is not None:
-        cx0, cy0, cx1, cy1 = bounds
-        px = max(cx0, min(cx1 - rotated.width, px))
-        py = max(cy0, min(cy1 - rotated.height, py))
-    Himage.paste(black_img, (px, py), rotated)
 
 
 # MLBAM hit-coordinate → field-feet transform. These constants MUST match the

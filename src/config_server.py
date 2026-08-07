@@ -58,7 +58,6 @@ FIELD_SPECS = [
     {'key': 'show_standings_sidebar', 'source': 'yaml', 'type': 'bool', 'label': 'Standings Sidebar'},
     {'key': 'show_wildcard_standings', 'source': 'yaml', 'type': 'bool', 'label': 'Wildcard Standings Strip'},
     {'key': 'wide_cell_always', 'source': 'yaml', 'type': 'bool', 'label': 'Always Show Wide Cell'},
-    {'key': 'show_config_qr', 'source': 'yaml', 'type': 'bool', 'label': 'Show Config QR Code'},
     {'key': 'FEATURED_TEAM_FULLSCREEN', 'source': 'env', 'type': 'bool', 'label': 'Fullscreen Featured Game'},
     {'key': 'LEAGUE_MODE', 'source': 'env', 'type': 'select',
      'label': 'League Mode Override (.env)', 'options': ['', 'mlb', 'aaa'],

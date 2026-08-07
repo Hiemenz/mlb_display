@@ -358,7 +358,6 @@ def test_image_grid_spare_cell_lineup(tmp_path, monkeypatch):
         'wide_cell_featured': False,
         'scoreboard_live_details': True,
         'final_linescore_minutes': 60,
-        'show_config_qr': False,
         'primary': 'NYY',
         'show_lineup_panel': True,
     }
