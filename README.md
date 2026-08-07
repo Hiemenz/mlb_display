@@ -99,7 +99,6 @@ When the slate has fewer than 15 games, the spare grid cells are filled with inf
 - **Magic / elimination numbers** (`show_magic_numbers`) — the primary team's division standings. The leader's row always shows its magic number (`M12`); trailing teams show games back until their elimination number drops below 20, at which point that row switches to the elimination number (`E7`) instead. A miniature version of the same M12/E7 badge (`sidebar_magic_badges`) can also be shown next to each team's logo in the standings sidebar.
 - **Hot Hitters / Hot Arms** (`show_streaks_panel` / `show_scoreless_panel`) — 14-day rolling batting average and ERA leaders.
 - **Season leaders panel** (`show_leaders_panel`) — cycles through HR / AVG / ERA / Saves / Hits / RBI / SB, rotating category every `leaders_rotation_minutes` (default 5) and refreshed once a day.
-- **Config QR code** (`show_config_qr`) — a QR code linking straight to the [config web server](#config-web-server).
 
 ---
 
@@ -212,7 +211,6 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 | **Auto timelapse** | Generates `.gif` + `.mp4` after all games go Final |
 | **Discord bot** | Switch mode or team from a Discord channel; bot posts preview image |
 | **MLB / MiLB / WBC** | `league_mode` (`mlb`/`aaa`) plus a sport priority list — WBC, Spring Training, International, Triple-A |
-| **Config QR** | QR to the mobile config server shown in a spare cell |
 | **Debug overlay** | Uptime + last successful fetch time in the corner (`show_debug_overlay`) |
 | **Partial refresh** | Changed regions refreshed without full-screen flash |
 
@@ -286,7 +284,6 @@ show_transactions_ticker: false
 transactions_lookback_days: 2
 show_leaders_panel: true
 leaders_rotation_minutes: 5
-show_config_qr: false         # QR to the config web server in a spare cell
 config_server_port: 8080      # port for `python src/config_server.py`
 show_debug_overlay: true      # uptime + last fetch time in the corner
 
@@ -397,9 +394,7 @@ poetry run python src/config_server.py --port 9000     # override the port for o
 
 Open `http://<this-machine's-LAN-IP>:8080/` from any phone/laptop on the
 same Wi-Fi. Changes apply on the next scoreboard refresh cycle — no restart
-needed. When the scoreboard grid has a spare cell (fewer than 15 games), a
-QR code pointing straight at this URL is shown there automatically (toggle
-via `show_config_qr` in `config/config.yaml`).
+needed.
 
 **systemd** — run alongside (not instead of) the cron-triggered display
 pipeline, so it's always reachable:

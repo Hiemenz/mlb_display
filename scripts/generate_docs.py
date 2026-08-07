@@ -30,9 +30,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, 'src'))
 os.chdir(REPO_ROOT)
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 # Silence any download attempts
 _NO_NETWORK = patch('image_assets._try_download_logo', return_value=False)

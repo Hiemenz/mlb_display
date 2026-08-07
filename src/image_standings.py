@@ -29,7 +29,6 @@ _SIDEBAR_VERTICAL_PADDING = 5
 # Corners (x=0..31 and x=768..799) are left as dead space for the sidebar logos.
 _WC_BOX_X_START = 32                              # matches x_start in draw_out_of_town_score_board
 _WC_BOX_X_END   = 767                             # right edge of last box column (632+135)
-_WC_MID         = (_WC_BOX_X_START + _WC_BOX_X_END) // 2   # = 399
 _WC_SLOT_W      = 24                                        # px per slot (2px padding around 20px logo)
 _WC_STRIP_H     = 30                              # matches y_start of boxes
 _WC_LOGO_SZ     = _SIDEBAR_LOGO_SIZE              # same 20px as the sidebar
@@ -39,9 +38,7 @@ _NL_DIVISIONS = ['National League East', 'National League Central', 'National Le
 
 # Fullscreen sidebar — 3 division columns side-by-side, full content-area height
 _FS_SIDEBAR_W   = 175   # left sidebar width (= game cell paste_x); game cell = 450px
-_FS_COL_W       = _FS_SIDEBAR_W // 3   # 58px per division column
 _FS_LOGO_SZ     = 44    # default logo size (fits in 58px col with 7px padding each side)
-_FS_LABEL_H     = 14    # px reserved for E/C/W label at top of each column
 
 _WC_WILDCARD_SPOTS = 3   # number of wildcard playoff berths per league
 _WC_MAX_TEAMS      = 12  # max eligible per league (15 teams - 3 division leaders)
@@ -255,7 +252,6 @@ _TICKER_ROW_FONT_SIZE = 13           # R/H/E digits, one per row — all the sam
 # that the dash visually overlaps whatever getlength() alone measured as
 # "before" it — a small fixed gap on each side compensates (same technique as
 # draw_playoff_bracket_header's leader-digit spacing).
-_TICKER_SCORE_GAP = 2
 
 
 def _ticker_status(game):

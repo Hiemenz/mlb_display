@@ -109,9 +109,9 @@ def test_set_yaml_scalar_preserves_comments_and_other_keys(isolated_files):
 def test_set_yaml_scalar_appends_when_key_absent(isolated_files):
     """Set yaml scalar appends when key absent."""
     yaml_path, _ = isolated_files
-    config_server._set_yaml_scalar(str(yaml_path), 'show_config_qr', 'true')
+    config_server._set_yaml_scalar(str(yaml_path), 'show_streaks_panel', 'true')
     after = yaml_path.read_text()
-    assert 'show_config_qr: true' in after
+    assert 'show_streaks_panel: true' in after
 
 
 def test_set_env_var_replaces_existing_key(isolated_files):
@@ -166,7 +166,7 @@ def test_save_updates_yaml_bool_field(client, isolated_files):
         'primary': 'BOS', 'display_mode': 'scoreboard', 'league_mode': 'mlb',
         'show_leaders_panel': 'on', 'use_team_logos': 'on', 'show_standings_sidebar': 'on',
         'show_wildcard_standings': 'on', 'wide_cell_always': '',
-        'show_config_qr': 'on', 'show_debug_overlay': '',
+        'show_debug_overlay': '',
         'FEATURED_TEAM_FULLSCREEN': '', 'LEAGUE_MODE': 'mlb',
     })
     assert resp.status_code == 302
@@ -184,7 +184,7 @@ def test_save_unchecked_checkbox_writes_false(client, isolated_files):
         # show_leaders_panel omitted entirely == unchecked checkbox
         'use_team_logos': 'on', 'show_standings_sidebar': 'on',
         'show_wildcard_standings': 'on', 'wide_cell_always': '',
-        'show_config_qr': '', 'show_debug_overlay': 'on',
+        'show_debug_overlay': 'on',
         'FEATURED_TEAM_FULLSCREEN': '', 'LEAGUE_MODE': 'mlb',
     })
     after = yaml_path.read_text()
@@ -198,7 +198,7 @@ def test_save_env_field(client, isolated_files):
         'primary': 'NYY', 'display_mode': 'scoreboard', 'league_mode': 'mlb',
         'show_leaders_panel': 'on', 'use_team_logos': 'on', 'show_standings_sidebar': 'on',
         'show_wildcard_standings': 'on', 'wide_cell_always': '',
-        'show_config_qr': 'on', 'show_debug_overlay': '',
+        'show_debug_overlay': '',
         'FEATURED_TEAM_FULLSCREEN': 'on', 'LEAGUE_MODE': 'aaa',
     })
     after = env_path.read_text()

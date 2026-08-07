@@ -884,7 +884,6 @@ def fetch_tomorrow_games(config=None, for_date=None):
                   Pass today's date in morning mode to populate the preview strips
                   on yesterday's Final game boxes with today's upcoming schedule.
     """
-    import time as _tm
     if config is None:
         config = load_config()
 

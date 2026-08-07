@@ -1357,15 +1357,6 @@ class TestDrawWideBoxMore:
 # ---------------------------------------------------------------------------
 
 @needs_pil
-def test_draw_backward_k_dead_code_direct(white_image):
-    """_draw_backward_k (no trailing 's') is unused dead code in the module but
-    still importable — call it directly for coverage."""
-    from image_box import _draw_backward_k
-    from image_assets import _get_font
-    _draw_backward_k(white_image, 10, 10, _get_font(14))
-
-
-@needs_pil
 def test_next_game_preview_logo_w_found(white_image):
     """_logo_w's use_logos branch (measuring an existing logo) is exercised via
     the two-different-games path, which calls _measure_half -> _logo_w."""
