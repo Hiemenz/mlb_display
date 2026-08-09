@@ -149,7 +149,7 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode):
             print("\nStopped.")
             return
 
-    print(f"\n✓ Replay complete.")
+    print("\n✓ Replay complete.")
 
 
 def main():
