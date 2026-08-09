@@ -7,8 +7,8 @@ Usage:
     # By game primary key
     poetry run python src/replay.py --game-pk 745503
 
-    # By date and team abbreviation
-    poetry run python src/replay.py --date 2026-08-01 --team CHC --delay 3
+    # By date and team abbreviation (custom delay)
+    poetry run python src/replay.py --date 2026-08-01 --team CHC --delay 60
 
     # Include non-pitch events (substitutions, pickoffs, etc.)
     poetry run python src/replay.py --date 2026-08-01 --team NYY --all-events
@@ -173,8 +173,8 @@ def main():
                         help='Game date YYYY-MM-DD. Required when --game-pk is not given.')
     parser.add_argument('--team',
                         help='Team abbreviation (e.g. CHC, NYY). Selects the game on --date.')
-    parser.add_argument('--delay', type=float, default=3.0,
-                        help='Seconds to pause between pitches (default: 3).')
+    parser.add_argument('--delay', type=float, default=30.0,
+                        help='Seconds to pause between pitches (default: 30).')
     parser.add_argument('--all-events', action='store_true',
                         help='Step through every event including substitutions and '
                              'pickoffs, not only actual pitch deliveries.')
