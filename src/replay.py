@@ -159,13 +159,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument('--date', required=True,
-                        help='Game date to replay (YYYY-MM-DD).')
-    parser.add_argument('--step', type=float, default=_DEFAULT_STEP_MINUTES,
-                        help=f'Baseball minutes to advance per refresh '
+    parser.add_argument('--date',
+                        help='Game date to replay (YYYY-MM-DD). '
+                             'Falls back to replay_date in config.yaml.')
+    parser.add_argument('--step', type=float, default=None,
+                        help=f'Baseball minutes to advance per refresh. '
+                             f'Falls back to replay_step_minutes in config.yaml '
                              f'(default: {_DEFAULT_STEP_MINUTES}).')
-    parser.add_argument('--delay', type=float, default=_DEFAULT_DELAY_SECONDS,
-                        help=f'Real seconds between display updates '
+    parser.add_argument('--delay', type=float, default=None,
+                        help=f'Real seconds between display updates. '
+                             f'Falls back to replay_delay_seconds in config.yaml '
                              f'(default: {_DEFAULT_DELAY_SECONDS}).')
     parser.add_argument('--local', action='store_true',
                         help='Dev mode: skip display push; auto-open output on macOS.')
@@ -174,10 +177,22 @@ def main():
 
     config = load_config(args.config)
 
+    date_str = args.date or config.get('replay_date', '').strip()
+    if not date_str:
+        parser.error(
+            'No date supplied. Pass --date or set replay_date in config.yaml '
+            '(editable via the config server).'
+        )
+
+    step_minutes = args.step if args.step is not None \
+        else float(config.get('replay_step_minutes', _DEFAULT_STEP_MINUTES))
+    real_delay = args.delay if args.delay is not None \
+        else float(config.get('replay_delay_seconds', _DEFAULT_DELAY_SECONDS))
+
     replay_day(
-        date_str=args.date,
-        step_minutes=args.step,
-        real_delay=args.delay,
+        date_str=date_str,
+        step_minutes=step_minutes,
+        real_delay=real_delay,
         config=config,
         local_mode=args.local,
     )

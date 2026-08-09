@@ -249,7 +249,7 @@ def test_replay_day_keyboard_interrupt_stops_cleanly(
 @patch('replay.replay_day')
 @patch('replay.load_config', return_value={})
 def test_main_passes_defaults(mock_cfg, mock_rd):
-    """main() passes default step/delay values when not specified."""
+    """main() uses module-level defaults when config has no replay keys."""
     import sys
     with patch.object(sys, 'argv', ['replay.py', '--date', '2026-08-01']):
         replay_mod.main()
@@ -264,7 +264,7 @@ def test_main_passes_defaults(mock_cfg, mock_rd):
 @patch('replay.replay_day')
 @patch('replay.load_config', return_value={})
 def test_main_custom_step_and_delay(mock_cfg, mock_rd):
-    """main() forwards --step and --delay to replay_day."""
+    """--step and --delay CLI args override config values."""
     import sys
     with patch.object(sys, 'argv', [
         'replay.py', '--date', '2026-08-01', '--step', '2', '--delay', '10',
@@ -274,6 +274,36 @@ def test_main_custom_step_and_delay(mock_cfg, mock_rd):
     _, kwargs = mock_rd.call_args
     assert kwargs['step_minutes'] == 2.0
     assert kwargs['real_delay'] == 10.0
+
+
+@patch('replay.replay_day')
+@patch('replay.load_config', return_value={
+    'replay_date': '2026-07-04',
+    'replay_step_minutes': 3,
+    'replay_delay_seconds': 45,
+})
+def test_main_reads_date_and_pacing_from_config(mock_cfg, mock_rd):
+    """When no CLI args given, main() falls back to replay_* keys in config."""
+    import sys
+    with patch.object(sys, 'argv', ['replay.py']):
+        replay_mod.main()
+
+    _, kwargs = mock_rd.call_args
+    assert kwargs['date_str'] == '2026-07-04'
+    assert kwargs['step_minutes'] == 3.0
+    assert kwargs['real_delay'] == 45.0
+
+
+@patch('replay.replay_day')
+@patch('replay.load_config', return_value={'replay_date': '2026-07-04'})
+def test_main_cli_date_overrides_config_date(mock_cfg, mock_rd):
+    """--date on the CLI wins over replay_date in config."""
+    import sys
+    with patch.object(sys, 'argv', ['replay.py', '--date', '2026-08-01']):
+        replay_mod.main()
+
+    _, kwargs = mock_rd.call_args
+    assert kwargs['date_str'] == '2026-08-01'
 
 
 @patch('replay.replay_day')
@@ -288,9 +318,10 @@ def test_main_local_flag(mock_cfg, mock_rd):
     assert kwargs['local_mode'] is True
 
 
-def test_main_requires_date():
-    """main() exits when --date is not supplied."""
+def test_main_no_date_no_config_exits():
+    """main() exits when neither --date nor config replay_date is set."""
     import sys
-    with patch.object(sys, 'argv', ['replay.py']):
-        with pytest.raises(SystemExit):
-            replay_mod.main()
+    with patch('replay.load_config', return_value={'replay_date': ''}):
+        with patch.object(sys, 'argv', ['replay.py']):
+            with pytest.raises(SystemExit):
+                replay_mod.main()
