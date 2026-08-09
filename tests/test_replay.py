@@ -1,16 +1,12 @@
-"""Tests for src/replay.py — pitch-by-pitch game replay on the e-ink display."""
+"""Tests for src/replay.py — time-based game-day replay on the e-ink display."""
 from datetime import datetime
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytz
 
 import replay as replay_mod
-from replay import (
-    _find_game_by_team,
-    _lookup_date_for_game,
-    replay_game,
-)
+from replay import replay_day
 
 UTC = pytz.utc
 
@@ -20,7 +16,7 @@ def _dt(hour, minute=0):
 
 
 # ---------------------------------------------------------------------------
-# _find_game_by_team
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 _TEAM_DATA = {
@@ -34,78 +30,20 @@ _TEAM_DATA = {
 
 _BASE_GAMES = [
     {'game_pk': 1001, 'away_team_id': 112, 'home_team_id': 158,
-     'away_team_name': 'Chicago Cubs', 'home_team_name': 'Milwaukee Brewers'},
+     'away_team_name': 'Chicago Cubs', 'home_team_name': 'Milwaukee Brewers',
+     'detailed_state': 'Final'},
     {'game_pk': 1002, 'away_team_id': 147, 'home_team_id': 111,
-     'away_team_name': 'New York Yankees', 'home_team_name': 'Boston Red Sox'},
+     'away_team_name': 'New York Yankees', 'home_team_name': 'Boston Red Sox',
+     'detailed_state': 'Final'},
 ]
 
 
-def test_find_game_by_team_home_match():
-    """Matches by home-team abbreviation."""
-    g = _find_game_by_team(_BASE_GAMES, _TEAM_DATA, 'MIL')
-    assert g is not None
-    assert g['game_pk'] == 1001
-
-
-def test_find_game_by_team_away_match():
-    """Matches by away-team abbreviation."""
-    g = _find_game_by_team(_BASE_GAMES, _TEAM_DATA, 'nyy')
-    assert g is not None
-    assert g['game_pk'] == 1002
-
-
-def test_find_game_by_team_not_found():
-    """Returns None when no game matches the abbreviation."""
-    assert _find_game_by_team(_BASE_GAMES, _TEAM_DATA, 'LAD') is None
-
-
-# ---------------------------------------------------------------------------
-# _lookup_date_for_game
-# ---------------------------------------------------------------------------
-
-def test_lookup_date_for_game_returns_date():
-    """Returns the originalDate from the live feed."""
-    resp = MagicMock()
-    resp.json.return_value = {
-        'gameData': {'datetime': {'originalDate': '2026-08-01'}}
-    }
-    with patch('replay.requests.get', return_value=resp):
-        date = _lookup_date_for_game(1001)
-    assert date == '2026-08-01'
-
-
-def test_lookup_date_for_game_raises_on_http_error():
-    """Propagates requests exceptions."""
-    import requests as _req
-    with patch('replay.requests.get', side_effect=_req.RequestException('timeout')):
-        with pytest.raises(_req.RequestException):
-            _lookup_date_for_game(9999)
-
-
-# ---------------------------------------------------------------------------
-# replay_game — core loop
-# ---------------------------------------------------------------------------
-
-def _pitch_ev(balls=0, strikes=0, outs=0, inning=1, half='top',
-              is_pitch=True, speed=91.5, ptype='FF'):
+def _make_tl(first_pitch_hour=20, last_play_hour=23):
+    """Minimal timeline dict with a sensible time window."""
+    fp = _dt(first_pitch_hour)
+    lp = _dt(last_play_hour)
     return {
-        'time': _dt(20),
-        'balls': balls,
-        'strikes': strikes,
-        'outs': outs,
-        'inning': inning,
-        'half_inning': half,
-        'away_score': 0,
-        'home_score': 0,
-        'is_pitch': is_pitch,
-        'last_pitch_speed': speed,
-        'last_pitch_type': ptype,
-    }
-
-
-def _make_tl(events=None):
-    return {
-        'pitch_events': events if events is not None else [],
+        'pitch_events': [],
         'plays': [],
         'wp_events': [],
         'hit_events': [],
@@ -113,102 +51,64 @@ def _make_tl(events=None):
         'pitcher_k_events': [],
         'challenge_events': [],
         'next_batters_events': [],
-        'first_pitch_utc': _dt(20),
-        'last_play_utc': _dt(23),
-        'scheduled_start_utc': _dt(20),
-        'first_actual_pitch_utc': _dt(20),
+        'first_pitch_utc': fp,
+        'first_actual_pitch_utc': fp,
+        'last_play_utc': lp,
+        'scheduled_start_utc': fp,
     }
 
 
-def _mock_games_json(game_pk=1001):
-    return {
-        'games': [
-            {
-                'game_pk': game_pk,
-                'away_team_id': 112,
-                'home_team_id': 158,
-                'away_team_name': 'Chicago Cubs',
-                'home_team_name': 'Milwaukee Brewers',
-                'detailed_state': 'Final',
-            }
-        ]
-    }
+def _patched_load(name, *a, **kw):
+    if 'games' in name:
+        return {'games': _BASE_GAMES}
+    return _TEAM_DATA
 
 
-def _setup_replay_patches(tl, game_pk=1001, games_json=None, state_override=None):
-    """Return a dict of patch kwargs for the core replay_game dependencies."""
-    if games_json is None:
-        games_json = _mock_games_json(game_pk)
-
-    reconstructed = state_override or {'game_pk': game_pk, 'detailed_state': 'In Progress'}
-
-    fake_image = MagicMock()
-    fake_image.save = MagicMock()
-
-    return {
-        'games_json': games_json,
-        'tl': tl,
-        'reconstructed': reconstructed,
-        'fake_image': fake_image,
-    }
-
+# ---------------------------------------------------------------------------
+# replay_day — core time-advance loop
+# ---------------------------------------------------------------------------
 
 @patch('replay.send_to_display')
 @patch('replay.orchestrate_score_board')
 @patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
 @patch('replay._fetch_game_timeline')
-@patch('replay.load_json_file')
+@patch('replay.load_json_file', side_effect=_patched_load)
 @patch('replay.fetch_scoreboard_for_date')
-def test_replay_game_calls_display_per_pitch(
-        mock_fetch, mock_load, mock_tl, mock_gsat, mock_orc, mock_disp,
+@patch('replay.time.sleep')
+def test_replay_day_renders_and_displays_each_active_step(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
 ):
-    """send_to_display is called once per pitch event."""
-    events = [_pitch_ev(strikes=0), _pitch_ev(strikes=1), _pitch_ev(strikes=2)]
-    tl = _make_tl(events)
-
+    """A frame is rendered and pushed for every active step in the window."""
+    tl = _make_tl(20, 20)   # 0-minute window → exactly 1 step
     mock_tl.return_value = tl
     mock_gsat.return_value = {'game_pk': 1001}
-
     fake_image = MagicMock()
     mock_orc.return_value = (fake_image, [])
 
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return _mock_games_json()
-        return _TEAM_DATA
-    mock_load.side_effect = _load
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
 
-    replay_game(
-        game_pk=1001, date_str='2026-08-01', delay_seconds=0,
-        pitches_only=True, config={}, local_mode=False,
-    )
-
-    assert mock_disp.call_count == 3
-    assert fake_image.save.call_count == 3
+    assert mock_orc.call_count >= 1
+    assert mock_disp.call_count >= 1
 
 
 @patch('replay.send_to_display')
 @patch('replay.orchestrate_score_board')
 @patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=False)
 @patch('replay._fetch_game_timeline')
-@patch('replay.load_json_file')
+@patch('replay.load_json_file', side_effect=_patched_load)
 @patch('replay.fetch_scoreboard_for_date')
-def test_replay_game_no_pitch_events_exits_early(
-        mock_fetch, mock_load, mock_tl, mock_gsat, mock_orc, mock_disp,
+@patch('replay.time.sleep')
+def test_replay_day_skips_inactive_steps(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
 ):
-    """No pitch events: prints message and returns without rendering."""
-    mock_tl.return_value = _make_tl([])  # empty
+    """Steps where no games are active are skipped (no render, no display push)."""
+    mock_tl.return_value = _make_tl(20, 20)
 
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return _mock_games_json()
-        return _TEAM_DATA
-    mock_load.side_effect = _load
-
-    replay_game(
-        game_pk=1001, date_str='2026-08-01', delay_seconds=0,
-        pitches_only=True, config={}, local_mode=False,
-    )
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
 
     mock_orc.assert_not_called()
     mock_disp.assert_not_called()
@@ -216,24 +116,16 @@ def test_replay_game_no_pitch_events_exits_early(
 
 @patch('replay.send_to_display')
 @patch('replay.orchestrate_score_board')
-@patch('replay._game_state_at_time')
 @patch('replay._fetch_game_timeline')
 @patch('replay.load_json_file')
 @patch('replay.fetch_scoreboard_for_date')
-def test_replay_game_unknown_game_pk_exits_early(
-        mock_fetch, mock_load, mock_tl, mock_gsat, mock_orc, mock_disp,
+def test_replay_day_no_games_returns_early(
+        mock_fetch, mock_load, mock_tl, mock_orc, mock_disp,
 ):
-    """game_pk not in base_games: returns without calling timeline or display."""
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return {'games': []}  # empty — game_pk will not be found
-        return _TEAM_DATA
-    mock_load.side_effect = _load
+    """Empty schedule: nothing is fetched or displayed."""
+    mock_load.return_value = {'games': []}
 
-    replay_game(
-        game_pk=9999, date_str='2026-08-01', delay_seconds=0,
-        pitches_only=True, config={}, local_mode=False,
-    )
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
 
     mock_tl.assert_not_called()
     mock_orc.assert_not_called()
@@ -242,93 +134,44 @@ def test_replay_game_unknown_game_pk_exits_early(
 @patch('replay.send_to_display')
 @patch('replay.orchestrate_score_board')
 @patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
 @patch('replay._fetch_game_timeline')
-@patch('replay.load_json_file')
+@patch('replay.load_json_file', side_effect=_patched_load)
 @patch('replay.fetch_scoreboard_for_date')
-def test_replay_game_local_mode_skips_display(
-        mock_fetch, mock_load, mock_tl, mock_gsat, mock_orc, mock_disp,
+@patch('replay.time.sleep')
+def test_replay_day_local_mode_skips_display(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
 ):
-    """local_mode=True: orchestrate_score_board still runs but send_to_display is not called."""
-    events = [_pitch_ev()]
-    mock_tl.return_value = _make_tl(events)
+    """local_mode=True: orchestrate runs but send_to_display is never called."""
+    mock_tl.return_value = _make_tl(20, 20)
     mock_gsat.return_value = {'game_pk': 1001}
-    fake_image = MagicMock()
-    mock_orc.return_value = (fake_image, [])
+    mock_orc.return_value = (MagicMock(), [])
 
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return _mock_games_json()
-        return _TEAM_DATA
-    mock_load.side_effect = _load
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=True)
 
-    replay_game(
-        game_pk=1001, date_str='2026-08-01', delay_seconds=0,
-        pitches_only=True, config={}, local_mode=True,
-    )
-
-    mock_orc.assert_called_once()
+    mock_orc.assert_called()
     mock_disp.assert_not_called()
 
 
 @patch('replay.send_to_display')
 @patch('replay.orchestrate_score_board')
 @patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
 @patch('replay._fetch_game_timeline')
-@patch('replay.load_json_file')
+@patch('replay.load_json_file', side_effect=_patched_load)
 @patch('replay.fetch_scoreboard_for_date')
-def test_replay_game_includes_non_pitch_events_when_not_pitches_only(
-        mock_fetch, mock_load, mock_tl, mock_gsat, mock_orc, mock_disp,
+@patch('replay.time.sleep')
+def test_replay_day_orchestrate_none_does_not_push(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
 ):
-    """pitches_only=False includes action events in the replay."""
-    pitch = _pitch_ev(is_pitch=True)
-    action = _pitch_ev(is_pitch=False, speed=None, ptype='')
-    events = [pitch, action]
-    mock_tl.return_value = _make_tl(events)
+    """When orchestrate returns None (unchanged image), send_to_display is not called."""
+    mock_tl.return_value = _make_tl(20, 20)
     mock_gsat.return_value = {'game_pk': 1001}
-    fake_image = MagicMock()
-    mock_orc.return_value = (fake_image, [])
+    mock_orc.return_value = None
 
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return _mock_games_json()
-        return _TEAM_DATA
-    mock_load.side_effect = _load
-
-    replay_game(
-        game_pk=1001, date_str='2026-08-01', delay_seconds=0,
-        pitches_only=False, config={}, local_mode=False,
-    )
-
-    # Both pitch and action events rendered
-    assert mock_orc.call_count == 2
-    assert mock_disp.call_count == 2
-
-
-@patch('replay.send_to_display')
-@patch('replay.orchestrate_score_board')
-@patch('replay._game_state_at_time')
-@patch('replay._fetch_game_timeline')
-@patch('replay.load_json_file')
-@patch('replay.fetch_scoreboard_for_date')
-def test_replay_game_skips_frame_when_orchestrate_returns_none(
-        mock_fetch, mock_load, mock_tl, mock_gsat, mock_orc, mock_disp,
-):
-    """No display push when orchestrate_score_board returns None (unchanged frame)."""
-    events = [_pitch_ev(), _pitch_ev()]
-    mock_tl.return_value = _make_tl(events)
-    mock_gsat.return_value = {'game_pk': 1001}
-    mock_orc.return_value = None  # unchanged — skip
-
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return _mock_games_json()
-        return _TEAM_DATA
-    mock_load.side_effect = _load
-
-    replay_game(
-        game_pk=1001, date_str='2026-08-01', delay_seconds=0,
-        pitches_only=True, config={}, local_mode=False,
-    )
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
 
     mock_disp.assert_not_called()
 
@@ -336,158 +179,117 @@ def test_replay_game_skips_frame_when_orchestrate_returns_none(
 @patch('replay.send_to_display')
 @patch('replay.orchestrate_score_board')
 @patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
 @patch('replay._fetch_game_timeline')
-@patch('replay.load_json_file')
+@patch('replay.load_json_file', side_effect=_patched_load)
 @patch('replay.fetch_scoreboard_for_date')
-def test_replay_game_other_games_stay_as_dict_copy(
-        mock_fetch, mock_load, mock_tl, mock_gsat, mock_orc, mock_disp,
+@patch('replay.time.sleep')
+def test_replay_day_render_error_continues_to_next_step(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
 ):
-    """Other games on the day keep their final-state dict; only the target game is reconstructed."""
-    events = [_pitch_ev()]
-    mock_tl.return_value = _make_tl(events)
-    mock_gsat.return_value = {'game_pk': 1001, 'reconstructed': True}
-    fake_image = MagicMock()
-    mock_orc.return_value = (fake_image, [])
+    """A render exception on one step doesn't abort the whole replay."""
+    mock_tl.return_value = _make_tl(20, 20)
+    mock_gsat.return_value = {'game_pk': 1001}
+    mock_orc.side_effect = [RuntimeError("render failed"), (MagicMock(), [])]
 
-    other_game = {
-        'game_pk': 2002, 'away_team_id': 147, 'home_team_id': 111,
-        'away_team_name': 'Yankees', 'home_team_name': 'Red Sox',
-        'detailed_state': 'Final',
-    }
-    games_json = {
-        'games': [
-            {
-                'game_pk': 1001,
-                'away_team_id': 112,
-                'home_team_id': 158,
-                'away_team_name': 'Cubs',
-                'home_team_name': 'Brewers',
-                'detailed_state': 'Final',
-            },
-            other_game,
-        ]
-    }
+    # Should not raise
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
 
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return games_json
-        return _TEAM_DATA
-    mock_load.side_effect = _load
 
-    replay_game(
-        game_pk=1001, date_str='2026-08-01', delay_seconds=0,
-        pitches_only=True, config={}, local_mode=False,
-    )
+@patch('replay.send_to_display')
+@patch('replay.orchestrate_score_board')
+@patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
+@patch('replay._fetch_game_timeline')
+@patch('replay.load_json_file', side_effect=_patched_load)
+@patch('replay.fetch_scoreboard_for_date')
+@patch('replay.time.sleep')
+def test_replay_day_reconstructs_each_game_at_current_time(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
+):
+    """_game_state_at_time is called once per game per active step."""
+    mock_tl.return_value = _make_tl(20, 20)  # 1-step window
+    mock_gsat.return_value = {'game_pk': 1001}
+    mock_orc.return_value = (MagicMock(), [])
 
-    frame_games = mock_orc.call_args[0][0]
-    assert frame_games[0].get('reconstructed') is True  # target: reconstructed
-    assert frame_games[1]['game_pk'] == 2002             # other: unchanged dict
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
+
+    # Each active step reconstructs every game once, so call count is a multiple of 2
+    assert mock_gsat.call_count > 0
+    assert mock_gsat.call_count % len(_BASE_GAMES) == 0
+
+
+@patch('replay.send_to_display')
+@patch('replay.orchestrate_score_board')
+@patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
+@patch('replay._fetch_game_timeline')
+@patch('replay.load_json_file', side_effect=_patched_load)
+@patch('replay.fetch_scoreboard_for_date')
+@patch('replay.time.sleep', side_effect=KeyboardInterrupt)
+def test_replay_day_keyboard_interrupt_stops_cleanly(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
+):
+    """KeyboardInterrupt during sleep stops replay without raising."""
+    mock_tl.return_value = _make_tl(20, 21)
+    mock_gsat.return_value = {'game_pk': 1001}
+    mock_orc.return_value = (MagicMock(), [])
+
+    # Should not propagate the KeyboardInterrupt
+    replay_day('2026-08-01', step_minutes=1, real_delay=5, config={}, local_mode=False)
 
 
 # ---------------------------------------------------------------------------
-# main() — argument routing
+# main() — argument parsing
 # ---------------------------------------------------------------------------
 
-@patch('replay.replay_game')
+@patch('replay.replay_day')
 @patch('replay.load_config', return_value={})
-def test_main_with_game_pk_and_date(mock_cfg, mock_rg):
-    """--game-pk + --date calls replay_game with correct args."""
+def test_main_passes_defaults(mock_cfg, mock_rd):
+    """main() passes default step/delay values when not specified."""
     import sys
-    with patch.object(sys, 'argv', ['replay.py', '--game-pk', '745503', '--date', '2026-08-01']):
+    with patch.object(sys, 'argv', ['replay.py', '--date', '2026-08-01']):
         replay_mod.main()
 
-    mock_rg.assert_called_once()
-    _, kwargs = mock_rg.call_args
-    assert kwargs['game_pk'] == 745503
+    _, kwargs = mock_rd.call_args
     assert kwargs['date_str'] == '2026-08-01'
-    assert kwargs['pitches_only'] is True
+    assert kwargs['step_minutes'] == replay_mod._DEFAULT_STEP_MINUTES
+    assert kwargs['real_delay'] == replay_mod._DEFAULT_DELAY_SECONDS
     assert kwargs['local_mode'] is False
 
 
-@patch('replay.replay_game')
+@patch('replay.replay_day')
 @patch('replay.load_config', return_value={})
-@patch('replay._lookup_date_for_game', return_value='2026-08-01')
-def test_main_game_pk_without_date_looks_up_date(mock_lookup, mock_cfg, mock_rg):
-    """--game-pk without --date auto-derives the date from the API."""
+def test_main_custom_step_and_delay(mock_cfg, mock_rd):
+    """main() forwards --step and --delay to replay_day."""
     import sys
-    with patch.object(sys, 'argv', ['replay.py', '--game-pk', '745503']):
-        replay_mod.main()
-
-    mock_lookup.assert_called_once_with(745503)
-    mock_rg.assert_called_once()
-
-
-@patch('replay.replay_game')
-@patch('replay.load_config', return_value={})
-@patch('replay.load_json_file')
-@patch('replay.fetch_scoreboard_for_date')
-@patch('replay.set_historical_mode')
-def test_main_with_date_and_team(mock_shm, mock_fetch, mock_load, mock_cfg, mock_rg):
-    """--date + --team resolves to a game_pk and calls replay_game."""
-    import sys
-
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return _mock_games_json(1001)
-        return _TEAM_DATA
-    mock_load.side_effect = _load
-
-    with patch.object(sys, 'argv', ['replay.py', '--date', '2026-08-01', '--team', 'CHC']):
-        replay_mod.main()
-
-    mock_rg.assert_called_once()
-    _, kwargs = mock_rg.call_args
-    assert kwargs['game_pk'] == 1001
-
-
-@patch('replay.replay_game')
-@patch('replay.load_config', return_value={})
-@patch('replay.load_json_file')
-@patch('replay.fetch_scoreboard_for_date')
-@patch('replay.set_historical_mode')
-def test_main_with_all_events_flag(mock_shm, mock_fetch, mock_load, mock_cfg, mock_rg):
-    """--all-events flag sets pitches_only=False."""
-    import sys
-
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return _mock_games_json(1001)
-        return _TEAM_DATA
-    mock_load.side_effect = _load
-
     with patch.object(sys, 'argv', [
-        'replay.py', '--date', '2026-08-01', '--team', 'CHC', '--all-events',
+        'replay.py', '--date', '2026-08-01', '--step', '2', '--delay', '10',
     ]):
         replay_mod.main()
 
-    _, kwargs = mock_rg.call_args
-    assert kwargs['pitches_only'] is False
+    _, kwargs = mock_rd.call_args
+    assert kwargs['step_minutes'] == 2.0
+    assert kwargs['real_delay'] == 10.0
 
 
-@patch('replay.replay_game')
+@patch('replay.replay_day')
 @patch('replay.load_config', return_value={})
-@patch('replay.load_json_file')
-@patch('replay.fetch_scoreboard_for_date')
-@patch('replay.set_historical_mode')
-def test_main_team_not_found_exits(mock_shm, mock_fetch, mock_load, mock_cfg, mock_rg):
-    """Exits with error when no game matches the requested team."""
+def test_main_local_flag(mock_cfg, mock_rd):
+    """--local sets local_mode=True."""
     import sys
+    with patch.object(sys, 'argv', ['replay.py', '--date', '2026-08-01', '--local']):
+        replay_mod.main()
 
-    def _load(name, *a, **kw):
-        if 'games' in name:
-            return {'games': []}
-        return _TEAM_DATA
-    mock_load.side_effect = _load
-
-    with patch.object(sys, 'argv', ['replay.py', '--date', '2026-08-01', '--team', 'LAD']):
-        with pytest.raises(SystemExit):
-            replay_mod.main()
-
-    mock_rg.assert_not_called()
+    _, kwargs = mock_rd.call_args
+    assert kwargs['local_mode'] is True
 
 
-def test_main_no_args_exits():
-    """No --game-pk and no --date/--team exits with an error."""
+def test_main_requires_date():
+    """main() exits when --date is not supplied."""
     import sys
     with patch.object(sys, 'argv', ['replay.py']):
         with pytest.raises(SystemExit):

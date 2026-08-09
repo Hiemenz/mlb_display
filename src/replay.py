@@ -1,20 +1,13 @@
-"""Replay a completed MLB game pitch-by-pitch on the e-ink display.
+"""Replay a full MLB game day on the e-ink display.
 
-Fetches the full play-by-play feed once, then steps through each pitch
-and renders the reconstructed game state to the display in sequence.
+Steps through the day in baseball time: every --delay real seconds the
+display advances --step minutes of actual game time, showing all games
+as they unfolded.
 
 Usage:
-    # By game primary key
-    poetry run python src/replay.py --game-pk 745503
-
-    # By date and team abbreviation (custom delay)
-    poetry run python src/replay.py --date 2026-08-01 --team CHC --delay 60
-
-    # Include non-pitch events (substitutions, pickoffs, etc.)
-    poetry run python src/replay.py --date 2026-08-01 --team NYY --all-events
-
-    # Dev mode: no display push, auto-open output image on macOS
-    poetry run python src/replay.py --date 2026-08-01 --team BOS --local
+    poetry run python src/replay.py --date 2026-08-01
+    poetry run python src/replay.py --date 2026-08-01 --step 2 --delay 30
+    poetry run python src/replay.py --date 2026-08-01 --local
 """
 import argparse
 import os
@@ -22,8 +15,9 @@ import platform
 import subprocess
 import sys
 import time
+from datetime import timedelta
 
-import requests
+import pytz
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -33,41 +27,24 @@ from generate_image import orchestrate_score_board
 from display import send_to_display
 from image_box import set_historical_mode
 from util import load_json_file
-from timelapse import _fetch_game_timeline, _game_state_at_time
+from timelapse import _fetch_game_timeline, _game_state_at_time, _any_game_active
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-
-def _lookup_date_for_game(game_pk):
-    """Return the YYYY-MM-DD date for a game_pk by querying the live feed."""
-    resp = requests.get(
-        f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
-        '?fields=gameData,datetime,originalDate',
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return (resp.json()
-            .get('gameData', {})
-            .get('datetime', {})
-            .get('originalDate', ''))
+_DEFAULT_STEP_MINUTES = 1    # advance 1 baseball minute per display refresh
+_DEFAULT_DELAY_SECONDS = 20  # wait 20 real seconds between refreshes
 
 
-def _find_game_by_team(base_games, team_data, team_abbr):
-    """Return the game dict for team_abbr from base_games, or None."""
-    abbr_map = team_data.get('team_abbreviation', {})
-    target = team_abbr.upper()
-    for g in base_games:
-        away_id = str(g.get('away_team_id', ''))
-        home_id = str(g.get('home_team_id', ''))
-        if (abbr_map.get(away_id, '').upper() == target
-                or abbr_map.get(home_id, '').upper() == target):
-            return g
-    return None
+def replay_day(date_str, step_minutes, real_delay, config, local_mode):
+    """Replay all games from date_str, advancing step_minutes of baseball time per refresh.
 
-
-def replay_game(game_pk, date_str, delay_seconds, pitches_only, config, local_mode):
-    """Fetch play-by-play for game_pk and step through it pitch-by-pitch on the display."""
+    Pushes a fresh scoreboard to the display every real_delay seconds.
+    Dead periods (before first pitch, between games) are skipped instantly.
+    """
     set_historical_mode(True)
+
+    tz_str = config.get('timezone', 'America/Chicago')
+    local_tz = pytz.timezone(tz_str)
 
     print(f"Fetching schedule for {date_str}...")
     fetch_scoreboard_for_date(date_str, sport_id=None, config=config)
@@ -76,150 +53,131 @@ def replay_game(game_pk, date_str, delay_seconds, pitches_only, config, local_mo
     if 'team_abbreviation' not in team_data:
         team_data = {'team_abbreviation': {}}
 
-    base_game = next(
-        (g for g in base_games if str(g.get('game_pk', '')) == str(game_pk)),
-        None,
-    )
-    if base_game is None:
-        print(f"Error: game {game_pk} not found in {date_str} schedule.")
+    if not base_games:
+        print("No games found — nothing to replay.")
         return
 
-    abbr_map = team_data.get('team_abbreviation', {})
-    away_abbr = abbr_map.get(str(base_game.get('away_team_id', '')), '???')
-    home_abbr = abbr_map.get(str(base_game.get('home_team_id', '')), '???')
-    print(f"Replaying: {away_abbr} @ {home_abbr}  (game_pk={game_pk}, {date_str})")
+    print(f"Fetching play-by-play for {len(base_games)} game(s)...")
+    game_timelines = {}
+    all_first_pitches = []
+    all_last_plays = []
 
-    print("Fetching play-by-play...")
-    tl = _fetch_game_timeline(game_pk)
+    for game in base_games:
+        game_pk = game.get('game_pk')
+        if not game_pk:
+            continue
+        print(f"  game {game_pk}...", end=' ', flush=True)
+        try:
+            tl = _fetch_game_timeline(game_pk)
+            game_timelines[str(game_pk)] = tl
+            anchor = (tl.get('first_actual_pitch_utc')
+                      or tl.get('first_pitch_utc')
+                      or tl.get('scheduled_start_utc'))
+            if anchor:
+                all_first_pitches.append(anchor)
+            if tl.get('last_play_utc'):
+                all_last_plays.append(tl['last_play_utc'])
+            print("ok")
+        except Exception as e:
+            print(f"error: {e}")
 
-    all_events = tl.get('pitch_events', [])
-    events = [e for e in all_events if e.get('is_pitch')] if pitches_only else all_events
-    if not events:
-        print("No pitch events found — nothing to replay.")
+    if not game_timelines or not all_first_pitches:
+        print("No timeline data — aborting.")
         return
 
-    print(f"{len(events)} event(s) to display  ({delay_seconds}s between each)")
+    start_utc = min(all_first_pitches)
+    end_utc = (max(all_last_plays) + timedelta(minutes=5)) if all_last_plays \
+              else start_utc + timedelta(hours=5)
+
+    start_local = start_utc.astimezone(local_tz)
+    end_local = end_utc.astimezone(local_tz)
+    total_steps = int((end_utc - start_utc).total_seconds() / 60 / step_minutes) + 1
+
+    print(f"Replaying {start_local.strftime('%H:%M')}–{end_local.strftime('%H:%M')} {tz_str}")
+    print(f"{total_steps} step(s) × {step_minutes} baseball min  "
+          f"→ {real_delay}s real time between each")
 
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
     is_mac = platform.system() == 'Darwin'
+    current_utc = start_utc
+    step = 0
 
-    for i, ev in enumerate(events):
-        target_utc = ev['time']
+    while current_utc <= end_utc:
+        step += 1
+        time_label = current_utc.astimezone(local_tz).strftime('%H:%M')
+
+        if not _any_game_active(game_timelines, current_utc):
+            current_utc += timedelta(minutes=step_minutes)
+            continue
 
         frame_games = []
-        for g in base_games:
-            if str(g.get('game_pk', '')) == str(game_pk):
-                frame_games.append(_game_state_at_time(g, tl, target_utc))
-            else:
-                frame_games.append(dict(g))
+        for game in base_games:
+            pk_str = str(game.get('game_pk', ''))
+            tl = game_timelines.get(pk_str)
+            frame_games.append(
+                _game_state_at_time(game, tl, current_utc) if tl else dict(game)
+            )
 
         try:
             result = orchestrate_score_board(
                 frame_games, team_data, date_str, bypass_cache=True, config=config,
             )
         except Exception as e:
-            print(f"  [{i + 1}/{len(events)}] render error: {e}")
+            print(f"  [{step:4d}/{total_steps}] {time_label} render error: {e}")
+            current_utc += timedelta(minutes=step_minutes)
             continue
 
-        if not result:
-            continue
+        if result:
+            image, changed_regions = result
+            image.save(output_path)
+            print(f"  [{step:4d}/{total_steps}] {time_label}")
 
-        image, changed_regions = result
-        image.save(output_path)
+            if local_mode:
+                if is_mac:
+                    subprocess.run(['open', output_path], check=False)
+            else:
+                try:
+                    send_to_display(output_path, changed_regions)
+                except Exception as e:
+                    print(f"  display error: {e}")
 
-        half = ev.get('half_inning', 'top')
-        inn = ev.get('inning', '?')
-        balls = ev.get('balls', 0)
-        strikes = ev.get('strikes', 0)
-        outs = ev.get('outs', 0)
-        if ev.get('is_pitch') and ev.get('last_pitch_type'):
-            spd = ev.get('last_pitch_speed')
-            pitch_info = f"{ev['last_pitch_type']}" + (f" {spd}mph" if spd else "")
-        else:
-            pitch_info = "action"
-        half_label = 'Top' if half == 'top' else 'Bot'
-        print(f"  [{i + 1:4d}/{len(events)}] {half_label} {inn}  {balls}-{strikes}, "
-              f"{outs} out — {pitch_info}")
+        current_utc += timedelta(minutes=step_minutes)
 
-        if local_mode:
-            if is_mac:
-                subprocess.run(['open', output_path], check=False)
-        else:
-            try:
-                send_to_display(output_path, changed_regions)
-            except Exception as e:
-                print(f"  display error: {e}")
+        try:
+            time.sleep(real_delay)
+        except KeyboardInterrupt:
+            print("\nStopped.")
+            return
 
-        if i < len(events) - 1:
-            try:
-                time.sleep(delay_seconds)
-            except KeyboardInterrupt:
-                print("\nStopped.")
-                return
-
-    print(f"\n✓ Replay complete — {len(events)} pitches shown.")
+    print(f"\n✓ Replay complete.")
 
 
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Replay a completed MLB game pitch-by-pitch on the e-ink display.',
+        description='Replay a full MLB game day on the e-ink display.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument('--game-pk', type=int,
-                        help='Game primary key (from the MLB API).')
-    parser.add_argument('--date',
-                        help='Game date YYYY-MM-DD. Required when --game-pk is not given.')
-    parser.add_argument('--team',
-                        help='Team abbreviation (e.g. CHC, NYY). Selects the game on --date.')
-    parser.add_argument('--delay', type=float, default=30.0,
-                        help='Seconds to pause between pitches (default: 30).')
-    parser.add_argument('--all-events', action='store_true',
-                        help='Step through every event including substitutions and '
-                             'pickoffs, not only actual pitch deliveries.')
+    parser.add_argument('--date', required=True,
+                        help='Game date to replay (YYYY-MM-DD).')
+    parser.add_argument('--step', type=float, default=_DEFAULT_STEP_MINUTES,
+                        help=f'Baseball minutes to advance per refresh '
+                             f'(default: {_DEFAULT_STEP_MINUTES}).')
+    parser.add_argument('--delay', type=float, default=_DEFAULT_DELAY_SECONDS,
+                        help=f'Real seconds between display updates '
+                             f'(default: {_DEFAULT_DELAY_SECONDS}).')
     parser.add_argument('--local', action='store_true',
                         help='Dev mode: skip display push; auto-open output on macOS.')
     add_config_arg(parser)
     args = parser.parse_args()
 
-    if not args.game_pk and not (args.date and args.team):
-        parser.error('Provide --game-pk, or both --date and --team.')
-
     config = load_config(args.config)
 
-    if args.game_pk:
-        game_pk = args.game_pk
-        if args.date:
-            date_str = args.date
-        else:
-            print(f"Looking up date for game {game_pk}...")
-            try:
-                date_str = _lookup_date_for_game(game_pk)
-            except Exception as e:
-                parser.error(f'Could not determine date from game_pk ({e}). Pass --date.')
-            if not date_str:
-                parser.error('Game date not found — pass --date explicitly.')
-            print(f"  Date: {date_str}")
-    else:
-        date_str = args.date
-        set_historical_mode(True)
-        fetch_scoreboard_for_date(date_str, sport_id=None, config=config)
-        base_games = load_json_file('games.json').get('games', [])
-        team_data = load_json_file('teams.json') or {}
-        game = _find_game_by_team(base_games, team_data, args.team)
-        if game is None:
-            parser.error(f'No game found for team {args.team!r} on {date_str}.')
-        game_pk = game['game_pk']
-        away = game.get('away_team_name', '?')
-        home = game.get('home_team_name', '?')
-        print(f"Found: {away} @ {home}  (game_pk={game_pk})")
-
-    replay_game(
-        game_pk=game_pk,
-        date_str=date_str,
-        delay_seconds=args.delay,
-        pitches_only=not args.all_events,
+    replay_day(
+        date_str=args.date,
+        step_minutes=args.step,
+        real_delay=args.delay,
         config=config,
         local_mode=args.local,
     )
