@@ -60,7 +60,9 @@ _CORNERS = [
 ]
 
 _LOGO_PX = 54
-_MIN_SEP = 52
+# Must exceed _LOGO_PX so no two logos touch, plus a legibility gutter —
+# same reasoning as quadrant_view._MIN_SEP, scaled to this canvas.
+_MIN_SEP = _LOGO_PX + 18
 _RELAX_PASSES = 160
 _MIN_ARROW = 14
 _MAX_ARROW = 150

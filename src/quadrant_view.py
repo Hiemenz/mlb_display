@@ -33,9 +33,13 @@ _LOGO_R = _LOGO_SIZE // 2
 # Share of each logo's box that should end up black. Keeps busy and sparse
 # logos at a similar visual weight instead of some vanishing and some blobbing.
 _INK_TARGET = 0.34
-# Minimum gap between logo centres. Below the logo width, so dense clusters
-# still nudge apart instead of exploding across the whole plot.
-_MIN_SEP = 25
+# Minimum gap between logo centres. The +9 is a legibility gutter, not slack:
+# at _LOGO_SIZE exactly, neighbours touch and a cluster reads as one smear at
+# 1-bit; a few px of white between them is what makes each club identifiable.
+# It must never drop to or below _LOGO_SIZE — each marker clears its own
+# footprint to white before pasting, so closer centres let a later team erase
+# a sliver of one already drawn.
+_MIN_SEP = _LOGO_SIZE + 9
 _RELAX_PASSES = 140
 # Arrows shorter than this are noise, not a trend, and only add clutter.
 _MIN_ARROW_PX = 7

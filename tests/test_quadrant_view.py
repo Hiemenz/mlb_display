@@ -200,14 +200,40 @@ def test_scale_tolerates_a_degenerate_range():
 
 @needs_pil
 def test_overlap_resolution_separates_stacked_logos():
-    """Teams landing on the same point are pushed apart, not drawn on top."""
+    """Teams landing on the same point end up at least a full logo box apart.
+
+    Not a token gap: each marker clears its own footprint to white before
+    pasting, so anything closer than _LOGO_SIZE lets one team erase a sliver of
+    a neighbour that was already drawn.
+    """
     stacked = [(400.0, 240.0)] * 6
     placed = qv._resolve_overlaps(stacked)
     for i in range(len(placed)):
         for j in range(i + 1, len(placed)):
             dx = placed[i][0] - placed[j][0]
             dy = placed[i][1] - placed[j][1]
-            assert (dx * dx + dy * dy) ** 0.5 > 1.0
+            assert (dx * dx + dy * dy) ** 0.5 >= qv._LOGO_SIZE
+
+
+@needs_pil
+def test_minimum_separation_exceeds_the_logo_box():
+    """The constant itself has to clear the logo, or every dense cluster smears."""
+    assert qv._MIN_SEP > qv._LOGO_SIZE
+
+
+@needs_pil
+def test_a_full_field_of_thirty_teams_never_overlaps():
+    """The real case: 30 clubs, many clustered near the league average."""
+    teams = [('T%02d' % i, 100 + i, 100.0 + (i % 5), 4.0 + (i % 4) * 0.05, None, None)
+             for i in range(30)]
+    payload = _payload(teams=teams)
+    scale = qv._Scale(80.0, 130.0, 3.0, 6.0)
+    placed = qv._resolve_overlaps(
+        [(scale.x(t['wrc']), scale.y(t['era'])) for t in payload['teams']])
+    for i in range(len(placed)):
+        for j in range(i + 1, len(placed)):
+            dx, dy = placed[i][0] - placed[j][0], placed[i][1] - placed[j][1]
+            assert (dx * dx + dy * dy) ** 0.5 >= qv._LOGO_SIZE, 'logos would smear'
 
 
 @needs_pil
