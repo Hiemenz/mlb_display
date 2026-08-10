@@ -16,7 +16,7 @@ in [CLAUDE.md](CLAUDE.md).
 
 ## Display Modes
 
-Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `pitch`, `derby` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
+Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `pitch`, `derby`, `quadrant` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
 
 ### Scoreboard — 5×3 grid (15 games)
 
@@ -111,6 +111,43 @@ When there are no games at all for the day (e.g. the All-Star break or a deep of
 ### Home Run Derby
 
 On the Derby's date, when there are no regular games to show, the display auto-switches to a single-elimination **Home Run Derby bracket** (8 batters) — see `auto_derby_mode`. Setting `display_mode: derby` forces it on unconditionally. Bracket data lives in `data/derby_bracket.json`; once the event goes live the run polls MLB every 60 seconds until it ends (capped at 3 hours).
+
+---
+
+### Team Quadrant (`display_mode: quadrant`)
+
+All 30 clubs plotted by offense (X) against run prevention (Y, worse upward), split into four
+corners by the league average: **SEND HELP**, **NO PITCHING**, **NO OFFENSE**, **BALANCED**. An
+arrow trails each logo back to where that team sat over the baseline window, so which direction a
+team is trending reads at a glance without an animation the panel can't show. Arrows are capped in
+length — the bearing is exact, only long shafts are truncated, which keeps the short grains from
+collapsing into a hairball.
+
+`quadrant_grain` picks which of three views is drawn:
+
+| Grain | Plots | Arrow comes from |
+|---|---|---|
+| `season` | Season to date | The first half (All-Star break split) |
+| `month` | Trailing 30 days | Season to date |
+| `week` | Trailing 7 days | Season to date — hot/cold, small samples |
+| `rotate` | Cycles all three | Switches every `quadrant_rotate_minutes` |
+
+Data is fetched by `src/fetch_team_quadrant.py` into `data/team_quadrant.json` (6-hour TTL) and is
+only fetched when this mode is actually selected. On a no-games day, this mode shows the chart
+instead of the idle screen.
+
+**About the X axis.** It is labelled `wRC+*` because it is not FanGraphs' wRC+ — their API rejects
+non-browser clients, so the number is rebuilt from the raw counting stats the MLB Stats API does
+expose: wOBA from linear weights, converted to runs above average per PA, expressed against the
+league. The one input that can't be reconstructed is **park factors**, so a team can drift a few
+points from the published figure (COL reads high, SD/SEA low). Ordering is unaffected.
+
+A full-colour PNG version of the same chart — shaded quadrants, colour logos — renders via:
+
+```bash
+poetry run python scripts/team_quadrant_chart.py --grain month --fetch
+poetry run python scripts/team_quadrant_chart.py --grain all --out output/
+```
 
 ---
 
@@ -222,10 +259,12 @@ Edit `config/config.yaml`:
 
 ```yaml
 # ── Display mode ──────────────────────────────────────────────
-# scoreboard | linescore | fields | scorecard | pitch | derby
+# scoreboard | linescore | fields | scorecard | pitch | derby | quadrant
 # DISPLAY_MODE env var overrides this (useful for one-off mode switches without editing YAML)
 display_mode: scoreboard
 auto_derby_mode: true        # auto-show the Derby bracket on Derby day when no games
+quadrant_grain: month        # quadrant mode: season | month | week | rotate
+quadrant_rotate_minutes: 30  # minutes per window when quadrant_grain is "rotate"
 
 # ── Primary team (for single-game modes and favorite-first slot) ──
 primary: NYY
@@ -435,6 +474,7 @@ mlb_display/
 │   ├── fetch_streaks.py          # Hot Hitters / Hot Arms rolling streaks
 │   ├── fetch_news.py             # Team or league headlines
 │   ├── fetch_idle.py             # Historical game fetcher for the idle screen
+│   ├── fetch_team_quadrant.py    # Team offense/pitching quadrant data (all grains)
 │   ├── game_detail_fetch.py      # MLB live feed API (pitch-by-pitch)
 │   ├── standings.py              # Standings, playoff bracket, transactions + cache
 │   ├── weather.py                # Open-Meteo forecast fetcher (own TTL cache)
@@ -459,6 +499,7 @@ mlb_display/
 │   ├── image_deadline.py         # Trade-deadline countdown cell
 │   ├── scorecard_view.py         # At-bat scorecard renderer
 │   ├── pitch_view.py             # Pitch location renderer
+│   ├── quadrant_view.py          # Team offense-vs-pitching quadrant chart
 │   ├── stadium_polygons.py       # Per-park field geometry for the spray chart
 │   │                             # ── Display + support ──
 │   ├── display.py                # CLI wrapper for display_eink

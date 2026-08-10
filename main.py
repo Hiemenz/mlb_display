@@ -24,7 +24,8 @@ from fetch_leaders import fetch_leaders
 from fetch_streaks import fetch_streaks
 from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
-from render_scoreboard import render
+from fetch_team_quadrant import fetch_team_quadrant
+from render_scoreboard import render, _get_display_mode
 from display import send_to_display
 from util import load_json_file, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
@@ -453,6 +454,36 @@ def _maybe_show_derby_bracket(config, no_throttle=False, auto_open=False):
     return True
 
 
+def _maybe_show_quadrant(config, no_throttle=False, auto_open=False):
+    """On a no-games day, show the team quadrant chart instead of the idle screen.
+
+    Returns True when the chart rendered, so the caller skips its normal
+    no-games handling. Off-days are the one time a season-shape view has the
+    panel to itself, and it is strictly more interesting than an empty grid —
+    but only when the user actually selected that mode.
+    """
+    if _get_display_mode(config) != 'quadrant':
+        return False
+
+    _refresh_team_quadrant(config, config.get('league_mode', 'mlb'),
+                           context=' on no-games day')
+
+    is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
+    output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
+    result = render(dict(config, dark_mode=is_dark), output_path=output_path,
+                    bypass_cache=no_throttle)
+    if not result:
+        return False
+
+    image, changed_regions = result
+    refresh_mode = send_to_display(output_path, changed_regions, force_full=no_throttle)
+    print(f"Quadrant: {refresh_mode} refresh ({len(changed_regions)} region(s))")
+    if auto_open:
+        import subprocess
+        subprocess.run(['open', output_path], check=False)
+    return True
+
+
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen with recent transactions."""
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
@@ -775,6 +806,22 @@ def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=
 
 
 
+def _refresh_team_quadrant(config, league_mode, force=False, context=''):
+    """Refetch the offense-vs-pitching quadrant data when that mode is on screen.
+
+    Costs four date-ranged team-stat calls per grain, so it is gated on the
+    display mode rather than a panel toggle; fetch_team_quadrant's own 6-hour
+    TTL absorbs the repeat calls across refresh cycles. MLB-only — the
+    date-range team splits have no Triple-A equivalent.
+    """
+    if league_mode == 'aaa' or _get_display_mode(config) != 'quadrant':
+        return
+    try:
+        fetch_team_quadrant(force=force)
+    except Exception as e:
+        print(f"Warning: team quadrant fetch{context} failed: {e}")
+
+
 _NEXT_DAY_CACHE_TTL_SECONDS = 3600
 
 
@@ -981,11 +1028,12 @@ Examples:
             if skip:
                 print(reason)
                 if reason.startswith("No games until"):
+                    _auto_open = args.local and system_platform == 'Darwin'
                     if not _maybe_show_derby_bracket(
-                            config, no_throttle=_no_throttle,
-                            auto_open=args.local and system_platform == 'Darwin'):
-                        _show_idle_screen(
-                            config, auto_open=args.local and system_platform == 'Darwin')
+                            config, no_throttle=_no_throttle, auto_open=_auto_open):
+                        if not _maybe_show_quadrant(
+                                config, no_throttle=_no_throttle, auto_open=_auto_open):
+                            _show_idle_screen(config, auto_open=_auto_open)
                     return
                 # The game poll is throttled, but the panels around the grid
                 # must still stay current — refresh them on their own gates.
@@ -1028,10 +1076,12 @@ Examples:
                                  force=args.full_refresh, context=_ctx)
                 _refresh_streaks(config, sched, league_mode, sport_id,
                                  force=args.full_refresh, context=_ctx)
+                _auto_open = args.local and system_platform == 'Darwin'
                 if not _maybe_show_derby_bracket(config, no_throttle=_no_throttle,
-                                                 auto_open=args.local and system_platform == 'Darwin'):
-                    _show_idle_screen(
-                        config, auto_open=args.local and system_platform == 'Darwin')
+                                                 auto_open=_auto_open):
+                    if not _maybe_show_quadrant(config, no_throttle=_no_throttle,
+                                                auto_open=_auto_open):
+                        _show_idle_screen(config, auto_open=_auto_open)
                 return
 
     # 7a. Auto dark/light mode: day = light, night = dark.
@@ -1061,6 +1111,7 @@ Examples:
     _refresh_news(config, force=_force_data_refresh)
     _refresh_leaders(config, sched, league_mode, sport_id, force=_force_data_refresh)
     _refresh_streaks(config, sched, league_mode, sport_id, force=_force_data_refresh)
+    _refresh_team_quadrant(config, league_mode, force=_force_data_refresh)
 
     # 9. Render and push to the panel.
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
