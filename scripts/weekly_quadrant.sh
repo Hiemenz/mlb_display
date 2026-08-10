@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Weekly cron entry point: refresh the team quadrant data and render the charts.
+# Refresh the team quadrant data and render the week + season charts.
 #
-# Runs under flock so a slow MLB API call can't overlap with the next trigger.
-# Follows the same shape as real_estate/scripts/monthly_update.sh.
+# Run by hand: ./scripts/weekly_quadrant.sh
+# Nothing schedules this — there is deliberately no cron entry or timer.
 #
-# Install (Mondays at 09:00 local):
-#   0 9 * * 1 /home/pi/git/mlb_display/scripts/weekly_quadrant.sh
+# It is written to stay cron-safe should that ever change (PATH is restored
+# below, flock guards against overlap), following the same shape as
+# real_estate/scripts/monthly_update.sh.
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-# cron runs with a minimal PATH that has neither poetry nor the venv on it.
+# A minimal PATH (as under cron) has neither poetry nor the venv on it.
 export PATH="/home/pi/.local/bin:$PATH"
 
 LOCKFILE="/tmp/mlb_quadrant.lock"
