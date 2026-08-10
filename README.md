@@ -149,6 +149,18 @@ poetry run python scripts/team_quadrant_chart.py --grain month --fetch
 poetry run python scripts/team_quadrant_chart.py --grain all --out output/
 ```
 
+**Weekly refresh.** `scripts/weekly_quadrant.sh` is a cron entry point that refreshes the data and
+renders the week + season charts into `output/`. It runs under `flock` (a slow API call can't
+overlap the next trigger), forces past the fetch's 6-hour TTL, and appends to `data/quadrant.log`.
+
+```
+0 9 * * 1 /home/pi/git/mlb_display/scripts/weekly_quadrant.sh
+```
+
+Cron runs with a minimal `PATH` that has neither poetry nor the venv on it, so the script puts
+`~/.local/bin` back on `PATH` itself — run it via the script rather than inlining the commands
+into crontab.
+
 ---
 
 ### Fullscreen Featured Game
