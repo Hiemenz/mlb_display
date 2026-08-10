@@ -185,6 +185,92 @@ def test_better_offense_scores_above_100():
     assert ftq.wrc_plus(_hitting(hr=5, hits=190), lg_woba, lg_r_pa) < 100.0
 
 
+def _woba_denominator(stat):
+    """The AB + uBB + SF + HBP that league wOBA is a ratio over."""
+    return ftq.woba_parts(stat)[1]
+
+
+_SKEWED_LEAGUE = {
+    147: _hitting(hr=45, hits=270, doubles=60, pa=1100, ab=980, runs=130),
+    111: _hitting(hr=12, hits=210, doubles=35, pa=900, ab=820, runs=70),
+    112: _hitting(),
+}
+
+
+def test_league_wrc_plus_is_exactly_100_weighted_by_the_woba_denominator():
+    """The defining identity, and it is exact for any input by construction.
+
+    The weight is the wOBA denominator rather than PA, because that is what
+    league wOBA is a ratio over. A drift here means the formula itself broke —
+    wrong denominator, a stray park term, a lost league mean.
+    """
+    lg_woba, lg_r_pa = ftq.league_context(_SKEWED_LEAGUE)
+    total = sum(_woba_denominator(s) for s in _SKEWED_LEAGUE.values())
+    weighted = sum(ftq.wrc_plus(s, lg_woba, lg_r_pa) * _woba_denominator(s)
+                   for s in _SKEWED_LEAGUE.values()) / total
+    assert weighted == pytest.approx(100.0, abs=1e-9)
+
+
+def test_pa_weighted_league_wrc_plus_is_only_approximately_100():
+    """Weighting by PA instead lands near 100, not on it — and that is expected.
+
+    A team's wOBA denominator excludes walks-as-PA and sacrifice bunts, so the
+    denominator/PA ratio varies slightly by club. On real MLB splits the ratio
+    is near-constant and this lands within 0.01 of 100; the fixture below is
+    deliberately skewed to show the effect is real rather than a rounding
+    artefact, so nobody "fixes" the exact test above by switching to PA.
+    """
+    lg_woba, lg_r_pa = ftq.league_context(_SKEWED_LEAGUE)
+    total_pa = sum(ftq._num(s['plateAppearances']) for s in _SKEWED_LEAGUE.values())
+    weighted = sum(ftq.wrc_plus(s, lg_woba, lg_r_pa) * ftq._num(s['plateAppearances'])
+                   for s in _SKEWED_LEAGUE.values()) / total_pa
+    assert weighted == pytest.approx(100.0, abs=1.0)
+    assert weighted != pytest.approx(100.0, abs=1e-6)
+
+
+def test_woba_weights_stay_calibrated_to_league_obp():
+    """wOBA weights are defined so league wOBA equals league OBP.
+
+    This is the check that catches a bad weight edit: swap in numbers from the
+    wrong scale and league wOBA drifts away from league OBP even though every
+    other test still passes. Inputs are real 2026 league aggregates.
+    """
+    league = {147: _hitting(hits=21000, doubles=4200, triples=400, hr=2800,
+                            bb=7600, ibb=250, hbp=1200, sf=700, ab=77000,
+                            pa=86500, runs=11000)}
+    lg_woba, _ = ftq.league_context(league)
+
+    stat = league[147]
+    on_base = (ftq._num(stat['hits']) + ftq._num(stat['baseOnBalls'])
+               + ftq._num(stat['hitByPitch']))
+    obp_denominator = (ftq._num(stat['atBats']) + ftq._num(stat['baseOnBalls'])
+                       + ftq._num(stat['hitByPitch']) + ftq._num(stat['sacFlies']))
+    lg_obp = on_base / obp_denominator
+
+    assert lg_woba == pytest.approx(lg_obp, rel=0.03), (
+        f'league wOBA {lg_woba:.4f} has drifted from league OBP {lg_obp:.4f} — '
+        'the linear weights are no longer on the standard scale'
+    )
+
+
+def test_wrc_plus_ordering_is_independent_of_the_woba_scale():
+    """wOBAScale sets the spread, never the ranking — so a stale constant is cosmetic."""
+    league = {147: _hitting(hr=45, hits=270), 111: _hitting(hr=12, hits=210),
+              112: _hitting()}
+    lg_woba, lg_r_pa = ftq.league_context(league)
+
+    def _ranking(scale):
+        """Team ids best-to-worst at a given wOBA scale."""
+        original = ftq._WOBA_SCALE
+        ftq._WOBA_SCALE = scale
+        try:
+            return sorted(league, key=lambda t: -ftq.wrc_plus(league[t], lg_woba, lg_r_pa))
+        finally:
+            ftq._WOBA_SCALE = original
+
+    assert _ranking(1.15) == _ranking(1.26)
+
+
 def test_wrc_plus_defaults_to_average_without_league_context():
     """No league runs per PA (preseason) means everyone is nominally average."""
     assert ftq.wrc_plus(_hitting(), 0.320, 0.0) == 100.0
