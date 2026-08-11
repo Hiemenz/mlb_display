@@ -237,8 +237,12 @@ class TestMorningThrottle:
         monkeypatch.setattr(
             main_mod, '_local_now',
             lambda cfg: _Now(2025, 6, 3, 8, 12, tzinfo=_dt.timezone.utc))
+        # Pinned to the two-way rotation this regression was found against; the
+        # three-way cycle lands a quadrant block here, which legitimately has
+        # showing_previous_day False. The block index is the subject either way.
         ctx = main_mod._resolve_target_date(
-            self._args(), {'morning_alternate_games': True})
+            self._args(), {'morning_alternate_games': True,
+                           'morning_alternate_quadrant': False})
         assert ctx.morning_block is not None
         assert ctx.showing_previous_day is True
 

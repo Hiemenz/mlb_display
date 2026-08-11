@@ -16,7 +16,7 @@ in [CLAUDE.md](CLAUDE.md).
 
 ## Display Modes
 
-Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `pitch`, `derby` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
+Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `pitch`, `derby`, `quadrant` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
 
 ### Scoreboard — 5×3 grid (15 games)
 
@@ -114,6 +114,65 @@ On the Derby's date, when there are no regular games to show, the display auto-s
 
 ---
 
+### Team Quadrant (`display_mode: quadrant`)
+
+All 30 clubs plotted by offense (X) against run prevention (Y, worse upward), split into four
+corners by the league average: **SEND HELP**, **NO PITCHING**, **NO OFFENSE**, **BALANCED**. An
+arrow trails each logo back to where that team sat over the baseline window, so which direction a
+team is trending reads at a glance without an animation the panel can't show. Arrows are capped in
+length — the bearing is exact, only long shafts are truncated, which keeps the short grains from
+collapsing into a hairball.
+
+`quadrant_grain` picks which of three views is drawn:
+
+| Grain | Plots | Arrow comes from |
+|---|---|---|
+| `season` | Season to date | The first half (All-Star break split) |
+| `month` | Trailing 30 days | The season *before* those 30 days |
+| `week` | Trailing 7 days | The season *before* those 7 days |
+| `rotate` | Cycles all three | Switches every `quadrant_rotate_minutes` |
+
+Every window ends on the **last completed day**, never today — today's games are in progress, and
+including them would mix partial box scores into the numbers (a team two innings in would
+contribute two innings of ERA).
+
+For `week` and `month` the two windows never overlap: the baseline is the season *up to* the
+window, not the season to date. A baseline that already contains the last seven days damps the
+very move the arrow exists to show, and the shorter the window the worse it gets. `season` is the
+deliberate exception — its current position is the whole season, because that is the view's point.
+
+Data is fetched by `src/fetch_team_quadrant.py` into `data/team_quadrant.json` (6-hour TTL) and is
+only fetched when this mode is actually selected. On a no-games day, this mode shows the chart
+instead of the idle screen.
+
+**About the X axis.** It is labelled `wRC+*` because it is not FanGraphs' wRC+ — their API rejects
+non-browser clients, so the number is rebuilt from the raw counting stats the MLB Stats API does
+expose: wOBA from linear weights, converted to runs above average per PA, expressed against the
+league. The one input that can't be reconstructed is **park factors**, so a team can drift a few
+points from the published figure (COL reads high, SD/SEA low). Ordering is unaffected.
+
+A full-colour PNG version of the same chart — shaded quadrants, colour logos — renders via:
+
+```bash
+poetry run python scripts/team_quadrant_chart.py --grain month --fetch
+poetry run python scripts/team_quadrant_chart.py --grain all --out output/
+```
+
+**Weekly refresh.** `scripts/weekly_quadrant.sh` refreshes the data and renders the week + season
+charts into `output/` in one command. It forces past the fetch's 6-hour TTL, runs under `flock` so
+two invocations can't overlap, and appends to `data/quadrant.log`.
+
+```bash
+./scripts/weekly_quadrant.sh
+```
+
+**Nothing schedules this** — there is no cron entry or timer installed, by design; run it when you
+want the charts. It is written to be cron-safe if you ever do schedule it (it restores
+`~/.local/bin` on `PATH`, which cron's minimal environment omits), e.g.
+`0 9 * * 1 /home/pi/git/mlb_display/scripts/weekly_quadrant.sh`.
+
+---
+
 ### Fullscreen Featured Game
 
 Single-game focus mode for your primary team. Enable by setting `FEATURED_TEAM_FULLSCREEN=true` in the environment.
@@ -206,7 +265,7 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 | **Vegas odds** | Moneyline displayed on pre-game tiles |
 | **Smart polling** | Skips API on off-days; finds next game date up to 30 days ahead |
 | **Night mode** | Suppresses refreshes during configurable overnight window |
-| **Morning mode** | Alternates yesterday finals ↔ today schedule until `morning_end` (separate weekday/weekend cutoffs) |
+| **Morning mode** | Rotates today's schedule → yesterday's finals → team quadrant every 5 min until `morning_end` (separate weekday/weekend cutoffs) |
 | **Auto dark mode** | White-on-black between `dark_start` and `dark_end`; full refresh forced on the transition |
 | **Auto timelapse** | Generates `.gif` + `.mp4` after all games go Final |
 | **Discord bot** | Switch mode or team from a Discord channel; bot posts preview image |
@@ -222,10 +281,12 @@ Edit `config/config.yaml`:
 
 ```yaml
 # ── Display mode ──────────────────────────────────────────────
-# scoreboard | linescore | fields | scorecard | pitch | derby
+# scoreboard | linescore | fields | scorecard | pitch | derby | quadrant
 # DISPLAY_MODE env var overrides this (useful for one-off mode switches without editing YAML)
 display_mode: scoreboard
 auto_derby_mode: true        # auto-show the Derby bracket on Derby day when no games
+quadrant_grain: month        # quadrant mode: season | month | week | rotate
+quadrant_rotate_minutes: 30  # minutes per window when quadrant_grain is "rotate"
 
 # ── Primary team (for single-game modes and favorite-first slot) ──
 primary: NYY
@@ -256,7 +317,9 @@ sport_id_priority:           # only used when league_mode is "mlb"
 night_mode: true
 night_start: 2               # hour (24h) to stop refreshing
 night_end: 7                 # hour (24h) to resume
-morning_alternate_games: true  # alternate yesterday/today every 5 min in the morning window
+morning_alternate_games: true     # rotate the display every 5 min in the morning window
+morning_alternate_quadrant: true  # make it three-way: today → yesterday → quadrant
+                                  # (false = original two-way yesterday/today)
 morning_end: 9               # weekday hour when "yesterday" gives way to today
 morning_end_weekend: 11      # weekend cutoff
 
@@ -435,6 +498,7 @@ mlb_display/
 │   ├── fetch_streaks.py          # Hot Hitters / Hot Arms rolling streaks
 │   ├── fetch_news.py             # Team or league headlines
 │   ├── fetch_idle.py             # Historical game fetcher for the idle screen
+│   ├── fetch_team_quadrant.py    # Team offense/pitching quadrant data (all grains)
 │   ├── game_detail_fetch.py      # MLB live feed API (pitch-by-pitch)
 │   ├── standings.py              # Standings, playoff bracket, transactions + cache
 │   ├── weather.py                # Open-Meteo forecast fetcher (own TTL cache)
@@ -459,6 +523,7 @@ mlb_display/
 │   ├── image_deadline.py         # Trade-deadline countdown cell
 │   ├── scorecard_view.py         # At-bat scorecard renderer
 │   ├── pitch_view.py             # Pitch location renderer
+│   ├── quadrant_view.py          # Team offense-vs-pitching quadrant chart
 │   ├── stadium_polygons.py       # Per-park field geometry for the spray chart
 │   │                             # ── Display + support ──
 │   ├── display.py                # CLI wrapper for display_eink

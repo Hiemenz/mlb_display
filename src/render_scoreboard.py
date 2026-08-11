@@ -22,12 +22,13 @@ from scorecard_view import render_scorecard_view
 from pitch_view import render_pitch_view
 from image_derby import render_derby_bracket
 from image_grid import draw_fields_grid
+from quadrant_view import render_quadrant_view
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
 
-_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields')
+_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields', 'quadrant')
 
 
 def _get_display_mode(config):
@@ -192,6 +193,22 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
             print(f"Image saved to {output_path}")
         return (image, [(0, 0, image.width, image.height)])
 
+    if mode == 'quadrant':
+        quadrant_data = load_json_file('team_quadrant.json')
+        if not quadrant_data:
+            print("No team_quadrant.json data found — run src/fetch_team_quadrant.py")
+            return None
+        try:
+            image = render_quadrant_view(quadrant_data, config=config,
+                                         dark_mode=config.get('dark_mode', False))
+        except ValueError as e:
+            print(f"Quadrant view unavailable: {e}")
+            return None
+        if output_path:
+            image.save(output_path)
+            print(f"Image saved to {output_path}")
+        return (image, [(0, 0, image.width, image.height)])
+
     if mode == 'fields':
         image = Image.new('1', (800, 480), 255)
         image = draw_fields_grid(image, game_state_data, team_data)
@@ -243,13 +260,17 @@ def main():
 Examples:
   python src/render_scoreboard.py
   python src/render_scoreboard.py --mode scorecard
+  python src/render_scoreboard.py --mode quadrant --grain week
   python src/render_scoreboard.py --date 2025-04-01 --output output/test.bmp --open
         ''',
     )
     parser.add_argument('--date', type=str, help='Date string for scoreboard header')
     parser.add_argument('--mode', type=str,
-                        choices=['scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields'],
+                        choices=list(_VALID_MODES),
                         help='Display mode override')
+    parser.add_argument('--grain', type=str,
+                        choices=['season', 'month', 'week', 'rotate'],
+                        help='Quadrant window override (quadrant mode only)')
     parser.add_argument('--output', type=str, default=None,
                         help=f'Output image path (default: {_DEFAULT_OUTPUT})')
     parser.add_argument('--open', action='store_true',
@@ -260,6 +281,8 @@ Examples:
     config = load_config(args.config)
     if args.mode:
         config['display_mode'] = args.mode
+    if args.grain:
+        config['quadrant_grain'] = args.grain
 
     output_path = args.output or _DEFAULT_OUTPUT
     result = render(config, date_str=args.date, output_path=output_path)
