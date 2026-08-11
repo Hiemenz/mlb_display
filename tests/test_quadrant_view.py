@@ -139,11 +139,34 @@ def test_ceil_to_step(value, step, expected):
     assert qv._ceil_to(value, step) == expected
 
 
-def test_axis_bounds_enclose_the_data_on_round_numbers():
-    """Bounds pad the data, then snap outward to the chosen step."""
-    lo, hi, step = qv._axis_bounds([88.0, 122.0], 0.06, [2, 5, 10, 20], 10.0)
+def test_axis_bounds_hug_the_data():
+    """Bounds enclose the data with only _AXIS_PAD of slack on each side.
+
+    Deliberately NOT snapped out to the step grid — that used to hand back up
+    to a full tick per side and squash the field into the middle of the plot.
+    """
+    lo, hi, _ = qv._axis_bounds([88.0, 122.0], qv._AXIS_PAD, [1, 2, 5, 10, 20], 10.0)
     assert lo <= 88.0 and hi >= 122.0
-    assert lo % step == 0 and hi % step == 0
+    used = (122.0 - 88.0) / (hi - lo)
+    assert used > 0.9, f'only {used:.0%} of the axis carries data'
+
+
+def test_axis_bounds_padding_is_symmetric():
+    """Neither end gets more slack than the other."""
+    lo, hi, _ = qv._axis_bounds([88.0, 122.0], qv._AXIS_PAD, [1, 2, 5, 10, 20], 10.0)
+    assert (88.0 - lo) == pytest.approx(hi - 122.0)
+
+
+def test_ticks_are_round_values_inside_unrounded_bounds():
+    """Bounds are arbitrary, so ticks start at the first round value above lo."""
+    ticks = qv._ticks(86.7, 114.2, 5)
+    assert ticks == [90, 95, 100, 105, 110]
+    assert all(t >= 86.7 and t <= 114.2 for t in ticks)
+
+
+def test_ticks_are_empty_when_no_round_value_fits():
+    """A range narrower than the step simply gets no gridline."""
+    assert qv._ticks(101.2, 103.4, 5) == []
 
 
 def test_axis_bounds_keep_a_minimum_span():
@@ -170,11 +193,22 @@ def test_ticks_span_the_axis_inclusively():
 
 
 @pytest.mark.parametrize('value,step,expected', [
-    (100.0, 5, '100'), (4.25, 0.25, '4.2'), (4.5, 0.5, '4.5'),
+    (100.0, 5, '100'),      # whole step -> integer
+    (4.5, 0.5, '4.5'),      # tenth step -> one decimal
+    (4.25, 0.25, '4.25'),   # quarter step -> two, or the label would read 4.2
+    (3.75, 0.25, '3.75'),
+    (4.2, 0.1, '4.2'),
 ])
-def test_tick_formatting_follows_the_step(value, step, expected):
-    """Whole steps print as integers; fractional steps get one decimal."""
+def test_tick_formatting_keeps_adjacent_ticks_distinct(value, step, expected):
+    """Decimals follow the step: a 0.25 grid printed to one decimal is wrong, not coarse."""
     assert qv._fmt_tick(value, step) == expected
+
+
+def test_quarter_steps_never_render_a_duplicate_label():
+    """The concrete failure the two-decimal rule prevents."""
+    labels = [qv._fmt_tick(v, 0.25) for v in (4.0, 4.25, 4.5, 4.75)]
+    assert labels == ['4.00', '4.25', '4.50', '4.75']
+    assert len(set(labels)) == 4
 
 
 def test_scale_maps_bounds_onto_the_plot_with_era_increasing_upward():
@@ -421,17 +455,34 @@ def test_dark_mode_inverts_the_render(no_logos):
 
 
 @needs_pil
-def test_axes_skip_ticks_that_fall_outside_the_plot():
-    """Rounding can push a tick a pixel past the frame — those are dropped, not clipped."""
-    image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
-    draw = ImageDraw.Draw(image)
-    # Steps that don't divide the range evenly put the last tick beyond the axis.
-    scale = qv._Scale(80.0, 120.0, 3.0, 6.0)
-    qv._draw_axes(image, draw, scale, 15, 2.0, {'wrc': 100.0, 'era': 4.5})
+def test_every_tick_lands_inside_the_frame():
+    """_ticks bounds its own output, so no tick can be drawn outside the axes."""
+    scale = qv._Scale(86.7, 114.2, 3.23, 5.55)
+    for value in qv._ticks(scale.x_lo, scale.x_hi, 5):
+        assert qv._PLOT_L <= int(scale.x(value)) <= qv._PLOT_R
+    for value in qv._ticks(scale.y_lo, scale.y_hi, 0.25):
+        assert qv._PLOT_T <= int(scale.y(value)) <= qv._PLOT_B
 
-    # Nothing was drawn outside the frame despite the overshooting ticks.
-    assert all(image.getpixel((x, qv._PLOT_T - 6)) == 1
-               for x in range(qv._PLOT_L, qv._PLOT_R))
+
+@needs_pil
+def test_an_arrow_pointing_off_plot_is_clipped_to_the_frame():
+    """A baseline outside the axes shortens the shaft instead of drawing past the frame."""
+    image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
+    head = (qv._PLOT_R - qv._LOGO_R, 240.0)
+    qv._draw_arrow(ImageDraw.Draw(image), (head[0] + 400, 240.0), head)
+    outside = [image.getpixel((x, y))
+               for x in range(qv._PLOT_R + 2, qv.EPD_WIDTH)
+               for y in range(230, 251)]
+    assert all(p == 1 for p in outside), 'arrow ink escaped the plot frame'
+
+
+@needs_pil
+def test_an_arrow_with_no_room_left_is_dropped_entirely():
+    """Hard against the frame there is nowhere to put a shaft, so none is drawn."""
+    image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
+    head = (qv._PLOT_R - 2, 240.0)
+    qv._draw_arrow(ImageDraw.Draw(image), (head[0] + 400, 240.0), head)
+    assert all(p == 1 for p in image.getdata()), 'nothing should have been drawn'
 
 
 @needs_pil

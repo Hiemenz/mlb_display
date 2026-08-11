@@ -66,6 +66,10 @@ _MIN_SEP = _LOGO_PX + 18
 _RELAX_PASSES = 160
 _MIN_ARROW = 14
 _MAX_ARROW = 150
+# Axis padding past the outermost team, and the gridline budget. Tight on
+# purpose: unused axis is the field squashed into the middle.
+_AXIS_PAD = 0.03
+_MAX_TICKS = 10
 
 
 def _font(size):
@@ -103,24 +107,38 @@ def color_logo(abbr):
 
 
 def _nice_bounds(values, pad_frac, candidates):
-    """(lo, hi, step) covering values with padding, snapped to a round step."""
+    """(lo, hi, step) covering values with a little padding.
+
+    Bounds sit exactly at the padded data rather than being rounded out to the
+    tick grid — snapping the ends gave away up to a full step per side, which
+    squeezed the teams into the middle. Ticks land on round values inside the
+    bounds instead. Mirrors quadrant_view._axis_bounds.
+    """
     lo, hi = min(values), max(values)
     pad = (hi - lo) * pad_frac or 1.0
     lo, hi = lo - pad, hi + pad
-    step = next((c for c in candidates if (hi - lo) / c <= 9), candidates[-1])
-    lo = step * (int(lo / step) - (1 if lo % step else 0))
-    hi = step * (int(hi / step) + (1 if hi % step else 0))
+    step = next((c for c in candidates if (hi - lo) / c <= _MAX_TICKS), candidates[-1])
     return lo, hi, step
 
 
 def _ticks(lo, hi, step):
-    """Tick values from lo to hi inclusive."""
-    return [lo + i * step for i in range(int(round((hi - lo) / step)) + 1)]
+    """Round multiples of step lying inside [lo, hi]."""
+    first = step * (int(lo / step) + (1 if lo % step else 0))
+    out = []
+    value = first
+    while value <= hi + 1e-9:
+        out.append(round(value, 6))
+        value += step
+    return out
 
 
 def _fmt(value, step):
-    """Integer ticks when the step is whole, else one decimal."""
-    return str(int(round(value))) if abs(step - round(step)) < 1e-9 else f'{value:.1f}'
+    """Enough decimals to keep adjacent ticks distinct (0.25 needs two)."""
+    if abs(step - round(step)) < 1e-9:
+        return str(int(round(value)))
+    if abs(step * 10 - round(step * 10)) < 1e-9:
+        return f'{value:.1f}'
+    return f'{value:.2f}'
 
 
 def _relax(points, plot):
@@ -171,7 +189,18 @@ def _dashed(draw, start, end, color, dash=10, gap=8, width=2):
             y += (dash + gap) * _SS
 
 
-def _arrow(draw, tail, head, color):
+def _tail_room(head, ux, uy, plot):
+    """How far back along the bearing a tail can run before leaving the plot."""
+    left, top, right, bottom = plot
+    limit = float('inf')
+    for delta, lo, hi, pos in ((-ux, left, right, head[0]), (-uy, top, bottom, head[1])):
+        if abs(delta) < 1e-9:
+            continue
+        limit = min(limit, ((hi if delta > 0 else lo) - pos) / delta)
+    return max(limit, 0.0)
+
+
+def _arrow(draw, tail, head, color, plot):
     """Grey shaft from the baseline position to the edge of the logo, with a head."""
     x1, y1 = head
     dx, dy = x1 - tail[0], y1 - tail[1]
@@ -179,7 +208,12 @@ def _arrow(draw, tail, head, color):
     if dist < _MIN_ARROW * _SS:
         return
     ux, uy = dx / dist, dy / dist
-    dist = min(dist, _MAX_ARROW * _SS)
+    # Cap the length, and clip to the frame — the axes are scaled to current
+    # positions, so a baseline point can sit off-plot. Shortening along the
+    # bearing keeps the direction exact; clamping the endpoint would not.
+    dist = min(dist, _MAX_ARROW * _SS, _tail_room(head, ux, uy, plot))
+    if dist < _MIN_ARROW * _SS:
+        return
     x0, y0 = x1 - ux * dist, y1 - uy * dist
 
     tip_x, tip_y = x1 - ux * (_LOGO_PX * _SS / 2), y1 - uy * (_LOGO_PX * _SS / 2)
@@ -204,10 +238,12 @@ def render_chart(payload, width=_W, height=_H):
     avg_wrc = avg.get('wrc', 100.0)
     avg_era = avg.get('era', 4.0)
 
-    xs = [t['wrc'] for t in teams] + [t['was_wrc'] for t in teams if t.get('was_wrc') is not None]
-    ys = [t['era'] for t in teams] + [t['was_era'] for t in teams if t.get('was_era') is not None]
-    x_lo, x_hi, x_step = _nice_bounds(xs + [avg_wrc], 0.05, [2, 5, 10, 20])
-    y_lo, y_hi, y_step = _nice_bounds(ys + [avg_era], 0.05, [0.25, 0.5, 1.0, 2.0])
+    # Scale to where the teams are, not to their baselines — arrow tails are
+    # length-capped and clipped to the frame, so they need no reserved room.
+    xs = [t['wrc'] for t in teams] + [avg_wrc]
+    ys = [t['era'] for t in teams] + [avg_era]
+    x_lo, x_hi, x_step = _nice_bounds(xs, _AXIS_PAD, [1, 2, 5, 10, 20])
+    y_lo, y_hi, y_step = _nice_bounds(ys, _AXIS_PAD, [0.1, 0.25, 0.5, 1.0, 2.0])
 
     image = Image.new('RGB', (width * _SS, height * _SS), _BG)
     draw = ImageDraw.Draw(image)
@@ -249,7 +285,8 @@ def render_chart(payload, width=_W, height=_H):
     for team, center in zip(teams, placed):
         if team.get('was_wrc') is None or team.get('was_era') is None:
             continue
-        _arrow(draw, (px(team['was_wrc']), py(team['was_era'])), center, _ARROW)
+        _arrow(draw, (px(team['was_wrc']), py(team['was_era'])), center, _ARROW,
+               (left, top, right, bottom))
 
     logo_px = int(_LOGO_PX * _SS)
     for team, (cx, cy) in zip(teams, placed):

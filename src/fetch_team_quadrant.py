@@ -113,6 +113,18 @@ def fetch_season_dates(season):
     return start, first_half_end
 
 
+def last_completed_day(today, season_start):
+    """The most recent day whose games are all final — yesterday, not today.
+
+    Today's games are in progress or unplayed, so including them mixes partial
+    box scores into every window: a team that has played two innings shows up
+    with two innings of ERA. Every window therefore ends here instead. Clamped
+    so opening day still produces a (single-day) window rather than reaching
+    back before the season.
+    """
+    return max(today - timedelta(days=1), season_start)
+
+
 def _window(start, end):
     """A window dict: API-ready bounds plus the label the chart prints."""
     return {
@@ -336,10 +348,14 @@ def fetch_team_quadrant(season=None, today=None, force=False):
         print(f'Season {season} has not started yet ({season_start})')
         return cached or {}
 
+    # Windows end on the last day whose games are final, never on today's
+    # partial slate — see last_completed_day.
+    as_of = last_completed_day(today, season_start)
+
     teams = fetch_team_list()
     grains = {}
     for grain in GRAINS:
-        payload = build_grain(season, grain, today, season_start, first_half_end, teams)
+        payload = build_grain(season, grain, as_of, season_start, first_half_end, teams)
         if payload:
             grains[grain] = payload
         else:
@@ -352,6 +368,7 @@ def fetch_team_quadrant(season=None, today=None, force=False):
     result = {
         'season': season,
         'date': today_str,
+        'as_of': _fmt(as_of),
         'generated': datetime.now().isoformat(timespec='seconds'),
         'grains': grains,
     }

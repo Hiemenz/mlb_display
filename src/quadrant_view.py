@@ -49,12 +49,52 @@ _MIN_ARROW_PX = 7
 # exact — which is the thing being communicated — and only truncates length.
 _MAX_ARROW_PX = 58
 
+# Axis breathing room past the outermost team, as a fraction of the data span.
+# Deliberately tight: the point of the chart is separating the field, and every
+# unused percent of axis squeezes the teams closer together.
+_AXIS_PAD = 0.03
+# Upper bound on gridlines per axis. Higher means a finer step, which also
+# means less waste when the bounds snap outward to a multiple of it.
+_MAX_TICKS = 10
+
 _CORNERS = {
     'tl': 'SEND HELP',
     'tr': 'NO PITCHING',
     'bl': 'NO OFFENSE',
     'br': 'BALANCED',
 }
+_CORNER_FONT_PX = 12
+_CORNER_PAD = 6
+_CORNER_H = 14
+_caption_rect_cache = None
+
+
+def _caption_rects():
+    """(corner_key, x0, y0, x1, y1) for each quadrant caption, measured once.
+
+    Layout placement reads these so logos can be kept clear of the captions:
+    a marker paints a white box over its own footprint, so a logo landing on a
+    caption would erase it outright.
+    """
+    global _caption_rect_cache
+    if _caption_rect_cache is None:
+        font = _get_font(_CORNER_FONT_PX)
+        rects = []
+        for key, text in _CORNERS.items():
+            width = font.getbbox(text)[2]
+            x0 = _PLOT_L + _CORNER_PAD if key[1] == 'l' else _PLOT_R - _CORNER_PAD - width
+            y0 = _PLOT_T + _CORNER_PAD if key[0] == 't' else _PLOT_B - _CORNER_PAD - _CORNER_H
+            rects.append((key, x0, y0, x0 + width, y0 + _CORNER_H))
+        _caption_rect_cache = rects
+    return _caption_rect_cache
+
+
+def _clear_of_captions(x, y):
+    """Nudge a logo centre vertically out of any caption it would cover."""
+    for key, x0, y0, x1, y1 in _caption_rects():
+        if x + _LOGO_R > x0 and x - _LOGO_R < x1 and y + _LOGO_R > y0 and y - _LOGO_R < y1:
+            y = y1 + _LOGO_R if key[0] == 't' else y0 - _LOGO_R
+    return x, y
 
 
 def current_grain(config=None, now=None):
@@ -77,15 +117,27 @@ def current_grain(config=None, now=None):
 
 
 def _nice_step(span, candidates):
-    """Smallest candidate step that keeps the axis under ~8 ticks."""
+    """Smallest candidate step that keeps the axis under _MAX_TICKS gridlines.
+
+    A finer step also means less rounding waste: bounds snap outward to a
+    multiple of the step, so a coarse step can silently pad the axis by most
+    of a tick on each side.
+    """
     for step in candidates:
-        if span / step <= 8:
+        if span / step <= _MAX_TICKS:
             return step
     return candidates[-1]
 
 
 def _axis_bounds(values, pad_frac, candidates, minimum_span):
-    """Return (lo, hi, step) covering values with padding, snapped to the step grid."""
+    """Return (lo, hi, step) covering values with a little padding.
+
+    The bounds sit exactly at the padded data, deliberately *not* rounded out
+    to the tick grid: snapping the ends to a round number gave away up to a
+    full step on each side, which on the ERA axis is most of the visible range.
+    Ticks are placed at round values inside these bounds instead, so the axis
+    ends need no label and the teams get the whole plot.
+    """
     if not values:
         return 0.0, 1.0, candidates[0]
     lo = min(values)
@@ -94,11 +146,7 @@ def _axis_bounds(values, pad_frac, candidates, minimum_span):
     pad = span * pad_frac
     lo -= pad
     hi += pad
-
-    step = _nice_step(hi - lo, candidates)
-    lo = _floor_to(lo, step)
-    hi = _ceil_to(hi, step)
-    return lo, hi, step
+    return lo, hi, _nice_step(hi - lo, candidates)
 
 
 def _floor_to(value, step):
@@ -113,19 +161,31 @@ def _ceil_to(value, step):
 
 
 def _ticks(lo, hi, step):
-    """Tick values from lo to hi inclusive."""
+    """Round multiples of step lying inside [lo, hi].
+
+    The bounds are no longer multiples of the step (see _axis_bounds), so the
+    first tick is the first round value at or above lo, not lo itself.
+    """
+    first = _ceil_to(lo, step)
     out = []
-    steps = int(round((hi - lo) / step))
-    for i in range(steps + 1):
-        out.append(lo + i * step)
+    value = first
+    while value <= hi + 1e-9:
+        out.append(round(value, 6))
+        value += step
     return out
 
 
 def _fmt_tick(value, step):
-    """Format a tick: integers when the step is whole, else one decimal."""
+    """Format a tick with just enough decimals to distinguish adjacent ticks.
+
+    A 0.25 ERA step printed to one decimal renders 3.25 and 3.5 as "3.2" and
+    "3.5" — the label would be wrong, not merely coarse.
+    """
     if abs(step - round(step)) < 1e-9:
         return str(int(round(value)))
-    return f'{value:.1f}'
+    if abs(step * 10 - round(step * 10)) < 1e-9:
+        return f'{value:.1f}'
+    return f'{value:.2f}'
 
 
 class _Scale:
@@ -192,9 +252,21 @@ def _resolve_overlaps(points):
         for c in coords:
             c[0] = min(max(c[0], _PLOT_L + _LOGO_R), _PLOT_R - _LOGO_R)
             c[1] = min(max(c[1], _PLOT_T + _LOGO_R), _PLOT_B - _LOGO_R)
+            c[0], c[1] = _clear_of_captions(c[0], c[1])
         if not moved:
             break
     return [(x, y) for x, y in coords]
+
+
+def _tail_room(head, ux, uy):
+    """How far back along the bearing a tail can run before leaving the plot."""
+    limit = float('inf')
+    for delta, lo, hi, pos in ((-ux, _PLOT_L + 1, _PLOT_R - 1, head[0]),
+                               (-uy, _PLOT_T + 1, _PLOT_B - 1, head[1])):
+        if abs(delta) < 1e-9:
+            continue
+        limit = min(limit, ((hi if delta > 0 else lo) - pos) / delta)
+    return max(limit, 0.0)
 
 
 def _draw_arrow(draw, tail, head, fill=0):
@@ -206,8 +278,13 @@ def _draw_arrow(draw, tail, head, fill=0):
         return
     ux, uy = dx / dist, dy / dist
 
-    # Pull an over-long tail in along its own bearing (see _MAX_ARROW_PX).
-    dist = min(dist, _MAX_ARROW_PX)
+    # Shorten an over-long tail along its own bearing (see _MAX_ARROW_PX), and
+    # again if it would run past the axis frame — the axes are scaled to the
+    # teams' current positions, so a baseline point can sit well off-plot.
+    # Shortening preserves the bearing exactly; clamping the endpoint would not.
+    dist = min(dist, _MAX_ARROW_PX, _tail_room(head, ux, uy))
+    if dist < _MIN_ARROW_PX:
+        return
     x0, y0 = x1 - ux * dist, y1 - uy * dist
 
     # Stop the shaft at the logo's edge so the head stays visible.
@@ -271,18 +348,16 @@ def _draw_axes(image, draw, scale, x_step, y_step, avg):
 
     draw.rectangle([_PLOT_L, _PLOT_T, _PLOT_R, _PLOT_B], outline=0)
 
+    # No range guard needed: _ticks only emits values inside the axis bounds,
+    # so every tick maps inside the frame by construction.
     for value in _ticks(scale.x_lo, scale.x_hi, x_step):
         px = int(scale.x(value))
-        if px < _PLOT_L or px > _PLOT_R:
-            continue
         draw.line([(px, _PLOT_B), (px, _PLOT_B + 4)], fill=0)
         text = _fmt_tick(value, x_step)
         draw.text((px - f_tick.getbbox(text)[2] / 2, _PLOT_B + 6), text, font=f_tick, fill=0)
 
     for value in _ticks(scale.y_lo, scale.y_hi, y_step):
         py = int(scale.y(value))
-        if py < _PLOT_T or py > _PLOT_B:
-            continue
         draw.line([(_PLOT_L - 4, py), (_PLOT_L, py)], fill=0)
         text = _fmt_tick(value, y_step)
         draw.text((_PLOT_L - 7 - f_tick.getbbox(text)[2], py - 6), text, font=f_tick, fill=0)
@@ -302,15 +377,10 @@ def _draw_axes(image, draw, scale, x_step, y_step, avg):
 
 
 def _draw_corner_labels(draw):
-    """The four quadrant captions, inset from each corner of the plot."""
-    font = _get_font(12)
-    pad = 6
-    draw.text((_PLOT_L + pad, _PLOT_T + pad), _CORNERS['tl'], font=font, fill=0)
-    tr = _CORNERS['tr']
-    draw.text((_PLOT_R - pad - font.getbbox(tr)[2], _PLOT_T + pad), tr, font=font, fill=0)
-    draw.text((_PLOT_L + pad, _PLOT_B - pad - 14), _CORNERS['bl'], font=font, fill=0)
-    br = _CORNERS['br']
-    draw.text((_PLOT_R - pad - font.getbbox(br)[2], _PLOT_B - pad - 14), br, font=font, fill=0)
+    """The four quadrant captions, drawn in the rects layout keeps clear."""
+    font = _get_font(_CORNER_FONT_PX)
+    for key, x0, y0, _, _ in _caption_rects():
+        draw.text((x0, y0), _CORNERS[key], font=font, fill=0)
 
 
 def _logo_marker(abbr, team_id, size=_LOGO_SIZE):
@@ -394,14 +464,15 @@ def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=Non
     avg = payload.get('avg') or {}
     avg = {'wrc': avg.get('wrc', 100.0), 'era': avg.get('era', 4.0)}
 
-    # Bound the axes over both endpoints of every arrow so no tail falls off-plot.
-    xs = [t['wrc'] for t in teams] + [t['was_wrc'] for t in teams if t.get('was_wrc') is not None]
-    ys = [t['era'] for t in teams] + [t['was_era'] for t in teams if t.get('was_era') is not None]
-    xs.append(avg['wrc'])
-    ys.append(avg['era'])
+    # Scale to where the teams actually are, not to their baselines. Including
+    # the arrow tails used to inflate the range by 19-35% and squash the whole
+    # field into the middle; tails are length-capped and clipped to the frame
+    # anyway (see _draw_arrow), so they do not need room reserved for them.
+    xs = [t['wrc'] for t in teams] + [avg['wrc']]
+    ys = [t['era'] for t in teams] + [avg['era']]
 
-    x_lo, x_hi, x_step = _axis_bounds(xs, 0.06, [2, 5, 10, 20], 10.0)
-    y_lo, y_hi, y_step = _axis_bounds(ys, 0.06, [0.25, 0.5, 1.0, 2.0], 1.0)
+    x_lo, x_hi, x_step = _axis_bounds(xs, _AXIS_PAD, [1, 2, 5, 10, 20], 10.0)
+    y_lo, y_hi, y_step = _axis_bounds(ys, _AXIS_PAD, [0.1, 0.25, 0.5, 1.0, 2.0], 1.0)
     scale = _Scale(x_lo, x_hi, y_lo, y_hi)
 
     _draw_header(image, draw, payload, payload.get('label', grain.upper()))

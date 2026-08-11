@@ -115,6 +115,50 @@ def test_season_grain_baseline_never_precedes_opening_day():
     assert baseline['start'] == baseline['end'] == '2026-03-25'
 
 
+def test_windows_end_yesterday_not_today():
+    """Today's games are in progress, so every window stops at the last final day."""
+    assert ftq.last_completed_day(date(2026, 8, 10), date(2026, 3, 25)) == date(2026, 8, 9)
+
+
+def test_last_completed_day_never_precedes_opening_day():
+    """On opening day there is no yesterday to fall back to."""
+    assert ftq.last_completed_day(date(2026, 3, 25), date(2026, 3, 25)) == date(2026, 3, 25)
+
+
+def test_fetch_builds_every_grain_against_the_last_completed_day():
+    """The exclusion is applied once, centrally, so no grain can include today."""
+    seen = {}
+
+    def _capture(season, grain, as_of, season_start, first_half_end, teams):
+        """Record the end date each grain was built against."""
+        seen[grain] = as_of
+        return None
+
+    with patch.object(ftq, 'load_json_file', return_value={}), \
+         patch.object(ftq, 'fetch_season_dates',
+                      return_value=(date(2026, 3, 25), date(2026, 7, 14))), \
+         patch.object(ftq, 'fetch_team_list', return_value={}), \
+         patch.object(ftq, 'build_grain', side_effect=_capture):
+        ftq.fetch_team_quadrant(today=date(2026, 8, 10), force=True)
+
+    assert seen and set(seen.values()) == {date(2026, 8, 9)}
+
+
+def test_fetch_records_the_as_of_date_it_used():
+    """The payload states which day the numbers run through, not when it ran."""
+    grain_payload = {'label': 'X', 'current': {}, 'baseline': {}, 'avg': {}, 'teams': []}
+    with patch.object(ftq, 'load_json_file', return_value={}), \
+         patch.object(ftq, 'fetch_season_dates',
+                      return_value=(date(2026, 3, 25), date(2026, 7, 14))), \
+         patch.object(ftq, 'fetch_team_list', return_value={}), \
+         patch.object(ftq, 'build_grain', return_value=grain_payload), \
+         patch.object(ftq, 'save_off_results'):
+        result = ftq.fetch_team_quadrant(today=date(2026, 8, 10), force=True)
+
+    assert result['date'] == '2026-08-10'
+    assert result['as_of'] == '2026-08-09'
+
+
 @pytest.mark.parametrize('grain,expected_start', [
     ('month', '2026-07-12'),   # 30 days inclusive
     ('week', '2026-08-04'),    # 7 days inclusive
