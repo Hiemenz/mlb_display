@@ -137,12 +137,17 @@ def _window(start, end):
 def windows_for_grain(grain, today, season_start, first_half_end):
     """Return (current_window, baseline_window) for a grain.
 
-    Season compares the second half against the first; the shorter grains
-    compare recent form against the season-to-date baseline, which is what
-    makes a week-long arrow mean "hot/cold relative to how they've played".
-    """
-    season_to_date = _window(season_start, today)
+    The two windows never overlap. For the trailing grains the baseline is the
+    season *up to* the window, not the season to date: comparing the last seven
+    days against a figure that already contains those seven days damps the very
+    move the arrow exists to show, and the shorter the window the worse it gets.
+    So the arrow reads "where they were before this stretch → where they are in
+    it".
 
+    Season is the exception, and deliberately: its current position is the whole
+    season to date, because that is the view's entire point. It points back at
+    the first half.
+    """
     if grain == 'season':
         # Before the All-Star break there is no first half to point back from,
         # so split the elapsed season down the middle instead.
@@ -150,11 +155,14 @@ def windows_for_grain(grain, today, season_start, first_half_end):
             season_start + timedelta(days=(today - season_start).days // 2)
         )
         split = max(split, season_start)
-        return season_to_date, _window(season_start, split)
+        return _window(season_start, today), _window(season_start, split)
 
     days = _GRAIN_DAYS.get(grain, _GRAIN_DAYS['month'])
     start = max(today - timedelta(days=days - 1), season_start)
-    return _window(start, today), season_to_date
+    # Everything before the window. Clamped so a window reaching back to opening
+    # day still yields a (single-day) baseline rather than an inverted range.
+    baseline_end = max(start - timedelta(days=1), season_start)
+    return _window(start, today), _window(season_start, baseline_end)
 
 
 def fetch_team_stats(season, start, end, group):

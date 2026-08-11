@@ -542,7 +542,19 @@ def _show_idle_screen(config, auto_open=False):
 
 
 _DateContext = namedtuple(
-    '_DateContext', ['date_str', 'showing_previous_day', 'morning_block', 'now'])
+    '_DateContext',
+    ['date_str', 'showing_previous_day', 'morning_block', 'now', 'mode_override'])
+
+
+def morning_rotation(config):
+    """The views the morning window cycles through, one per 5-minute block.
+
+    'quadrant' is a display mode rather than a date, so it rides along as a
+    mode override; the other two are ordinary game grids for a given day.
+    """
+    if config.get('morning_alternate_quadrant', True):
+        return ('today', 'yesterday', 'quadrant')
+    return ('yesterday', 'today')
 
 
 def _resolve_target_date(args, config):
@@ -552,14 +564,14 @@ def _resolve_target_date(args, config):
     * After the morning cutoff (9am, 11am at weekends) → today.
     * Inside the morning window → the previous day, so last night's finals stay
       up through breakfast. With ``morning_alternate_games`` enabled the window
-      instead alternates between yesterday and today every 5 minutes;
+      instead cycles through morning_rotation() every 5 minutes;
       ``morning_block`` carries that block index (None when not alternating, and
       the only thing the morning throttle may key on).
     """
     if args.date:
         set_historical_mode(True)
         print(f"Using specified date: {args.date}")
-        return _DateContext(args.date, False, None, _local_now(config))
+        return _DateContext(args.date, False, None, _local_now(config), None)
 
     now = _local_now(config)
     today = now.date().strftime('%Y-%m-%d')
@@ -572,18 +584,21 @@ def _resolve_target_date(args, config):
 
     if now.hour >= morning_end:
         print(f"Using today's date: {today}")
-        return _DateContext(today, False, None, now)
+        return _DateContext(today, False, None, now, None)
 
     if now.hour >= morning_start and config.get('morning_alternate_games', True):
         block = (now.hour * 60 + now.minute) // 5
-        if block % 2 == 0:
-            print(f"Morning alternating (block {block}) — showing previous day: {yesterday}")
-            return _DateContext(yesterday, True, block, now)
-        print(f"Morning alternating (block {block}) — showing today: {today}")
-        return _DateContext(today, True, block, now)
+        rotation = morning_rotation(config)
+        view = rotation[block % len(rotation)]
+        if view == 'quadrant':
+            print(f"Morning alternating (block {block}) — showing team quadrant")
+            return _DateContext(today, False, block, now, 'quadrant')
+        date_str = yesterday if view == 'yesterday' else today
+        print(f"Morning alternating (block {block}) — showing {view}: {date_str}")
+        return _DateContext(date_str, view == 'yesterday', block, now, None)
 
     print(f"Before {morning_end}am — showing previous day: {yesterday}")
-    return _DateContext(yesterday, True, None, now)
+    return _DateContext(yesterday, True, None, now, None)
 
 
 def _update_schedule_state(game_state_data, date_str, config, sched):
@@ -1111,11 +1126,19 @@ Examples:
     _refresh_news(config, force=_force_data_refresh)
     _refresh_leaders(config, sched, league_mode, sport_id, force=_force_data_refresh)
     _refresh_streaks(config, sched, league_mode, sport_id, force=_force_data_refresh)
-    _refresh_team_quadrant(config, league_mode, force=_force_data_refresh)
+
+    # A morning rotation block showing the quadrant overrides the display mode
+    # for this run only — config itself is left alone so the mode the user
+    # actually configured comes back on the next block. Built before the
+    # quadrant refresh so that refresh sees the mode it gates on.
+    view_config = config
+    if _date_ctx.mode_override:
+        view_config = dict(config, display_mode=_date_ctx.mode_override)
+    _refresh_team_quadrant(view_config, league_mode, force=_force_data_refresh)
 
     # 9. Render and push to the panel.
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
-    if not _render_and_display(config, date_str, output_path,
+    if not _render_and_display(view_config, date_str, output_path,
                                no_throttle=_no_throttle,
                                dark_transitioned=_dark_transitioned,
                                morning_block=_morning_block):

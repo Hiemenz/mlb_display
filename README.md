@@ -128,9 +128,18 @@ collapsing into a hairball.
 | Grain | Plots | Arrow comes from |
 |---|---|---|
 | `season` | Season to date | The first half (All-Star break split) |
-| `month` | Trailing 30 days | Season to date |
-| `week` | Trailing 7 days | Season to date — hot/cold, small samples |
+| `month` | Trailing 30 days | The season *before* those 30 days |
+| `week` | Trailing 7 days | The season *before* those 7 days |
 | `rotate` | Cycles all three | Switches every `quadrant_rotate_minutes` |
+
+Every window ends on the **last completed day**, never today — today's games are in progress, and
+including them would mix partial box scores into the numbers (a team two innings in would
+contribute two innings of ERA).
+
+For `week` and `month` the two windows never overlap: the baseline is the season *up to* the
+window, not the season to date. A baseline that already contains the last seven days damps the
+very move the arrow exists to show, and the shorter the window the worse it gets. `season` is the
+deliberate exception — its current position is the whole season, because that is the view's point.
 
 Data is fetched by `src/fetch_team_quadrant.py` into `data/team_quadrant.json` (6-hour TTL) and is
 only fetched when this mode is actually selected. On a no-games day, this mode shows the chart
@@ -256,7 +265,7 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 | **Vegas odds** | Moneyline displayed on pre-game tiles |
 | **Smart polling** | Skips API on off-days; finds next game date up to 30 days ahead |
 | **Night mode** | Suppresses refreshes during configurable overnight window |
-| **Morning mode** | Alternates yesterday finals ↔ today schedule until `morning_end` (separate weekday/weekend cutoffs) |
+| **Morning mode** | Rotates today's schedule → yesterday's finals → team quadrant every 5 min until `morning_end` (separate weekday/weekend cutoffs) |
 | **Auto dark mode** | White-on-black between `dark_start` and `dark_end`; full refresh forced on the transition |
 | **Auto timelapse** | Generates `.gif` + `.mp4` after all games go Final |
 | **Discord bot** | Switch mode or team from a Discord channel; bot posts preview image |
@@ -308,7 +317,9 @@ sport_id_priority:           # only used when league_mode is "mlb"
 night_mode: true
 night_start: 2               # hour (24h) to stop refreshing
 night_end: 7                 # hour (24h) to resume
-morning_alternate_games: true  # alternate yesterday/today every 5 min in the morning window
+morning_alternate_games: true     # rotate the display every 5 min in the morning window
+morning_alternate_quadrant: true  # make it three-way: today → yesterday → quadrant
+                                  # (false = original two-way yesterday/today)
 morning_end: 9               # weekday hour when "yesterday" gives way to today
 morning_end_weekend: 11      # weekend cutoff
 
