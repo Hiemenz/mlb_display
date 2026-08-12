@@ -268,6 +268,14 @@ weather:
   enabled: true
   cache_ttl_minutes: 60
 
+# Replay mode: step through a past game day on the display.
+# replay_date accepts YYYY-MM-DD; leave blank when not replaying.
+# replay_step_minutes: baseball minutes advanced per display refresh.
+# replay_delay_seconds: real seconds between display updates.
+replay_date: ""
+replay_step_minutes: 1
+replay_delay_seconds: 20
+
 # Auto-generate a timelapse video after all games for the day go Final.
 # Output is saved to output/scoreboard_YYYY-MM-DD.gif + .mp4.
 # A sentinel file (data/video_generated_YYYY-MM-DD.done) prevents re-running.
