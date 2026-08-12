@@ -2,7 +2,7 @@
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
 scoreboard: true
 
-# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch" | "derby"
+# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "pitch" | "derby" | "quadrant"
 # If set, overrides the scoreboard: true/false flag above.
 # "field"     = single-game field diagram with runners, hit location, strike zone overlay
 # "scorecard" = official scorer-style per-batter at-bat grid for both teams
@@ -12,7 +12,18 @@ scoreboard: true
 #               to the last cached file if the event hasn't started yet or the fetch fails.
 #               Setting display_mode to "derby" here forces it on unconditionally. You normally
 #               don't need to — see auto_derby_mode below.
+# "quadrant"  = all 30 teams plotted offense (wRC+*) vs pitching (ERA), split into four
+#               corners by the league average, with an arrow trailing each logo back to
+#               where that team sat over the baseline window. See quadrant_grain below.
 display_mode: "scoreboard"
+
+# Which window the quadrant chart plots — these are three different views of the same data:
+# "season" = season to date, arrow from the first half
+# "month"  = trailing 30 days, arrow from season to date
+# "week"   = trailing 7 days, arrow from season to date (hot/cold, small samples)
+# "rotate" = cycle through all three, switching every quadrant_rotate_minutes
+quadrant_grain: "week"
+quadrant_rotate_minutes: 30
 
 # Automatically switch to the Home Run Derby bracket (see "derby" above) on the actual Derby
 # date, but only on days with no games to show (e.g. the All-Star break) — days with real games
@@ -64,12 +75,16 @@ night_mode: true
 night_start: 2   # 2am (hour in 24h, local timezone)
 night_end: 7     # 7am
 
-# Morning alternating mode: between night_end and morning_end, alternate between yesterday's
-# results and today's schedule every 5 minutes. Before night_end always shows yesterday;
-# at/after morning_end always shows today.
+# Morning alternating mode: between night_end and morning_end, rotate the display every
+# 5 minutes. Before night_end always shows yesterday; at/after morning_end always shows today.
 morning_alternate_games: true
 morning_end: 9          # weekday cutoff (Mon–Fri)
 morning_end_weekend: 11 # weekend cutoff (Sat–Sun)
+
+# Include the team quadrant chart in the morning rotation, making it a three-way cycle:
+# today's games → yesterday's games → quadrant, 5 minutes each. Set false for the original
+# two-way yesterday/today alternation.
+morning_alternate_quadrant: true
 
 
 # Auto dark/light mode: display is dark (inverted) between dark_start and dark_end,

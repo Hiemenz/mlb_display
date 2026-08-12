@@ -165,11 +165,13 @@ def test_render_single_game_mode_handles_exception():
 # 3. render() — dispatch + save-to-disk logic
 # ---------------------------------------------------------------------------
 
-def _loader(games_payload=None, teams_payload=None, derby_payload=None):
+def _loader(games_payload=None, teams_payload=None, derby_payload=None,
+            quadrant_payload=None):
     """Build a load_json_file side_effect that never touches real data/ files."""
     games_payload = games_payload if games_payload is not None else {'games': []}
     teams_payload = teams_payload if teams_payload is not None else {'team_abbreviation': {}}
     derby_payload = derby_payload if derby_payload is not None else {}
+    quadrant_payload = quadrant_payload if quadrant_payload is not None else {}
 
     def _fn(filename, file_path=None):
         """Fn."""
@@ -179,6 +181,8 @@ def _loader(games_payload=None, teams_payload=None, derby_payload=None):
             return teams_payload
         if filename == 'derby_bracket.json':
             return derby_payload
+        if filename == 'team_quadrant.json':
+            return quadrant_payload
         return {}
     return _fn
 
@@ -219,6 +223,47 @@ def test_render_derby_mode_dispatches_and_saves(tmp_path):
     assert result == (fake_image, [(0, 0, 800, 480)])
     m_derby.assert_called_once_with(derby_data, dark_mode=False)
     assert out_path.exists()
+
+
+def test_render_quadrant_mode_no_data_returns_none():
+    """No cached team_quadrant.json → render() returns None instead of a blank plot."""
+    with patch('render_scoreboard.load_json_file', side_effect=_loader(quadrant_payload={})):
+        result = render_scoreboard.render({'display_mode': 'quadrant'},
+                                          output_path='/nonexistent/should/not/write.bmp')
+    assert result is None
+
+
+def test_render_quadrant_mode_unusable_data_returns_none():
+    """A payload the view rejects falls back rather than raising out of render()."""
+    with patch('render_scoreboard.load_json_file',
+               side_effect=_loader(quadrant_payload={'grains': {}})), \
+         patch('render_scoreboard.render_quadrant_view', side_effect=ValueError('empty')):
+        result = render_scoreboard.render({'display_mode': 'quadrant'},
+                                          output_path='/nonexistent/should/not/write.bmp')
+    assert result is None
+
+
+@needs_pil
+def test_render_quadrant_mode_dispatches_and_saves(tmp_path):
+    """render() in quadrant mode renders the chart full-screen and saves it."""
+    quadrant_data = {'grains': {'month': {'teams': [{'abbr': 'NYY'}]}}}
+    fake_image = Image.new('1', (800, 480), 255)
+    out_path = tmp_path / 'quadrant.bmp'
+    config = {'display_mode': 'quadrant', 'quadrant_grain': 'month'}
+    with patch('render_scoreboard.load_json_file',
+               side_effect=_loader(quadrant_payload=quadrant_data)), \
+         patch('render_scoreboard.render_quadrant_view', return_value=fake_image) as m_view:
+        result = render_scoreboard.render(config, output_path=str(out_path))
+
+    assert result == (fake_image, [(0, 0, 800, 480)])
+    m_view.assert_called_once_with(quadrant_data, config=config, dark_mode=False)
+    assert out_path.exists()
+
+
+def test_quadrant_is_a_valid_display_mode():
+    """The mode has to be selectable from config and the CLI."""
+    assert 'quadrant' in render_scoreboard._VALID_MODES
+    assert render_scoreboard._get_display_mode({'display_mode': 'quadrant'}) == 'quadrant'
 
 
 @needs_pil
@@ -454,6 +499,17 @@ def test_main_invokes_render_with_mode_override_and_output(monkeypatch, tmp_path
 
 
 @needs_pil
+def test_main_grain_flag_overrides_the_configured_window(monkeypatch, tmp_path):
+    """`--grain week` lets you preview one quadrant view without editing config."""
+    out_path = str(tmp_path / 'out.bmp')
+    monkeypatch.setattr('sys.argv', ['render_scoreboard.py', '--mode', 'quadrant',
+                                     '--grain', 'week', '--output', out_path])
+    with patch('render_scoreboard.load_config', return_value={'quadrant_grain': 'season'}), \
+         patch('render_scoreboard.render', return_value=None) as m_render:
+        render_scoreboard.main()
+    assert m_render.call_args.args[0]['quadrant_grain'] == 'week'
+
+
 def test_main_prints_output_path_on_success(monkeypatch, tmp_path, capsys):
     """Main prints output path on success."""
     out_path = str(tmp_path / 'out.bmp')
