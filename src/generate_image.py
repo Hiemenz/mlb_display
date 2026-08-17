@@ -24,6 +24,7 @@ from image_standings import (
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
     draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
     draw_overflow_ticker, _ticker_window, draw_transactions_header,
+    draw_recap_header,
 )
 from image_box import draw_box, _abbr_play, _draw_linescore_grid, _draw_backwards_k
 
@@ -436,8 +437,11 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     #      AND at least one game hasn't finished yet (once all games are done
     #      the ticker gives way to standings).
     #   2. Playoff bracket
-    #   3. Wildcard standings
-    #   4. Transactions (when show_transactions_ticker is on and strip is empty)
+    #   3. Recap header — once all games are done and no bracket is active,
+    #      rotates through each game showing walk-off type (Walk-off HR / 1B /
+    #      …) for walk-off wins and WP/LP last names for normal finals.
+    #   4. Wildcard standings
+    #   5. Transactions (when show_transactions_ticker is on and strip is empty)
     if _ticker_will_show:
         Himage = draw_overflow_ticker(
             Himage, _dropped_games, team_data,
@@ -449,6 +453,11 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         if standings_data and 'standings' in standings_data:
             wildcard_data = derive_wildcard_from_standings(standings_data)
             Himage = draw_wildcard_header(Himage, wildcard_data)
+    elif _all_games_done and game_state_data:
+        Himage = draw_recap_header(
+            Himage, list(game_state_data), team_data,
+            rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2),
+        )
     elif config.get('show_transactions_ticker', False):
         _tx_hdr = (load_json_file('transactions.json') or {}).get('transactions', [])
         if _tx_hdr:
@@ -531,6 +540,10 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             _header_state = {'mode': 'ticker', 'key': _header_key}
         elif _bracket:
             _header_state = {'mode': 'bracket', 'key': []}
+        elif _all_games_done and game_state_data:
+            _recap_key = [str(g.get('game_pk', '')) for g in _ticker_window(
+                list(game_state_data), rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2))]
+            _header_state = {'mode': 'recap', 'key': _recap_key}
         elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
             _header_state = {'mode': 'wildcard', 'key': []}
         elif config.get('show_transactions_ticker', False):

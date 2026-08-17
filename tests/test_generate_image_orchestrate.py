@@ -347,7 +347,7 @@ def test_linescore_window_expiry_forces_rerender_even_if_nothing_else_changed():
 
     assert result is not None, "linescore-window expiry must force a re-render"
     _, regions = result
-    assert regions == [(32, 30, 152, 150)]
+    assert (32, 30, 152, 150) in regions
 
 
 @needs_pil
@@ -541,7 +541,7 @@ def test_changed_region_for_normal_game_is_single_cell_width():
 
     assert result is not None
     _, regions = result
-    assert regions == [(32, 30, 152, 150)]
+    assert (32, 30, 152, 150) in regions
 
 
 @needs_pil
@@ -865,10 +865,11 @@ def test_unchanged_games_produce_no_region():
 
     assert result is not None
     _, regions = result
-    # Only game_pk=2 (row0,col1) changed → single normal-width region, aligned
-    # to the second grid column (150px stride + x_start=32, 8px-rounded).
-    assert len(regions) == 1
-    assert regions[0][2] == 152
+    # Only game_pk=2 (row0,col1) changed → its normal-width region must be present,
+    # aligned to the second grid column (150px stride + x_start=32, 8px-rounded).
+    game_regions = [r for r in regions if r != (0, 0, 800, 30)]
+    assert len(game_regions) == 1
+    assert game_regions[0][2] == 152
 
 
 # ---------------------------------------------------------------------------
