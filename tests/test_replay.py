@@ -325,3 +325,29 @@ def test_main_no_date_no_config_exits():
         with patch.object(sys, 'argv', ['replay.py']):
             with pytest.raises(SystemExit):
                 replay_mod.main()
+
+
+@patch('replay.send_to_display')
+@patch('replay.orchestrate_score_board')
+@patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
+@patch('replay._fetch_game_timeline')
+@patch('replay.load_json_file', side_effect=_patched_load)
+@patch('replay.fetch_scoreboard_for_date')
+@patch('replay.time.sleep')
+@patch('replay.ImageFont.load_default', return_value=MagicMock())
+@patch('replay.ImageFont.truetype', side_effect=OSError('font not found'))
+def test_replay_day_font_fallback_on_truetype_error(
+        mock_truetype, mock_load_default, mock_sleep, mock_fetch, mock_load,
+        mock_tl, mock_active, mock_gsat, mock_orc, mock_disp,
+):
+    """Falls back to ImageFont.load_default() when Font.ttc cannot be loaded."""
+    mock_tl.return_value = _make_tl(20, 20)
+    mock_gsat.return_value = {'game_pk': 1001}
+    mock_orc.return_value = (MagicMock(), [])
+
+    # Should not raise even when truetype fails
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
+
+    mock_load_default.assert_called_once()
+    assert mock_orc.call_count >= 1
