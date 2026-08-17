@@ -517,6 +517,124 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
     return Himage
 
 
+_RECAP_WALK_OFF_ABBR = {
+    'Home Run': 'HR', 'Single': '1B', 'Double': '2B', 'Triple': '3B',
+    'Walk': 'BB', 'Hit By Pitch': 'HBP', 'Error': 'E', 'Passed Ball': 'PB',
+    'Wild Pitch': 'WP', 'Balk': 'BLK',
+}
+
+
+def _recap_row_labels(game):
+    """(top_label, bot_label) for one game in the recap header.
+
+    Walk-off games show the walk-off type ("Walk-off" / "HR") so the play
+    gets the spotlight instead of the pitcher line. Normal finals show the
+    winning and losing pitcher last names ("WP: Cole" / "LP: Pivetta").
+    """
+    if game.get('walk_off'):
+        abbr = _RECAP_WALK_OFF_ABBR.get(game.get('last_play') or '', '')
+        return 'Walk-off', abbr
+    wp = game.get('winner_name') or ''
+    lp = game.get('loser_name') or ''
+    top = ('WP: ' + wp.split()[-1]) if wp else ''
+    bot = ('LP: ' + lp.split()[-1]) if lp else ''
+    return top, bot
+
+
+def draw_recap_header(Himage, final_games, team_data, rotation_minutes=2):
+    """Draw a game-recap strip across the 30px header (y=0..30) once all
+    games for the day are Final.
+
+    One entry per game, same stacked-logo format as draw_overflow_ticker.
+    Walk-off games show the walk-off play type; others show WP/LP last names.
+    Rotates through entries when more games than _TICKER_MAX_ENTRIES fit at once.
+    """
+    games = [g for g in (final_games or []) if g.get('away_runs') is not None]
+    if not games:
+        return Himage
+
+    chunk = _ticker_window(games, rotation_minutes=rotation_minutes)
+
+    draw = ImageDraw.Draw(Himage)
+    font = _get_font(9)
+    row_font = _get_font(_TICKER_ROW_FONT_SIZE)
+    abbr_map = team_data.get('team_abbreviation', {})
+
+    n = len(chunk)
+    entry_w = 800 // n
+
+    for i, game in enumerate(chunk):
+        x0 = i * entry_w
+
+        away_id = str(game.get('away_team_id', ''))
+        home_id = str(game.get('home_team_id', ''))
+        away_abbr = abbr_map.get(away_id, '???')
+        home_abbr = abbr_map.get(home_id, '???')
+
+        away_logo = _logo_small(away_abbr, away_id, size=_TICKER_LOGO_SZ)
+        home_logo = _logo_small(home_abbr, home_id, size=_TICKER_LOGO_SZ)
+        away_w = away_logo.size[0] if away_logo else int(font.getlength(away_abbr))
+        home_w = home_logo.size[0] if home_logo else int(font.getlength(home_abbr))
+        logo_col_w = max(away_w, home_w)
+
+        away_r = str(game.get('away_runs', ''))
+        home_r = str(game.get('home_runs', ''))
+        away_r_w = int(row_font.getlength(away_r))
+        home_r_w = int(row_font.getlength(home_r))
+        row_w = max(away_r_w, home_r_w)
+
+        top_label, bot_label = _recap_row_labels(game)
+        top_w = int(font.getlength(top_label)) if top_label else 0
+        bot_w = int(font.getlength(bot_label)) if bot_label else 0
+        label_w = max(top_w, bot_w)
+
+        total_w = logo_col_w + 2 + 1 + 2 + row_w
+        if label_w:
+            total_w += 4 + label_w
+
+        cur_x = x0 + max(0, (entry_w - total_w) // 2)
+        block_start_x = cur_x
+
+        row_top_y = (_TICKER_ROW_H - _TICKER_ROW_FONT_SIZE) // 2
+        row_bot_y = _TICKER_ROW_H + row_top_y
+
+        if away_logo:
+            Himage.paste(away_logo, (cur_x + (logo_col_w - away_w) // 2,
+                                     (_TICKER_ROW_H - away_logo.size[1]) // 2))
+        else:
+            draw.text((cur_x + (logo_col_w - away_w) // 2, row_top_y),
+                      away_abbr, font=font, fill=0)
+        if home_logo:
+            Himage.paste(home_logo, (cur_x + (logo_col_w - home_w) // 2,
+                                     _TICKER_ROW_H + (_TICKER_ROW_H - home_logo.size[1]) // 2))
+        else:
+            draw.text((cur_x + (logo_col_w - home_w) // 2, _TICKER_ROW_H + row_top_y),
+                      home_abbr, font=font, fill=0)
+        cur_x += logo_col_w
+
+        def _bold(xy, text, f=row_font):
+            draw.text(xy, text, font=f, fill=0)
+            draw.text((xy[0] + 1, xy[1]), text, font=f, fill=0)
+
+        cur_x += 2
+        draw.line((cur_x, 1, cur_x, _WC_STRIP_H - 2), fill=0, width=1)
+        cur_x += 1 + 2
+        _bold((cur_x + (row_w - away_r_w) // 2, row_top_y), away_r)
+        _bold((cur_x + (row_w - home_r_w) // 2, row_bot_y), home_r)
+        cur_x += row_w
+
+        draw.line((block_start_x, _TICKER_ROW_H, cur_x - 1, _TICKER_ROW_H), fill=0, width=1)
+
+        if label_w:
+            cur_x += 4
+            if top_label:
+                _bold((cur_x, row_top_y), top_label, f=font)
+            if bot_label:
+                _bold((cur_x, row_bot_y), bot_label, f=font)
+
+    return Himage
+
+
 _TX_HEADER_MAX = 5
 _TX_HEADER_ABBR = {
     'Status Change': 'IL', 'Recalled': 'Recall', 'Optioned': 'Option',

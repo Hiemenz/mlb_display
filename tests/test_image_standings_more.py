@@ -29,6 +29,8 @@ from image_standings import (
     draw_standings_sidebar_fullscreen,
     draw_overflow_ticker,
     draw_transactions_header,
+    draw_recap_header,
+    _recap_row_labels,
     _ticker_status,
     _ticker_score,
     _ticker_window,
@@ -1331,4 +1333,109 @@ class TestDrawTransactionsHeader:
 
     def test_empty_player_name_skips_last_name(self):
         result = self._render([_TX_ENTRY('CLE', '', 'Released')])
+        assert isinstance(result, Image.Image)
+
+
+# ===========================================================================
+# _recap_row_labels() — pure logic
+# ===========================================================================
+
+class TestRecapRowLabels:
+
+    def test_walk_off_home_run_returns_walk_off_and_hr(self):
+        game = {'walk_off': True, 'last_play': 'Home Run'}
+        assert _recap_row_labels(game) == ('Walk-off', 'HR')
+
+    def test_walk_off_single_returns_walk_off_and_1b(self):
+        game = {'walk_off': True, 'last_play': 'Single'}
+        assert _recap_row_labels(game) == ('Walk-off', '1B')
+
+    def test_walk_off_unknown_type_returns_empty_abbr(self):
+        game = {'walk_off': True, 'last_play': 'Something Unusual'}
+        assert _recap_row_labels(game) == ('Walk-off', '')
+
+    def test_walk_off_with_no_last_play_returns_empty_abbr(self):
+        game = {'walk_off': True}
+        assert _recap_row_labels(game) == ('Walk-off', '')
+
+    def test_normal_final_returns_wp_lp_last_names(self):
+        game = {'winner_name': 'Gerrit Cole', 'loser_name': 'Nick Pivetta'}
+        top, bot = _recap_row_labels(game)
+        assert top == 'WP: Cole'
+        assert bot == 'LP: Pivetta'
+
+    def test_normal_final_missing_winner_returns_empty_top(self):
+        game = {'loser_name': 'Nick Pivetta'}
+        top, bot = _recap_row_labels(game)
+        assert top == ''
+        assert bot == 'LP: Pivetta'
+
+    def test_normal_final_missing_both_returns_empty_strings(self):
+        game = {}
+        assert _recap_row_labels(game) == ('', '')
+
+
+# ===========================================================================
+# draw_recap_header() — rendering
+# ===========================================================================
+
+@needs_pil
+class TestDrawRecapHeader:
+
+    def _blank(self):
+        return Image.new('1', (800, 30), 255)
+
+    def _team_data(self):
+        return {'team_abbreviation': {'1': 'NYY', '2': 'BOS'}}
+
+    def _game(self, pk=1, **kw):
+        g = {'game_pk': pk, 'away_team_id': 1, 'home_team_id': 2,
+             'away_runs': 5, 'home_runs': 3, 'detailed_state': 'Final'}
+        g.update(kw)
+        return g
+
+    def test_empty_games_returns_unchanged_image(self):
+        canvas = self._blank()
+        result = draw_recap_header(canvas, [], self._team_data())
+        assert result is canvas
+
+    def test_games_without_runs_are_skipped(self):
+        canvas = self._blank()
+        game = {'game_pk': 1, 'away_team_id': 1, 'home_team_id': 2,
+                'away_runs': None, 'detailed_state': 'Final'}
+        result = draw_recap_header(canvas, [game], self._team_data())
+        assert result is canvas
+
+    def test_single_final_game_renders_something(self):
+        canvas = self._blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_recap_header(canvas, [self._game()], self._team_data())
+        assert isinstance(result, Image.Image)
+        assert any(px == 0 for px in result.getdata())
+
+    def test_walk_off_game_draws_walk_off_label(self):
+        canvas = self._blank()
+        game = self._game(walk_off=True, last_play='Home Run')
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings.ImageDraw.ImageDraw.text') as mock_text:
+            draw_recap_header(canvas, [game], self._team_data())
+        drawn = [call.args[1] for call in mock_text.call_args_list]
+        assert 'Walk-off' in drawn
+        assert 'HR' in drawn
+
+    def test_normal_final_draws_wp_lp_labels(self):
+        canvas = self._blank()
+        game = self._game(winner_name='Gerrit Cole', loser_name='Nick Pivetta')
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings.ImageDraw.ImageDraw.text') as mock_text:
+            draw_recap_header(canvas, [game], self._team_data())
+        drawn = [call.args[1] for call in mock_text.call_args_list]
+        assert 'WP: Cole' in drawn
+        assert 'LP: Pivetta' in drawn
+
+    def test_multiple_games_render_without_error(self):
+        canvas = self._blank()
+        games = [self._game(pk=i, away_runs=i, home_runs=0) for i in range(1, 4)]
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_recap_header(canvas, games, self._team_data())
         assert isinstance(result, Image.Image)
