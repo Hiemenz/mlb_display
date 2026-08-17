@@ -259,7 +259,8 @@ def _ticker_status(game):
     start time (not started), 'Top 4'/'Bot 7' (live), 'F' (final), or 'Postponed'."""
     state = game.get('detailed_state', '')
     if state in _TICKER_FINAL_STATES:
-        return 'F'
+        _inn = game.get('current_inning') or 9
+        return f'F/{_inn}' if _inn > 9 else 'F'
     if state in _TICKER_POSTPONED_STATES:
         return 'Postponed'
     if state in _TICKER_LIVE_STATES:
