@@ -715,9 +715,17 @@ def _ov_game(pk, away_id=1, home_id=2, state='Scheduled', **overrides):
 
 class TestTickerStatus:
     def test_final_family_normalizes_to_f(self):
-        """Final family normalizes to the single-letter 'F'."""
+        """Final family normalizes to the single-letter 'F' for 9-inning games."""
         for state in ('Final', 'Game Over', 'Final: Tied'):
             assert _ticker_status(_ov_game(1, state=state)) == 'F'
+
+    def test_final_extra_innings_appends_inning(self):
+        """Extra-innings final shows F/<inning> (e.g. F/10)."""
+        for state in ('Final', 'Game Over'):
+            g = _ov_game(1, state=state, current_inning=10)
+            assert _ticker_status(g) == 'F/10'
+        g = _ov_game(1, state='Final', current_inning=13)
+        assert _ticker_status(g) == 'F/13'
 
     def test_postponed_family_normalizes_to_postponed(self):
         """Postponed family normalizes to Postponed."""
