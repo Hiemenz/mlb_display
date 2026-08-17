@@ -18,6 +18,7 @@ import time
 from datetime import timedelta
 
 import pytz
+from PIL import ImageDraw, ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -30,6 +31,7 @@ from util import load_json_file
 from timelapse import _fetch_game_timeline, _game_state_at_time, _any_game_active
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_FONT_PATH = os.path.join(_REPO_ROOT, 'pic', 'Font.ttc')
 
 _DEFAULT_STEP_MINUTES = 1    # advance 1 baseball minute per display refresh
 _DEFAULT_DELAY_SECONDS = 20  # wait 20 real seconds between refreshes
@@ -99,6 +101,10 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode):
 
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
     is_mac = platform.system() == 'Darwin'
+    try:
+        _badge_font = ImageFont.truetype(_FONT_PATH, 9)
+    except Exception:
+        _badge_font = ImageFont.load_default()
     current_utc = start_utc
     step = 0
 
@@ -129,6 +135,8 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode):
 
         if result:
             image, changed_regions = result
+            _draw = ImageDraw.Draw(image)
+            _draw.text((2, 469), f'REPLAY  {time_label}', font=_badge_font, fill=0)
             image.save(output_path)
             print(f"  [{step:4d}/{total_steps}] {time_label}")
 
