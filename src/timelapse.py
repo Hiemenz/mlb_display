@@ -556,56 +556,7 @@ def _fetch_game_timeline(game_pk):
         first_actual_pitch = timeline[0]['end_time']  # first completed play as fallback
 
     # Build next_batters_events: for each inning break, compute the 3 upcoming batters
-    away_pids   = [pid for pid, _ in away_order]
-    home_pids   = [pid for pid, _ in home_order]
-    pid_to_name = {pid: name for pid, name in away_order + home_order}
-    next_batters_events = []
-
-    for i, play in enumerate(timeline):
-        if play.get('outs_after', 0) < 3:
-            continue
-        curr_half = play['half_inning']
-        if curr_half == 'top':
-            batting_side = 'home'
-            batting_half = 'bottom'
-        else:
-            batting_side = 'away'
-            batting_half = 'top'
-
-        batting_pids = home_pids if batting_side == 'home' else away_pids
-        if not batting_pids:
-            continue
-
-        # Last batter from this team in their most recent prior half-inning
-        last_batter_id = None
-        for prev in reversed(timeline[:i + 1]):
-            if prev['half_inning'] == batting_half:
-                last_batter_id = prev.get('batter_id')
-                break
-
-        if last_batter_id and last_batter_id in batting_pids:
-            start = (batting_pids.index(last_batter_id) + 1) % len(batting_pids)
-        else:
-            start = 0
-
-        n = len(batting_pids)
-        next_3 = [batting_pids[(start + k) % n] for k in range(min(3, n))]
-        names  = [pid_to_name.get(pid, '') for pid in next_3]
-
-        # Pitcher for the upcoming half: first pitch event after this break in that half
-        next_pitcher = ''
-        for pe in pitch_events:
-            if pe['time'] > play['end_time'] and pe.get('half_inning') == batting_half:
-                next_pitcher = pe.get('pitcher', '')
-                break
-
-        next_batters_events.append({
-            'time':          play['end_time'],
-            'next_batter_1': names[0] if len(names) > 0 else '',
-            'next_batter_2': names[1] if len(names) > 1 else '',
-            'next_batter_3': names[2] if len(names) > 2 else '',
-            'next_pitcher':  next_pitcher,
-        })
+    next_batters_events = _build_next_batters_events(timeline, pitch_events, away_order, home_order)
 
     return {
         'scheduled_start_utc':   scheduled_start,
@@ -699,6 +650,165 @@ def _build_ab_pitches(pitch_events, last_play, target_utc):
     return result
 
 
+def _build_next_batters_events(timeline, pitch_events, away_order, home_order):
+    """Compute the 3 upcoming batters + next pitcher at each inning break.
+
+    Returns a list of dicts sorted by time (matching the timeline order), each with:
+    time, next_batter_1/2/3 (full names), next_pitcher.
+    """
+    away_pids   = [pid for pid, _ in away_order]
+    home_pids   = [pid for pid, _ in home_order]
+    pid_to_name = {pid: name for pid, name in away_order + home_order}
+    events = []
+
+    for i, play in enumerate(timeline):
+        if play.get('outs_after', 0) < 3:
+            continue
+        curr_half = play['half_inning']
+        batting_side = 'home' if curr_half == 'top' else 'away'
+        batting_half = 'bottom' if batting_side == 'home' else 'top'
+        batting_pids = home_pids if batting_side == 'home' else away_pids
+        if not batting_pids:
+            continue
+
+        last_batter_id = None
+        for prev in reversed(timeline[:i + 1]):
+            if prev['half_inning'] == batting_half:
+                last_batter_id = prev.get('batter_id')
+                break
+
+        if last_batter_id and last_batter_id in batting_pids:
+            start = (batting_pids.index(last_batter_id) + 1) % len(batting_pids)
+        else:
+            start = 0
+
+        n = len(batting_pids)
+        next_3 = [batting_pids[(start + k) % n] for k in range(min(3, n))]
+        names  = [pid_to_name.get(pid, '') for pid in next_3]
+
+        next_pitcher = ''
+        for pe in pitch_events:
+            if pe['time'] > play['end_time'] and pe.get('half_inning') == batting_half:
+                next_pitcher = pe.get('pitcher', '')
+                break
+
+        events.append({
+            'time':          play['end_time'],
+            'next_batter_1': names[0] if len(names) > 0 else '',
+            'next_batter_2': names[1] if len(names) > 1 else '',
+            'next_batter_3': names[2] if len(names) > 2 else '',
+            'next_pitcher':  next_pitcher,
+        })
+    return events
+
+
+def _apply_in_progress_count_state(state, pitch_events, plays, target_utc):
+    """Set inning, count, batter, and pitcher fields on state for an in-progress game.
+
+    Mutates state in place. Returns (last_event, last_play, between_plays) for
+    use in subsequent runner-state and win-probability lookups.
+    """
+    last_event = None
+    for ev in pitch_events:
+        if ev['time'] <= target_utc:
+            last_event = ev
+        else:
+            break
+
+    last_play = None
+    for play in plays:
+        if play['end_time'] <= target_utc:
+            last_play = play
+        else:
+            break
+
+    between_plays = (
+        last_play is not None and
+        (last_event is None or last_play['end_time'] > last_event['time'])
+    )
+
+    if between_plays:
+        outs_after = last_play.get('outs_after', 0)
+        half = last_play.get('half_inning', 'top')
+        state['away_runs']            = last_play['away_score']
+        state['home_runs']            = last_play['home_score']
+        state['current_inning']       = last_play['inning']
+        state['currentInningOrdinal'] = _ordinal(last_play['inning'])
+        state['num_of_outs']          = outs_after
+        state['balls']                = 0
+        state['strikes']              = 0
+        state['current_pitcher']      = last_play.get('pitcher') or None
+        _next_event = next(
+            (ev for ev in pitch_events if ev['time'] > last_play['end_time']),
+            None,
+        )
+        state['current_hitter'] = _next_event.get('batter') if _next_event else None
+        if outs_after >= 3:
+            state['inningState'] = 'Middle' if half == 'top' else 'End'
+        else:
+            state['inningState'] = 'Top' if half == 'top' else 'Bottom'
+        state['at_bat_pitch_count'] = 0
+        state['last_pitch_speed']   = None
+        state['last_pitch_type']    = ''
+        state['last_strike_call']   = ''
+        state['strike_calls']       = []
+    elif last_event:
+        state['away_runs']            = last_event['away_score']
+        state['home_runs']            = last_event['home_score']
+        state['current_inning']       = last_event['inning']
+        state['currentInningOrdinal'] = _ordinal(last_event['inning'])
+        state['num_of_outs']          = last_event['outs']
+        state['balls']                = last_event['balls']
+        state['strikes']              = last_event['strikes']
+        state['current_pitcher']      = last_event.get('pitcher') or None
+        state['current_hitter']       = last_event.get('batter') or None
+        half = last_event.get('half_inning', 'top')
+        state['inningState']          = 'Top' if half == 'top' else 'Bottom'
+        state['at_bat_pitch_count'] = last_event.get('at_bat_pitch_count') or 0
+        state['last_pitch_speed']   = last_event.get('last_pitch_speed')
+        state['last_pitch_type']    = last_event.get('last_pitch_type') or ''
+        state['last_strike_call']   = last_event.get('last_strike_call') or ''
+        state['strike_calls']       = list(last_event.get('strike_calls') or [])
+    else:
+        state.update({
+            'detailed_state': 'Scheduled',
+            'away_runs': None, 'home_runs': None,
+            'current_inning': None, 'currentInningOrdinal': None,
+            'inningState': None, 'num_of_outs': None,
+            'balls': None, 'strikes': None,
+            'current_pitcher': None, 'current_hitter': None,
+        })
+
+    return last_event, last_play, between_plays
+
+
+def _reconstruct_hit_and_pg_stats(state, plays, target_utc):
+    """Reconstruct hit counts and no-hitter/perfect-game flags from play history.
+
+    Mutates state in place with: away_hits, home_hits, no_hitter, perfect_game.
+    """
+    _away_hits = 0
+    _home_hits = 0
+    _home_pg   = True
+    _away_pg   = True
+    for _p in plays:
+        if _p['end_time'] > target_utc:
+            break
+        _away_hits = _p.get('away_hits_so_far', _away_hits)
+        _home_hits = _p.get('home_hits_so_far', _home_hits)
+        _home_pg   = _p.get('home_pg_intact', _home_pg)
+        _away_pg   = _p.get('away_pg_intact', _away_pg)
+    state['away_hits'] = _away_hits
+    state['home_hits'] = _home_hits
+    _inn = state.get('current_inning') or 0
+    if _inn >= _NO_HITTER_INNING_THRESHOLD:
+        if _home_pg or _away_pg:
+            state['perfect_game'] = True
+            state['no_hitter']    = True
+        elif _away_hits == 0 or _home_hits == 0:
+            state['no_hitter'] = True
+
+
 def _game_state_at_time(base_game, tl, target_utc):
     """Return a copy of base_game with dynamic fields set to game state at target_utc."""
     state = dict(base_game)
@@ -761,8 +871,7 @@ def _game_state_at_time(base_game, tl, target_utc):
 
     # --- In Progress: reconstruct detailed state from pitch events and completed plays ---
     state['detailed_state'] = 'In Progress'
-    # Clear all fields that carry Final-game semantics and would bleed into
-    # reconstructed in-progress frames if inherited from base_game unchanged.
+    # Clear Final-game semantics that would bleed into reconstructed in-progress frames.
     state['walk_off']              = False
     state['no_hitter']             = False
     state['perfect_game']          = False
@@ -773,88 +882,8 @@ def _game_state_at_time(base_game, tl, target_utc):
     state['ab_pitches']            = []
     pitch_events = tl.get('pitch_events', [])
 
-    # Last pitch event before target_utc
-    last_event = None
-    for ev in pitch_events:
-        if ev['time'] <= target_utc:
-            last_event = ev
-        else:
-            break
-
-    # Last completed play before target_utc
-    last_play = None
-    for play in plays:
-        if play['end_time'] <= target_utc:
-            last_play = play
-        else:
-            break
-
-    # Between-plays: last play resolved AFTER the most recent pitch event.
-    # This covers the inning break and the gap between plate appearances.
-    between_plays = (
-        last_play is not None and
-        (last_event is None or last_play['end_time'] > last_event['time'])
-    )
-
-    if between_plays:
-        outs_after = last_play.get('outs_after', 0)
-        half = last_play.get('half_inning', 'top')
-        state['away_runs']            = last_play['away_score']
-        state['home_runs']            = last_play['home_score']
-        state['current_inning']       = last_play['inning']
-        state['currentInningOrdinal'] = _ordinal(last_play['inning'])
-        state['num_of_outs']          = outs_after
-        state['balls']                = 0
-        state['strikes']              = 0
-        state['current_pitcher']      = last_play.get('pitcher') or None
-        # Find the first batter of the next half inning so "Due:" can be shown
-        _next_event = next(
-            (ev for ev in pitch_events if ev['time'] > last_play['end_time']),
-            None,
-        )
-        state['current_hitter'] = _next_event.get('batter') if _next_event else None
-        if outs_after >= 3:
-            # Inning break: top half done → Mid, bottom half done → End
-            state['inningState'] = 'Middle' if half == 'top' else 'End'
-        else:
-            state['inningState'] = 'Top' if half == 'top' else 'Bottom'
-        # No active at-bat during a between-plays gap — clear pitch detail fields.
-        state['at_bat_pitch_count'] = 0
-        state['last_pitch_speed']   = None
-        state['last_pitch_type']    = ''
-        state['last_strike_call']   = ''
-        state['strike_calls']       = []
-    elif last_event:
-        # Mid-at-bat: pitch events are more recent than the last play completion
-        state['away_runs']            = last_event['away_score']
-        state['home_runs']            = last_event['home_score']
-        state['current_inning']       = last_event['inning']
-        state['currentInningOrdinal'] = _ordinal(last_event['inning'])
-        state['num_of_outs']          = last_event['outs']
-        state['balls']                = last_event['balls']
-        state['strikes']              = last_event['strikes']
-        state['current_pitcher']      = last_event.get('pitcher') or None
-        state['current_hitter']       = last_event.get('batter') or None
-        half = last_event.get('half_inning', 'top')
-        state['inningState']          = 'Top' if half == 'top' else 'Bottom'
-        # Copy pitch detail fields from the most recent pitch event so the wide
-        # box can display pitch speed, type, per-at-bat count, and strike calls.
-        state['at_bat_pitch_count'] = last_event.get('at_bat_pitch_count') or 0
-        state['last_pitch_speed']   = last_event.get('last_pitch_speed')
-        state['last_pitch_type']    = last_event.get('last_pitch_type') or ''
-        state['last_strike_call']   = last_event.get('last_strike_call') or ''
-        state['strike_calls']       = list(last_event.get('strike_calls') or [])
-    else:
-        # No pitch events and no completed plays at this timestamp —
-        # the game hasn't officially started yet (no first pitch thrown).
-        state.update({
-            'detailed_state': 'Scheduled',
-            'away_runs': None, 'home_runs': None,
-            'current_inning': None, 'currentInningOrdinal': None,
-            'inningState': None, 'num_of_outs': None,
-            'balls': None, 'strikes': None,
-            'current_pitcher': None, 'current_hitter': None,
-        })
+    last_event, last_play, between_plays = \
+        _apply_in_progress_count_state(state, pitch_events, plays, target_utc)
 
     # Compute save_situation from the reconstructed inning and run differential.
     # base_game always has save_situation=False (Final games have no save situation),
@@ -872,32 +901,8 @@ def _game_state_at_time(base_game, tl, target_utc):
     state['away_inning_runs'] = away_inn
     state['home_inning_runs'] = home_inn
 
-    # --- Reconstruct fields normally provided by game_detail_fetch ---
-
     # Hit counts and no-hitter / perfect-game state from play history.
-    # These must be derived from plays to target_utc, not inherited from the
-    # Final base_game (which would show the final totals from pitch 1).
-    _away_hits = 0
-    _home_hits = 0
-    _home_pg   = True   # home pitcher's perfect game still intact
-    _away_pg   = True   # away pitcher's perfect game still intact
-    for _p in plays:
-        if _p['end_time'] > target_utc:
-            break
-        _away_hits = _p.get('away_hits_so_far', _away_hits)
-        _home_hits = _p.get('home_hits_so_far', _home_hits)
-        _home_pg   = _p.get('home_pg_intact', _home_pg)
-        _away_pg   = _p.get('away_pg_intact', _away_pg)
-    state['away_hits'] = _away_hits
-    state['home_hits'] = _home_hits
-    # Show no-hitter / perfect-game banner only once the game is past inning 5
-    # (mirrors when the MLB API starts setting the flags during a live game).
-    if _inn >= _NO_HITTER_INNING_THRESHOLD:
-        if _home_pg or _away_pg:
-            state['perfect_game'] = True
-            state['no_hitter']    = True
-        elif _away_hits == 0 or _home_hits == 0:
-            state['no_hitter'] = True
+    _reconstruct_hit_and_pg_stats(state, plays, target_utc)
 
     # Strike-zone pitch visualization for the current at-bat.
     state['ab_pitches'] = _build_ab_pitches(pitch_events, last_play, target_utc)

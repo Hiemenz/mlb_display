@@ -1195,6 +1195,179 @@ def _in_final_linescore_window(game_data, final_linescore_secs):
     return final_ts is not None and (_time.time() - final_ts) < final_linescore_secs
 
 
+def _compute_game_state_str(game_data, original_detailed_state, game_ending_state, between_innings):
+    """Return the short header string for the current game state (pure computation)."""
+    state = game_data['detailed_state']
+
+    if state in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
+        if state == 'Game Over':
+            s = 'Final'
+        elif state == 'Final: Tied':
+            s = 'Tied'
+        elif state == 'Delayed':
+            inn = game_data.get('current_inning') or 0
+            s = f'DLY {inn}' if inn > 0 else 'Delay'
+        else:
+            s = state
+        if s == 'Final':
+            if (game_data.get('away_runs') or 0) == (game_data.get('home_runs') or 0):
+                s = 'Tied'
+        if state not in ('Delayed', 'Postponed'):
+            inn = game_data.get('current_inning') or 9
+            if inn > 9:
+                s = 'F/' + str(inn)
+            elif inn != 9 and s not in ('Tied',):
+                s += '/' + str(inn)
+        return s
+
+    if state == 'Warmup':
+        return game_data.get('game_start') or state
+
+    if state in ('Scheduled', 'Pre-Game'):
+        if original_detailed_state == 'Delayed Start':
+            return 'Delay'
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(game_data.get('game_start', ''), "%Y-%m-%dT%H:%M:%SZ")
+            return dt.strftime("%I:%M %p").lstrip("0")
+        except Exception:
+            return game_data.get('game_start', '')
+
+    if state in ('Suspended', 'Cancelled', 'Cancelled: Rain'):
+        s = 'Susp' if state == 'Suspended' else 'Canc'
+        inn = game_data.get('current_inning')
+        if inn:
+            half = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
+                game_data.get('inningState') or '', '')
+            s += f' {half} {inn}' if half else f' {inn}'
+        return s
+
+    # In Progress (and any other live state not matched above)
+    inn_state = game_data.get('inningState') or ''
+    inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
+        inn_state, inn_state[:3].capitalize() if inn_state else '')
+    inn_ord_raw = game_data.get('currentInningOrdinal') or str(game_data.get('current_inning') or 1)
+    inn_ord = _re.sub(r'(?:st|nd|rd|th)$', '', inn_ord_raw, flags=_re.IGNORECASE)
+    if game_ending_state and between_innings:
+        return 'End of Game'
+    return f'{inn_label} {inn_ord}'.strip()
+
+
+def _resolve_series_team(game_data, away_team_name, home_team_name):
+    """Return (abbr, team_id_str) for the series leader/winner, or (None, None)."""
+    result = game_data.get('series_result', '')
+    parts = result.split()
+    if len(parts) >= 2 and parts[1] == 'wins':
+        leading = parts[0].upper()
+        if leading == away_team_name.upper():
+            return away_team_name, str(game_data['away_team_id'])
+        if leading == home_team_name.upper():
+            return home_team_name, str(game_data['home_team_id'])
+    if game_data.get('away_team_is_winner'):
+        return away_team_name, str(game_data['away_team_id'])
+    if game_data.get('home_team_is_winner'):
+        return home_team_name, str(game_data['home_team_id'])
+    return None, None
+
+
+def _draw_series_header_state(ctx, game_data, away_team_name, home_team_name,
+                               away_team_id, home_team_id, ser):
+    """Draw series context (sweep/clinched/tied/leading/postponed) in the tile header.
+
+    Returns ser_content_left_x — the left edge of the drawn content.
+    May call ctx.paste(), so callers should refresh draw = ctx.draw after.
+    """
+    s = ctx.s
+    start_x, start_y = ctx.x, ctx.y
+    horizonta_len = ctx.w
+    font14, font11 = ctx.font14, ctx.font11
+
+    ser_content_left_x = start_x + horizonta_len - 2 * s
+
+    def _place_logo_score(abbr, team_id, score_str, score_w, bold):
+        """Draw [logo] score right-anchored; return left edge of content."""
+        _logo = _logo_small(abbr, team_id, size=14 * s) if abbr else None
+        _rx = start_x + horizonta_len - 2 * s
+        if _logo:
+            _lw, _lh = _logo.size
+            _score_x = _rx - score_w
+            _logo_x  = _score_x - 2 * s - _lw
+            _logo_y  = start_y + (20 * s - _lh) // 2
+            ctx.paste(_logo, (_logo_x, _logo_y))
+            _left_x = _logo_x
+        else:
+            _score_x = _rx - score_w
+            _left_x  = _score_x
+        if bold:
+            _draw_bold_text(ctx.draw, (_score_x, start_y + 3 * s), score_str, font14, s)
+        else:
+            ctx.draw.text((_score_x, start_y + 3 * s), score_str, font=font14, fill=0)
+        if ser.show_overline:
+            ctx.draw.line((_score_x, start_y + 3 * s,
+                           _score_x + score_w, start_y + 3 * s), fill=0, width=2)
+        return _left_x
+
+    if ser.is_sweep or ser.clinched:
+        _sw = game_data.get('series_wins') or 0
+        _sl = game_data.get('series_losses') or 0
+        _score_str = f'{_sw}-{_sl}'
+        _score_w = int(font14.getlength(_score_str))
+        _abbr, _tid = _resolve_series_team(game_data, away_team_name, home_team_name)
+        ser_content_left_x = _place_logo_score(_abbr, _tid, _score_str, _score_w, bold=True)
+
+    elif ser.tied:
+        _sw = game_data.get('series_wins') or 0
+        _sl = game_data.get('series_losses') or 0
+        _tied_str = f'{_sw}-{_sl}'
+        _tied_w = int(font14.getlength(_tied_str))
+        _tx = start_x + horizonta_len - 2 * s - _tied_w
+        ser_content_left_x = _tx
+        _draw_bold_text(ctx.draw, (_tx, start_y + 3 * s), _tied_str, font14, s)
+        if ser.show_overline:
+            ctx.draw.line((_tx, start_y + 3 * s,
+                           _tx + _tied_w, start_y + 3 * s), fill=0, width=2)
+
+    elif ser.leading:
+        _sw = game_data.get('series_wins') or 0
+        _sl = game_data.get('series_losses') or 0
+        _score_str = f'{_sw}-{_sl}'
+        _score_w = int(font14.getlength(_score_str))
+        _abbr, _tid = _resolve_series_team(game_data, away_team_name, home_team_name)
+        ser_content_left_x = _place_logo_score(_abbr, _tid, _score_str, _score_w, bold=False)
+
+    # Series context in header for postponed games
+    if game_data['detailed_state'] == 'Postponed' and (game_data.get('series_total_games') or 1) > 1:
+        _ppd_sr = game_data.get('series_result') or ''
+        _ppd_parts = _ppd_sr.split()
+        _ppd_is_tied = 'tied' in _ppd_sr.lower()
+        _ppd_sw = game_data.get('series_wins') or 0
+        _ppd_sl = game_data.get('series_losses') or 0
+        _rx = start_x + horizonta_len - 2 * s
+
+        if (_ppd_sw + _ppd_sl) > 0 and not _ppd_is_tied and len(_ppd_parts) >= 3 and _ppd_parts[1] == 'leads':
+            _ppd_score = _ppd_parts[2]
+            _ppd_leader_str = _ppd_parts[0].upper()
+            _ppd_logo_abbr = _ppd_logo_id = None
+            if _ppd_leader_str == away_team_name.upper():
+                _ppd_logo_abbr, _ppd_logo_id = away_team_name, str(game_data['away_team_id'])
+            elif _ppd_leader_str == home_team_name.upper():
+                _ppd_logo_abbr, _ppd_logo_id = home_team_name, str(game_data['home_team_id'])
+            _ppd_score_w = int(font11.getlength(_ppd_score))
+            _ppd_score_x = _rx - _ppd_score_w
+            ctx.draw.text((_ppd_score_x, start_y + 5 * s), _ppd_score, font=font11, fill=0)
+            ser_content_left_x = _ppd_score_x
+            if _ppd_logo_abbr:
+                _ppd_logo = _logo_small(_ppd_logo_abbr, _ppd_logo_id, size=14 * s)
+                if _ppd_logo:
+                    _lw, _lh = _ppd_logo.size
+                    _ppd_logo_x = _ppd_score_x - 2 * s - _lw
+                    _ppd_logo_y = start_y + (20 * s - _lh) // 2
+                    ctx.paste(_ppd_logo, (_ppd_logo_x, _ppd_logo_y))
+                    ser_content_left_x = _ppd_logo_x
+
+    return ser_content_left_x
+
+
 _LayoutFlags = namedtuple('_LayoutFlags', [
     'delayed_with_score', 'between_innings', 'pitching_change',
     'mid_inning_pc', 'game_ending_state',
@@ -1857,64 +2030,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         else:
             _draw_body_live_active(ctx, game_data, _mid_inning_pc)
 
-    if game_data['detailed_state'] in ('Final', 'Game Over', 'Final: Tied', 'Postponed', 'Delayed'):
-        # Normalize display labels
-        if game_data['detailed_state'] == 'Game Over':
-            game_state_str = 'Final'
-        elif game_data['detailed_state'] == 'Final: Tied':
-            game_state_str = 'Tied'
-        elif game_data['detailed_state'] == 'Delayed':
-            # Show inning when the delay happened mid-game (e.g. "DLY 5"); just "Delay" pre-game
-            _dly_inn = game_data.get('current_inning') or 0
-            game_state_str = f'DLY {_dly_inn}' if _dly_inn > 0 else 'Delay'
-        else:
-            game_state_str = game_data['detailed_state']
-
-        # Catch tied games the API marks as plain "Final" (spring training, international)
-        if game_state_str == 'Final':
-            _ar = game_data.get('away_runs') or 0
-            _hr = game_data.get('home_runs') or 0
-            if _ar == _hr:
-                game_state_str = 'Tied'
-
-        if game_data['detailed_state'] not in ('Delayed', 'Postponed'):
-            _fin_inning = game_data.get('current_inning') or 9
-            if _fin_inning > 9:
-                game_state_str = 'F/' + str(_fin_inning)
-            elif _fin_inning != 9 and game_state_str not in ('Tied',):
-                game_state_str += '/' + str(_fin_inning)
-
-    elif game_data['detailed_state'] == 'Warmup':
-        # Show start time in header instead of the word "Warmup"
-        game_state_str = game_data.get('game_start') or game_data['detailed_state']
-
-    elif game_data['detailed_state'] in ('Scheduled', 'Pre-Game'):
-        if _original_detailed_state == 'Delayed Start':
-            game_state_str = 'Delay'
-        else:
-            try:
-                from datetime import datetime
-                dt = datetime.strptime(game_data.get('game_start', ''), "%Y-%m-%dT%H:%M:%SZ")
-                game_state_str = dt.strftime("%I:%M %p").lstrip("0")
-            except Exception:
-                game_state_str = game_data.get('game_start', '')
-    elif game_data['detailed_state'] in ('Suspended', 'Cancelled', 'Cancelled: Rain'):
-        game_state_str = 'Susp' if game_data['detailed_state'] == 'Suspended' else 'Canc'
-        _inn = game_data.get('current_inning')
-        if _inn:
-            _susp_half = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
-                game_data.get('inningState') or '', '')
-            game_state_str += f' {_susp_half} {_inn}' if _susp_half else f' {_inn}'
-    else:
-        # In Progress (and any other live state not matched above)
-        _inn_state = game_data.get('inningState') or ''
-        _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(_inn_state, _inn_state[:3].capitalize() if _inn_state else '')
-        _inn_ord_raw = game_data.get('currentInningOrdinal') or str(game_data.get('current_inning') or 1)
-        _inn_ord = _re.sub(r'(?:st|nd|rd|th)$', '', _inn_ord_raw, flags=_re.IGNORECASE)
-        if _game_ending_state and _between_innings:
-            game_state_str = 'End of Game'
-        else:
-            game_state_str = (f'{_inn_label} {_inn_ord}').strip()
+    game_state_str = _compute_game_state_str(
+        game_data, _original_detailed_state, _game_ending_state, _between_innings)
 
     # DH label vars — defined early so both the header-override block below
     # and the later duration block can use them.
@@ -1978,140 +2095,11 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _ser = _compute_series_state(game_data)
     _game_is_final = _ser.game_is_final
     _active_no_no = _ser.active_no_no
-    _ser_total = _ser.total_games
-    _sw_wins, _sw_losses, _sw_desc = _ser.wins, _ser.losses, _ser.description
     _is_sweep = _ser.is_sweep
-    _series_clinched = _ser.clinched
-    _series_tied = _ser.tied
-    _series_leading = _ser.leading
-    _show_overline = _ser.show_overline
 
-    # _ser_content_left_x tracks left edge of series/broom content for G:X:XX positioning
-    _ser_content_left_x = start_x + horizonta_len - 2 * s
-
-    if _is_sweep or _series_clinched:
-        # Series win: draw winner logo + series score (e.g. 3-1)
-        _sw = game_data.get('series_wins') or 0
-        _sl = game_data.get('series_losses') or 0
-        _score_str = f'{_sw}-{_sl}'
-        _score_w = int(font14.getlength(_score_str))
-        _ser_logo_size = 14 * s
-        # Determine series winner from series_result (e.g. "NYY wins 2-1")
-        _ser_winner_abbr = _ser_winner_id = None
-        _ser_result_sw = game_data.get('series_result', '')
-        _ser_result_sw_parts = _ser_result_sw.split()
-        if len(_ser_result_sw_parts) >= 2 and _ser_result_sw_parts[1] == 'wins':
-            _leading_sw = _ser_result_sw_parts[0].upper()
-            if _leading_sw == away_team_name.upper():
-                _ser_winner_abbr, _ser_winner_id = away_team_name, str(game_data['away_team_id'])
-            elif _leading_sw == home_team_name.upper():
-                _ser_winner_abbr, _ser_winner_id = home_team_name, str(game_data['home_team_id'])
-        if not _ser_winner_abbr:
-            if game_data.get('away_team_is_winner'):
-                _ser_winner_abbr, _ser_winner_id = away_team_name, str(game_data['away_team_id'])
-            elif game_data.get('home_team_is_winner'):
-                _ser_winner_abbr, _ser_winner_id = home_team_name, str(game_data['home_team_id'])
-        _ser_logo = _logo_small(_ser_winner_abbr, _ser_winner_id, size=_ser_logo_size) if _ser_winner_abbr else None
-        _rx = start_x + horizonta_len - 2 * s
-        if _ser_logo:
-            _logo_w, _logo_h = _ser_logo.size
-            _score_x = _rx - _score_w
-            _logo_x = _score_x - 2 * s - _logo_w
-            _logo_y = start_y + (20 * s - _logo_h) // 2
-            Himage.paste(_ser_logo, (_logo_x, _logo_y))
-            draw = ImageDraw.Draw(Himage)
-            _ser_content_left_x = _logo_x
-        else:
-            _score_x = _rx - _score_w
-            _ser_content_left_x = _score_x
-        _draw_bold_text(draw, (_score_x, start_y + 3 * s), _score_str, font14, s)
-        if _show_overline:
-            draw.line((_score_x, start_y + 3 * s, _score_x + _score_w, start_y + 3 * s), fill=0, width=2)
-
-    elif _series_tied:
-        _sw = game_data.get('series_wins') or 0
-        _sl = game_data.get('series_losses') or 0
-        _tied_str = f'{_sw}-{_sl}'
-        _tied_w = int(font14.getlength(_tied_str))
-        _rx = start_x + horizonta_len - 2 * s
-        _tx = _rx - _tied_w
-        _ser_content_left_x = _tx
-        _draw_bold_text(draw, (_tx, start_y + 3 * s), _tied_str, font14, s)
-        if _show_overline:
-            draw.line((_tx, start_y + 3 * s, _tx + _tied_w, start_y + 3 * s), fill=0, width=2)
-
-    elif _series_leading:
-        # Series leader: draw leading team's logo + score (e.g. [NYY logo] 1-0)
-        _sw = game_data.get('series_wins') or 0
-        _sl = game_data.get('series_losses') or 0
-        _score_str = f'{_sw}-{_sl}'
-        _score_w = int(font14.getlength(_score_str))
-        _ser_logo_size = 14 * s
-        _ser_leader_abbr = _ser_leader_id = None
-        _ser_result = game_data.get('series_result', '')
-        _ser_result_parts = _ser_result.split()
-        if len(_ser_result_parts) >= 2 and _ser_result_parts[1] == 'wins':
-            _leading = _ser_result_parts[0].upper()
-            if _leading == away_team_name.upper():
-                _ser_leader_abbr, _ser_leader_id = away_team_name, str(game_data['away_team_id'])
-            elif _leading == home_team_name.upper():
-                _ser_leader_abbr, _ser_leader_id = home_team_name, str(game_data['home_team_id'])
-        if not _ser_leader_abbr:
-            if game_data.get('away_team_is_winner'):
-                _ser_leader_abbr, _ser_leader_id = away_team_name, str(game_data['away_team_id'])
-            elif game_data.get('home_team_is_winner'):
-                _ser_leader_abbr, _ser_leader_id = home_team_name, str(game_data['home_team_id'])
-        _ser_logo = _logo_small(_ser_leader_abbr, _ser_leader_id, size=_ser_logo_size) if _ser_leader_abbr else None
-        _rx = start_x + horizonta_len - 2 * s
-        if _ser_logo:
-            _logo_w, _logo_h = _ser_logo.size
-            _score_x = _rx - _score_w
-            _logo_x = _score_x - 2 * s - _logo_w
-            _logo_y = start_y + (20 * s - _logo_h) // 2
-            Himage.paste(_ser_logo, (_logo_x, _logo_y))
-            draw = ImageDraw.Draw(Himage)
-            _ser_content_left_x = _logo_x
-        else:
-            _score_x = _rx - _score_w
-            _ser_content_left_x = _score_x
-        draw.text((_score_x, start_y + 3 * s), _score_str, font=font14, fill=0)
-        if _show_overline:
-            draw.line((_score_x, start_y + 3 * s, _score_x + _score_w, start_y + 3 * s), fill=0, width=2)
-
-    # Series context in header for postponed games
-    if game_data['detailed_state'] == 'Postponed' and (game_data.get('series_total_games') or 1) > 1:
-        _ppd_sr = game_data.get('series_result') or ''
-        _ppd_parts = _ppd_sr.split()
-        _ppd_is_tied = 'tied' in _ppd_sr.lower()
-        _ppd_sw = game_data.get('series_wins') or 0
-        _ppd_sl = game_data.get('series_losses') or 0
-        _rx = start_x + horizonta_len - 2 * s
-
-        if (_ppd_sw + _ppd_sl) == 0:
-            # Series hasn't started (or API returned stale 0-0 data for a mid-series PPD).
-            # Don't show "0/X" — the count is unreliable; teams may have played yesterday.
-            pass
-        elif not _ppd_is_tied and len(_ppd_parts) >= 3 and _ppd_parts[1] == 'leads':
-            _ppd_score = _ppd_parts[2]
-            _ppd_leader_str = _ppd_parts[0].upper()
-            _ppd_logo_abbr = _ppd_logo_id = None
-            if _ppd_leader_str == away_team_name.upper():
-                _ppd_logo_abbr, _ppd_logo_id = away_team_name, str(game_data['away_team_id'])
-            elif _ppd_leader_str == home_team_name.upper():
-                _ppd_logo_abbr, _ppd_logo_id = home_team_name, str(game_data['home_team_id'])
-            _ppd_score_w = int(font11.getlength(_ppd_score))
-            _ppd_score_x = _rx - _ppd_score_w
-            draw.text((_ppd_score_x, start_y + 5 * s), _ppd_score, font=font11, fill=0)
-            _ser_content_left_x = _ppd_score_x
-            if _ppd_logo_abbr:
-                _ppd_logo = _logo_small(_ppd_logo_abbr, _ppd_logo_id, size=14 * s)
-                if _ppd_logo:
-                    _lw, _lh = _ppd_logo.size
-                    _ppd_logo_x = _ppd_score_x - 2 * s - _lw
-                    _ppd_logo_y = start_y + (20 * s - _lh) // 2
-                    Himage.paste(_ppd_logo, (_ppd_logo_x, _ppd_logo_y))
-                    draw = ImageDraw.Draw(Himage)
-                    _ser_content_left_x = _ppd_logo_x
+    _ser_content_left_x = _draw_series_header_state(
+        ctx, game_data, away_team_name, home_team_name, away_team_id, home_team_id, _ser)
+    draw = ctx.draw  # refresh after potential paste inside the helper
 
     # Delay reason — right-anchored where the venue normally lives.
     _is_any_delay = (

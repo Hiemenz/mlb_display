@@ -179,6 +179,172 @@ def _draw_debug_overlay(Himage, config):
     return Himage
 
 
+def _check_linescore_window(game_state_data, config):
+    """Detect if any Final game has exited the post-game linescore display window.
+
+    Returns (window_changed, new_win_state, old_win_state, expired_pks).
+    Persists new_win_state to disk as a side effect.
+    """
+    _final_state_set = {'Final', 'Game Over', 'Final: Tied'}
+    _final_times = load_json_file('game_final_times.json') or {}
+    _old_win_state = load_json_file('old_linescore_window_state.json') or {}
+    _new_win_state: dict = {}
+    _expired_pks: set = set()
+    _final_linescore_secs = config.get('final_linescore_minutes', 60) * 60
+    for _g in game_state_data:
+        if _g.get('detailed_state') not in _final_state_set:
+            continue
+        _pk = str(_g.get('game_pk', ''))
+        if not _pk:
+            continue
+        _ft = _final_times.get(_pk)
+        if _ft is None:
+            continue
+        _end_utc = _g.get('game_end_time_utc')
+        if _end_utc:
+            try:
+                _end_dt = pytz.utc.localize(datetime.strptime(_end_utc[:19], "%Y-%m-%dT%H:%M:%S"))
+                _in_win = (datetime.now(pytz.utc) - _end_dt).total_seconds() < _final_linescore_secs
+            except Exception:
+                _in_win = (_time_mod.time() - float(_ft)) < _final_linescore_secs
+        else:
+            _in_win = (_time_mod.time() - float(_ft)) < _final_linescore_secs
+        _new_win_state[_pk] = _in_win
+        if _old_win_state.get(_pk) is True and not _in_win:
+            _expired_pks.add(_pk)
+            print(f'Linescore window expired for game {_pk} — forcing re-render')
+    save_off_results(_new_win_state, 'old_linescore_window_state')
+    return bool(_expired_pks), _new_win_state, _old_win_state, _expired_pks
+
+
+def _compute_fullscreen_regions(bypass_cache, featured_game, old_by_pk,
+                                old_win_state, new_win_state):
+    """Compute partial-refresh zones for live fullscreen mode.
+
+    Returns a list of (x, y, w, h) regions, or [] when a full refresh is needed.
+    """
+    _fs_regions: list = []
+    if bypass_cache or not featured_game:
+        return _fs_regions
+    _ds = featured_game.get('detailed_state', '')
+    if _ds not in ('In Progress', 'Player challenge', 'Manager challenge'):
+        return _fs_regions
+    _feat_pk = str(featured_game.get('game_pk', ''))
+    _old_feat = old_by_pk.get(_feat_pk)
+    if _old_feat is None:
+        return _fs_regions
+
+    _HEADER_FIELDS = frozenset({
+        'inningState', 'inningHalf', 'current_inning', 'currentInningOrdinal',
+        'last_play', 'last_review_result', 'last_play_description',
+        'sub_event', 'last_play_rbi',
+    })
+    _SCORE_FIELDS = frozenset({
+        'away_runs', 'home_runs', 'away_hits', 'home_hits',
+        'away_errors', 'home_errors',
+        'runner_on_first', 'runner_on_second', 'runner_on_third',
+        'runner_first_number', 'runner_second_number', 'runner_third_number',
+        'num_of_outs',
+        'away_challenges_remaining', 'home_challenges_remaining',
+        'away_replay_remaining', 'home_replay_remaining', 'abs_challenge_max',
+        'save_situation', 'detailed_state',
+    })
+    _BOTTOM_FIELDS = frozenset({
+        'balls', 'strikes', 'strike_calls',
+        'last_pitch_speed', 'last_pitch_type', 'pitch_count',
+        'current_pitcher',
+        'current_play_batter', 'current_hitter',
+        'due_up', 'next_batter_1', 'next_batter_2', 'next_batter_3', 'in_hole',
+        'current_at_bat_complete', 'next_pitcher',
+        'away_win_probability', 'home_win_probability',
+        'away_inning_runs', 'home_inning_runs',
+        'inningState', 'inningHalf', 'current_inning',
+        'num_of_outs',
+    })
+    _ALL_KNOWN = _HEADER_FIELDS | _SCORE_FIELDS | _BOTTOM_FIELDS
+    _changed_fields = {k for k in set(featured_game) | set(_old_feat)
+                       if featured_game.get(k) != _old_feat.get(k)}
+    if not _changed_fields or (_changed_fields - _ALL_KNOWN):
+        return _fs_regions
+
+    _zones = []
+    if _changed_fields & _HEADER_FIELDS:
+        _zones.append((0, 0, 800, 76))
+    if _changed_fields & _SCORE_FIELDS:
+        _zones.append((0, 69, 800, 208))
+    if _changed_fields & _BOTTOM_FIELDS:
+        _zones.append((0, 277, 800, 203))
+    return _zones if len(_zones) < 3 else [(0, 0, 800, 480)]
+
+
+def _compute_grid_changed_regions(ordered, slots, refreshed_game_ids, bypass_cache,
+                                  dropped_games, ticker_will_show, bracket,
+                                  all_games_done, game_state_data, config, league_mode):
+    """Compute partial-refresh changed_regions list and layout_changed flag for grid mode.
+
+    Persists grid positions and header state to disk as side effects.
+    Returns (changed_regions, layout_changed).
+    """
+    x_start = 32
+    y_start = 30
+    changed_regions = []
+    for game, slot_info in zip(ordered, slots):
+        slot_type, gx, gy = slot_info
+        pk = str(game.get('game_pk', ''))
+        if pk in refreshed_game_ids:
+            rx = (gx * 150 + x_start) // 8 * 8
+            ry = gy * 150 + y_start
+            if slot_type == 'triple':
+                rw = 440
+            elif slot_type == 'wide':
+                rw = 304
+            else:
+                rw = 152
+            changed_regions.append((rx, ry, rw, 150))
+
+    if len(changed_regions) >= 10:
+        changed_regions = [(0, 0, 800, 480)]
+
+    layout_changed = False
+    if bypass_cache:
+        return changed_regions, layout_changed
+
+    new_positions = {
+        str(game.get('game_pk', '')): list(slot_info)
+        for game, slot_info in zip(ordered, slots)
+        if game.get('game_pk', '')
+    }
+    old_positions = load_json_file('old_grid_positions.json') or {}
+    layout_changed = new_positions != old_positions
+    save_off_results(new_positions, 'old_grid_positions')
+    save_off_results({'needed': layout_changed}, 'force_full_refresh')
+
+    _rot_mins = config.get('overflow_ticker_rotation_minutes', 2)
+    if ticker_will_show:
+        _header_key = [str(g.get('game_pk', '')) for g in _ticker_window(dropped_games, rotation_minutes=_rot_mins)]
+        _header_state = {'mode': 'ticker', 'key': _header_key}
+    elif bracket:
+        _header_state = {'mode': 'bracket', 'key': []}
+    elif all_games_done and game_state_data:
+        _recap_key = [str(g.get('game_pk', '')) for g in _ticker_window(list(game_state_data), rotation_minutes=_rot_mins)]
+        _header_state = {'mode': 'recap', 'key': _recap_key}
+    elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
+        _header_state = {'mode': 'wildcard', 'key': []}
+    elif config.get('show_transactions_ticker', False):
+        _tx_key = [(e.get('date', '') + e.get('player_name', ''))
+                   for e in (load_json_file('transactions.json') or {}).get('transactions', [])[:5]]
+        _header_state = {'mode': 'transactions', 'key': _tx_key}
+    else:
+        _header_state = {'mode': 'none', 'key': []}
+
+    old_header_state = load_json_file('old_header_state.json') or {}
+    if _header_state != old_header_state and changed_regions != [(0, 0, 800, 480)]:
+        changed_regions.append((0, 0, 800, _WC_STRIP_H))
+    save_off_results(_header_state, 'old_header_state')
+
+    return changed_regions, layout_changed
+
+
 def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_cache=False, config=None):
     """Returns (image, changed_regions) or None if nothing changed.
 
@@ -226,6 +392,8 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             refreshed_game_ids.add(pk)
 
     changed_game_ids = set()
+    _new_win_state: dict = {}
+    _old_win_state: dict = {}
     if not bypass_cache:
         # --- Score change detection ---
         old_scores = load_json_file('score_alerts.json')
@@ -243,42 +411,11 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
                     changed_game_ids.add(pk)
                     print(f'Score change detected for game {pk}: {old_entry} -> {new_scores[pk]}')
         save_off_results(new_scores, 'score_alerts')
-        # --- End score change detection ---
 
         # Detect when a Final game's linescore window transitions True→False.
-        # The visual content (linescore grid vs WP/LP) changes at the 60-min boundary
-        # without any change to game_state_data, so the data comparison above won't
-        # catch it. We track the window state separately and force a re-render when
-        # any game exits the window.
-        _final_state_set = {'Final', 'Game Over', 'Final: Tied'}
-        _final_times = load_json_file('game_final_times.json') or {}
-        _old_win_state = load_json_file('old_linescore_window_state.json') or {}
-        _new_win_state = {}
-        _linescore_window_changed = False
-        _final_linescore_secs = config.get('final_linescore_minutes', 60) * 60
-        for _g in game_state_data:
-            if _g.get('detailed_state') in _final_state_set:
-                _pk = str(_g.get('game_pk', ''))
-                if not _pk:
-                    continue
-                _ft = _final_times.get(_pk)
-                if _ft is None:
-                    continue
-                _end_utc = _g.get('game_end_time_utc')
-                if _end_utc:
-                    try:
-                        _end_dt = pytz.utc.localize(datetime.strptime(_end_utc[:19], "%Y-%m-%dT%H:%M:%S"))
-                        _in_win = (datetime.now(pytz.utc) - _end_dt).total_seconds() < _final_linescore_secs
-                    except Exception:
-                        _in_win = (_time_mod.time() - float(_ft)) < _final_linescore_secs
-                else:
-                    _in_win = (_time_mod.time() - float(_ft)) < _final_linescore_secs
-                _new_win_state[_pk] = _in_win
-                if _old_win_state.get(_pk) is True and not _in_win:
-                    _linescore_window_changed = True
-                    refreshed_game_ids.add(_pk)
-                    print(f'Linescore window expired for game {_pk} — forcing re-render')
-        save_off_results(_new_win_state, 'old_linescore_window_state')
+        _linescore_window_changed, _new_win_state, _old_win_state, _expired_pks = \
+            _check_linescore_window(game_state_data, config)
+        refreshed_game_ids |= _expired_pks
 
         if compare_json_dicts_sorted(new_dict, old_dict) and not _linescore_window_changed:
             print('images the same')
@@ -325,63 +462,11 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         if config.get('dark_mode', False):
             Himage = ImageOps.invert(Himage.convert('L')).convert('1')
 
-        # Partial refresh for live fullscreen: map changed fields to display zones and
-        # refresh only the affected zones.  Three zones:
-        #   Header  y=0..75   — inning label, last-play event
-        #   Score   y=69..276 — R/H/E rows, bases, outs, challenges
-        #   Bottom  y=277..479 — B/S/O, pitch info, pitcher/batter, win %
-        # (Header and Score overlap slightly at y=69..75 to cover the thick divider line.)
-        # If all three zones change, fall back to a full refresh (empty list).
-        _fs_regions = []
-        if not bypass_cache and featured_game:
-            _ds = featured_game.get('detailed_state', '')
-            _is_live_fs = _ds in ('In Progress', 'Player challenge', 'Manager challenge')
-            if _is_live_fs:
-                _feat_pk = str(featured_game.get('game_pk', ''))
-                _old_feat = old_by_pk.get(_feat_pk)
-                if _old_feat is not None:
-                    _HEADER_FIELDS = frozenset({
-                        'inningState', 'inningHalf', 'current_inning', 'currentInningOrdinal',
-                        'last_play', 'last_review_result', 'last_play_description',
-                        'sub_event', 'last_play_rbi',
-                    })
-                    _SCORE_FIELDS = frozenset({
-                        'away_runs', 'home_runs', 'away_hits', 'home_hits',
-                        'away_errors', 'home_errors',
-                        'runner_on_first', 'runner_on_second', 'runner_on_third',
-                        'runner_first_number', 'runner_second_number', 'runner_third_number',
-                        'num_of_outs',
-                        'away_challenges_remaining', 'home_challenges_remaining',
-                        'away_replay_remaining', 'home_replay_remaining', 'abs_challenge_max',
-                        'save_situation', 'detailed_state',
-                    })
-                    _BOTTOM_FIELDS = frozenset({
-                        'balls', 'strikes', 'strike_calls',
-                        'last_pitch_speed', 'last_pitch_type', 'pitch_count',
-                        'current_pitcher',
-                        'current_play_batter', 'current_hitter',
-                        'due_up', 'next_batter_1', 'next_batter_2', 'next_batter_3', 'in_hole',
-                        'current_at_bat_complete', 'next_pitcher',
-                        'away_win_probability', 'home_win_probability',
-                        'away_inning_runs', 'home_inning_runs',
-                        'inningState', 'inningHalf', 'current_inning',
-                        'num_of_outs',
-                    })
-                    _ALL_KNOWN = _HEADER_FIELDS | _SCORE_FIELDS | _BOTTOM_FIELDS
-                    _changed_fields = {k for k in set(featured_game) | set(_old_feat)
-                                       if featured_game.get(k) != _old_feat.get(k)}
-                    if _changed_fields and not (_changed_fields - _ALL_KNOWN):
-                        _zones = []
-                        if _changed_fields & _HEADER_FIELDS:
-                            _zones.append((0, 0, 800, 76))    # header + thick border
-                        if _changed_fields & _SCORE_FIELDS:
-                            _zones.append((0, 69, 800, 208))  # R/H/E rows through divider
-                        if _changed_fields & _BOTTOM_FIELDS:
-                            _zones.append((0, 277, 800, 203)) # situation + win% bar
-                        if len(_zones) < 3:
-                            _fs_regions = _zones
-                        else:
-                            _fs_regions = [(0, 0, 800, 480)]  # all zones → full-screen partial
+        # Partial refresh for live fullscreen: map changed fields to display zones.
+        # Three zones: Header y=0..75 | Score y=69..276 | Bottom y=277..479
+        # (Header and Score overlap at y=69..75 to cover the thick divider line.)
+        _fs_regions = _compute_fullscreen_regions(
+            bypass_cache, featured_game, old_by_pk, _old_win_state, _new_win_state)
 
         return (Himage, _fs_regions)
 
@@ -480,82 +565,14 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     # --- Compute changed regions from changed_game_ids ---
     # Reuses the exact _ordered/_slots draw_out_of_town_score_board was given
-    # above, so wide (2-cell) games — which consume two slot units and may be
-    # reordered — get a region that covers the whole tile rather than only
-    # its left half.
-    x_start = 32
-    y_start = 30
-    changed_regions = []
-    for game, slot_info in zip(_ordered, _slots):
-        slot_type, gx, gy = slot_info
-        pk = str(game.get('game_pk', ''))
-        if pk in refreshed_game_ids:
-            # Align x to 8-pixel boundary
-            rx = (gx * 150 + x_start) // 8 * 8
-            ry = gy * 150 + y_start
-            # Triple tiles span 3 columns (≈435px); wide 2 (≈300px); normal 1 (150px).
-            # Pad to cover 8px alignment rounding and keep width divisible by 8.
-            if slot_type == 'triple':
-                rw = 440
-            elif slot_type == 'wide':
-                rw = 304
-            else:
-                rw = 152
-            rh = 150
-            changed_regions.append((rx, ry, rw, rh))
-
-    # If 10+ cells changed, refresh the whole canvas as one partial region
-    if len(changed_regions) >= 10:
-        changed_regions = [(0, 0, 800, 480)]
-
-    # A game can shift to a different cell purely because another game's live
-    # state changed the grid packing (see _pack_grid in image_grid.py) — its
-    # own data is identical, so it's never in refreshed_game_ids and its old
-    # cell never gets marked for partial refresh. Partial refresh only
-    # touches the regions we hand it, so that old cell keeps showing the
-    # stale game underneath (ghosting) until something else happens to touch
-    # it. Detect any such reshuffle and signal main.py to force a true full
-    # (flashing) refresh instead, which repaints the entire screen.
-    layout_changed = False
-    if not bypass_cache:
-        new_positions = {
-            str(game.get('game_pk', '')): list(slot_info)
-            for game, slot_info in zip(_ordered, _slots)
-            if game.get('game_pk', '')
-        }
-        old_positions = load_json_file('old_grid_positions.json') or {}
-        layout_changed = new_positions != old_positions
-        save_off_results(new_positions, 'old_grid_positions')
-        save_off_results({'needed': layout_changed}, 'force_full_refresh')
-
-        # The header strip (overflow ticker / bracket / wildcard standings)
-        # isn't covered by the grid-cell diffing above — a pure ticker
-        # rotation change, for instance, wouldn't otherwise be included in
-        # changed_regions and so wouldn't reach the e-ink panel on a partial
-        # refresh. Fingerprint whatever's currently showing there and add the
-        # strip to changed_regions when it differs from the last poll.
-        if _ticker_will_show:
-            _header_key = [str(g.get('game_pk', '')) for g in _ticker_window(
-                _dropped_games, rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2))]
-            _header_state = {'mode': 'ticker', 'key': _header_key}
-        elif _bracket:
-            _header_state = {'mode': 'bracket', 'key': []}
-        elif _all_games_done and game_state_data:
-            _recap_key = [str(g.get('game_pk', '')) for g in _ticker_window(
-                list(game_state_data), rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2))]
-            _header_state = {'mode': 'recap', 'key': _recap_key}
-        elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
-            _header_state = {'mode': 'wildcard', 'key': []}
-        elif config.get('show_transactions_ticker', False):
-            _tx_key = [(e.get('date', '') + e.get('player_name', ''))
-                       for e in (load_json_file('transactions.json') or {}).get('transactions', [])[:5]]
-            _header_state = {'mode': 'transactions', 'key': _tx_key}
-        else:
-            _header_state = {'mode': 'none', 'key': []}
-
-        old_header_state = load_json_file('old_header_state.json') or {}
-        if _header_state != old_header_state and changed_regions != [(0, 0, 800, 480)]:
-            changed_regions.append((0, 0, 800, _WC_STRIP_H))
-        save_off_results(_header_state, 'old_header_state')
+    # above, so wide (2-cell) games get a region covering the whole tile.
+    # A game can shift cell due to live-state grid repacking without its own
+    # data changing; _compute_grid_changed_regions detects that as layout_changed
+    # so main.py can force a full (flashing) refresh instead of a partial one.
+    changed_regions, layout_changed = _compute_grid_changed_regions(
+        _ordered, _slots, refreshed_game_ids, bypass_cache,
+        _dropped_games, _ticker_will_show, _bracket,
+        _all_games_done, game_state_data, config, league_mode,
+    )
 
     return (Himage, changed_regions)
