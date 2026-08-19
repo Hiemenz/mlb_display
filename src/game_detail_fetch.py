@@ -308,6 +308,177 @@ def _find_recent_sub_event(plays):
     return None
 
 
+def _extract_at_bat_pitch_data(current_play_events):
+    """Scan pitch events in the current at-bat.
+
+    Returns (last_speed, last_type, last_strike_call, at_bat_pitch_count, strike_calls).
+    """
+    last_speed = None
+    last_type = ''
+    last_strike_call = ''
+    at_bat_pitch_count = 0
+    strike_calls: list = []
+    for ev in current_play_events:
+        if not ev.get('isPitch'):
+            continue
+        at_bat_pitch_count += 1
+        pd = ev.get('pitchData', {})
+        details = ev.get('details', {})
+        call_code = (details.get('call', {}).get('code', '') or '').upper()
+        if call_code in ('S', 'W', 'T', 'O', 'M'):
+            last_strike_call = 'S'
+            if len(strike_calls) < 2:
+                strike_calls.append('S')
+        elif call_code == 'C':
+            last_strike_call = 'L'
+            if len(strike_calls) < 2:
+                strike_calls.append('C')
+        elif call_code in ('F', 'L', 'R'):
+            last_strike_call = 'F'
+            if len(strike_calls) < 2:
+                strike_calls.append('F')
+        raw_code = details.get('type', {}).get('code', '') or ''
+        last_type = _PITCH_TYPE_ABBR.get(raw_code, raw_code)
+        last_speed = pd.get('startSpeed')
+    return last_speed, last_type, last_strike_call, at_bat_pitch_count, strike_calls
+
+
+def _extract_last_play_and_hit(plays):
+    """Find the most recent completed non-substitution play and its hit coordinates.
+
+    Returns (last_play, inning, is_top, rbi, hit_x, hit_y, is_out, is_hr).
+    All values are None / 0 / False when no qualifying play is found.
+    """
+    _SUBST_EVENT_TYPES = {
+        'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
+        'runner_substitution', 'game_advisory', 'ejection', 'defensive_switch',
+    }
+    live_last_play = None
+    live_last_play_inning = None
+    live_last_play_is_top = None
+    live_last_play_rbi = 0
+    last_lp = None
+    for _lp in reversed(plays.get('allPlays', [])):
+        if not _lp.get('about', {}).get('isComplete'):
+            continue
+        _et = (_lp.get('result', {}).get('eventType') or '').lower().replace(' ', '_')
+        if _et in _SUBST_EVENT_TYPES:
+            continue
+        if not (_lp.get('result', {}).get('event') or ''):
+            continue
+        live_last_play = _build_scorecard_notation(_lp)
+        live_last_play_inning = _lp.get('about', {}).get('inning')
+        live_last_play_is_top = _lp.get('about', {}).get('isTopInning')
+        live_last_play_rbi = int(_lp.get('result', {}).get('rbi') or 0)
+        last_lp = _lp
+        break
+
+    last_hit_x = last_hit_y = None
+    last_hit_is_out = last_hit_is_hr = None
+    if last_lp is not None:
+        _lp_event = last_lp.get('result', {}).get('event', '')
+        _lp_hit_data = last_lp.get('hitData', {})
+        _hx = _lp_hit_data.get('coordinates', {}).get('coordX')
+        _hy = _lp_hit_data.get('coordinates', {}).get('coordY')
+        if _hx is None or _hy is None:
+            for _pe in last_lp.get('playEvents', []):
+                _hx = _pe.get('hitData', {}).get('coordinates', {}).get('coordX')
+                _hy = _pe.get('hitData', {}).get('coordinates', {}).get('coordY')
+                if _hx is not None and _hy is not None:
+                    break
+        if _hx is not None and _hy is not None:
+            last_hit_x = _hx
+            last_hit_y = _hy
+            last_hit_is_out = _lp_event not in _HIT_EVENTS
+            last_hit_is_hr = (_lp_event == 'Home Run')
+
+    return (live_last_play, live_last_play_inning, live_last_play_is_top, live_last_play_rbi,
+            last_hit_x, last_hit_y, last_hit_is_out, last_hit_is_hr)
+
+
+def _build_game_plays_log(plays):
+    """Build the last-7-events log for the wide-cell header.
+
+    Returns half_inning_plays: list of scorecard tokens and half-inning direction
+    markers ('^' for top, 'v' for bottom), trimmed to the 7 most recent events.
+    """
+    _SUBST_EVENT_TYPES = {
+        'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
+        'runner_substitution', 'game_advisory', 'ejection', 'defensive_switch',
+    }
+    _ACTION_CODES = {
+        'stolen_base':      'SB',
+        'caught_stealing':  'CS',
+        'pickoff':          'PK',
+        'wild_pitch':       'WP',
+        'passed_ball':      'PB',
+        'balk':             'BLK',
+        'pitching_substitution': 'PC',
+    }
+
+    def _action_code(et):
+        for _k, _v in _ACTION_CODES.items():
+            if et.startswith(_k):
+                return _v
+        return None
+
+    game_plays: list = []
+    _last_play_half = None
+    for _ap in plays.get('allPlays', []):
+        _about = _ap.get('about', {})
+        _this_half = (_about.get('inning', 0), bool(_about.get('isTopInning', True)))
+        _review_added = False
+        for _pe in _ap.get('playEvents', []):
+            if _pe.get('type') == 'action':
+                _code = _action_code((_pe.get('details', {}).get('eventType') or '').lower())
+                if _code and (not game_plays or game_plays[-1] != _code):
+                    if _last_play_half and _this_half != _last_play_half:
+                        game_plays.append('^' if _this_half[1] else 'v')
+                    game_plays.append(_code)
+                    _last_play_half = _this_half
+            _rd = _pe.get('reviewDetails')
+            if _rd and not _rd.get('inProgress') and not _review_added:
+                game_plays.append('CHAL W' if _rd.get('isOverturned') else 'CHAL L')
+                _review_added = True
+        if _ap.get('about', {}).get('isComplete', False):
+            _result = _ap.get('result', {})
+            _ap_et = (_result.get('eventType') or '').lower().replace(' ', '_')
+            if _ap_et == 'pitching_substitution':
+                if not game_plays or game_plays[-1] != 'PC':
+                    game_plays.append('PC')
+            elif _ap_et not in _SUBST_EVENT_TYPES:
+                _ev = (_result.get('event') or '').strip()
+                if _ev:
+                    _note = _build_scorecard_notation(_ap)
+                    _rbi = int(_result.get('rbi') or 0)
+                    _is_err = _note.startswith('E') or ' E' in _note
+                    if _rbi > 0 and not _is_err:
+                        if _note == 'HR':
+                            if _rbi == 4:
+                                _note = 'Grand Slam'
+                            elif _rbi >= 2:
+                                _note = f'{_rbi}R HR'
+                        elif _rbi == 1:
+                            _note = f'RBI {_note}'
+                        else:
+                            _note = f'{_rbi}RBI {_note}'
+                    if _last_play_half and _this_half != _last_play_half:
+                        game_plays.append('^' if _this_half[1] else 'v')
+                    game_plays.append(_note)
+                    _last_play_half = _this_half
+
+    # Keep the last 7 *events* (plus the half-inning markers that fall between them).
+    _kept: list = []
+    _event_count = 0
+    for _tok in reversed(game_plays):
+        _kept.append(_tok)
+        if _tok not in ('^', 'v'):
+            _event_count += 1
+            if _event_count >= 7:
+                break
+    return list(reversed(_kept))
+
+
 def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
     """Fetch pitch count, batter game stats, last at-bat result, and last pitch speed
     from the live feed for use in the scoreboard box.
@@ -360,34 +531,9 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
                 break
 
         # Scan current at-bat: pitch count, last strike type, and whether AB is complete
-        last_speed = None
-        last_type = ''
-        last_strike_call = ''
-        at_bat_pitch_count = 0
-        strike_calls = []  # per-strike call type: 'S' swinging, 'C' called, 'F' foul
         current_play_events = plays.get('currentPlay', {}).get('playEvents', [])
-        for ev in current_play_events:
-            if ev.get('isPitch'):
-                at_bat_pitch_count += 1
-                pd = ev.get('pitchData', {})
-                details = ev.get('details', {})
-                call_code = (details.get('call', {}).get('code', '') or '').upper()
-                if call_code in ('S', 'W', 'T', 'O', 'M'):
-                    last_strike_call = 'S'  # swinging
-                    if len(strike_calls) < 2:
-                        strike_calls.append('S')
-                elif call_code == 'C':
-                    last_strike_call = 'L'  # looking
-                    if len(strike_calls) < 2:
-                        strike_calls.append('C')
-                elif call_code in ('F', 'L', 'R'):
-                    last_strike_call = 'F'  # foul
-                    if len(strike_calls) < 2:
-                        strike_calls.append('F')
-                # always overwrite so the last pitch in the AB is shown
-                raw_code = details.get('type', {}).get('code', '') or ''
-                last_type = _PITCH_TYPE_ABBR.get(raw_code, raw_code)
-                last_speed = pd.get('startSpeed')
+        last_speed, last_type, last_strike_call, at_bat_pitch_count, strike_calls = \
+            _extract_at_bat_pitch_data(current_play_events)
 
         _current_play = plays.get('currentPlay', {})
         current_at_bat_complete = bool(
@@ -413,53 +559,9 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         sub_event = _find_recent_sub_event(plays)
 
         # Extract last completed play from the live feed — more timely than the win-prob endpoint.
-        # For field errors include the position code (e.g. "E6" for shortstop error).
-        _SUBST_EVENT_TYPES = {
-            'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
-            'runner_substitution', 'game_advisory', 'ejection', 'defensive_switch',
-        }
-        live_last_play = None
-        live_last_play_inning = None
-        live_last_play_is_top = None
-        live_last_play_rbi = 0
-        for _lp in reversed(plays.get('allPlays', [])):
-            if not _lp.get('about', {}).get('isComplete'):
-                continue
-            _et = (_lp.get('result', {}).get('eventType') or '').lower().replace(' ', '_')
-            if _et in _SUBST_EVENT_TYPES:
-                continue
-            _ev = _lp.get('result', {}).get('event') or ''
-            if not _ev:
-                continue
-            live_last_play = _build_scorecard_notation(_lp)
-            live_last_play_inning = _lp.get('about', {}).get('inning')
-            live_last_play_is_top = _lp.get('about', {}).get('isTopInning')
-            live_last_play_rbi = int(_lp.get('result', {}).get('rbi') or 0)
-            break
-
-        # Batted-ball landing spot for the last completed play, if it was hit into play.
-        last_hit_x = None
-        last_hit_y = None
-        last_hit_is_out = None
-        last_hit_is_hr = False
-        if live_last_play is not None:
-            _lp_result = _lp.get('result', {})
-            _lp_event = _lp_result.get('event', '')
-            _lp_hit_data = _lp.get('hitData', {})
-            _hx = _lp_hit_data.get('coordinates', {}).get('coordX')
-            _hy = _lp_hit_data.get('coordinates', {}).get('coordY')
-            if _hx is None or _hy is None:
-                for _pe in _lp.get('playEvents', []):
-                    _pe_hit_data = _pe.get('hitData', {})
-                    _hx = _pe_hit_data.get('coordinates', {}).get('coordX')
-                    _hy = _pe_hit_data.get('coordinates', {}).get('coordY')
-                    if _hx is not None and _hy is not None:
-                        break
-            if _hx is not None and _hy is not None:
-                last_hit_x = _hx
-                last_hit_y = _hy
-                last_hit_is_out = _lp_event not in _HIT_EVENTS
-                last_hit_is_hr = (_lp_event == 'Home Run')
+        (live_last_play, live_last_play_inning, live_last_play_is_top, live_last_play_rbi,
+         last_hit_x, last_hit_y, last_hit_is_out, last_hit_is_hr) = \
+            _extract_last_play_and_hit(plays)
 
         # Last 7 batted balls in play (fair or foul) for the field diagram.
         # Uses the same coord extraction as _extract_all_hit_coordinates but
@@ -472,91 +574,8 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         for _p in ab_pitches:
             _p['pt_abbr'] = _PITCH_TYPE_ABBR.get(_p.get('code', ''), _p.get('code', ''))
 
-        # Mid-at-bat "action" events worth surfacing in the header, oldest-first.
-        _ACTION_CODES = {
-            'stolen_base':      'SB',
-            'caught_stealing':  'CS',
-            'pickoff':          'PK',
-            'wild_pitch':       'WP',
-            'passed_ball':      'PB',
-            'balk':             'BLK',
-            'pitching_substitution': 'PC',
-        }
-
-        def _action_code(et):
-            """Action code."""
-            for _k, _v in _ACTION_CODES.items():
-                if et.startswith(_k):
-                    return _v
-            return None
-
-        # Last 7 events of the whole game for the header, oldest-first, in scorecard
-        # notation (e.g. '6-3', 'K', 'F9', '3R HR'). Runs-batted-in plays are prefixed
-        # with the run count. Includes in-play actions (steals, pickoffs, wild pitches,
-        # pitching changes) and challenge/replay reviews.
-        # A direction token is inserted wherever the half-inning changes so the
-        # renderer can show an inning-break delimiter: '^' when heading into the
-        # top half (away bats), 'v' when heading into the bottom half (home bats).
-        game_plays = []
-        _last_play_half = None   # (inning, isTopInning) of the last appended play
-        for _ap in plays.get('allPlays', []):
-            _about = _ap.get('about', {})
-            _this_half = (_about.get('inning', 0), bool(_about.get('isTopInning', True)))
-            # In-play actions and challenge/replay reviews, in the order they occurred.
-            _review_added = False
-            for _pe in _ap.get('playEvents', []):
-                if _pe.get('type') == 'action':
-                    _code = _action_code((_pe.get('details', {}).get('eventType') or '').lower())
-                    if _code and (not game_plays or game_plays[-1] != _code):
-                        if _last_play_half and _this_half != _last_play_half:
-                            game_plays.append('^' if _this_half[1] else 'v')
-                        game_plays.append(_code)
-                        _last_play_half = _this_half
-                _rd = _pe.get('reviewDetails')
-                if _rd and not _rd.get('inProgress') and not _review_added:
-                    game_plays.append('CHAL W' if _rd.get('isOverturned') else 'CHAL L')
-                    _review_added = True
-            # Final result of a completed at-bat.
-            if _ap.get('about', {}).get('isComplete', False):
-                _result = _ap.get('result', {})
-                _ap_et = (_result.get('eventType') or '').lower().replace(' ', '_')
-                if _ap_et == 'pitching_substitution':
-                    if not game_plays or game_plays[-1] != 'PC':
-                        game_plays.append('PC')
-                elif _ap_et not in _SUBST_EVENT_TYPES:
-                    _ev = (_result.get('event') or '').strip()
-                    if _ev:
-                        # Same scorecard notation + RBI prefixes the normal cells use.
-                        _note = _build_scorecard_notation(_ap)
-                        _rbi = int(_result.get('rbi') or 0)
-                        _is_err = _note.startswith('E') or ' E' in _note
-                        if _rbi > 0 and not _is_err:
-                            if _note == 'HR':
-                                if _rbi == 4:
-                                    _note = 'Grand Slam'
-                                elif _rbi >= 2:
-                                    _note = f'{_rbi}R HR'
-                                # solo HR: no prefix
-                            elif _rbi == 1:
-                                _note = f'RBI {_note}'
-                            else:
-                                _note = f'{_rbi}RBI {_note}'
-                        if _last_play_half and _this_half != _last_play_half:
-                            game_plays.append('^' if _this_half[1] else 'v')
-                        game_plays.append(_note)
-                        _last_play_half = _this_half
-        # Keep the last 7 *events* (plus the half-inning markers that fall between
-        # them). Slicing game_plays[-7:] directly would count '^'/'v' markers as
-        # entries and leave fewer than 7 real events showing.
-        _kept = []
-        _event_count = 0
-        for _tok in reversed(game_plays):
-            _kept.append(_tok)
-            if _tok not in ('^', 'v'):
-                _event_count += 1
-                if _event_count >= 7:
-                    break
-        half_inning_plays = list(reversed(_kept))
+        # Last 7 events of the whole game for the header (steals, pitching changes, plays).
+        half_inning_plays = _build_game_plays_log(plays)
 
         # K strikeouts for wide-cell header: track swinging (K) vs looking (L) per pitcher side
         away_pitcher_ks = []   # Ks by away pitcher (home batters struck out, isTopInning=False)
@@ -625,6 +644,51 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         return {}
 
 
+def _build_batting_order_from_plays(all_plays, all_players, batting_half, team_box):
+    """Reconstruct the 9-slot batting order for a team from play history.
+
+    More reliable than parsing the 'battingOrder' field, which can be null.
+    Returns a list of player IDs in batting order (may be shorter than 9 if
+    the team hasn't had all batters up yet). Falls back to the battingOrder
+    field when no plays exist for this team's half-inning.
+    """
+    ordered_pids = [None] * 9
+    seen_pids: set = set()
+    original_slot = 0
+    for play in all_plays:
+        if play.get('about', {}).get('halfInning') != batting_half:
+            continue
+        bid = play.get('matchup', {}).get('batter', {}).get('id')
+        if not bid or bid in seen_pids:
+            continue
+        seen_pids.add(bid)
+        if original_slot < 9:
+            ordered_pids[original_slot] = bid
+            original_slot += 1
+        else:
+            pdata = all_players.get(f'ID{bid}', {})
+            bat_str = str(pdata.get('battingOrder', ''))
+            if bat_str and bat_str[0].isdigit():
+                slot_idx = int(bat_str[0]) - 1
+                if 0 <= slot_idx < 9:
+                    ordered_pids[slot_idx] = bid
+
+    ordered_pids = [p for p in ordered_pids if p is not None]
+
+    if not ordered_pids:
+        batting_order_ids = team_box.get('battingOrder', [])
+        slot_to_pid: dict = {}
+        for pid in batting_order_ids:
+            pdata = all_players.get(f'ID{pid}', {})
+            bat_str = str(pdata.get('battingOrder', ''))
+            slot = int(bat_str[0]) if bat_str and bat_str[0].isdigit() else None
+            if slot:
+                slot_to_pid[slot] = pid
+        ordered_pids = [slot_to_pid[s] for s in sorted(slot_to_pid.keys())]
+
+    return ordered_pids
+
+
 def fetch_between_inning_info(game_pk, inning_state):
     """Return the next 3 batters, pitcher, and last-play notation for the break.
 
@@ -648,7 +712,6 @@ def fetch_between_inning_info(game_pk, inning_state):
         batting_half = 'bottom' if batting_side == 'home' else 'top'
 
         team_box = boxscore.get('teams', {}).get(batting_side, {})
-        team_box.get('players', {})
 
         # Build all_players: both teams combined (needed for sub lookups)
         all_players = {}
@@ -662,50 +725,7 @@ def fetch_between_inning_info(game_pk, inning_state):
 
         all_plays = plays.get('allPlays', [])
 
-        # Build the 9-slot batting order from play history — much more reliable than
-        # parsing 'battingOrder' field which can be null or missing in the API response.
-        # Walk through all plays for this team's half-inning in forward order:
-        # the first 9 unique batter IDs encountered are the original batting order slots.
-        # Subsequent new batters are substitutes; resolve their slot via 'battingOrder'
-        # field (first digit = slot, e.g. '300' → slot 3) and update that slot.
-        ordered_pids = [None] * 9  # slots 0-8 (batting positions 1-9)
-        seen_pids = set()
-        original_slot = 0  # tracks next available slot for first-seen original batters
-        for play in all_plays:
-            if play.get('about', {}).get('halfInning') != batting_half:
-                continue
-            bid = play.get('matchup', {}).get('batter', {}).get('id')
-            if not bid or bid in seen_pids:
-                continue
-            seen_pids.add(bid)
-            if original_slot < 9:
-                # Original lineup member — assign to next open slot
-                ordered_pids[original_slot] = bid
-                original_slot += 1
-            else:
-                # Substitute — use battingOrder field to find their slot
-                pdata = all_players.get(f'ID{bid}', {})
-                bat_str = str(pdata.get('battingOrder', ''))
-                if bat_str and bat_str[0].isdigit():
-                    slot_idx = int(bat_str[0]) - 1  # 0-indexed
-                    if 0 <= slot_idx < 9:
-                        ordered_pids[slot_idx] = bid
-
-        # Remove unfilled slots (team hasn't sent all 9 batters up yet)
-        ordered_pids = [p for p in ordered_pids if p is not None]
-
-        # Fallback for teams that haven't batted yet (e.g. home team in Middle of 1st):
-        # no plays exist for batting_half, so build order from battingOrder field instead.
-        if not ordered_pids:
-            batting_order_ids = team_box.get('battingOrder', [])
-            slot_to_pid = {}
-            for pid in batting_order_ids:
-                pdata = all_players.get(f'ID{pid}', {})
-                bat_str = str(pdata.get('battingOrder', ''))
-                slot = int(bat_str[0]) if bat_str and bat_str[0].isdigit() else None
-                if slot:
-                    slot_to_pid[slot] = pid
-            ordered_pids = [slot_to_pid[s] for s in sorted(slot_to_pid.keys())]
+        ordered_pids = _build_batting_order_from_plays(all_plays, all_players, batting_half, team_box)
 
         if not ordered_pids:
             return {}
@@ -791,36 +811,6 @@ def fetch_between_inning_info(game_pk, inning_state):
         }
     except Exception:
         return {}
-
-
-
-    """Extract pitch locations from the current at-bat, falling back to the last completed at-bat."""
-    sources = [plays.get('currentPlay', {})]
-    all_plays = plays.get('allPlays', [])
-    if all_plays:
-        sources.append(all_plays[-1])
-
-    for play in sources:
-        pitches = []
-        for event in play.get('playEvents', []):
-            if not event.get('isPitch'):
-                continue
-            coords = event.get('pitchData', {}).get('coordinates', {})
-            px = coords.get('pX')
-            pz = coords.get('pZ')
-            if px is None or pz is None:
-                continue
-            details = event.get('details', {})
-            pitches.append({
-                'px': px,
-                'pz': pz,
-                'code': details.get('type', {}).get('code', ''),
-                'is_strike': details.get('isStrike', False),
-                'is_ball': details.get('isBall', False),
-            })
-        if pitches:
-            return pitches
-    return []
 
 
 _HIT_EVENTS = {'Single', 'Double', 'Triple', 'Home Run'}
