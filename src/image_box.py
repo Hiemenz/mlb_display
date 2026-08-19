@@ -1911,7 +1911,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(_inn_state, _inn_state[:3].capitalize() if _inn_state else '')
         _inn_ord_raw = game_data.get('currentInningOrdinal') or str(game_data.get('current_inning') or 1)
         _inn_ord = _re.sub(r'(?:st|nd|rd|th)$', '', _inn_ord_raw, flags=_re.IGNORECASE)
-        game_state_str = (f'{_inn_label} {_inn_ord}').strip()
+        if _game_ending_state and _between_innings:
+            game_state_str = 'End of Game'
+        else:
+            game_state_str = (f'{_inn_label} {_inn_ord}').strip()
 
     # DH label vars — defined early so both the header-override block below
     # and the later duration block can use them.
@@ -2686,7 +2689,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     state = game_data.get('detailed_state', '')
     _between_innings = game_data.get('inningState') in ('Middle', 'End')
-    _mid_inning_pc = _compute_layout_flags(game_data).mid_inning_pc
+    _rp_flags = _compute_layout_flags(game_data)
+    _mid_inning_pc = _rp_flags.mid_inning_pc
+    _game_ending_state = _rp_flags.game_ending_state
 
     # ── Header: last 5 game events + count ─────────────────────────────
     # Events render in the same size as the single-cell last-play text (font12),
@@ -2705,7 +2710,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _inn_state = game_data.get('inningState') or ''
     _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
         _inn_state, (_inn_state[:3] or ''))
-    _inn_text = f"{_inn_label} {game_data.get('current_inning') or 1}".strip()
+    _inn_text = 'End of Game' if (_game_ending_state and _between_innings) \
+        else f"{_inn_label} {game_data.get('current_inning') or 1}".strip()
     _inn_w = int(font14.getlength(_inn_text)) + 2 * s   # +2 for the inning's bold strike
 
     half_inning_plays = game_data.get('half_inning_plays') or []
@@ -2828,6 +2834,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     if state != 'In Progress':
         return
+
+    if _between_innings and _game_ending_state:
+        return Himage
 
     ab_pitches = game_data.get('ab_pitches') or []
 
