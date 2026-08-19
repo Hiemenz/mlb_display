@@ -2114,6 +2114,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     _is_any_delay = (
         _original_detailed_state == 'Delayed Start'
         or game_data['detailed_state'] == 'Delayed'
+        or bool(game_data.get('postpone_reason'))
     )
     _hdr_right = _ser_content_left_x - 2 * s
     _hdr_max_w = max(_hdr_right - start_x - _total_time_w - 6 * s, 0)

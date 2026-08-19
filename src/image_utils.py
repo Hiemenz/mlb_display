@@ -43,6 +43,8 @@ def draw_tight_number(draw, cx, cy, text, font, fill, gap=None, bold=False):
         draw.text((x0, y0), text, font=font, fill=fill)
         if bold:
             draw.text((x0 + 1, y0), text, font=font, fill=fill)
+            draw.text((x0, y0 + 1), text, font=font, fill=fill)
+            draw.text((x0 + 1, y0 + 1), text, font=font, fill=fill)
         return
     if gap is None:
         gap = 1
@@ -55,6 +57,8 @@ def draw_tight_number(draw, cx, cy, text, font, fill, gap=None, bold=False):
         draw.text((x - bb[0], y), ch, font=font, fill=fill)
         if bold:
             draw.text((x - bb[0] + 1, y), ch, font=font, fill=fill)
+            draw.text((x - bb[0], y + 1), ch, font=font, fill=fill)
+            draw.text((x - bb[0] + 1, y + 1), ch, font=font, fill=fill)
         x += w + gap
 
 
