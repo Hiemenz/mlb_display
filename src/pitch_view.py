@@ -85,20 +85,22 @@ def _draw_pitches(draw, fonts, pitches):
         seq = str(pitch.get('seq', ''))
 
         if code in ('S', 'C', 'T'):
-            # Strike — filled circle, seq number to the right
+            # Strike — filled circle, seq number centered inside in white
             draw.ellipse([bx - r, by - r, bx + r, by + r], fill=0, outline=0)
-            draw.text((bx + r + 2, by - 5), seq, font=fonts['f9'], fill=0)
+            _sb = fonts['f9'].getbbox(seq)
+            draw.text((bx - (_sb[0] + _sb[2]) // 2, by - (_sb[1] + _sb[3]) // 2), seq, font=fonts['f9'], fill=255)
         elif code == 'F':
-            # Foul — open circle with 'F' inside
+            # Foul — open circle with 'F' centered inside
             draw.ellipse([bx - r, by - r, bx + r, by + r], outline=0, width=2)
             _fb = fonts['f9'].getbbox('F')
             draw.text((bx - (_fb[0] + _fb[2]) // 2, by - (_fb[1] + _fb[3]) // 2), 'F', font=fonts['f9'], fill=0)
         elif code == 'X':
-            # In play — filled square, seq to the right
+            # In play — filled square, seq number centered inside in white
             draw.rectangle([bx - r, by - r, bx + r, by + r], fill=0)
-            draw.text((bx + r + 2, by - 5), seq, font=fonts['f9'], fill=0)
+            _sb = fonts['f9'].getbbox(seq)
+            draw.text((bx - (_sb[0] + _sb[2]) // 2, by - (_sb[1] + _sb[3]) // 2), seq, font=fonts['f9'], fill=255)
         else:
-            # Ball — open circle with seq number inside
+            # Ball — open circle with seq number centered inside
             draw.ellipse([bx - r, by - r, bx + r, by + r], outline=0, width=2)
             _sb = fonts['f9'].getbbox(seq)
             draw.text((bx - (_sb[0] + _sb[2]) // 2, by - (_sb[1] + _sb[3]) // 2), seq, font=fonts['f9'], fill=0)
