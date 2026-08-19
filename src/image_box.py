@@ -2893,7 +2893,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             box = [bx - PITCH_R, by - PITCH_R, bx + PITCH_R, by + PITCH_R]
             seq_str = str(pitch_num)
             _sb = font7.getbbox(seq_str)
-            _tx = bx - (_sb[0] + _sb[2]) // 2
+            _tx = bx - (_sb[0] + _sb[2]) // 2 + 1
             _ty = by - (_sb[1] + _sb[3]) // 2
             if filled:
                 draw.ellipse(box, fill=0, outline=0)
