@@ -161,14 +161,14 @@ def test_fetch_records_the_as_of_date_it_used():
 
 @pytest.mark.parametrize('grain,expected_start,baseline_end', [
     ('month', '2026-07-12', '2026-07-11'),   # 30 days inclusive
-    ('week', '2026-08-04', '2026-08-03'),    # 7 days inclusive
+    ('week', '2026-07-27', '2026-07-26'),    # 15 days inclusive
 ])
 def test_short_grains_compare_against_the_season_before_the_window(
         grain, expected_start, baseline_end):
     """Recent form is plotted against the season *up to* the window, not through it.
 
-    The windows must not overlap: a baseline that already contains the last
-    seven days damps the very move the arrow exists to show.
+    The windows must not overlap: a baseline that already contains the
+    trailing window damps the very move the arrow exists to show.
     """
     current, baseline = ftq.windows_for_grain(
         grain, date(2026, 8, 10), date(2026, 3, 25), date(2026, 7, 14))
