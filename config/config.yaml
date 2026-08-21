@@ -20,7 +20,7 @@ display_mode: "scoreboard"
 # Which window the quadrant chart plots — these are three different views of the same data:
 # "season" = season to date, arrow from the first half
 # "month"  = trailing 30 days, arrow from season to date
-# "week"   = trailing 7 days, arrow from season to date (hot/cold, small samples)
+# "week"   = trailing 15 days, arrow from season to date (hot/cold, small samples)
 # "rotate" = cycle through all three, switching every quadrant_rotate_minutes
 quadrant_grain: "week"
 quadrant_rotate_minutes: 30

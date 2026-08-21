@@ -8,7 +8,7 @@ from baseline to now, so the chart shows which direction a team is coming from.
 Grains and their baselines:
     season  regular-season start → today, arrow from the first half
     month   trailing 30 days,             arrow from season-to-date
-    week    trailing 7 days,              arrow from season-to-date
+    week    trailing 15 days,             arrow from season-to-date
 
 The X axis is a wRC+ *proxy*. FanGraphs' real wRC+ is not reachable from here
 (their API rejects non-browser clients), so it is rebuilt from the raw counting
@@ -52,8 +52,8 @@ _W_HR = 2.101
 _WOBA_SCALE = 1.157
 
 GRAINS = ('season', 'month', 'week')
-_GRAIN_DAYS = {'month': 30, 'week': 7}
-_GRAIN_LABEL = {'season': 'SEASON', 'month': 'LAST 30 DAYS', 'week': 'LAST 7 DAYS'}
+_GRAIN_DAYS = {'month': 30, 'week': 15}
+_GRAIN_LABEL = {'season': 'SEASON', 'month': 'LAST 30 DAYS', 'week': 'LAST 15 DAYS'}
 
 
 def _num(value, default=0.0):
