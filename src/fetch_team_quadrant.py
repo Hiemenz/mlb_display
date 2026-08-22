@@ -138,9 +138,13 @@ def windows_for_grain(grain, today, season_start, first_half_end):
     """Return (current_window, baseline_window) for a grain.
 
     The two windows never overlap. For the trailing grains the baseline is the
-    season *up to* the window, not the season to date: comparing the last seven
-    days against a figure that already contains those seven days damps the very
-    move the arrow exists to show, and the shorter the window the worse it gets.
+    equal-length window immediately before the current one, not the season to
+    date: comparing the last seven days against a figure that already contains
+    those seven days damps the very move the arrow exists to show, and the
+    shorter the window the worse it gets. Matching the baseline's length to the
+    current window also keeps arrow distance a meaningful signal — both points
+    are averages over the same number of games, so the gap between them tracks
+    an actual swing in form rather than a short window vs. a season-long one.
     So the arrow reads "where they were before this stretch → where they are in
     it".
 
@@ -159,10 +163,12 @@ def windows_for_grain(grain, today, season_start, first_half_end):
 
     days = _GRAIN_DAYS.get(grain, _GRAIN_DAYS['month'])
     start = max(today - timedelta(days=days - 1), season_start)
-    # Everything before the window. Clamped so a window reaching back to opening
-    # day still yields a (single-day) baseline rather than an inverted range.
+    # The window immediately before the current one, same length. Clamped so a
+    # window reaching back to opening day still yields a (single-day) baseline
+    # rather than an inverted range.
     baseline_end = max(start - timedelta(days=1), season_start)
-    return _window(start, today), _window(season_start, baseline_end)
+    baseline_start = max(baseline_end - timedelta(days=days - 1), season_start)
+    return _window(start, today), _window(baseline_start, baseline_end)
 
 
 def fetch_team_stats(season, start, end, group):

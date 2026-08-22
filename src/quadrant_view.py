@@ -321,7 +321,6 @@ def _draw_header(image, draw, payload, grain_label):
     baseline = (payload.get('baseline') or {}).get('label', '')
     current = (payload.get('current') or {}).get('label', '')
     f_small = _get_font(13)
-    f_big = _get_font(18)
 
     x = 10
     draw.text((x, 9), baseline, font=f_small, fill=0)
@@ -332,9 +331,9 @@ def _draw_header(image, draw, payload, grain_label):
     draw.polygon([(x + 24, 15), (x + 17, 12), (x + 17, 18)], fill=0)
     x += 32
 
-    draw.text((x, 5), current, font=f_big, fill=0)
+    draw.text((x, 9), current, font=f_small, fill=0)
     # Faux-bold: the e-ink font has no bold face, so overdraw one pixel across.
-    draw.text((x + 1, 5), current, font=f_big, fill=0)
+    draw.text((x + 1, 9), current, font=f_small, fill=0)
 
     right = grain_label
     draw.text((EPD_WIDTH - 10 - f_small.getbbox(right)[2], 9), right, font=f_small, fill=0)
