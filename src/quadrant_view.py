@@ -2,9 +2,13 @@
 
 Every club is plotted by offense (wRC+ proxy, X) against run prevention (ERA,
 Y, worse upward), splitting the field into the four corners the chart is really
-about: strong both ways, strong one way, or neither. An arrow trails each logo
-back to where that team sat over the baseline window, so the direction a team
-is heading is visible without an animation the display cannot show.
+about: strong both ways, strong one way, or neither. A short directional badge
+sits beside each logo pointing back toward that team's season baseline, so the
+direction a team is trending is visible without an animation the display
+cannot show. The badge's length is fixed rather than literal: the baseline is
+the full season, so the true baseline point is almost always too far away to
+reach with a readable line (see _draw_trend_badge), and a second parallel
+stroke flags a big swing instead.
 
 Three grains — season, month, week — are three separate views over the same
 data, selected by config (or rotated through). Data comes from
@@ -41,13 +45,17 @@ _INK_TARGET = 0.34
 # a sliver of one already drawn.
 _MIN_SEP = _LOGO_SIZE + 9
 _RELAX_PASSES = 140
-# Arrows shorter than this are noise, not a trend, and only add clutter.
-_MIN_ARROW_PX = 7
-# ...and longer than this stop being readable. At the week grain every team's
-# baseline is the same season-to-date point, so uncapped shafts all converge
-# into one hairball across the middle of the plot. Clamping keeps the bearing
-# exact — which is the thing being communicated — and only truncates length.
-_MAX_ARROW_PX = 58
+# Moves shorter than this are noise, not a trend, and only add clutter.
+_MIN_TREND_PX = 7
+# Raw (unclamped) pixel distance at or above which a trend badge draws with a
+# second parallel stroke instead of one. The baseline is the full season, so
+# most teams' true baseline point sits hundreds of pixels away — far past any
+# length a badge next to the logo could show literally. A fixed badge length
+# with a two-tier stroke count reports bearing exactly and swing size roughly,
+# rather than truncating a line toward a point it can never actually reach.
+_BIG_TREND_PX = 150
+_TREND_LEN = 10
+_TREND_LEN_BIG = 15
 
 # Axis breathing room past the outermost team, as a fraction of the data span.
 # Deliberately tight: the point of the chart is separating the field, and every
@@ -269,34 +277,46 @@ def _tail_room(head, ux, uy):
     return max(limit, 0.0)
 
 
-def _draw_arrow(draw, tail, head, fill=0):
-    """Line from the baseline position to just outside the logo, tipped with a head."""
+def _draw_trend_badge(draw, tail, head, fill=0):
+    """A short directional tick beside the logo, pointing back toward the baseline.
+
+    Bearing is exact; length is not. See _BIG_TREND_PX: with a full-season
+    baseline the true tail point is almost always too far away to reach with
+    a readable line, so the tick stays a fixed short length and a second
+    parallel stroke flags a big swing instead of drawing toward a point it
+    could never actually reach.
+    """
     x1, y1 = head
     dx, dy = x1 - tail[0], y1 - tail[1]
     dist = (dx * dx + dy * dy) ** 0.5
-    if dist < _MIN_ARROW_PX:
+    if dist < _MIN_TREND_PX:
         return
     ux, uy = dx / dist, dy / dist
 
-    # Shorten an over-long tail along its own bearing (see _MAX_ARROW_PX), and
-    # again if it would run past the axis frame — the axes are scaled to the
-    # teams' current positions, so a baseline point can sit well off-plot.
-    # Shortening preserves the bearing exactly; clamping the endpoint would not.
-    dist = min(dist, _MAX_ARROW_PX, _tail_room(head, ux, uy))
-    if dist < _MIN_ARROW_PX:
+    big = dist >= _BIG_TREND_PX
+    length = _TREND_LEN_BIG if big else _TREND_LEN
+
+    # _tail_room measures room from the logo centre, not the shaft's near end
+    # at the logo edge, so clamp the full centre-to-tail-end distance and
+    # subtract the edge radius back out — shortening if it would run past the
+    # axis frame, since the axes are scaled to the teams' current positions
+    # and a badge can start near the edge.
+    total = min(_LOGO_R + length, _tail_room(head, ux, uy))
+    length = total - _LOGO_R
+    if length < _MIN_TREND_PX:
         return
-    x0, y0 = x1 - ux * dist, y1 - uy * dist
 
     # Stop the shaft at the logo's edge so the head stays visible.
     tip_x = x1 - ux * _LOGO_R
     tip_y = y1 - uy * _LOGO_R
-    if ((tip_x - x0) ** 2 + (tip_y - y0) ** 2) ** 0.5 < 3:
-        return
+    x0, y0 = x1 - ux * total, y1 - uy * total
 
     draw.line([(x0, y0), (tip_x, tip_y)], fill=fill)
-    draw.ellipse([x0 - 2, y0 - 2, x0 + 2, y0 + 2], outline=fill)
+    if big:
+        ox, oy = -uy * 1.6, ux * 1.6
+        draw.line([(x0 + ox, y0 + oy), (tip_x + ox, tip_y + oy)], fill=fill)
 
-    head_len, head_w = 6.0, 3.0
+    head_len, head_w = (6.0, 3.2) if big else (4.0, 2.2)
     bx, by = tip_x - ux * head_len, tip_y - uy * head_len
     draw.polygon(
         [(tip_x, tip_y), (bx - uy * head_w, by + ux * head_w), (bx + uy * head_w, by - ux * head_w)],
@@ -376,10 +396,17 @@ def _draw_axes(image, draw, scale, x_step, y_step, avg):
 
 
 def _draw_corner_labels(draw):
-    """The four quadrant captions, drawn in the rects layout keeps clear."""
+    """The four quadrant captions, drawn in the rects layout keeps clear.
+
+    Top-right ("NO PITCHING") is faux-bolded by overdrawing one pixel across
+    — the e-ink font has no bold face — to draw the eye there first: a team
+    with no pitching is the more actionable read of the four corners.
+    """
     font = _get_font(_CORNER_FONT_PX)
     for key, x0, y0, _, _ in _caption_rects():
         draw.text((x0, y0), _CORNERS[key], font=font, fill=0)
+        if key == 'tr':
+            draw.text((x0 + 1, y0), _CORNERS[key], font=font, fill=0)
 
 
 def _logo_marker(abbr, team_id, size=_LOGO_SIZE):
@@ -463,10 +490,10 @@ def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=Non
     avg = payload.get('avg') or {}
     avg = {'wrc': avg.get('wrc', 100.0), 'era': avg.get('era', 4.0)}
 
-    # Scale to where the teams actually are, not to their baselines. Including
-    # the arrow tails used to inflate the range by 19-35% and squash the whole
-    # field into the middle; tails are length-capped and clipped to the frame
-    # anyway (see _draw_arrow), so they do not need room reserved for them.
+    # Scale to where the teams actually are, not to their baselines. A season
+    # baseline routinely sits far outside this range, but the trend badge is a
+    # fixed short length next to the logo (see _draw_trend_badge), so it needs
+    # no room reserved for it either.
     xs = [t['wrc'] for t in teams] + [avg['wrc']]
     ys = [t['era'] for t in teams] + [avg['era']]
 
@@ -481,12 +508,12 @@ def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=Non
     raw = [(scale.x(t['wrc']), scale.y(t['era'])) for t in teams]
     placed = _resolve_overlaps(raw)
 
-    # Arrows first so every logo paints over its own shaft, not a neighbour's.
+    # Badges first so every logo paints over its own tick, not a neighbour's.
     for team, center in zip(teams, placed):
         if team.get('was_wrc') is None or team.get('was_era') is None:
             continue
         tail = (scale.x(team['was_wrc']), scale.y(team['was_era']))
-        _draw_arrow(draw, tail, center)
+        _draw_trend_badge(draw, tail, center)
 
     for team, center in zip(teams, placed):
         _team_marker(image, draw, team, center)
