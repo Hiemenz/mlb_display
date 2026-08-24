@@ -550,7 +550,7 @@ def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=Non
         tail = (scale.x(team['was_wrc']), scale.y(team['was_era']))
         _draw_arrow(draw, tail, center)
 
-    for team, center in zip(teams, placed):
+    for team, _center in zip(teams, placed):
         if team.get('was_wrc') is None or team.get('was_era') is None:
             continue
         tail = (scale.x(team['was_wrc']), scale.y(team['was_era']))
