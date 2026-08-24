@@ -137,16 +137,15 @@ def _window(start, end):
 def windows_for_grain(grain, today, season_start, first_half_end):
     """Return (current_window, baseline_window) for a grain.
 
-    The two windows never overlap. For the trailing grains the baseline is the
-    season *up to* the window, not the season to date: comparing the last seven
-    days against a figure that already contains those seven days damps the very
-    move the arrow exists to show, and the shorter the window the worse it gets.
-    So the arrow reads "where they were before this stretch → where they are in
-    it".
-
-    Season is the exception, and deliberately: its current position is the whole
-    season to date, because that is the view's entire point. It points back at
-    the first half.
+    Every grain's baseline is a stable, recognizable reference figure — full
+    season to date for the trailing grains, first half for season itself — so
+    the arrow reads "here's their real level → here's how the last stretch
+    compares to it", the same question a season-stats line answers for any
+    other team. The current window nests inside the baseline for the trailing
+    grains, which does damp the arrow slightly (the recent games are part of
+    both averages), but the alternative — a synthetic baseline nobody could
+    cross-check against a real stat line — is worse for a chart whose whole
+    point is "does this team's form match their reputation".
     """
     if grain == 'season':
         # Before the All-Star break there is no first half to point back from,
@@ -159,10 +158,7 @@ def windows_for_grain(grain, today, season_start, first_half_end):
 
     days = _GRAIN_DAYS.get(grain, _GRAIN_DAYS['month'])
     start = max(today - timedelta(days=days - 1), season_start)
-    # Everything before the window. Clamped so a window reaching back to opening
-    # day still yields a (single-day) baseline rather than an inverted range.
-    baseline_end = max(start - timedelta(days=1), season_start)
-    return _window(start, today), _window(season_start, baseline_end)
+    return _window(start, today), _window(season_start, today)
 
 
 def fetch_team_stats(season, start, end, group):

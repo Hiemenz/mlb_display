@@ -159,38 +159,21 @@ def test_fetch_records_the_as_of_date_it_used():
     assert result['as_of'] == '2026-08-09'
 
 
-@pytest.mark.parametrize('grain,expected_start,baseline_end', [
-    ('month', '2026-07-12', '2026-07-11'),   # 30 days inclusive
-    ('week', '2026-07-27', '2026-07-26'),    # 15 days inclusive
+@pytest.mark.parametrize('grain,expected_start', [
+    ('month', '2026-07-12'),   # 30 days inclusive
+    ('week', '2026-07-27'),    # 15 days inclusive
 ])
-def test_short_grains_compare_against_the_season_before_the_window(
-        grain, expected_start, baseline_end):
-    """Recent form is plotted against the season *up to* the window, not through it.
-
-    The windows must not overlap: a baseline that already contains the
-    trailing window damps the very move the arrow exists to show.
+def test_short_grains_compare_against_the_full_season(grain, expected_start):
+    """Recent form is plotted against the season to date, a figure a team's own
+    stat line already shows — not a synthetic prior window nobody could
+    cross-check.
     """
     current, baseline = ftq.windows_for_grain(
         grain, date(2026, 8, 10), date(2026, 3, 25), date(2026, 7, 14))
     assert current['start'] == expected_start
     assert current['end'] == '2026-08-10'
     assert baseline['start'] == '2026-03-25'
-    assert baseline['end'] == baseline_end
-    assert baseline['end'] < current['start'], 'windows overlap'
-
-
-@pytest.mark.parametrize('grain', ['week', 'month'])
-def test_short_grain_baseline_stops_the_day_before_the_window(grain):
-    """The baseline ends exactly one day before the window opens — no gap, no overlap."""
-    current, baseline = ftq.windows_for_grain(
-        grain, date(2026, 8, 10), date(2026, 3, 25), date(2026, 7, 14))
-    gap = (_parse_day(current['start']) - _parse_day(baseline['end'])).days
-    assert gap == 1
-
-
-def _parse_day(text):
-    """'YYYY-MM-DD' -> date."""
-    return date(*(int(part) for part in text.split('-')))
+    assert baseline['end'] == '2026-08-10'
 
 
 def test_baseline_never_inverts_early_in_the_season():
@@ -198,7 +181,7 @@ def test_baseline_never_inverts_early_in_the_season():
     current, baseline = ftq.windows_for_grain(
         'week', date(2026, 3, 27), date(2026, 3, 25), date(2026, 7, 14))
     assert current['start'] == '2026-03-25'
-    assert baseline['start'] == baseline['end'] == '2026-03-25'
+    assert baseline['start'] == '2026-03-25' and baseline['end'] == '2026-03-27'
 
 
 def test_short_grain_window_clamps_to_season_start():

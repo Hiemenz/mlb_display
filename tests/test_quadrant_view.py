@@ -294,43 +294,46 @@ def test_widely_spaced_points_are_left_alone():
 
 
 # ---------------------------------------------------------------------------
-# Arrows
+# Trend badges
 # ---------------------------------------------------------------------------
 
-def _arrow_ink(tail, head):
-    """Draw one arrow on a blank canvas and count the black pixels."""
+def _badge_ink(tail, head):
+    """Draw one trend badge on a blank canvas and count the black pixels."""
     image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
-    qv._draw_arrow(ImageDraw.Draw(image), tail, head)
+    qv._draw_trend_badge(ImageDraw.Draw(image), tail, head)
     return sum(1 for p in image.getdata() if p == 0)
 
 
 @needs_pil
-def test_a_real_move_draws_an_arrow():
-    """A team that moved gets a shaft, a tail dot, and a head."""
-    assert _arrow_ink((200.0, 200.0), (320.0, 260.0)) > 0
+def test_a_real_move_draws_a_badge():
+    """A team that moved gets a tick and a head."""
+    assert _badge_ink((200.0, 200.0), (320.0, 260.0)) > 0
 
 
 @needs_pil
 def test_a_negligible_move_draws_nothing():
     """Sub-threshold jitter is suppressed so the plot stays readable."""
-    assert _arrow_ink((200.0, 200.0), (202.0, 201.0)) == 0
+    assert _badge_ink((200.0, 200.0), (202.0, 201.0)) == 0
 
 
 @needs_pil
-def test_a_move_swallowed_by_the_logo_draws_nothing():
-    """When the tail sits under the logo there is no shaft worth drawing."""
-    assert _arrow_ink((200.0, 200.0), (200.0, 211.0)) == 0
+def test_a_big_move_draws_more_ink_than_a_small_one():
+    """The second parallel stroke is the only cue for swing size once the
+    baseline sits too far away for literal distance (see _BIG_TREND_PX)."""
+    small = _badge_ink((200.0, 200.0), (300.0, 200.0))  # 100px, below the tier cutoff
+    big = _badge_ink((200.0, 200.0), (600.0, 200.0))    # 400px, above it
+    assert 0 < small < big
 
 
 @needs_pil
-def test_long_arrows_are_capped_but_keep_their_bearing():
-    """The week grain's converging tails are truncated, not redirected."""
+def test_big_moves_keep_a_short_fixed_length_but_the_right_bearing():
+    """However far the true baseline is, the badge stays a short tick at the logo."""
     image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
-    qv._draw_arrow(ImageDraw.Draw(image), (100.0, 240.0), (700.0, 240.0))
+    qv._draw_trend_badge(ImageDraw.Draw(image), (100.0, 240.0), (700.0, 240.0))
     columns = [x for x in range(qv.EPD_WIDTH)
                if any(image.getpixel((x, y)) == 0 for y in range(230, 251))]
-    # Ink starts near the cap, not back at the true tail 600px away.
-    assert min(columns) > 700 - qv._MAX_ARROW_PX - 5
+    # Ink sits in a short run next to the logo, not back at the true tail 600px away.
+    assert min(columns) > 700 - qv._TREND_LEN_BIG - qv._LOGO_R - 10
     assert max(columns) <= 700
 
 
@@ -465,23 +468,25 @@ def test_every_tick_lands_inside_the_frame():
 
 
 @needs_pil
-def test_an_arrow_pointing_off_plot_is_clipped_to_the_frame():
-    """A baseline outside the axes shortens the shaft instead of drawing past the frame."""
+def test_a_badge_near_the_edge_is_clipped_to_the_frame():
+    """A baseline outside the axes shortens the tick instead of drawing past the frame."""
     image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
-    head = (qv._PLOT_R - qv._LOGO_R, 240.0)
-    qv._draw_arrow(ImageDraw.Draw(image), (head[0] + 400, 240.0), head)
+    head = (qv._PLOT_R - qv._LOGO_R - 10, 240.0)
+    qv._draw_trend_badge(ImageDraw.Draw(image), (head[0] + 400, 240.0), head)
+    assert any(image.getpixel((x, 240)) == 0 for x in range(int(head[0]), qv._PLOT_R)), \
+        'expected a shortened tick to still be visible'
     outside = [image.getpixel((x, y))
                for x in range(qv._PLOT_R + 2, qv.EPD_WIDTH)
                for y in range(230, 251)]
-    assert all(p == 1 for p in outside), 'arrow ink escaped the plot frame'
+    assert all(p == 1 for p in outside), 'badge ink escaped the plot frame'
 
 
 @needs_pil
-def test_an_arrow_with_no_room_left_is_dropped_entirely():
-    """Hard against the frame there is nowhere to put a shaft, so none is drawn."""
+def test_a_badge_with_no_room_left_is_dropped_entirely():
+    """Hard against the frame there is nowhere to put a tick, so none is drawn."""
     image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
     head = (qv._PLOT_R - 2, 240.0)
-    qv._draw_arrow(ImageDraw.Draw(image), (head[0] + 400, 240.0), head)
+    qv._draw_trend_badge(ImageDraw.Draw(image), (head[0] + 400, 240.0), head)
     assert all(p == 1 for p in image.getdata()), 'nothing should have been drawn'
 
 
