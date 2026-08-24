@@ -1,14 +1,9 @@
 """Team offense-vs-pitching quadrant chart (800x480, 1-bit e-ink).
 
-Every club is plotted by offense (wRC+ proxy, X) against run prevention (ERA,
-Y, worse upward), splitting the field into the four corners the chart is really
-about: strong both ways, strong one way, or neither. A short directional badge
-sits beside each logo pointing back toward that team's season baseline, so the
-direction a team is trending is visible without an animation the display
-cannot show. The badge's length is fixed rather than literal: the baseline is
-the full season, so the true baseline point is almost always too far away to
-reach with a readable line (see _draw_trend_badge), and a second parallel
-stroke flags a big swing instead.
+Every club is plotted at both its current-window position (full-size logo) and
+its season-baseline position (small logo), with an arrow connecting the two so
+direction and magnitude of the move are both literal. The four corners show
+strong both ways, strong one way, or neither.
 
 Three grains — season, month, week — are three separate views over the same
 data, selected by config (or rotated through). Data comes from
@@ -34,6 +29,8 @@ _PLOT_B = 442
 
 _LOGO_SIZE = 26
 _LOGO_R = _LOGO_SIZE // 2
+_LOGO_SIZE_SMALL = 14
+_LOGO_R_SMALL = _LOGO_SIZE_SMALL // 2
 # Share of each logo's box that should end up black. Keeps busy and sparse
 # logos at a similar visual weight instead of some vanishing and some blobbing.
 _INK_TARGET = 0.34
@@ -47,12 +44,6 @@ _MIN_SEP = _LOGO_SIZE + 9
 _RELAX_PASSES = 140
 # Moves shorter than this are noise, not a trend, and only add clutter.
 _MIN_TREND_PX = 7
-# Raw (unclamped) pixel distance at or above which a trend badge draws with a
-# second parallel stroke instead of one. The baseline is the full season, so
-# most teams' true baseline point sits hundreds of pixels away — far past any
-# length a badge next to the logo could show literally. A fixed badge length
-# with a two-tier stroke count reports bearing exactly and swing size roughly,
-# rather than truncating a line toward a point it can never actually reach.
 _BIG_TREND_PX = 150
 _TREND_LEN = 10
 _TREND_LEN_BIG = 15
@@ -324,6 +315,35 @@ def _draw_trend_badge(draw, tail, head, fill=0):
     )
 
 
+_ARROW_MAX_PX = 28
+
+
+def _draw_arrow(draw, tail, head, fill=0):
+    """Fixed-length directional arrow from the current logo edge toward the baseline.
+
+    Bearing is exact; length is capped at _ARROW_MAX_PX so lines don't cross
+    the whole chart. The small baseline logo shows where the baseline actually
+    is; the arrow shows direction and a proportional (but capped) magnitude.
+    """
+    dx, dy = head[0] - tail[0], head[1] - tail[1]
+    dist = (dx * dx + dy * dy) ** 0.5
+    if dist < _MIN_TREND_PX:
+        return
+    ux, uy = dx / dist, dy / dist
+    length = min(dist - _LOGO_R - _LOGO_R_SMALL, _ARROW_MAX_PX)
+    if length < _MIN_TREND_PX:
+        return
+    tip_x, tip_y = head[0] - ux * _LOGO_R, head[1] - uy * _LOGO_R
+    x0, y0 = tip_x - ux * length, tip_y - uy * length
+    draw.line([(x0, y0), (tip_x, tip_y)], fill=fill)
+    head_len, head_w = 4.0, 2.2
+    bx, by = tip_x - ux * head_len, tip_y - uy * head_len
+    draw.polygon(
+        [(tip_x, tip_y), (bx - uy * head_w, by + ux * head_w), (bx + uy * head_w, by - ux * head_w)],
+        fill=fill,
+    )
+
+
 def _draw_vertical_text(image, text, x, y_center, font):
     """Paste 90°-rotated text (used for the ERA axis title)."""
     bbox = font.getbbox(text)
@@ -352,8 +372,6 @@ def _draw_header(image, draw, payload, grain_label):
     x += 32
 
     draw.text((x, 9), current, font=f_small, fill=0)
-    # Faux-bold: the e-ink font has no bold face, so overdraw one pixel across.
-    draw.text((x + 1, 9), current, font=f_small, fill=0)
 
     right = grain_label
     draw.text((EPD_WIDTH - 10 - f_small.getbbox(right)[2], 9), right, font=f_small, fill=0)
@@ -463,6 +481,23 @@ def _team_marker(image, draw, team, center):
     draw.text((cx - bbox[2] / 2, cy - 6), abbr, font=font, fill=0)
 
 
+def _team_marker_small(image, draw, team, center):
+    """Small logo at the baseline position."""
+    cx, cy = int(center[0]), int(center[1])
+    logo = _logo_marker(team.get('abbr', ''), team.get('id'), size=_LOGO_SIZE_SMALL)
+    if logo is not None:
+        draw.rectangle([cx - _LOGO_R_SMALL, cy - _LOGO_R_SMALL,
+                        cx + _LOGO_R_SMALL, cy + _LOGO_R_SMALL], fill=1)
+        _paste_logo(image, logo, (cx - logo.width // 2, cy - logo.height // 2))
+        return
+    abbr = team.get('abbr', '')
+    font = _get_font(9)
+    bbox = font.getbbox(abbr)
+    w = bbox[2] + 2
+    draw.rectangle([cx - w / 2, cy - 6, cx + w / 2, cy + 6], fill=1, outline=0)
+    draw.text((cx - bbox[2] / 2, cy - 4), abbr, font=font, fill=0)
+
+
 def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=None):
     """Render the quadrant chart for one grain. Returns an 800x480 '1'-mode image.
 
@@ -490,12 +525,12 @@ def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=Non
     avg = payload.get('avg') or {}
     avg = {'wrc': avg.get('wrc', 100.0), 'era': avg.get('era', 4.0)}
 
-    # Scale to where the teams actually are, not to their baselines. A season
-    # baseline routinely sits far outside this range, but the trend badge is a
-    # fixed short length next to the logo (see _draw_trend_badge), so it needs
-    # no room reserved for it either.
-    xs = [t['wrc'] for t in teams] + [avg['wrc']]
-    ys = [t['era'] for t in teams] + [avg['era']]
+    xs = ([t['wrc'] for t in teams]
+          + [t['was_wrc'] for t in teams if t.get('was_wrc') is not None]
+          + [avg['wrc']])
+    ys = ([t['era'] for t in teams]
+          + [t['was_era'] for t in teams if t.get('was_era') is not None]
+          + [avg['era']])
 
     x_lo, x_hi, x_step = _axis_bounds(xs, _AXIS_PAD, [1, 2, 5, 10, 20], 10.0)
     y_lo, y_hi, y_step = _axis_bounds(ys, _AXIS_PAD, [0.1, 0.25, 0.5, 1.0, 2.0], 1.0)
@@ -508,12 +543,18 @@ def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=Non
     raw = [(scale.x(t['wrc']), scale.y(t['era'])) for t in teams]
     placed = _resolve_overlaps(raw)
 
-    # Badges first so every logo paints over its own tick, not a neighbour's.
+    # Arrows first, then small baseline logos over arrow tails, then full logos on top.
     for team, center in zip(teams, placed):
         if team.get('was_wrc') is None or team.get('was_era') is None:
             continue
         tail = (scale.x(team['was_wrc']), scale.y(team['was_era']))
-        _draw_trend_badge(draw, tail, center)
+        _draw_arrow(draw, tail, center)
+
+    for team, center in zip(teams, placed):
+        if team.get('was_wrc') is None or team.get('was_era') is None:
+            continue
+        tail = (scale.x(team['was_wrc']), scale.y(team['was_era']))
+        _team_marker_small(image, draw, team, tail)
 
     for team, center in zip(teams, placed):
         _team_marker(image, draw, team, center)
