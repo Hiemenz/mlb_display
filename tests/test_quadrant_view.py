@@ -604,7 +604,23 @@ def golden_update(request):
 
 @needs_pil
 @linux_only
-def test_golden_quadrant(golden_update, no_logos):
-    """Full-chart regression: axes, crosshair, corner captions, arrows, markers."""
+def test_golden_quadrant_month(golden_update, no_logos):
+    """Full-chart regression for the month grain."""
     image = qv.render_quadrant_view(_data(), grain='month')
     _assert_matches_golden(image, 'quadrant_month', golden_update)
+
+
+@needs_pil
+@linux_only
+def test_golden_quadrant_week(golden_update, no_logos):
+    """Full-chart regression for the week grain (short label, tighter window)."""
+    image = qv.render_quadrant_view(_data(), grain='week')
+    _assert_matches_golden(image, 'quadrant_week', golden_update)
+
+
+@needs_pil
+@linux_only
+def test_golden_quadrant_season(golden_update, no_logos):
+    """Full-chart regression for the season grain (full-season baseline)."""
+    image = qv.render_quadrant_view(_data(), grain='season')
+    _assert_matches_golden(image, 'quadrant_season', golden_update)

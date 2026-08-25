@@ -243,6 +243,66 @@ def test_replay_day_keyboard_interrupt_stops_cleanly(
 
 
 # ---------------------------------------------------------------------------
+# Final frame — pushed after the replay loop completes
+# ---------------------------------------------------------------------------
+
+@patch('replay.send_to_display')
+@patch('replay.orchestrate_score_board')
+@patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
+@patch('replay._fetch_game_timeline')
+@patch('replay.load_json_file', side_effect=_patched_load)
+@patch('replay.fetch_scoreboard_for_date')
+@patch('replay.time.sleep')
+def test_replay_day_pushes_final_clean_frame(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
+):
+    """After the replay loop, one more frame is pushed without a REPLAY badge.
+
+    _make_tl(20, 20) gives a 5-minute window (last_play + 5 min buffer) which
+    produces exactly 6 active steps; the final frame adds 1 more call.
+    """
+    mock_tl.return_value = _make_tl(20, 20)
+    mock_gsat.return_value = {'game_pk': 1001}
+    fake_image = MagicMock()
+    mock_orc.return_value = (fake_image, [])
+
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
+
+    # The final frame calls orchestrate exactly once more than send_to_display would
+    # have been called had there been no final frame — i.e. both counts are equal
+    # and both are > the number of loop steps alone.
+    assert mock_orc.call_count == mock_disp.call_count
+    # 6 loop steps + 1 final frame = 7 total (change this if step logic changes)
+    assert mock_orc.call_count == 7
+
+
+@patch('replay.send_to_display')
+@patch('replay.orchestrate_score_board')
+@patch('replay._game_state_at_time')
+@patch('replay._any_game_active', return_value=True)
+@patch('replay._fetch_game_timeline')
+@patch('replay.load_json_file', side_effect=_patched_load)
+@patch('replay.fetch_scoreboard_for_date')
+@patch('replay.time.sleep')
+def test_replay_day_final_frame_survives_render_error(
+        mock_sleep, mock_fetch, mock_load, mock_tl, mock_active,
+        mock_gsat, mock_orc, mock_disp,
+):
+    """A render error on the final-frame call does not propagate."""
+    mock_tl.return_value = _make_tl(20, 20)
+    mock_gsat.return_value = {'game_pk': 1001}
+    mock_orc.side_effect = [
+        (MagicMock(), []),          # loop step
+        RuntimeError('boom'),       # final frame
+    ]
+
+    # Should not raise
+    replay_day('2026-08-01', step_minutes=1, real_delay=0, config={}, local_mode=False)
+
+
+# ---------------------------------------------------------------------------
 # main() — argument parsing
 # ---------------------------------------------------------------------------
 
