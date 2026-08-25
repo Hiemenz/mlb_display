@@ -338,6 +338,64 @@ def test_big_moves_keep_a_short_fixed_length_but_the_right_bearing():
 
 
 # ---------------------------------------------------------------------------
+# Connecting arrows (current → baseline)
+# ---------------------------------------------------------------------------
+
+def _arrow_ink(tail, head):
+    """Draw one connecting arrow on a blank canvas and count the black pixels."""
+    image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
+    qv._draw_arrow(ImageDraw.Draw(image), tail, head)
+    return sum(1 for p in image.getdata() if p == 0)
+
+
+@needs_pil
+def test_arrow_draws_ink_for_a_real_move():
+    """A team that shifted its position gets an arrow."""
+    assert _arrow_ink((200.0, 200.0), (320.0, 260.0)) > 0
+
+
+@needs_pil
+def test_arrow_suppresses_sub_threshold_jitter():
+    """Tiny moves (logos nearly on top of each other) draw nothing."""
+    assert _arrow_ink((200.0, 200.0), (202.0, 201.0)) == 0
+
+
+@needs_pil
+def test_arrow_is_capped_at_arrow_max_px():
+    """However far the baseline sits, the drawn shaft stays within _ARROW_MAX_PX."""
+    image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
+    head = (700.0, 240.0)
+    qv._draw_arrow(ImageDraw.Draw(image), (100.0, 240.0), head)
+    columns = [x for x in range(qv.EPD_WIDTH)
+               if any(image.getpixel((x, y)) == 0 for y in range(230, 251))]
+    assert columns, 'expected some ink'
+    # Shaft must start within ARROW_MAX_PX + logo radius of the current logo.
+    assert min(columns) >= head[0] - qv._LOGO_R - qv._ARROW_MAX_PX - 5
+
+
+# ---------------------------------------------------------------------------
+# Small baseline markers
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_team_marker_small_draws_something(no_logos):
+    """The small baseline marker leaves ink on the canvas even without artwork."""
+    image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
+    qv._team_marker_small(image, ImageDraw.Draw(image), {'abbr': 'NYY', 'id': 147}, (400, 240))
+    assert any(p == 0 for p in image.getdata())
+
+
+@needs_pil
+def test_team_marker_small_pastes_a_logo_when_one_exists():
+    """With artwork the small baseline marker pastes a logo, not a text box."""
+    logo = Image.new('1', (qv._LOGO_SIZE_SMALL, qv._LOGO_SIZE_SMALL), 0)
+    image = Image.new('1', (qv.EPD_WIDTH, qv.EPD_HEIGHT), 1)
+    with patch.object(qv, '_logo_marker', return_value=logo):
+        qv._team_marker_small(image, ImageDraw.Draw(image), {'abbr': 'NYY', 'id': 147}, (400, 240))
+    assert image.getpixel((400, 240)) == 0
+
+
+# ---------------------------------------------------------------------------
 # Logo markers
 # ---------------------------------------------------------------------------
 
