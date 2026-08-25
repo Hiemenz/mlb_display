@@ -107,6 +107,7 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode):
         _badge_font = ImageFont.load_default()
     current_utc = start_utc
     step = 0
+    last_frame_games = None
 
     while current_utc <= end_utc:
         step += 1
@@ -138,6 +139,7 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode):
             _draw = ImageDraw.Draw(image)
             _draw.text((2, 469), f'REPLAY  {time_label}', font=_badge_font, fill=0)
             image.save(output_path)
+            last_frame_games = frame_games
             print(f"  [{step:4d}/{total_steps}] {time_label}")
 
             if local_mode:
@@ -158,6 +160,25 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode):
             return
 
     print("\n✓ Replay complete.")
+
+    # Push one final clean frame (no badge) so the display shows the real
+    # end-of-day scores rather than the last REPLAY HH:MM stamp.
+    if last_frame_games is not None:
+        try:
+            result = orchestrate_score_board(
+                last_frame_games, team_data, date_str, bypass_cache=True, config=config,
+            )
+            if result:
+                image, changed_regions = result
+                image.save(output_path)
+                print("Final scores pushed to display.")
+                if local_mode:
+                    if is_mac:
+                        subprocess.run(['open', output_path], check=False)
+                else:
+                    send_to_display(output_path, changed_regions)
+        except Exception as e:
+            print(f"Final frame error: {e}")
 
 
 def main():

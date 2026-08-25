@@ -485,27 +485,54 @@ def _maybe_show_quadrant(config, no_throttle=False, auto_open=False):
 
 
 def _show_idle_screen(config, auto_open=False):
-    """Render and display the idle 'no games today' screen with recent transactions."""
+    """Render and display the idle 'no games today' screen.
+
+    Alternates between the recent-transactions view and the team quadrant
+    chart every 20 minutes (keyed to the wall clock so the output is
+    deterministic for any given cron tick).  The quadrant slot is skipped
+    when quadrant data isn't cached — transactions are shown instead.
+    """
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
 
-    team_data = load_json_file('teams.json')
-    if not team_data or 'team_abbreviation' not in team_data:
-        team_data = {'team_abbreviation': {}}
+    # Determine which view this 20-minute block should show.
+    # Block 0 (minutes 0-19) → transactions; Block 1 → quadrant; Block 2 → transactions; …
+    _show_quadrant_slot = (
+        config.get('idle_quadrant_rotation', True)
+        and (datetime.now().minute // 20) % 2 == 1
+    )
+    if _show_quadrant_slot:
+        quadrant_data = load_json_file('team_quadrant.json')
+        if quadrant_data:
+            try:
+                from quadrant_view import render_quadrant_view
+                image = render_quadrant_view(
+                    quadrant_data, config=idle_config,
+                    dark_mode=idle_config.get('dark_mode', False),
+                )
+                print("Idle: showing quadrant view")
+            except Exception as _qe:
+                print(f"Idle: quadrant render failed ({_qe}), falling back to transactions")
+                _show_quadrant_slot = False
+        else:
+            _show_quadrant_slot = False
 
-    # Load transactions — fetch fresh if missing or older than 1 hour
-    tx_data = load_json_file('transactions.json') or {}
-    tx_age  = time.time() - tx_data.get('fetched_at', 0)
-    if not tx_data.get('transactions') or tx_age > 3600:
-        try:
-            from standings import fetch_transactions
-            tx_data = fetch_transactions(lookback_days=config.get('transactions_lookback_days', 3)) or tx_data
-        except Exception as _e:
-            print(f"Warning: idle transactions fetch failed: {_e}")
-    transactions = tx_data.get('transactions', [])
+    if not _show_quadrant_slot:
+        team_data = load_json_file('teams.json')
+        if not team_data or 'team_abbreviation' not in team_data:
+            team_data = {'team_abbreviation': {}}
 
-    # Render
-    image = draw_idle_screen(transactions, team_data, {}, idle_config)
+        # Load transactions — fetch fresh if missing or older than 1 hour
+        tx_data = load_json_file('transactions.json') or {}
+        tx_age  = time.time() - tx_data.get('fetched_at', 0)
+        if not tx_data.get('transactions') or tx_age > 3600:
+            try:
+                from standings import fetch_transactions
+                tx_data = fetch_transactions(lookback_days=config.get('transactions_lookback_days', 3)) or tx_data
+            except Exception as _e:
+                print(f"Warning: idle transactions fetch failed: {_e}")
+        transactions = tx_data.get('transactions', [])
+        image = draw_idle_screen(transactions, team_data, {}, idle_config)
 
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 

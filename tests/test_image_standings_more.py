@@ -1131,12 +1131,101 @@ class TestWildcardMovers:
         """When _logo_small returns a real image, the paste branch in
         draw_wildcard_header (lines 100-103) executes."""
         fake_logo = Image.new('1', (20, 20), 0)
-        al = [{'abbr': 'NYY', 'team_id': '147', 'gb': '1.0', 'rank': 4}]
-        nl = [{'abbr': 'LAD', 'team_id': '119', 'gb': '0.5', 'rank': 5}]
+        al = [{'abbr': 'NYY', 'team_id': '147', 'gb': '1.0', 'rank': 4, 'elim_badge': ''}]
+        nl = [{'abbr': 'LAD', 'team_id': '119', 'gb': '0.5', 'rank': 5, 'elim_badge': ''}]
         img = _blank()
         with patch('image_standings._logo_small', return_value=fake_logo):
             result = draw_wildcard_header(img, {'AL': al, 'NL': nl})
         assert result is img
+
+    def test_wildcard_header_draws_elim_badge_text(self):
+        """When a team carries an elim_badge, its text is drawn in the slot."""
+        from image_standings import _WC_BADGE_H, _WC_STRIP_H
+        al = [{'abbr': 'NYY', 'team_id': '147', 'gb': '2.0', 'rank': 4, 'elim_badge': 'E5'}]
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            draw_wildcard_header(img, {'AL': al, 'NL': []})
+        # At least some ink should appear in the badge row at the bottom of the strip.
+        badge_row_y = _WC_STRIP_H - _WC_BADGE_H - 1
+        has_ink = any(img.getpixel((x, badge_row_y)) == 0 for x in range(32, 56))
+        assert has_ink, 'expected badge text ink in the slot'
+
+    def test_wildcard_header_no_badge_for_in_box_teams(self):
+        """Teams inside the wildcard box have elim_badge='' and no extra ink row."""
+        al = [
+            {'abbr': 'NYY', 'team_id': '147', 'gb': '-', 'rank': 1, 'elim_badge': ''},
+            {'abbr': 'BOS', 'team_id': '111', 'gb': '1.0', 'rank': 2, 'elim_badge': ''},
+            {'abbr': 'TBR', 'team_id': '139', 'gb': '2.0', 'rank': 3, 'elim_badge': ''},
+        ]
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            draw_wildcard_header(img, {'AL': al, 'NL': []})
+        # No crash and result is the image.
+        assert img.size == (800, 480)
+
+    def test_derive_wildcard_bad_wins_losses_type_falls_back(self):
+        """Non-numeric league_record_wins/losses hit the ValueError branch."""
+        from image_standings import derive_wildcard_from_standings
+        data = {
+            'standings': {
+                'American League East': [
+                    {'team_id': '99', 'divisionRank': '2', 'team_name': 'TST',
+                     'league_rank': '5', 'wild_card_games_back': '3.0',
+                     'league_record_wins': 'bad', 'league_record_losses': 'bad'},
+                ],
+            },
+            'team_abbreviation': {},
+        }
+        result = derive_wildcard_from_standings(data)
+        team = next((t for t in result.get('AL', []) if t['team_id'] == '99'), None)
+        assert team is not None
+        assert team['wins'] is None
+        assert team['losses'] is None
+
+
+# ===========================================================================
+# _wc_elim_badge
+# ===========================================================================
+
+class TestWcElimBadge:
+    """Unit tests for image_standings._wc_elim_badge."""
+
+    def _badge(self, team_entry, wc3_wins=85, wc3_losses=None):
+        from image_standings import _wc_elim_badge
+        return _wc_elim_badge(team_entry, wc3_wins, wc3_losses)
+
+    def test_clinched_out_returns_OUT(self):
+        """A team with clinch_indicator='e' is eliminated."""
+        assert self._badge({'clinch_indicator': 'e', 'losses': 70}) == 'OUT'
+
+    def test_no_wc3_wins_returns_empty(self):
+        """When the 3rd WC team has no wins data, no badge is shown."""
+        assert self._badge({'losses': 70}, wc3_wins=None) == ''
+
+    def test_no_losses_returns_empty(self):
+        """When the bubble team has no losses data, no badge is shown."""
+        assert self._badge({'losses': None}) == ''
+
+    def test_elimination_elim_leq_threshold(self):
+        """Elimination number at or below threshold returns E{n}."""
+        from image_utils import MAGIC_BASE, ELIM_THRESHOLD
+        # Set wins so that MAGIC_BASE - wc3_wins - team_losses = ELIM_THRESHOLD
+        wc3_wins = 80
+        losses = MAGIC_BASE - wc3_wins - ELIM_THRESHOLD
+        assert self._badge({'losses': losses, 'clinch_indicator': ''}, wc3_wins=wc3_wins) \
+               == f'E{ELIM_THRESHOLD}'
+
+    def test_large_elimination_number_returns_empty(self):
+        """Elimination number above ELIM_THRESHOLD is not meaningful enough to show."""
+        assert self._badge({'losses': 10, 'clinch_indicator': ''}, wc3_wins=40) == ''
+
+    def test_already_eliminated_returns_OUT(self):
+        """Elimination number ≤ 0 means the team is already eliminated."""
+        from image_utils import MAGIC_BASE
+        wc3_wins = 90
+        losses = MAGIC_BASE - wc3_wins   # elim = 0
+        assert self._badge({'losses': losses, 'clinch_indicator': ''}, wc3_wins=wc3_wins) \
+               == 'OUT'
 
 
 # ===========================================================================

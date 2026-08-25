@@ -562,3 +562,49 @@ def render_quadrant_view(data, grain=None, config=None, dark_mode=False, now=Non
     if dark_mode:
         image = ImageOps.invert(image.convert('L')).convert('1')
     return image
+
+
+def main():
+    """CLI: render the cached quadrant chart and export as a PNG."""
+    import argparse
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from util import load_json_file
+
+    parser = argparse.ArgumentParser(
+        description='Render the team offense-vs-pitching quadrant chart.',
+    )
+    parser.add_argument('--grain', choices=GRAINS, default=None,
+                        help='Which grain to render (default: from config / season).')
+    parser.add_argument('--export-png', metavar='PATH', default='quadrant.png',
+                        help='Output path for the exported PNG (default: quadrant.png).')
+    parser.add_argument('--dark', action='store_true', help='Dark/inverted output.')
+    parser.add_argument('--scale', type=int, default=2,
+                        help='Integer upscale factor for the export (default: 2 → 1600×960).')
+    args = parser.parse_args()
+
+    data = load_json_file('team_quadrant.json')
+    if not data:
+        print('No team_quadrant.json cached. Run: python src/fetch_team_quadrant.py')
+        sys.exit(1)
+
+    try:
+        image = render_quadrant_view(data, grain=args.grain, dark_mode=args.dark)
+    except ValueError as e:
+        print(f'Render failed: {e}')
+        sys.exit(1)
+
+    export = image.convert('L')
+    if args.scale > 1:
+        export = export.resize(
+            (image.width * args.scale, image.height * args.scale),
+            resample=Image.NEAREST,
+        )
+    export.save(args.export_png)
+    grain_used = args.grain or 'season'
+    print(f'Saved {args.export_png} ({export.width}×{export.height}, grain={grain_used})')
+
+
+if __name__ == '__main__':  # pragma: no cover
+    main()

@@ -44,13 +44,36 @@ _WC_WILDCARD_SPOTS = 3   # number of wildcard playoff berths per league
 _WC_MAX_TEAMS      = 12  # max eligible per league (15 teams - 3 division leaders)
 
 
+def _wc_elim_badge(team_entry, wc3_wins, wc3_losses):
+    """Badge text for a wildcard bubble team (outside the top-3 spots).
+
+    Returns 'E{n}' when the elimination number is ≤ ELIM_THRESHOLD, else ''.
+    wc3_wins / wc3_losses are the record of the team currently holding the
+    3rd wildcard spot — the benchmark a bubble team must chase.
+    """
+    clinch = (team_entry.get('clinch_indicator') or '').strip().lower()
+    if clinch == 'e':
+        return 'OUT'
+    if wc3_wins is None:
+        return ''
+    losses = team_entry.get('losses')
+    if losses is None:
+        return ''
+    elim = MAGIC_BASE - wc3_wins - losses
+    if elim <= 0:
+        return 'OUT'
+    if elim <= ELIM_THRESHOLD:
+        return f'E{elim}'
+    return ''
+
+
 def derive_wildcard_from_standings(standings_data):
     """Build {'AL': [...], 'NL': [...]} from standings.json.
 
     Collects all non-division-leader teams per league, sorts by league_rank
     (overall AL/NL rank already accounts for wildcard position correctly).
     Returns all eligible wildcard teams (max 12: 15 teams minus 3 division leaders).
-    Each entry: {'abbr': str, 'team_id': str, 'gb': str}.
+    Each entry: {'abbr': str, 'team_id': str, 'gb': str, 'elim_badge': str}.
     """
     abbr_map = standings_data.get('team_abbreviation', {})
     divisions = standings_data.get('standings', {})
@@ -68,17 +91,41 @@ def derive_wildcard_from_standings(standings_data):
                     rank = int(t.get('league_rank', 999))
                 except (ValueError, TypeError):
                     rank = 999
+                wins = t.get('league_record_wins')
+                losses = t.get('league_record_losses')
+                try:
+                    wins = int(wins) if wins is not None else None
+                    losses = int(losses) if losses is not None else None
+                except (ValueError, TypeError):
+                    wins = losses = None
                 teams.append({
                     'abbr': abbr,
                     'team_id': team_id,
                     'gb': t.get('wild_card_games_back') or '-',
                     'rank': rank,
+                    'wins': wins,
+                    'losses': losses,
+                    'clinch_indicator': t.get('clinch_indicator') or '',
                 })
         teams.sort(key=lambda t: t['rank'])
+
+        # Compute elimination badges for bubble teams (rank 4+).
+        # The benchmark is the team holding the 3rd wildcard spot.
+        wc3 = teams[2] if len(teams) >= 3 else None
+        wc3_wins = wc3['wins'] if wc3 else None
+        wc3_losses = wc3['losses'] if wc3 else None
+        for i, team in enumerate(teams):
+            if i < _WC_WILDCARD_SPOTS:
+                team['elim_badge'] = ''
+            else:
+                team['elim_badge'] = _wc_elim_badge(team, wc3_wins, wc3_losses)
+
         result[league_key] = teams  # all eligible, no cap
 
     return result
 
+
+_WC_BADGE_H = 7   # px font height for elim badge; logo shrinks by this when badge shown
 
 def draw_wildcard_header(Himage, wildcard_data):
     """Draw a compact wildcard standings strip across the top of the display (y=0..30).
@@ -87,24 +134,37 @@ def draw_wildcard_header(Himage, wildcard_data):
     NL wildcard (all eligible, up to 12) right-to-left in the right half, rank 1 at right edge.
     A rounded rectangle is drawn around the top-3 wildcard leaders on each side.
     Falls back to 3-letter abbreviation (font9) when no logo is available.
+    Bubble teams (rank 4+) show an E# elimination badge below their slot when the
+    number is ≤ ELIM_THRESHOLD (i.e. the race is tight enough to matter).
     """
     draw = ImageDraw.Draw(Himage)
     font = _get_font(9)
+    font_badge = _get_font(_WC_BADGE_H)
 
     def _draw_slot(slot_x, team):
-        """Draw slot."""
+        """Draw one wildcard slot with optional elimination badge."""
         abbr    = (team.get('abbr') or '???')[:4]
         team_id = str(team.get('team_id', ''))
+        badge   = team.get('elim_badge', '')
 
-        logo = _logo_small(abbr, team_id, size=_WC_LOGO_SZ)
+        # When a badge is present, shrink the logo to leave room at the bottom.
+        logo_sz  = _WC_LOGO_SZ - _WC_BADGE_H if badge else _WC_LOGO_SZ
+        logo_top = 1 if badge else (_WC_STRIP_H - _WC_LOGO_SZ) // 2
+
+        logo = _logo_small(abbr, team_id, size=logo_sz)
         if logo is not None:
             lw, lh = logo.size
             logo_x = slot_x + (_WC_SLOT_W - lw) // 2
-            logo_y = (_WC_STRIP_H - lh) // 2
-            Himage.paste(logo, (logo_x, logo_y))
+            Himage.paste(logo, (logo_x, logo_top))
         else:
             abbr_w = int(font.getlength(abbr))
-            draw.text((slot_x + (_WC_SLOT_W - abbr_w) // 2, (_WC_STRIP_H - 9) // 2), abbr, font=font, fill=0)
+            text_y = logo_top + (logo_sz - 9) // 2
+            draw.text((slot_x + (_WC_SLOT_W - abbr_w) // 2, text_y), abbr, font=font, fill=0)
+
+        if badge:
+            bw = int(font_badge.getlength(badge))
+            draw.text((slot_x + (_WC_SLOT_W - bw) // 2, _WC_STRIP_H - _WC_BADGE_H - 1),
+                      badge, font=font_badge, fill=0)
 
     al_teams = wildcard_data.get('AL', [])[:_WC_MAX_TEAMS]
     nl_teams = wildcard_data.get('NL', [])[:_WC_MAX_TEAMS]
