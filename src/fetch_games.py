@@ -433,8 +433,14 @@ def get_team_abbreviation(team_id):
 
 
 def check_games_for_sport(date, sport_id):
-    """Return count of games for a sport on a date (MLB filters out spring training
-    only when regular-season games exist on the same day)."""
+    """Return count of games for a sport on a date, or None on API error.
+
+    Returns 0 only when the API definitively confirms no games. Returns None
+    when the request fails so callers can distinguish "no games" from "unknown"
+    and avoid falling through to lower-priority sports on transient errors.
+    MLB (sport_id=1) filters out Spring Training/Exhibition when regular-season
+    games exist on the same day.
+    """
     endpoint_url = (
         'https://statsapi.mlb.com/api/v1/schedule?'
         f'startDate={date}&endDate={date}&sportId={sport_id}'
@@ -451,9 +457,11 @@ def check_games_for_sport(date, sport_id):
                     if regular:
                         games = regular
                 return len(games)
+            return 0
+        print(f"Error checking games for sport {sport_id}: HTTP {response.status_code}")
     except Exception as e:
         print(f"Error checking games for sport {sport_id}: {e}")
-    return 0
+    return None
 
 
 def find_next_game_date(sport_id_priority, from_date_str):
@@ -894,7 +902,7 @@ def fetch_tomorrow_games(config=None, for_date=None):
     sport_id = None
     for sid in sport_id_priority:
         cnt = check_games_for_sport(target_date, sid)
-        if cnt > 0:
+        if cnt is None or cnt > 0:
             sport_id = sid
             break
     if sport_id is None:
@@ -951,6 +959,12 @@ def fetch_scoreboard_for_date(date, sport_id=None, config=None):
             print(f"Checking sports in priority order: {[SPORT_NAMES.get(sid, f'Sport {sid}') for sid in sport_id_priority]}")
             for sid in sport_id_priority:
                 game_count = check_games_for_sport(date, sid)
+                if game_count is None:
+                    # API error — can't confirm no games; stop here to avoid
+                    # falling through to lower-priority sports on transient failures.
+                    print(f"  API error for {SPORT_NAMES.get(sid, f'Sport {sid}')}, using it to avoid minor-league fallback")
+                    sport_id = sid
+                    break
                 if game_count > 0:
                     print(f"✓ Found {game_count} game(s) for {SPORT_NAMES.get(sid, f'Sport {sid}')}")
                     sport_id = sid

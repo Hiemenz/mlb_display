@@ -748,15 +748,15 @@ class TestCheckGamesForSport:
         with patch('fetch_games.requests.get', return_value=_resp(json_data=payload)):
             assert check_games_for_sport('2026-03-15', 16) == 1
 
-    def test_non_200_returns_zero(self):
-        """Non 200 returns zero."""
+    def test_non_200_returns_none(self):
+        """Non-200 returns None (API error, not a confirmed zero)."""
         with patch('fetch_games.requests.get', return_value=_resp(status_code=500)):
-            assert check_games_for_sport('2026-07-01', 1) == 0
+            assert check_games_for_sport('2026-07-01', 1) is None
 
-    def test_exception_returns_zero(self):
-        """Exception returns zero."""
+    def test_exception_returns_none(self):
+        """Exception returns None (API error, not a confirmed zero)."""
         with patch('fetch_games.requests.get', side_effect=Exception('boom')):
-            assert check_games_for_sport('2026-07-01', 1) == 0
+            assert check_games_for_sport('2026-07-01', 1) is None
 
 
 # ===========================================================================
@@ -1335,6 +1335,20 @@ class TestFetchTomorrowGames:
         expected = (_d.today() + _td(days=1)).strftime('%Y-%m-%d')
         assert saved_data['date'] == expected
 
+    def test_api_error_stops_fallthrough_to_lower_priority_sports(self):
+        """API error on top-priority sport stays on that sport instead of falling to minor leagues."""
+        schedule_payload = {'dates': [{'games': [
+            {'teams': {'away': {'team': {'id': 111}}, 'home': {'team': {'id': 110}}},
+             'gameDate': '2026-07-02T23:05:00Z', 'gamePk': 999, 'gameType': 'R'},
+        ]}]}
+        # None for sport_id=1 → stops there, requests the schedule for sport_id=1 anyway
+        with patch('fetch_games.check_games_for_sport', return_value=None), \
+             patch('fetch_games.requests.get', return_value=_resp(json_data=schedule_payload)), \
+             patch('fetch_games.save_off_results') as mock_save:
+            fetch_tomorrow_games(config={'sport_id_priority': [1, 11]}, for_date='2026-07-02')
+        saved_data, _ = mock_save.call_args[0]
+        assert saved_data['games'][0]['game_pk'] == 999
+
     def test_empty_sport_priority_defaults_to_sport_1(self):
         """Empty sport priority defaults to sport 1."""
         with patch('fetch_games.check_games_for_sport') as mock_check, \
@@ -1383,6 +1397,16 @@ class TestFetchScoreboardForDate:
             fetch_scoreboard_for_date('2026-07-01', sport_id=None,
                                        config={'sport_id_priority': [1, 8]})
         assert mock_parse.call_args[0][1] == 8
+
+    def test_api_error_stops_fallthrough_to_lower_priority_sports(self):
+        """API error for top-priority sport stops fallthrough — uses that sport, not minor leagues."""
+        with patch('fetch_games.check_games_for_sport', side_effect=[None, 3]), \
+             patch('fetch_games.requests.get', return_value=_resp(json_data={'dates': []})), \
+             patch('fetch_games.parse_games') as mock_parse:
+            fetch_scoreboard_for_date('2026-07-01', sport_id=None,
+                                       config={'sport_id_priority': [1, 11]})
+        # None from sport_id=1 → stays on sport 1, never checks sport 11
+        assert mock_parse.call_args[0][1] == 1
 
     def test_no_games_found_defaults_to_first_priority_sport(self):
         """No games found defaults to first priority sport."""
