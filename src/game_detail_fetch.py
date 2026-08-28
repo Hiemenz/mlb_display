@@ -544,14 +544,13 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
         # so it never lags behind the linescore like linescore.offense.batter can.
         current_play_batter = _matchup.get('batter', {}).get('fullName') or None
         bat_side = _matchup.get('batSide', {}).get('code', '')
+        pitch_hand = _matchup.get('pitchHand', {}).get('code', '')
 
-        # ABS max grows by 1 per extra inning (10th = 3 total, 11th = 4, ...)
-        current_inning = linescore.get('currentInning') or 9
-        abs_max = _ABS_CHALLENGE_MAX + max(0, int(current_inning) - 9)
-
+        # ABS challenge allotment is fixed at 2 per team for the whole game —
+        # it does not grow in extra innings.
         away_used, home_used = _count_abs_challenges_used(plays, away_id, home_id)
-        away_remaining = max(0, abs_max - away_used)
-        home_remaining = max(0, abs_max - home_used)
+        away_remaining = max(0, _ABS_CHALLENGE_MAX - away_used)
+        home_remaining = max(0, _ABS_CHALLENGE_MAX - home_used)
         away_replay_used, home_replay_used = _count_replay_challenges_used(plays, away_id, home_id)
         away_replay_remaining = max(0, _REPLAY_CHALLENGE_MAX - away_replay_used)
         home_replay_remaining = max(0, _REPLAY_CHALLENGE_MAX - home_replay_used)
@@ -576,6 +575,9 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
 
         # Last 7 events of the whole game for the header (steals, pitching changes, plays).
         half_inning_plays = _build_game_plays_log(plays)
+
+        # Per-out play type (K, F8, ...) for the current half-inning's out circles.
+        outs_this_half = _build_current_half_inning_outs(plays)
 
         # K strikeouts for wide-cell header: track swinging (K) vs looking (L) per pitcher side
         away_pitcher_ks = []   # Ks by away pitcher (home batters struck out, isTopInning=False)
@@ -609,7 +611,8 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'current_at_bat_complete': current_at_bat_complete,
             'current_play_batter': current_play_batter,
             'sub_event': sub_event,
-            'abs_challenge_max': abs_max,
+            'outs_this_half': outs_this_half,
+            'abs_challenge_max': _ABS_CHALLENGE_MAX,
             'away_challenges_remaining': away_remaining,
             'home_challenges_remaining': home_remaining,
             'away_replay_remaining': away_replay_remaining,
@@ -635,6 +638,7 @@ def fetch_scoreboard_live_extras(game_pk, away_id=None, home_id=None):
             'recent_hits': recent_hits,
             'all_game_hits': _all_game_hits,
             'bat_side': bat_side,
+            'pitch_hand': pitch_hand,
             'ab_pitches': ab_pitches,
             'half_inning_plays': half_inning_plays,
             'away_pitcher_ks': away_pitcher_ks,
@@ -1143,6 +1147,61 @@ def _build_scorecard_notation(play):
     if _is_pk:  return 'PO'
     if _is_sdp: return 'K'
     return _EVENT_CODE_MAP.get(event, event[:3] if event else '')
+
+
+_OUT_EVENT_TYPES = {
+    'strikeout', 'strikeout_double_play', 'strikeout_triple_play',
+    'field_out', 'force_out', 'fielders_choice_out',
+    'grounded_into_double_play', 'double_play', 'triple_play',
+    'sac_fly', 'sac_fly_double_play', 'sac_bunt', 'sac_bunt_double_play',
+}
+_DP_EVENT_TYPES = {
+    'grounded_into_double_play', 'double_play',
+    'strikeout_double_play', 'sac_fly_double_play', 'sac_bunt_double_play',
+}
+_TP_EVENT_TYPES = {'triple_play', 'strikeout_triple_play'}
+
+
+def _outs_produced(event_type):
+    """Number of outs a single batter-recorded play produces, from its
+    normalised (lowercase, underscored) result.eventType."""
+    if event_type in _TP_EVENT_TYPES:
+        return 3
+    if event_type in _DP_EVENT_TYPES:
+        return 2
+    if event_type in _OUT_EVENT_TYPES:
+        return 1
+    return 0
+
+
+def _build_current_half_inning_outs(plays):
+    """Scorecard notation (e.g. 'K', 'F8', '6-4-3 DP') for each out recorded
+    so far in the at-bat's current half-inning, oldest first, capped at 3.
+
+    Scoped to outs the batter makes at the plate (strikeouts, balls in
+    play) — outs on the bases (caught stealing, pickoffs) aren't labelled.
+    """
+    _current_about = plays.get('currentPlay', {}).get('about', {})
+    if 'inning' not in _current_about:
+        _all = plays.get('allPlays', [])
+        _current_about = _all[-1].get('about', {}) if _all else {}
+    _inning = _current_about.get('inning')
+    if _inning is None:
+        return []
+    _is_top = bool(_current_about.get('isTopInning', True))
+
+    outs: list = []
+    for _ap in plays.get('allPlays', []):
+        _ap_about = _ap.get('about', {})
+        if not _ap_about.get('isComplete'):
+            continue
+        if _ap_about.get('inning') != _inning or bool(_ap_about.get('isTopInning', True)) != _is_top:
+            continue
+        _et = (_ap.get('result', {}).get('eventType') or '').lower().replace(' ', '_')
+        _n = _outs_produced(_et)
+        if _n:
+            outs.extend([_build_scorecard_notation(_ap)] * _n)
+    return outs[:3]
 
 
 def _build_lineup_at_bats(boxscore, plays, team_side):

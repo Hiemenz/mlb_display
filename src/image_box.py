@@ -352,7 +352,7 @@ def _draw_challenge_dots(draw, start_x, start_y, game_data, use_logos=False, log
         abs_remaining = game_data.get(f'{side}_challenges_remaining')
         replay_remaining = game_data.get(f'{side}_replay_remaining')
 
-        # ABS dots — one per challenge slot, max grows +1 per extra inning
+        # ABS dots — one per challenge slot (fixed allotment, does not grow in extras)
         if abs_remaining is not None:
             abs_remaining = max(0, min(abs_max, int(abs_remaining)))
             for i in range(abs_max):
@@ -2927,10 +2927,28 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
         # ── Outs circles: left side, below bases ──────────────────────
         outs_list = [i + 1 <= _outs_count for i in range(3)]
-        Himage = draw_circle(Himage, (rp_x + 18 * s, rp_y + 71 * s), 6 * s, outs_list[0], outline_width=2)
-        Himage = draw_circle(Himage, (rp_x + 32 * s, rp_y + 71 * s), 6 * s, outs_list[1], outline_width=2)
-        Himage = draw_circle(Himage, (rp_x + 46 * s, rp_y + 71 * s), 6 * s, outs_list[2], outline_width=2)
+        _outs_x = [rp_x + 18 * s, rp_x + 32 * s, rp_x + 46 * s]
+        _outs_y = rp_y + 71 * s
+        Himage = draw_circle(Himage, (_outs_x[0], _outs_y), 6 * s, outs_list[0], outline_width=2)
+        Himage = draw_circle(Himage, (_outs_x[1], _outs_y), 6 * s, outs_list[1], outline_width=2)
+        Himage = draw_circle(Himage, (_outs_x[2], _outs_y), 6 * s, outs_list[2], outline_width=2)
         draw = ImageDraw.Draw(Himage)
+
+        # Play-type label under each recorded out this half-inning (e.g. 'K', 'F8').
+        # Only outs the batter makes at the plate are labelled — base-running
+        # outs (caught stealing, pickoffs) aren't tracked here.
+        _outs_labels = game_data.get('outs_this_half') or []
+        _ol_max_w = 12 * s
+        for _oi, _olabel in enumerate(_outs_labels[:3]):
+            if not (outs_list[_oi] and _olabel):
+                continue
+            _ol_str = _olabel
+            while _ol_str and int(font7.getlength(_ol_str)) > _ol_max_w:
+                _ol_str = _ol_str[:-1]
+            if not _ol_str:  # pragma: no cover
+                continue
+            _ol_w = int(font7.getlength(_ol_str))
+            draw.text((_outs_x[_oi] - _ol_w / 2, _outs_y + 7 * s), _ol_str, font=font7, fill=0)
 
         # ── Pitch list: vertical, right of bases/outs, left of zone ───
         # Anchored to a fixed top (not the zone) so moving the zone down doesn't
@@ -3018,6 +3036,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         _pitcher_name = f'{_outgoing}→{_pc_incoming}' if _outgoing else _pc_incoming
     else:
         _pitcher_name = _format_player_name(game_data.get('current_pitcher') or '')
+        _pitch_hand = game_data.get('pitch_hand', '')
+        if _pitcher_name and _pitch_hand:
+            _pitcher_name = f'{_pitcher_name} ({_pitch_hand})'
 
     # Game-level pitch count when available (live); fall back to per-at-bat count
     # for timelapse frames where only at_bat_pitch_count is reconstructed.
@@ -3057,7 +3078,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _hitter = _format_player_name(
                 game_data.get('current_play_batter') or game_data.get('current_hitter') or ''
             )
-            _batter_label = f'AB: {_hitter}'
+            _bat_side = game_data.get('bat_side', '')
+            _side_suffix = f' ({_bat_side})' if _hitter and _bat_side else ''
+            _batter_label = f'AB: {_hitter}{_side_suffix}'
         if _batter_label:
             _bf = font11
             if int(_bf.getlength(_batter_label)) > _hit_avail:
@@ -3499,36 +3522,6 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
             (HX + hp,     hcy - hp),
             (HX + hp,     hcy),
         ], fill=255, outline=0)
-
-        # Batter figure: stick person with bat on the correct side of home plate.
-        # RHB stands in the left (3B-side) box; LHB stands in the right (1B-side) box.
-        # Top-down view: bat is held back (away from plate), angling up toward the pitcher.
-        _bat_side = game_data.get('bat_side', '')
-        if _bat_side:
-            _fig_gap = max(round(2 * s), 1)   # px between plate edge and figure centre
-            _fig_off = max(round(3 * s), 2)   # half-width of figure footprint
-            _head_r  = max(round(1.5 * s), 1)
-            _fig_h   = max(round(9 * s), 7)   # total figure height (feet→head)
-            _bat_len = max(round(5 * s), 4)
-
-            def _draw_batter(cx, away_dir):
-                """Stick-figure batter centred at cx, feet at hcy. away_dir: ±1 from plate."""
-                _top = hcy - _fig_h           # head-centre y
-                draw.ellipse([cx - _head_r, _top - _head_r,
-                              cx + _head_r, _top + _head_r], fill=0)
-                draw.line([(cx, _top + _head_r + 1), (cx, hcy)], fill=0, width=1)
-                # Bat: from shoulder, angling away from plate and upward
-                _sy = _top + _head_r + max(round(2 * s), 1)
-                draw.line([(cx, _sy),
-                           (cx + away_dir * _bat_len,
-                            _sy - round(_bat_len * 0.7))], fill=0, width=1)
-
-            if _bat_side in ('R', 'S'):
-                # RHB: left of plate, bat held back toward 3B (−x)
-                _draw_batter(HX - hp - _fig_gap - _fig_off, away_dir=-1)
-            if _bat_side in ('L', 'S'):
-                # LHB: right of plate, bat held back toward 1B (+x)
-                _draw_batter(HX + hp + _fig_gap + _fig_off, away_dir=+1)
 
     for runner_key, (bx, by) in [
         ('runner_on_first',  FIRST),

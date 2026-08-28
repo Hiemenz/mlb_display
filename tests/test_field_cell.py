@@ -779,42 +779,6 @@ def _cell_with_game(game_data, w=150, h=130, scale=1):
 
 
 @needs_pil
-class TestBatSideIndicator:
-    """Bat-side boxes are drawn beside home plate for R/L/S."""
-
-    def _game(self, bat_side):
-        return {'venue': 'American Family Field', 'bat_side': bat_side}
-
-    def test_rhb_no_crash(self):
-        """Right-handed batter renders without error."""
-        assert _cell_with_game(self._game('R')) is not None
-
-    def test_lhb_no_crash(self):
-        """Left-handed batter renders without error."""
-        assert _cell_with_game(self._game('L')) is not None
-
-    def test_switch_no_crash(self):
-        """Switch hitter renders two boxes without error."""
-        assert _cell_with_game(self._game('S')) is not None
-
-    def test_missing_bat_side_no_crash(self):
-        """Missing bat_side key renders without error."""
-        assert _cell_with_game({'venue': 'American Family Field'}) is not None
-
-    def test_rhb_differs_from_lhb(self):
-        """RHB and LHB box positions produce different pixels."""
-        rhb = _cell_with_game(self._game('R'))
-        lhb = _cell_with_game(self._game('L'))
-        assert rhb.tobytes() != lhb.tobytes()
-
-    def test_switch_differs_from_rhb(self):
-        """Switch hitter (two boxes) differs from RHB (one box)."""
-        switch = _cell_with_game(self._game('S'))
-        rhb    = _cell_with_game(self._game('R'))
-        assert switch.tobytes() != rhb.tobytes()
-
-
-@needs_pil
 class TestLaunchAngleArcs:
     """Bezier trajectory arcs are drawn for hits with launch_angle data."""
 

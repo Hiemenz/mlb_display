@@ -33,6 +33,7 @@ from game_detail_fetch import (
     _build_lineup_at_bats,
     _extract_pitchers,
     _build_scorecard_notation,
+    _build_current_half_inning_outs,
     _extract_all_hit_coordinates,
     _map_event_to_code,
     _pos_from_desc,
@@ -659,6 +660,45 @@ class TestFetchScoreboardLiveExtras:
         assert result['abs_challenge_max'] == 2
 
     @patch('game_detail_fetch.fetch_live_feed')
+    def test_bat_side_and_pitch_hand_extracted_from_matchup(self, mock_fetch):
+        """bat_side and pitch_hand come from currentPlay.matchup's batSide/
+        pitchHand codes, for the batter/pitcher handedness suffixes."""
+        feed = _live_feed()
+        feed['liveData']['plays']['currentPlay']['matchup']['batSide'] = {'code': 'L'}
+        feed['liveData']['plays']['currentPlay']['matchup']['pitchHand'] = {'code': 'R'}
+        mock_fetch.return_value = feed
+        result = fetch_scoreboard_live_extras(123)
+        assert result['bat_side'] == 'L'
+        assert result['pitch_hand'] == 'R'
+
+    @patch('game_detail_fetch.fetch_live_feed')
+    def test_bat_side_and_pitch_hand_default_empty(self, mock_fetch):
+        """Missing batSide/pitchHand in the matchup must not crash."""
+        mock_fetch.return_value = _live_feed()
+        result = fetch_scoreboard_live_extras(123)
+        assert result['bat_side'] == ''
+        assert result['pitch_hand'] == ''
+
+    @patch('game_detail_fetch.fetch_live_feed')
+    def test_outs_this_half_defaults_empty(self, mock_fetch):
+        """No completed outs yet in the current half-inning -> empty list."""
+        mock_fetch.return_value = _live_feed()
+        result = fetch_scoreboard_live_extras(123)
+        assert result['outs_this_half'] == []
+
+    @patch('game_detail_fetch.fetch_live_feed')
+    def test_outs_this_half_labels_recorded_out(self, mock_fetch):
+        """A completed strikeout in the current (5th, top) half-inning shows up."""
+        feed = _live_feed()
+        feed['liveData']['plays']['allPlays'] = [
+            _play(event='Strikeout', event_type='strikeout', inning=5, is_top=True,
+                  play_events=[{'isPitch': True, 'details': {'call': {'code': 'S'}}}]),
+        ]
+        mock_fetch.return_value = feed
+        result = fetch_scoreboard_live_extras(123)
+        assert result['outs_this_half'] == ['K']
+
+    @patch('game_detail_fetch.fetch_live_feed')
     def test_runner_jersey_numbers(self, mock_fetch):
         """Runner jersey numbers."""
         mock_fetch.return_value = _live_feed()
@@ -668,18 +708,20 @@ class TestFetchScoreboardLiveExtras:
         assert result['runner_third_number'] is None
 
     @patch('game_detail_fetch.fetch_live_feed')
-    def test_abs_challenge_max_grows_in_extra_innings(self, mock_fetch):
-        """Abs challenge max grows in extra innings."""
+    def test_abs_challenge_max_fixed_in_extra_innings(self, mock_fetch):
+        """ABS challenge allotment does not grow in extra innings — it's a
+        fixed 2 per team for the whole game, unlike the tennis-style
+        challenge system some assume."""
         mock_fetch.return_value = _live_feed(liveData={'linescore': {'currentInning': 11}})
         result = fetch_scoreboard_live_extras(123)
-        assert result['abs_challenge_max'] == 4
+        assert result['abs_challenge_max'] == 2
 
     @patch('game_detail_fetch.fetch_live_feed')
     def test_abs_challenge_max_tenth_inning(self, mock_fetch):
         """Abs challenge max tenth inning."""
         mock_fetch.return_value = _live_feed(liveData={'linescore': {'currentInning': 10}})
         result = fetch_scoreboard_live_extras(123)
-        assert result['abs_challenge_max'] == 3
+        assert result['abs_challenge_max'] == 2
 
     @patch('game_detail_fetch.fetch_live_feed')
     def test_current_at_bat_pitch_tracking_swinging(self, mock_fetch):
@@ -1440,6 +1482,102 @@ class TestBuildScorecardNotationExtra:
         # _EVENT_CODE_MAP has no 'Groundout' fallback via _map (only via _EVENT_CODE_MAP dict directly)
         result = _build_scorecard_notation(play)
         assert result == 'GO'
+
+
+# ===========================================================================
+# _build_current_half_inning_outs — per-out play-type labels (K, F8, ...)
+# for the wide-cell's out circles.
+# ===========================================================================
+
+class TestBuildCurrentHalfInningOuts:
+    def test_no_current_play_no_all_plays_returns_empty(self):
+        """No current play no all plays returns empty."""
+        assert _build_current_half_inning_outs({'currentPlay': {}, 'allPlays': []}) == []
+
+    def test_strikeout_then_flyout_labelled_in_order(self):
+        """Strikeout then flyout labelled in order."""
+        plays = {
+            'currentPlay': {'about': {'inning': 7, 'isTopInning': True}},
+            'allPlays': [
+                _play(event='Strikeout', event_type='strikeout', inning=7, is_top=True,
+                      play_events=[{'isPitch': True, 'details': {'call': {'code': 'S'}}}]),
+                _play(event='Flyout', event_type='field_out', inning=7, is_top=True,
+                      credits=[{'position': {'code': '8'}, 'credit': 'f_putout'}]),
+            ],
+        }
+        assert _build_current_half_inning_outs(plays) == ['K', 'F8']
+
+    def test_ignores_plays_from_other_half_innings(self):
+        """A completed play from a different inning/half must not be counted."""
+        plays = {
+            'currentPlay': {'about': {'inning': 7, 'isTopInning': True}},
+            'allPlays': [
+                _play(event='Strikeout', event_type='strikeout', inning=6, is_top=False),
+                _play(event='Groundout', event_type='field_out', inning=7, is_top=True,
+                      credits=[{'position': {'code': '3'}, 'credit': 'f_putout'}]),
+            ],
+        }
+        assert _build_current_half_inning_outs(plays) == ['3']
+
+    def test_incomplete_current_play_not_counted(self):
+        """The at-bat in progress hasn't recorded an out yet — must not appear."""
+        plays = {
+            'currentPlay': {'about': {'inning': 7, 'isTopInning': True}},
+            'allPlays': [
+                _play(event='', event_type='', inning=7, is_top=True, is_complete=False),
+            ],
+        }
+        assert _build_current_half_inning_outs(plays) == []
+
+    def test_non_out_events_not_counted(self):
+        """Hits, walks, and other non-out events don't produce an out label."""
+        plays = {
+            'currentPlay': {'about': {'inning': 7, 'isTopInning': True}},
+            'allPlays': [
+                _play(event='Single', event_type='single', inning=7, is_top=True),
+                _play(event='Walk', event_type='walk', inning=7, is_top=True),
+            ],
+        }
+        assert _build_current_half_inning_outs(plays) == []
+
+    def test_double_play_labels_both_outs_with_same_notation(self):
+        """A double play records 2 outs on one play — both slots get its notation."""
+        plays = {
+            'currentPlay': {'about': {'inning': 7, 'isTopInning': True}},
+            'allPlays': [
+                _play(event='Grounded Into DP', event_type='grounded_into_double_play',
+                      inning=7, is_top=True,
+                      credits=[{'position': {'code': '6'}, 'credit': 'f_assist'},
+                               {'position': {'code': '4'}, 'credit': 'f_assist'},
+                               {'position': {'code': '3'}, 'credit': 'f_putout'}]),
+            ],
+        }
+        assert _build_current_half_inning_outs(plays) == ['6-4-3 DP', '6-4-3 DP']
+
+    def test_result_capped_at_three_outs(self):
+        """Never returns more than 3 labels even if the data implies more."""
+        plays = {
+            'currentPlay': {'about': {'inning': 7, 'isTopInning': True}},
+            'allPlays': [
+                _play(event='Strikeout', event_type='strikeout', inning=7, is_top=True),
+                _play(event='Grounded Into DP', event_type='grounded_into_double_play',
+                      inning=7, is_top=True,
+                      credits=[{'position': {'code': '6'}, 'credit': 'f_putout'}]),
+            ],
+        }
+        assert len(_build_current_half_inning_outs(plays)) == 3
+
+    def test_falls_back_to_last_all_play_when_current_play_has_no_about(self):
+        """Between-innings frames: currentPlay may lack 'about' — use the last
+        completed play in allPlays to identify the half-inning instead."""
+        plays = {
+            'currentPlay': {},
+            'allPlays': [
+                _play(event='Flyout', event_type='field_out', inning=3, is_top=False,
+                      credits=[{'position': {'code': '9'}, 'credit': 'f_putout'}]),
+            ],
+        }
+        assert _build_current_half_inning_outs(plays) == ['F9']
 
 
 # ===========================================================================
