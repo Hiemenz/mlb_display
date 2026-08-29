@@ -335,6 +335,156 @@ def test_wide_box_very_long_batter_name_truncates(white_image, team_data):
 
 
 @needs_pil
+def test_wide_box_batter_row_shows_bat_side(team_data):
+    """The 'AB:' row appends '(R)'/'(L)'/'(S)' after the batter's name when
+    bat_side is present, and omits it when absent — pixels must differ."""
+    from image_box import draw_wide_box
+    # AB row: rp_x = start_x + CELL_W (135), drawn at rp_y + 117.
+    batter_row = (135, 114, 285, 132)
+
+    def _row(bat_side):
+        img = Image.new('1', (800, 480), 255)
+        game = _live_game(current_at_bat_complete=False)
+        if bat_side is None:
+            game.pop('bat_side', None)
+        else:
+            game['bat_side'] = bat_side
+        draw_wide_box(img, 0, 0, game, team_data)
+        return list(img.crop(batter_row).getdata())
+
+    no_side = _row(None)
+    rhb     = _row('R')
+    lhb     = _row('L')
+    switch  = _row('S')
+
+    assert any(p == 0 for p in no_side), 'the AB row should be drawn at all'
+    assert rhb != no_side, "'(R)' suffix must change the AB row pixels"
+    assert rhb != lhb, "'(R)' and '(L)' suffixes must differ"
+    assert switch != rhb, "'(S)' suffix must differ from '(R)'"
+
+
+@needs_pil
+def test_wide_box_out_circles_show_play_type_labels(team_data):
+    """Each recorded out's circle gets a small play-type label under it
+    (e.g. 'K' for the first out, 'F8' for the second)."""
+    from image_box import draw_wide_box
+    # Outs row: circles at rp_y+71, labels drawn a few px below.
+    outs_label_row = (135 + 12, 77, 135 + 54, 90)
+
+    def _crop(game):
+        img = Image.new('1', (800, 480), 255)
+        draw_wide_box(img, 0, 0, game, team_data)
+        return list(img.crop(outs_label_row).getdata())
+
+    with_labels = _crop(_live_game(num_of_outs=2, outs_this_half=['K', 'F8']))
+    no_labels   = _crop(_live_game(num_of_outs=2))
+
+    assert any(p == 0 for p in with_labels), 'out labels should draw ink under the circles'
+    assert with_labels != no_labels, 'labelled and unlabelled out rows must differ'
+
+
+@needs_pil
+def test_wide_box_out_labels_only_shown_for_recorded_outs(team_data):
+    """A label at an index beyond num_of_outs (not yet recorded) must not draw —
+    only outs that have actually happened get labelled."""
+    from image_box import draw_wide_box
+    outs_label_row = (135 + 12, 77, 135 + 54, 90)
+
+    def _crop(game):
+        img = Image.new('1', (800, 480), 255)
+        draw_wide_box(img, 0, 0, game, team_data)
+        return list(img.crop(outs_label_row).getdata())
+
+    # 1 out recorded, but 3 labels supplied — only the first should render.
+    one_out_three_labels = _crop(_live_game(num_of_outs=1, outs_this_half=['K', 'F8', '6-3']))
+    one_out_one_label    = _crop(_live_game(num_of_outs=1, outs_this_half=['K']))
+
+    assert one_out_three_labels == one_out_one_label, \
+        'labels beyond the recorded out count must not be drawn'
+
+
+@needs_pil
+def test_wide_box_out_label_truncates_when_too_wide(team_data):
+    """A long double-play notation ('6-4-3 DP') must shrink to fit under the
+    out circle rather than overflowing into its neighbor."""
+    from image_box import draw_wide_box
+    img = Image.new('1', (800, 480), 255)
+    game = _live_game(num_of_outs=1, outs_this_half=['6-4-3 DP'])
+    result = draw_wide_box(img, 0, 0, game, team_data)
+    assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_wide_box_pitcher_row_shows_pitch_hand(team_data):
+    """The 'P:' row appends '(R)'/'(L)' after the pitcher's name when
+    pitch_hand is present, and omits it when absent."""
+    from image_box import draw_wide_box
+    # P row: rp_x = start_x + CELL_W (135), drawn at rp_y + 107.
+    pitcher_row = (135, 104, 285, 122)
+
+    def _row(pitch_hand):
+        img = Image.new('1', (800, 480), 255)
+        game = _live_game()
+        if pitch_hand is None:
+            game.pop('pitch_hand', None)
+        else:
+            game['pitch_hand'] = pitch_hand
+        draw_wide_box(img, 0, 0, game, team_data)
+        return list(img.crop(pitcher_row).getdata())
+
+    no_hand = _row(None)
+    rhp     = _row('R')
+    lhp     = _row('L')
+
+    assert any(p == 0 for p in no_hand), 'the P row should be drawn at all'
+    assert rhp != no_hand, "'(R)' suffix must change the P row pixels"
+    assert rhp != lhp, "'(R)' and '(L)' suffixes must differ"
+
+
+@needs_pil
+def test_wide_box_pitch_hand_ignored_during_mid_inning_change(team_data):
+    """pitch_hand describes the outgoing pitcher — during a mid-inning
+    change ('P: Webb→King') it must not be appended, since it may belong
+    to the wrong pitcher."""
+    from image_box import draw_wide_box
+    pitcher_row = (135, 104, 285, 122)
+
+    def _row(pitch_hand):
+        img = Image.new('1', (800, 480), 255)
+        game = _live_game(sub_event='PC: King')
+        if pitch_hand is None:
+            game.pop('pitch_hand', None)
+        else:
+            game['pitch_hand'] = pitch_hand
+        draw_wide_box(img, 0, 0, game, team_data)
+        return list(img.crop(pitcher_row).getdata())
+
+    assert _row('R') == _row(None), \
+        "pitch_hand must not be applied during a mid-inning pitching change"
+
+
+@needs_pil
+def test_wide_box_bat_side_ignored_for_due_up_batter(team_data):
+    """bat_side describes the current hitter, not the on-deck one — the
+    due-up 'AB:' row (shown once the at-bat is complete) must not append it."""
+    from image_box import draw_wide_box
+    batter_row = (135, 114, 285, 132)
+
+    def _row(bat_side):
+        img = Image.new('1', (800, 480), 255)
+        game = _live_game(current_at_bat_complete=True, due_up='Freddie Freeman')
+        if bat_side is None:
+            game.pop('bat_side', None)
+        else:
+            game['bat_side'] = bat_side
+        draw_wide_box(img, 0, 0, game, team_data)
+        return list(img.crop(batter_row).getdata())
+
+    assert _row('R') == _row(None), \
+        "bat_side must not be applied to the due-up batter's row"
+
+
+@needs_pil
 def test_wide_panel_mid_inning_pc_names_both_pitchers(team_data):
     """current_pitcher still reports the departing arm during a change, so the
     right panel's 'P:' line reads 'Webb→King'. Left alone it credited the pitch

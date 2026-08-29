@@ -771,8 +771,9 @@ def test_game_state_pitch_details_cleared_between_plays():
     assert state['strike_calls'] == []
 
 
-def test_game_state_abs_challenge_max_scales_for_extra_innings():
-    """ABS challenge max grows by 1 per extra inning (10th=3, 11th=4, …)."""
+def test_game_state_abs_challenge_max_fixed_for_extra_innings():
+    """ABS challenge allotment is fixed at 2 per team — it does not grow in
+    extra innings."""
     pitch_events = [{'time': _dt(23, 11), 'balls': 0, 'strikes': 0, 'outs': 0,
                       'inning': 10, 'half_inning': 'top', 'away_score': 3, 'home_score': 3,
                       'pitcher': '', 'batter': '', 'runner_on_first': None,
@@ -782,8 +783,8 @@ def test_game_state_abs_challenge_max_scales_for_extra_innings():
     tl = _tl(pitch_events=pitch_events, last_play_utc=_dt(23, 30))
     state = _game_state_at_time(_base_game(), tl, _dt(23, 11))
     assert state['current_inning'] == 10
-    assert state['away_challenges_remaining'] == 3   # 2 base + 1 extra inning
-    assert state['home_challenges_remaining'] == 3
+    assert state['away_challenges_remaining'] == 2
+    assert state['home_challenges_remaining'] == 2
 
 
 def test_game_state_next_batters_shown_during_break():

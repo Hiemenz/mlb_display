@@ -1022,15 +1022,12 @@ def _game_state_at_time(base_game, tl, target_utc):
                 last_challenge = ce
             else:
                 break
-        # ABS challenge max grows by 1 per extra inning (10th = 3, 11th = 4, …)
-        _cur_inn = state.get('current_inning') or 9
-        _abs_max = _GIF_ABS_CHALLENGE_MAX + max(0, int(_cur_inn) - 9)
         if last_challenge:
             state['away_challenges_remaining'] = last_challenge['away_remaining']
             state['home_challenges_remaining'] = last_challenge['home_remaining']
         else:
-            state['away_challenges_remaining'] = _abs_max
-            state['home_challenges_remaining'] = _abs_max
+            state['away_challenges_remaining'] = _GIF_ABS_CHALLENGE_MAX
+            state['home_challenges_remaining'] = _GIF_ABS_CHALLENGE_MAX
 
     # Next 3 batters + pitcher: shown during inning breaks (Middle/End)
     if state.get('inningState') in ('Middle', 'End'):
