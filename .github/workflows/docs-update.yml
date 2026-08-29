@@ -19,7 +19,6 @@ on:
       - 'src/image_utils.py'
       - 'src/generate_image.py'
       - 'src/field_view.py'
-      - 'src/pitch_view.py'
       - 'src/scorecard_view.py'
       - 'scripts/generate_docs.py'
       - 'pic/Font.ttc'

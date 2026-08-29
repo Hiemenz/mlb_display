@@ -3,7 +3,7 @@ Render scoreboard image from cached data/games.json.
 Does NOT call the MLB API — run fetch_games.py first.
 
 Standalone CLI:
-    python src/render_scoreboard.py [--date 2025-04-01] [--mode scorecard|pitch|scoreboard]
+    python src/render_scoreboard.py [--date 2025-04-01] [--mode scorecard|scoreboard]
                                     [--output output/test.bmp] [--open] [--config PATH]
 """
 import os
@@ -17,9 +17,8 @@ from PIL import Image, ImageChops
 from util import load_json_file
 from config_loader import load_config, add_config_arg
 from generate_image import orchestrate_score_board
-from game_detail_fetch import select_game, fetch_scorecard_data, fetch_pitch_view_data
+from game_detail_fetch import select_game, fetch_scorecard_data
 from scorecard_view import render_scorecard_view
-from pitch_view import render_pitch_view
 from image_derby import render_derby_bracket
 from image_grid import draw_fields_grid
 from quadrant_view import render_quadrant_view
@@ -28,7 +27,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
 
-_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'pitch', 'derby', 'fields', 'quadrant')
+_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'derby', 'fields', 'quadrant')
 
 
 def _get_display_mode(config):
@@ -45,7 +44,7 @@ def _get_display_mode(config):
 
 
 def _render_single_game_mode(mode, game_state_data, team_data, config, output_path=None):
-    """Render field/scorecard/pitch view for a single game. Returns image or None."""
+    """Render field/scorecard view for a single game. Returns image or None."""
     favorite = config.get('primary', '')
     game = select_game(game_state_data, favorite, team_data)
     if not game:
@@ -67,12 +66,8 @@ def _render_single_game_mode(mode, game_state_data, team_data, config, output_pa
     print(f"Selected game: {away_abbr} @ {home_abbr} (pk={game_pk}, mode={mode})")
 
     try:
-        if mode == 'pitch':
-            data = fetch_pitch_view_data(game_pk)
-            image = render_pitch_view(data, dark_mode=dark_mode)
-        else:
-            data = fetch_scorecard_data(game_pk)
-            image = render_scorecard_view(data, dark_mode=dark_mode)
+        data = fetch_scorecard_data(game_pk)
+        image = render_scorecard_view(data, dark_mode=dark_mode)
 
         if output_path:
             image.save(output_path)
@@ -175,7 +170,7 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
 
     mode = _get_display_mode(config)
 
-    if mode in ('scorecard', 'pitch'):
+    if mode == 'scorecard':
         image = _render_single_game_mode(mode, game_state_data, team_data, config, output_path)
         if image:
             return (image, [(0, 0, image.width, image.height)])

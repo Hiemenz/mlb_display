@@ -91,7 +91,7 @@ staleness gate so a panel nobody enabled never costs a request.
 | `fetch_streaks.py` | Hot Hitters / Hot Arms rolling streaks |
 | `fetch_news.py` | Team or league headlines |
 | `fetch_derby.py` | Home Run Derby bracket |
-| `game_detail_fetch.py` | Per-game detail for the scorecard, pitch and field views |
+| `game_detail_fetch.py` | Per-game detail for the scorecard and field views |
 | `weather.py` | Open-Meteo forecasts, with its own TTL cache |
 
 ### Render layer — `data/*.json` in, `PIL.Image` out
@@ -107,7 +107,7 @@ staleness gate so a panel nobody enabled never costs a request.
 | `image_assets.py` | Fonts, logos, mascots — all asset loading and caching |
 | `image_utils.py` | Shared pure helpers (name formatting, geometry, magic numbers, rank parsing) |
 | `image_<panel>.py` | One module per filler panel: leaders, streaks, magic, news, transactions, deadline, lineup, scoreless, derby |
-| `scorecard_view.py`, `pitch_view.py` | Alternate display modes (scorecard, pitch plot) |
+| `scorecard_view.py` | Alternate display mode (scorecard) |
 | `stadium_polygons.py` | Per-park field geometry for the spray chart, consumed by `image_box._draw_field_cell` |
 
 ### Display layer
