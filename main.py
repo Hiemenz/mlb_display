@@ -487,21 +487,20 @@ def _maybe_show_quadrant(config, no_throttle=False, auto_open=False):
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen.
 
-    Rotates through the recent-transactions view, the team quadrant chart and
-    the playoff-race view every 20 minutes (keyed to the wall clock so the
-    output is deterministic for any given cron tick). A slot is skipped in
-    favor of transactions when its data isn't cached or its config flag is off.
+    Alternates between the recent-transactions view and the team quadrant
+    chart every 20 minutes (keyed to the wall clock so the output is
+    deterministic for any given cron tick).  The quadrant slot is skipped
+    when quadrant data isn't cached — transactions are shown instead.
     """
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
 
     # Determine which view this 20-minute block should show.
-    # Block 0 (minutes 0-19) → transactions; Block 1 → quadrant; Block 2 → race; …
-    _slot = (datetime.now().minute // 20) % 3
-    _show_quadrant_slot = _slot == 1 and config.get('idle_quadrant_rotation', True)
-    _show_race_slot = _slot == 2 and config.get('idle_race_rotation', True)
-    image = None
-
+    # Block 0 (minutes 0-19) → transactions; Block 1 → quadrant; Block 2 → transactions; …
+    _show_quadrant_slot = (
+        config.get('idle_quadrant_rotation', True)
+        and (datetime.now().minute // 20) % 2 == 1
+    )
     if _show_quadrant_slot:
         quadrant_data = load_json_file('team_quadrant.json')
         if quadrant_data:
@@ -514,22 +513,11 @@ def _show_idle_screen(config, auto_open=False):
                 print("Idle: showing quadrant view")
             except Exception as _qe:
                 print(f"Idle: quadrant render failed ({_qe}), falling back to transactions")
+                _show_quadrant_slot = False
+        else:
+            _show_quadrant_slot = False
 
-    if image is None and _show_race_slot:
-        standings_data = load_json_file('standings.json')
-        if standings_data:
-            try:
-                from race_view import render_race_view
-                team_data_for_race = load_json_file('teams.json') or {'team_abbreviation': {}}
-                image = render_race_view(
-                    standings_data, team_data=team_data_for_race,
-                    dark_mode=idle_config.get('dark_mode', False),
-                )
-                print("Idle: showing playoff-race view")
-            except Exception as _re:
-                print(f"Idle: race view failed ({_re}), falling back to transactions")
-
-    if image is None:
+    if not _show_quadrant_slot:
         team_data = load_json_file('teams.json')
         if not team_data or 'team_abbreviation' not in team_data:
             team_data = {'team_abbreviation': {}}
