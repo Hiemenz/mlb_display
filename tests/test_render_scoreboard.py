@@ -26,7 +26,7 @@ import render_scoreboard
 # 1. _get_display_mode — pure function, no mocking needed
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize('mode_value', ['scoreboard', 'linescore', 'scorecard', 'pitch'])
+@pytest.mark.parametrize('mode_value', ['scoreboard', 'linescore', 'scorecard'])
 def test_get_display_mode_explicit(mode_value):
     """Get display mode explicit."""
     config = {'display_mode': mode_value}
@@ -70,7 +70,7 @@ def test_get_display_mode_env_var_overrides_config(monkeypatch):
 def test_get_display_mode_env_var_invalid_falls_through(monkeypatch):
     """An invalid DISPLAY_MODE env var is ignored; config takes over."""
     monkeypatch.setenv('DISPLAY_MODE', 'bogus')
-    assert render_scoreboard._get_display_mode({'display_mode': 'pitch'}) == 'pitch'
+    assert render_scoreboard._get_display_mode({'display_mode': 'scorecard'}) == 'scorecard'
 
 
 def test_get_display_mode_env_var_empty_falls_through(monkeypatch):
@@ -92,23 +92,6 @@ _TEAM_DATA = {'team_abbreviation': {'119': 'LAD', '137': 'SF'}}
 
 
 @needs_pil
-def test_render_single_game_mode_pitch_saves_output(tmp_path):
-    """Render single game mode pitch saves to output_path."""
-    fake_image = Image.new('1', (800, 480), 255)
-    out_path = str(tmp_path / 'out.bmp')
-    with patch('render_scoreboard.select_game', return_value=_game()), \
-         patch('render_scoreboard.fetch_pitch_view_data', return_value={}) as m_fetch, \
-         patch('render_scoreboard.render_pitch_view', return_value=fake_image) as m_render:
-        result = render_scoreboard._render_single_game_mode(
-            'pitch', [], _TEAM_DATA, {'primary': 'LAD'}, output_path=out_path)
-    assert result is fake_image
-    m_fetch.assert_called_once_with(555)
-    m_render.assert_called_once()
-    import os
-    assert os.path.isfile(out_path)
-
-
-@needs_pil
 def test_render_single_game_mode_scorecard():
     """Render single game mode scorecard."""
     fake_image = Image.new('1', (800, 480), 255)
@@ -123,17 +106,18 @@ def test_render_single_game_mode_scorecard():
 
 
 @needs_pil
-def test_render_single_game_mode_pitch():
-    """Render single game mode pitch."""
+def test_render_single_game_mode_scorecard_saves_output(tmp_path):
+    """Render single game mode scorecard saves to output_path."""
     fake_image = Image.new('1', (800, 480), 255)
+    out_path = str(tmp_path / 'out.bmp')
     with patch('render_scoreboard.select_game', return_value=_game()), \
-         patch('render_scoreboard.fetch_pitch_view_data', return_value={}) as m_fetch, \
-         patch('render_scoreboard.render_pitch_view', return_value=fake_image) as m_render:
+         patch('render_scoreboard.fetch_scorecard_data', return_value={}), \
+         patch('render_scoreboard.render_scorecard_view', return_value=fake_image):
         result = render_scoreboard._render_single_game_mode(
-            'pitch', [], _TEAM_DATA, {}, output_path=None)
+            'scorecard', [], _TEAM_DATA, {'primary': 'LAD'}, output_path=out_path)
     assert result is fake_image
-    m_fetch.assert_called_once_with(555)
-    m_render.assert_called_once()
+    import os
+    assert os.path.isfile(out_path)
 
 
 def test_render_single_game_mode_no_game_found():
@@ -189,7 +173,7 @@ def _loader(games_payload=None, teams_payload=None, derby_payload=None,
 
 @needs_pil
 def test_render_dispatches_single_game_mode(tmp_path):
-    """render() routes scorecard/pitch modes through _render_single_game_mode
+    """render() routes scorecard mode through _render_single_game_mode
     and wraps a returned image in a full-image changed-region tuple."""
     fake_image = Image.new('1', (800, 480), 255)
     config = {'display_mode': 'scorecard'}
@@ -487,14 +471,14 @@ def test_main_invokes_render_with_mode_override_and_output(monkeypatch, tmp_path
     out_path = str(tmp_path / 'out.bmp')
     monkeypatch.setattr(
         'sys.argv',
-        ['render_scoreboard.py', '--mode', 'pitch', '--output', out_path],
+        ['render_scoreboard.py', '--mode', 'scorecard', '--output', out_path],
     )
     with patch('render_scoreboard.load_config', return_value={}) as m_load_config, \
          patch('render_scoreboard.render', return_value=None) as m_render:
         render_scoreboard.main()
     m_load_config.assert_called_once()
     args, kwargs = m_render.call_args
-    assert args[0]['display_mode'] == 'pitch'
+    assert args[0]['display_mode'] == 'scorecard'
     assert kwargs['output_path'] == out_path
 
 

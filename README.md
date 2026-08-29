@@ -16,7 +16,7 @@ in [CLAUDE.md](CLAUDE.md).
 
 ## Display Modes
 
-Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `pitch`, `derby`, `quadrant` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
+Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `derby`, `quadrant` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
 
 ### Scoreboard — 5×3 grid (15 games)
 
@@ -200,14 +200,6 @@ Official scorer–style at-bat grid for both teams. Each cell shows the batter's
 
 ---
 
-### Pitch View
-
-Full 3×3 strike zone diagram with all pitches for the current at-bat plotted by location. Pitch types are visually differentiated (strike/ball/foul/in-play). The right panel shows the batter/pitcher matchup, season stats, and a scrollable pitch-by-pitch log with pitch type, velocity, and result.
-
-![Pitch View](docs/pitch_mode.png)
-
----
-
 ## Scoreboard Tile States
 
 Every tile in the 5×3 grid is self-contained and adapts to real-time game state.
@@ -281,7 +273,7 @@ Edit `config/config.yaml`:
 
 ```yaml
 # ── Display mode ──────────────────────────────────────────────
-# scoreboard | linescore | fields | scorecard | pitch | derby | quadrant
+# scoreboard | linescore | fields | scorecard | derby | quadrant
 # DISPLAY_MODE env var overrides this (useful for one-off mode switches without editing YAML)
 display_mode: scoreboard
 auto_derby_mode: true        # auto-show the Derby bracket on Derby day when no games
@@ -522,7 +514,6 @@ mlb_display/
 │   ├── image_lineup.py           # Pre-game batting-order cell
 │   ├── image_deadline.py         # Trade-deadline countdown cell
 │   ├── scorecard_view.py         # At-bat scorecard renderer
-│   ├── pitch_view.py             # Pitch location renderer
 │   ├── quadrant_view.py          # Team offense-vs-pitching quadrant chart
 │   ├── stadium_polygons.py       # Per-park field geometry for the spray chart
 │   │                             # ── Display + support ──

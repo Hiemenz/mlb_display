@@ -16,7 +16,6 @@ Produces:
     docs/tile_final.png             — single final tile (cropped)
     docs/wide_cell.png              — wide (2-slot) live cell with pitch zone
     docs/fields_mode.png            — 5×3 fields-mode grid
-    docs/pitch_mode.png             — pitch zone view
     docs/scorecard_mode.png         — at-bat scorecard view
     docs/standings_sidebar.png      — standings sidebar strip with streak badges
     docs/demo.gif                   — animated GIF cycling through all states
@@ -470,30 +469,6 @@ def _field_fixture():
     }
 
 
-def _pitch_fixture():
-    """Pitch fixture."""
-    return {
-        'detailed_state': 'In Progress',
-        'inning_state': 'Top',
-        'inning_ordinal': '7th',
-        'balls': 2, 'strikes': 1, 'outs': 1,
-        'away_abbr': 'LAD', 'home_abbr': 'SF',
-        'away_id': 119, 'home_id': 137,
-        'away_runs': 3, 'home_runs': 2,
-        'batter': {'name': 'Freddie Freeman',
-                   'season': {'avg': '.312', 'homeRuns': '15', 'rbi': '55'}},
-        'pitcher': {'name': 'Logan Webb', 'season': {'era': '2.85'},
-                    'stats': {'inningsPitched': '150.0', 'strikeOuts': '140'}},
-        'pitches': [
-            {'px': -0.3, 'pz': 2.8, 'code': 'C', 'seq': 1, 'pitch_type': 'Fastball', 'speed': 94.1},
-            {'px':  0.9, 'pz': 1.2, 'code': 'B', 'seq': 2, 'pitch_type': 'Slider', 'speed': 86.3},
-            {'px':  0.1, 'pz': 2.5, 'code': 'S', 'seq': 3, 'pitch_type': 'Changeup', 'speed': 88.5},
-            {'px': -0.6, 'pz': 2.9, 'code': 'F', 'seq': 4, 'pitch_type': 'Fastball', 'speed': 95.0},
-            {'px':  0.3, 'pz': 3.0, 'code': 'X', 'seq': 5, 'pitch_type': 'Cutter', 'speed': 90.2},
-        ],
-    }
-
-
 def _scorecard_lineup(n=9):
     """Scorecard lineup."""
     codes = ['1B', 'K', 'HR', '6-3', 'BB', '2B', 'F9', '3B', 'K']
@@ -759,16 +734,6 @@ def generate_fields_mode():
     _save(img, 'fields_mode.png', scale=1)
 
 
-def generate_pitch_mode():
-    """Generate pitch mode."""
-    print("Generating pitch_mode.png ...")
-    from pitch_view import render_pitch_view
-
-    with _NO_NETWORK:
-        img = render_pitch_view(_pitch_fixture())
-    _save(img, 'pitch_mode.png', scale=1)
-
-
 def generate_scorecard_mode():
     """Generate scorecard mode."""
     print("Generating scorecard_mode.png ...")
@@ -809,7 +774,6 @@ def generate_demo_gif():
     from image_grid import draw_out_of_town_score_board
     from image_box import draw_wide_box
     from image_standings import draw_standings_sidebar, draw_wildcard_header
-    from pitch_view import render_pitch_view
 
     frames = []
 
@@ -869,10 +833,6 @@ def generate_demo_gif():
         img = _dfg(img, LIVE_GAMES * 3, TEAM_DATA)
         _add(img, 3)
 
-        # Frame 6: Pitch view
-        img = render_pitch_view(_pitch_fixture())
-        _add(img, 3)
-
     # Downscale to 400×240 to keep GIF size reasonable
     scaled_frames = [f.resize((400, 240), Image.LANCZOS) for f in frames]
     gif_path = os.path.join(DOCS_DIR, 'demo.gif')
@@ -905,7 +865,6 @@ def main():
     generate_tile_final()
     generate_wide_cell()
     generate_fields_mode()
-    generate_pitch_mode()
     generate_scorecard_mode()
     generate_standings_sidebar()
     generate_demo_gif()

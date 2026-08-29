@@ -119,7 +119,6 @@
     "tests/test_image_utils_more.py::assertion-free-test": 1,
     "tests/test_leaders.py::missing-docstring": 7,
     "tests/test_leaders.py::unused-import": 1,
-    "tests/test_pitch_view.py::missing-docstring": 2,
     "tests/test_render_scoreboard.py::missing-docstring": 7,
     "tests/test_scoreboard_rules.py::assertion-free-test": 17,
     "tests/test_scoreboard_rules.py::bad-function-name": 5,

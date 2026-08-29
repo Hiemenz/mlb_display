@@ -44,7 +44,7 @@ poetry run mypy
   auto-merge immediately.
 - **`docs-update.yml`** — nightly (08:00 UTC) and on push to `main` touching rendering
   source files (`src/image_*.py`, `src/generate_image.py`, `src/field_view.py`,
-  `src/pitch_view.py`, `src/scorecard_view.py`, `scripts/generate_docs.py`,
+  `src/scorecard_view.py`, `scripts/generate_docs.py`,
   `pic/Font.ttc`), regenerates doc screenshots/demo GIF and auto-commits to `main`
   (`[skip ci]`) if anything changed.
 

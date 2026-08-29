@@ -18,7 +18,6 @@ import game_detail_fetch as gdf
 from game_detail_fetch import (
     select_game,
     fetch_live_feed,
-    fetch_pitch_view_data,
     fetch_scoreboard_live_extras,
     fetch_between_inning_info,
     fetch_scorecard_data,
@@ -597,43 +596,6 @@ class TestGetPlayerInfo:
         boxscore = {'teams': {'away': {'players': {}}, 'home': {'players': {}}}}
         result = _get_player_info(boxscore, 42, 'batting')
         assert result == {'name': '', 'stats': {}, 'season': {}}
-
-
-# ===========================================================================
-# fetch_pitch_view_data
-# ===========================================================================
-
-class TestFetchPitchViewData:
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_happy_path(self, mock_fetch):
-        """Happy path."""
-        mock_fetch.return_value = _live_feed()
-        result = fetch_pitch_view_data(123)
-        assert result['detailed_state'] == 'In Progress'
-        assert result['away_abbr'] == 'BOS'
-        assert result['home_abbr'] == 'NYY'
-        assert result['batter']['name'] == 'Mookie Betts'
-        assert result['pitcher']['name'] == 'Logan Webb'
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_no_batter_or_pitcher_ids(self, mock_fetch):
-        """No batter or pitcher ids."""
-        mock_fetch.return_value = _live_feed(liveData={
-            'linescore': {'offense': {'batter': {'id': None}}, 'defense': {'pitcher': {'id': None}}},
-        })
-        result = fetch_pitch_view_data(123)
-        assert result['batter'] == {'name': '', 'stats': {}}
-        assert result['pitcher'] == {'name': '', 'stats': {}}
-
-    @patch('game_detail_fetch.fetch_live_feed')
-    def test_empty_feed_uses_defaults(self, mock_fetch):
-        """Empty feed uses defaults."""
-        mock_fetch.return_value = {}
-        result = fetch_pitch_view_data(123)
-        assert result['detailed_state'] == ''
-        assert result['away_runs'] == 0
-        assert result['balls'] == 0
-        assert result['pitches'] == []
 
 
 # ===========================================================================

@@ -90,43 +90,6 @@ def _extract_pitches_detailed(plays):
     return []
 
 
-def fetch_pitch_view_data(game_pk):
-    """Extract pitch view data from the live feed."""
-    data = fetch_live_feed(game_pk)
-    game_data = data.get('gameData', {})
-    live_data = data.get('liveData', {})
-    plays = live_data.get('plays', {})
-    linescore = live_data.get('linescore', {})
-    boxscore = live_data.get('boxscore', {})
-
-    status = game_data.get('status', {})
-    teams = game_data.get('teams', {})
-    away_team = teams.get('away', {})
-    home_team = teams.get('home', {})
-
-    offense = linescore.get('offense', {})
-    batter_id = offense.get('batter', {}).get('id')
-    pitcher_id = linescore.get('defense', {}).get('pitcher', {}).get('id')
-
-    return {
-        'detailed_state': status.get('detailedState', ''),
-        'away_abbr': away_team.get('abbreviation', ''),
-        'home_abbr': home_team.get('abbreviation', ''),
-        'away_id': away_team.get('id', 0),
-        'home_id': home_team.get('id', 0),
-        'away_runs': linescore.get('teams', {}).get('away', {}).get('runs', 0),
-        'home_runs': linescore.get('teams', {}).get('home', {}).get('runs', 0),
-        'inning_ordinal': linescore.get('currentInningOrdinal', ''),
-        'inning_state': linescore.get('inningState', ''),
-        'balls': linescore.get('balls', 0) or 0,
-        'strikes': linescore.get('strikes', 0) or 0,
-        'outs': linescore.get('outs', 0) or 0,
-        'batter': _get_player_info(boxscore, batter_id, 'batting'),
-        'pitcher': _get_player_info(boxscore, pitcher_id, 'pitching'),
-        'pitches': _extract_pitches_detailed(plays),
-    }
-
-
 _ABS_CHALLENGE_MAX = 2
 _REPLAY_CHALLENGE_MAX = 1
 
