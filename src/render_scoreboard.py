@@ -22,12 +22,13 @@ from scorecard_view import render_scorecard_view
 from image_derby import render_derby_bracket
 from image_grid import draw_fields_grid
 from quadrant_view import render_quadrant_view
+from race_view import render_race_view
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
 
-_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'derby', 'fields', 'quadrant')
+_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'derby', 'fields', 'quadrant', 'race')
 
 
 def _get_display_mode(config):
@@ -198,6 +199,22 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
                                          dark_mode=config.get('dark_mode', False))
         except ValueError as e:
             print(f"Quadrant view unavailable: {e}")
+            return None
+        if output_path:
+            image.save(output_path)
+            print(f"Image saved to {output_path}")
+        return (image, [(0, 0, image.width, image.height)])
+
+    if mode == 'race':
+        standings_data = load_json_file('standings.json')
+        if not standings_data:
+            print("No standings.json data found — run src/standings.py")
+            return None
+        try:
+            image = render_race_view(standings_data, team_data=team_data,
+                                     dark_mode=config.get('dark_mode', False))
+        except ValueError as e:
+            print(f"Race view unavailable: {e}")
             return None
         if output_path:
             image.save(output_path)

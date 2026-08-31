@@ -117,15 +117,24 @@ def derive_wildcard_from_standings(standings_data):
         for i, team in enumerate(teams):
             if i < _WC_WILDCARD_SPOTS:
                 team['elim_badge'] = ''
+                team['elim_number'] = None
             else:
                 team['elim_badge'] = _wc_elim_badge(team, wc3_wins, wc3_losses)
+                # Raw E# so the header strip can decide to show it for > 10 GB teams.
+                elim_n = None
+                clinch = (team.get('clinch_indicator') or '').strip().lower()
+                if clinch != 'e' and wc3_wins is not None and team.get('losses') is not None:
+                    e = MAGIC_BASE - wc3_wins - team['losses']
+                    if e > 0:
+                        elim_n = e
+                team['elim_number'] = elim_n
 
         result[league_key] = teams  # all eligible, no cap
 
     return result
 
 
-_WC_BADGE_H = 7   # px font height for elim badge; logo shrinks by this when badge shown
+_WC_BADGE_H = 7   # px font height for elim badge; overlaid at the bottom corner of the slot
 
 def draw_wildcard_header(Himage, wildcard_data):
     """Draw a compact wildcard standings strip across the top of the display (y=0..30).
@@ -134,22 +143,40 @@ def draw_wildcard_header(Himage, wildcard_data):
     NL wildcard (all eligible, up to 12) right-to-left in the right half, rank 1 at right edge.
     A rounded rectangle is drawn around the top-3 wildcard leaders on each side.
     Falls back to 3-letter abbreviation (font9) when no logo is available.
-    Bubble teams (rank 4+) show an E# elimination badge below their slot when the
-    number is ≤ ELIM_THRESHOLD (i.e. the race is tight enough to matter).
+    Bubble teams (rank 4+) show an E# elimination badge at the bottom corner of their slot
+    (bottom-left for AL, bottom-right for NL) without shrinking the logo.
     """
     draw = ImageDraw.Draw(Himage)
     font = _get_font(9)
     font_badge = _get_font(_WC_BADGE_H)
 
-    def _draw_slot(slot_x, team):
-        """Draw one wildcard slot with optional elimination badge."""
+    def _draw_slot(slot_x, team, side='left'):
+        """Draw one wildcard slot with games-back label at the bottom corner."""
         abbr    = (team.get('abbr') or '???')[:4]
         team_id = str(team.get('team_id', ''))
-        badge   = team.get('elim_badge', '')
+        # Badge selection: OUT > close E# (≤ threshold) > GB if ≤ 10 > E# if > 10 games back.
+        elim_badge  = team.get('elim_badge', '')
+        elim_number = team.get('elim_number')
+        gb          = team.get('gb', '') or ''
+        if elim_badge == 'OUT':
+            badge = 'OUT'
+        elif gb == '-':
+            badge = ''
+        elif elim_badge:                       # E# within ELIM_THRESHOLD — close elimination
+            badge = elim_badge
+        else:
+            try:
+                gb_val = float(gb)
+            except (ValueError, TypeError):
+                gb_val = 0.0
+            if gb_val > 10 and elim_number is not None:
+                badge = f'E{elim_number}'
+            else:
+                badge = gb
 
-        # When a badge is present, shrink the logo to leave room at the bottom.
-        logo_sz  = _WC_LOGO_SZ - _WC_BADGE_H if badge else _WC_LOGO_SZ
-        logo_top = 1 if badge else (_WC_STRIP_H - _WC_LOGO_SZ) // 2
+        # Logo stays full size; badge overlays the bottom corner rather than shrinking the logo.
+        logo_sz  = _WC_LOGO_SZ
+        logo_top = (_WC_STRIP_H - _WC_LOGO_SZ) // 2
 
         logo = _logo_small(abbr, team_id, size=logo_sz)
         if logo is not None:
@@ -163,39 +190,42 @@ def draw_wildcard_header(Himage, wildcard_data):
 
         if badge:
             bw = int(font_badge.getlength(badge))
-            draw.text((slot_x + (_WC_SLOT_W - bw) // 2, _WC_STRIP_H - _WC_BADGE_H - 1),
-                      badge, font=font_badge, fill=0)
+            badge_y = _WC_STRIP_H - _WC_BADGE_H - 1
+            badge_x = slot_x if side == 'left' else slot_x + _WC_SLOT_W - bw
+            draw.text((badge_x, badge_y), badge, font=font_badge, fill=0)
 
     al_teams = wildcard_data.get('AL', [])[:_WC_MAX_TEAMS]
     nl_teams = wildcard_data.get('NL', [])[:_WC_MAX_TEAMS]
 
     # AL: rank 1 at left box edge (x=32), higher ranks toward center
     for i, team in enumerate(al_teams):
-        _draw_slot(_WC_BOX_X_START + i * _WC_SLOT_W, team)
+        _draw_slot(_WC_BOX_X_START + i * _WC_SLOT_W, team, side='left')
 
     # NL: rank 1 at right box edge (x=767), higher ranks toward center
     for i, team in enumerate(nl_teams):
-        _draw_slot(_WC_BOX_X_END - (i + 1) * _WC_SLOT_W, team)
+        _draw_slot(_WC_BOX_X_END - (i + 1) * _WC_SLOT_W, team, side='right')
 
-    # Draw a rounded box around the wildcard leaders (top _WC_WILDCARD_SPOTS per league)
+    # Draw a bracket (top + sides, no bottom) around the wildcard leaders so the
+    # bottom-corner badges are not obscured by a closing line.
+    _r  = 3
+    _y0 = 1
+    _y1 = _WC_STRIP_H - 2
+
+    def _draw_open_box(x0, x1):
+        draw.line((x0 + _r, _y0, x1 - _r, _y0), fill=0, width=1)          # top
+        draw.arc((x0, _y0, x0 + 2 * _r, _y0 + 2 * _r), 180, 270, fill=0)  # top-left arc
+        draw.arc((x1 - 2 * _r, _y0, x1, _y0 + 2 * _r), 270, 360, fill=0)  # top-right arc
+        draw.line((x0, _y0 + _r, x0, _y1), fill=0, width=1)                # left side
+        draw.line((x1, _y0 + _r, x1, _y1), fill=0, width=1)                # right side
+
     n_al = min(len(al_teams), _WC_WILDCARD_SPOTS)
     n_nl = min(len(nl_teams), _WC_WILDCARD_SPOTS)
 
     if n_al > 0:
-        box_x0 = _WC_BOX_X_START + 1
-        box_x1 = _WC_BOX_X_START + n_al * _WC_SLOT_W
-        try:
-            draw.rounded_rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], radius=3, outline=0, width=1)
-        except AttributeError:
-            draw.rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], outline=0, width=1)
+        _draw_open_box(_WC_BOX_X_START + 1, _WC_BOX_X_START + n_al * _WC_SLOT_W)
 
     if n_nl > 0:
-        box_x0 = _WC_BOX_X_END - n_nl * _WC_SLOT_W
-        box_x1 = _WC_BOX_X_END
-        try:
-            draw.rounded_rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], radius=3, outline=0, width=1)
-        except AttributeError:
-            draw.rectangle([box_x0, 1, box_x1, _WC_STRIP_H - 2], outline=0, width=1)
+        _draw_open_box(_WC_BOX_X_END - n_nl * _WC_SLOT_W, _WC_BOX_X_END)
 
     return Himage
 

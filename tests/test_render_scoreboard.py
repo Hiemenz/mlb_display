@@ -150,12 +150,13 @@ def test_render_single_game_mode_handles_exception():
 # ---------------------------------------------------------------------------
 
 def _loader(games_payload=None, teams_payload=None, derby_payload=None,
-            quadrant_payload=None):
+            quadrant_payload=None, standings_payload=None):
     """Build a load_json_file side_effect that never touches real data/ files."""
     games_payload = games_payload if games_payload is not None else {'games': []}
     teams_payload = teams_payload if teams_payload is not None else {'team_abbreviation': {}}
     derby_payload = derby_payload if derby_payload is not None else {}
     quadrant_payload = quadrant_payload if quadrant_payload is not None else {}
+    standings_payload = standings_payload if standings_payload is not None else {}
 
     def _fn(filename, file_path=None):
         """Fn."""
@@ -167,6 +168,8 @@ def _loader(games_payload=None, teams_payload=None, derby_payload=None,
             return derby_payload
         if filename == 'team_quadrant.json':
             return quadrant_payload
+        if filename == 'standings.json':
+            return standings_payload
         return {}
     return _fn
 
@@ -248,6 +251,48 @@ def test_quadrant_is_a_valid_display_mode():
     """The mode has to be selectable from config and the CLI."""
     assert 'quadrant' in render_scoreboard._VALID_MODES
     assert render_scoreboard._get_display_mode({'display_mode': 'quadrant'}) == 'quadrant'
+
+
+def test_render_race_mode_no_data_returns_none():
+    """No cached standings.json data → render() returns None instead of a blank panel."""
+    config = {'display_mode': 'race'}
+    with patch('render_scoreboard.load_json_file', side_effect=_loader(standings_payload={})):
+        result = render_scoreboard.render(config, output_path='/nonexistent/should/not/write.bmp')
+    assert result is None
+
+
+def test_render_race_mode_unusable_data_returns_none():
+    """A payload the view rejects falls back rather than raising out of render()."""
+    with patch('render_scoreboard.load_json_file',
+               side_effect=_loader(standings_payload={'standings': {}})), \
+         patch('render_scoreboard.render_race_view', side_effect=ValueError('empty')):
+        result = render_scoreboard.render({'display_mode': 'race'},
+                                          output_path='/nonexistent/should/not/write.bmp')
+    assert result is None
+
+
+@needs_pil
+def test_render_race_mode_dispatches_and_saves(tmp_path):
+    """render() in race mode renders the playoff-race panel full-screen and saves it."""
+    standings_data = {'standings': {'American League East': []}, 'team_abbreviation': {}}
+    teams_data = {'team_abbreviation': {'1': 'NYY'}}
+    fake_image = Image.new('1', (800, 480), 255)
+    out_path = tmp_path / 'race.bmp'
+    config = {'display_mode': 'race'}
+    with patch('render_scoreboard.load_json_file',
+               side_effect=_loader(standings_payload=standings_data, teams_payload=teams_data)), \
+         patch('render_scoreboard.render_race_view', return_value=fake_image) as m_view:
+        result = render_scoreboard.render(config, output_path=str(out_path))
+
+    assert result == (fake_image, [(0, 0, 800, 480)])
+    m_view.assert_called_once_with(standings_data, team_data=teams_data, dark_mode=False)
+    assert out_path.exists()
+
+
+def test_race_is_a_valid_display_mode():
+    """The mode has to be selectable from config and the CLI."""
+    assert 'race' in render_scoreboard._VALID_MODES
+    assert render_scoreboard._get_display_mode({'display_mode': 'race'}) == 'race'
 
 
 @needs_pil
