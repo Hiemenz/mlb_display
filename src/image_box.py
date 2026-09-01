@@ -2668,6 +2668,15 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _rp_flags = _compute_layout_flags(game_data)
     _mid_inning_pc = _rp_flags.mid_inning_pc
     _game_ending_state = _rp_flags.game_ending_state
+    # When the API briefly reports inningState='Middle'/'End' during a genuine
+    # mid-inning PC (outs already recorded this half-inning), mid_inning_pc is
+    # False (it requires not between_innings). Detect it directly so the right
+    # panel still draws bases instead of the next-batter list.
+    _live_mid_pc = (
+        (game_data.get('sub_event') or '').startswith('PC:')
+        and state == 'In Progress'
+        and 0 < (game_data.get('num_of_outs') or 0) < 3
+    )
 
     # ── Header: last 5 game events + count ─────────────────────────────
     # Events render in the same size as the single-cell last-play text (font12),
@@ -2835,7 +2844,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     zone_ty = rp_y + header_h + 12 * s   # nudged down
     zone_by = zone_ty + ZONE_H
 
-    if not _between_innings:
+    if not _between_innings or _live_mid_pc:
         draw.rectangle([zone_lx, zone_ty, zone_rx, zone_by], outline=0)
         tw = ZONE_W // 3
         th = ZONE_H // 3
@@ -3017,7 +3026,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _lps = game_data.get('last_pitch_speed')
     # Mid-inning change: name both ends of it ("P: Warren→King"). current_pitcher
     # still reports the departing arm until the API catches up.
-    _pc_incoming = (game_data.get('sub_event') or '')[3:].strip() if _mid_inning_pc else ''
+    _pc_incoming = (game_data.get('sub_event') or '')[3:].strip() if (_mid_inning_pc or _live_mid_pc) else ''
     if _pc_incoming:
         _outgoing = _last_name(game_data.get('current_pitcher') or '')
         _pitcher_name = f'{_outgoing}→{_pc_incoming}' if _outgoing else _pc_incoming
