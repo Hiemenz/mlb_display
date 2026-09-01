@@ -132,7 +132,7 @@ def _fielder_seq_from_desc(description, max_pos=5):
     return ''
 
 
-def _draw_backwards_k(img, x, y, fnt):
+def _draw_backwards_k(img, x, y, fnt, fill=0):
     """Paste a horizontally-mirrored 'K' glyph at text anchor (x, y) on a mode-'1' img."""
     bbox = fnt.getbbox('K')
     ox, oy, ox2, oy2 = bbox
@@ -145,7 +145,34 @@ def _draw_backwards_k(img, x, y, fnt):
     # Build mask: 255 where glyph is black, 0 where background is white
     mask = ImageOps.invert(tmp.convert('L'))
     px, py = x + ox - pad, y + oy - pad
-    img.paste(0, (px, py, px + gw + 2 * pad, py + gh + 2 * pad), mask)
+    img.paste(fill, (px, py, px + gw + 2 * pad, py + gh + 2 * pad), mask)
+
+
+def _draw_out_labels_in_circles(draw, Himage, cx_list, cy, outs_list, labels, s):
+    """Draw scorecard labels centered inside each filled out circle (white on black).
+
+    White fill (255) matches the runner-number convention: light mode shows white
+    text on black circles; dark mode inverts the whole image so it becomes black
+    text on white circles."""
+    fnt = _get_font(max(7 * s, 7))
+    max_w = 10 * s
+    for i, (lbl, filled) in enumerate(zip(labels[:3], outs_list)):
+        if not (filled and lbl):
+            continue
+        cx = cx_list[i]
+        if lbl == 'Kl':
+            bb = fnt.getbbox('K')
+            tx = cx - (bb[0] + bb[2] - 1) // 2
+            ty = cy - (bb[1] + bb[3] - 1) // 2
+            _draw_backwards_k(Himage, tx, ty, fnt, fill=255)
+        else:
+            disp = lbl
+            while disp and int(fnt.getlength(disp)) > max_w:
+                disp = disp[:-1]
+            if not disp:
+                continue
+            bb = fnt.getbbox(disp)
+            draw.text((cx - (bb[0] + bb[2] - 1) // 2, cy - (bb[1] + bb[3] - 1) // 2), disp, font=fnt, fill=255)
 
 
 def set_historical_mode(enabled=True):
@@ -1512,6 +1539,11 @@ def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
             Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, _pc_outs_list[1], outline_width=2)
             Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, _pc_outs_list[2], outline_width=2)
             draw = ImageDraw.Draw(Himage)
+            _draw_out_labels_in_circles(
+                draw, Himage,
+                [start_x + 97 * s, start_x + 111 * s, start_x + 125 * s], start_y + 73 * s,
+                _pc_outs_list, game_data.get('outs_this_half') or [], s,
+            )
         else:
             # If 3 outs are recorded but inningState hasn't flipped to Middle/End yet
             # (API lag), show the linescore instead — prevents filled base diamonds
@@ -1546,6 +1578,12 @@ def _draw_live_situation_panel(ctx, game_data, team_data, between_innings,
                 Himage = draw_circle(Himage, (start_x + 97 * s,  start_y + 73 * s), 6 * s, outs_list[0], outline_width=2)
                 Himage = draw_circle(Himage, (start_x + 111 * s, start_y + 73 * s), 6 * s, outs_list[1], outline_width=2)
                 Himage = draw_circle(Himage, (start_x + 125 * s, start_y + 73 * s), 6 * s, outs_list[2], outline_width=2)
+                draw = ImageDraw.Draw(Himage)
+                _draw_out_labels_in_circles(
+                    draw, Himage,
+                    [start_x + 97 * s, start_x + 111 * s, start_x + 125 * s], start_y + 73 * s,
+                    outs_list, game_data.get('outs_this_half') or [], s,
+                )
 
                 balls_list = [None] * 4
                 for i in range(1, 4):
