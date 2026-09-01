@@ -2326,19 +2326,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         elif play_display:
             _draw_play_right(play_display)
 
-    if _delayed_with_score:
-        _delay_reason = game_data.get('postpone_reason') or ''
-        if _delay_reason:
-            _delay_str = f'R: {_delay_reason}'
-            _max_delay_w = max(horizonta_len - _total_time_w - 10 * s, 0)
-            _delay_fnt = _get_font(12 * s)
-            while len(_delay_str) > 1 and int(_delay_fnt.getlength(_delay_str)) > _max_delay_w:
-                _delay_str = _delay_str[:-2] + '.'
-            if _delay_str and int(_delay_fnt.getlength(_delay_str)) <= _max_delay_w:
-                _dw = int(_delay_fnt.getlength(_delay_str))
-                _dx_pos = start_x + horizonta_len - _dw - 2 * s
-                _draw_bold_text(draw, (_dx_pos, start_y + 4 * s), _delay_str, _delay_fnt, s)
-
     # Initialize score variables (will be used later for winner display)
     away_runs = str(game_data.get('away_runs', 0) if game_data.get('away_runs', 0) is not None else 0)
     home_runs = str(game_data.get('home_runs', 0) if game_data.get('home_runs', 0) is not None else 0)
