@@ -165,14 +165,16 @@ def _draw_out_labels_in_circles(draw, Himage, cx_list, cy, outs_list, labels, s)
             tx = cx - (bb[0] + bb[2] - 1) // 2
             ty = cy - (bb[1] + bb[3] - 1) // 2
             _draw_backwards_k(Himage, tx, ty, fnt, fill=255)
+            _draw_backwards_k(Himage, tx + 1, ty, fnt, fill=255)
+            _draw_backwards_k(Himage, tx, ty + 1, fnt, fill=255)
+            _draw_backwards_k(Himage, tx + 1, ty + 1, fnt, fill=255)
         else:
             disp = lbl
             while disp and int(fnt.getlength(disp)) > max_w:
                 disp = disp[:-1]
             if not disp:
                 continue
-            bb = fnt.getbbox(disp)
-            draw.text((cx - (bb[0] + bb[2] - 1) // 2, cy - (bb[1] + bb[3] - 1) // 2), disp, font=fnt, fill=255)
+            draw_tight_number(draw, cx, cy, disp, fnt, 255, bold=True)
 
 
 def set_historical_mode(enabled=True):
