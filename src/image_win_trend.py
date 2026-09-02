@@ -1,11 +1,12 @@
 """Season win-trend renderer.
 
 Provides:
-  draw_win_trend_cell(Himage, x, y, data, config)       – 135×130 px grid tile
-  render_win_trend_view(data, config, dark_mode)        – 800×480 single-team view
-  render_all_teams_win_trend_view(data, config, dark_mode) – 800×480 all-teams grid
+  draw_win_trend_cell(Himage, x, y, data, config)          – 135×130 px grid tile
+  render_win_trend_view(data, config, dark_mode)           – 800×480 single-team chart
+  render_all_teams_win_trend_view(data, config, dark_mode) – 800×480 30-team sparkline grid
+  render_divisions_win_trend_view(data, config, dark_mode) – 800×480 6-division race charts
 
-Single-team data from win_trend.json; all-teams data from all_teams_trend.json.
+Single-team data from win_trend.json; all-teams/division data from all_teams_trend.json.
 See fetch_win_trend.py.
 """
 from PIL import Image, ImageDraw
@@ -400,5 +401,194 @@ def render_all_teams_win_trend_view(data, config=None, dark_mode=False):
         sp_x0 = cx + _AT_PAD
         sp_w  = _AT_CELL_W - _AT_PAD * 2
         _draw_trend_line(draw, pts, sp_x0, sp_y0, sp_w, sp_h, dark_mode=dark_mode)
+
+    return Himage
+
+
+# ---------------------------------------------------------------------------
+# Division race view (800 × 480 px) — 3 AL + 3 NL panels, 3 cols × 2 rows
+# ---------------------------------------------------------------------------
+
+_DIVISIONS = [
+    ('AL East',    ['NYY', 'BOS', 'BAL', 'TOR', 'TB']),
+    ('AL Central', ['CLE', 'MIN', 'DET', 'CWS', 'KC']),
+    ('AL West',    ['HOU', 'TEX', 'SEA', 'OAK', 'LAA']),
+    ('NL East',    ['ATL', 'NYM', 'PHI', 'MIA', 'WSH']),
+    ('NL Central', ['MIL', 'CHC', 'STL', 'CIN', 'PIT']),
+    ('NL West',    ['LAD', 'SF',  'SD',  'ARI', 'COL']),
+]
+
+_DIV_COLS    = 3
+_DIV_ROWS    = 2
+_DIV_GL_H    = 22          # global header height
+_DIV_PANEL_W = EPD_W // _DIV_COLS                       # 266
+_DIV_PANEL_H = (EPD_H - _DIV_GL_H) // _DIV_ROWS        # 229
+_DIV_HDR_H   = 16          # per-panel header height
+_DIV_PAD_L   = 26          # left margin (y-axis labels)
+_DIV_PAD_R   = 22          # right margin (end labels)
+_DIV_PAD_T   = 3
+_DIV_PAD_B   = 3
+
+_LINE_PATTERNS = [
+    None,       # 0: solid
+    'bold',     # 1: solid + y+1 (thicker)
+    (4, 4),     # 2: dashed
+    (2, 4),     # 3: dotted
+    (8, 3),     # 4: long-dash
+]
+
+
+def _draw_styled_line(draw, x1, y1, x2, y2, style, fg, counter):
+    """Draw a line segment with a pattern; counter is a mutable [int] for continuity."""
+    pat = _LINE_PATTERNS[style % len(_LINE_PATTERNS)]
+    if pat is None:
+        draw.line((x1, y1, x2, y2), fill=fg)
+        return
+    if pat == 'bold':
+        draw.line((x1, y1, x2, y2), fill=fg)
+        draw.line((x1, y1 + 1, x2, y2 + 1), fill=fg)
+        return
+    on, off = pat
+    dx, dy = x2 - x1, y2 - y1
+    length = max(int((dx * dx + dy * dy) ** 0.5), 1)
+    for t in range(length + 1):
+        if (counter[0] % (on + off)) < on:
+            px = int(x1 + t / length * dx)
+            py = int(y1 + t / length * dy)
+            draw.point((px, py), fill=fg)
+        counter[0] += 1
+
+
+def _draw_div_panel(draw, data_by_abbr, px, py, pw, ph, div_name, team_abbrs, fg, bg):
+    """Render one division panel at pixel rect (px, py, pw, ph)."""
+    font_hdr = _get_font(11)
+    font_sm  = _get_font(8)
+
+    # Panel header
+    draw.text((px + 3, py + 2), div_name.upper(), font=font_hdr, fill=fg)
+    draw.text((px + 4, py + 2), div_name.upper(), font=font_hdr, fill=fg)
+    draw.line((px, py + _DIV_HDR_H, px + pw - 1, py + _DIV_HDR_H), fill=fg)
+
+    # Chart area
+    cx0 = px + _DIV_PAD_L
+    cy0 = py + _DIV_HDR_H + _DIV_PAD_T
+    cw  = pw - _DIV_PAD_L - _DIV_PAD_R
+    ch  = ph - _DIV_HDR_H - _DIV_PAD_T - _DIV_PAD_B
+
+    # Shared y-scale: global min/max across all 5 teams
+    all_diffs = []
+    team_games = {}
+    for abbr in team_abbrs:
+        gs = (data_by_abbr.get(abbr) or {}).get('games', [])
+        team_games[abbr] = gs
+        for g in gs:
+            all_diffs.append(g['wins'] - g['losses'])
+    if not all_diffs:
+        return
+
+    d_max = max(max(all_diffs), 1)
+    d_min = min(min(all_diffs), -1)
+    pad_y = max(int((d_max - d_min) * 0.08), 2)
+    y_hi, y_lo = d_max + pad_y, d_min - pad_y
+    y_rng = max(y_hi - y_lo, 1)
+
+    all_n = max((len(team_games[a]) for a in team_abbrs), default=2)
+    all_n = max(all_n, 2)
+
+    def _gx(gn):
+        return cx0 + int((gn - 1) / (all_n - 1) * (cw - 1))
+
+    def _gy(d):
+        return cy0 + ch - 1 - int((d - y_lo) / y_rng * (ch - 1))
+
+    # Axes
+    draw.line((cx0, cy0, cx0, cy0 + ch - 1), fill=fg)
+    cy_zero = _gy(0)
+    draw.line((cx0, cy_zero, cx0 + cw - 1, cy_zero), fill=fg)
+
+    # Y-axis ticks
+    tick_step = max(5, (round((y_hi - y_lo) / 4 / 5) * 5) or 5)
+    for tv in range(int(y_lo), int(y_hi) + 1, tick_step):
+        ty = _gy(tv)
+        if cy0 <= ty <= cy0 + ch and tv != 0:
+            draw.line((cx0 - 3, ty, cx0, ty), fill=fg)
+            lbl = ('+' if tv > 0 else '') + str(tv)
+            lw = int(font_sm.getlength(lbl))
+            draw.text((cx0 - lw - 4, ty - 4), lbl, font=font_sm, fill=fg)
+
+    # Sort teams best-to-worst for consistent style assignment
+    sorted_teams = sorted(
+        team_abbrs,
+        key=lambda a: (team_games[a][-1]['wins'] - team_games[a][-1]['losses'])
+                      if team_games[a] else 0,
+        reverse=True,
+    )
+
+    for style_idx, abbr in enumerate(sorted_teams):
+        games = team_games[abbr]
+        if not games:
+            continue
+        counter = [0]
+        prev_pt = None
+        for j, g in enumerate(games):
+            gx = _gx(j + 1)
+            gy = _gy(g['wins'] - g['losses'])
+            if prev_pt is not None:
+                _draw_styled_line(draw, prev_pt[0], prev_pt[1], gx, gy,
+                                  style_idx, fg, counter)
+            prev_pt = (gx, gy)
+
+        # End label
+        last = games[-1]
+        end_x = _gx(len(games))
+        end_y = _gy(last['wins'] - last['losses'])
+        lw = int(font_sm.getlength(abbr))
+        lx = min(end_x + 2, px + pw - lw - 2)
+        ly = max(cy0, min(cy0 + ch - 9, end_y - 4))
+        draw.rectangle([lx - 1, ly - 1, lx + lw, ly + 8], fill=bg)
+        draw.text((lx, ly), abbr, font=font_sm, fill=fg)
+
+
+def render_divisions_win_trend_view(data, config=None, dark_mode=False):
+    """Render an 800×480 grid of 6 division win-trend panels.
+
+    Each panel shows all 5 teams in a division on shared axes so divisional
+    races are directly comparable. data is from all_teams_trend.json.
+    """
+    config = config or {}
+    bg = 0 if dark_mode else 255
+    fg = 255 if dark_mode else 0
+
+    Himage = Image.new('1', (EPD_W, EPD_H), bg)
+    draw = ImageDraw.Draw(Himage)
+
+    if not data or not data.get('teams'):
+        f = _get_font(16)
+        draw.text((20, 200), 'No data — run fetch_win_trend.py --all', font=f, fill=fg)
+        return Himage
+
+    season = data.get('season', '')
+    data_by_abbr = {v['team_abbr']: v for v in data['teams'].values()}
+
+    # Global header
+    font_title = _get_font(14)
+    title = f'{season} SEASON PACE — BY DIVISION'
+    draw.text((4, 3), title, font=font_title, fill=fg)
+    draw.text((5, 3), title, font=font_title, fill=fg)
+    draw.line((0, _DIV_GL_H, EPD_W, _DIV_GL_H), fill=fg)
+
+    for idx, (div_name, team_abbrs) in enumerate(_DIVISIONS):
+        col = idx % _DIV_COLS
+        row = idx // _DIV_COLS
+        px = col * _DIV_PANEL_W
+        py = _DIV_GL_H + row * _DIV_PANEL_H
+
+        # Panel borders (right divider and bottom rule)
+        if col > 0:
+            draw.line((px, py, px, py + _DIV_PANEL_H - 1), fill=fg)
+        draw.line((px, py + _DIV_PANEL_H - 1, px + _DIV_PANEL_W - 1, py + _DIV_PANEL_H - 1), fill=fg)
+
+        _draw_div_panel(draw, data_by_abbr, px, py, _DIV_PANEL_W, _DIV_PANEL_H,
+                        div_name, team_abbrs, fg, bg)
 
     return Himage

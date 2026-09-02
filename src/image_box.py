@@ -2798,36 +2798,19 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             else:
                 cx = _draw_text_seg(cx, y, val)
 
-    # When show_play_description is set (triple cell), prefer the human-readable
-    # last-play description text over the abbreviated token list.
-    if show_play_description:
-        _desc = (game_data.get('last_play_description') or '').strip()
-        if _desc and _hdr_max_w > 0:
-            _desc_font = font12
-            # Truncate until the text fits the available header width.
-            _desc_text = _desc
-            while _desc_text and int(_desc_font.getlength(_desc_text)) > _hdr_max_w:
-                _desc_text = _desc_text[:-1]
-            if _desc_text and _desc_text != _desc:
-                _desc_text = _desc_text.rstrip(' ') + '…'
-            if _desc_text:
-                draw.text((_hdr_left, rp_y + 4 * s), _desc_text, font=_desc_font, fill=0)
-                draw.text((_hdr_left + 1, rp_y + 4 * s), _desc_text, font=_desc_font, fill=0)
-    else:
-        # Show up to the last 7 events; drop oldest (leftmost) until it fits so the
-        # most recent events always stay visible.
-        _hdr_items = []
-        while _recent_plays:
-            _hdr_items = _build_items(_recent_plays)
-            if _measure_items(_hdr_items) <= _hdr_max_w:
-                break
+    # Header: abbreviated half-inning token list (always; description goes in body).
+    _hdr_items = []
+    while _recent_plays:
+        _hdr_items = _build_items(_recent_plays)
+        if _measure_items(_hdr_items) <= _hdr_max_w:
+            break
+        _recent_plays.pop(0)
+        # Don't leave a lone triangle boundary marker at the front
+        while _recent_plays and _recent_plays[0] in ('^', 'v'):
             _recent_plays.pop(0)
-            # Don't leave a lone triangle boundary marker at the front
-            while _recent_plays and _recent_plays[0] in ('^', 'v'):
-                _recent_plays.pop(0)
-        if _recent_plays and _hdr_items:
-            _tx = max(_hdr_left, _hdr_right - _measure_items(_hdr_items))
-            _draw_items(_tx, rp_y + 4 * s, _hdr_items)
+    if _recent_plays and _hdr_items:
+        _tx = max(_hdr_left, _hdr_right - _measure_items(_hdr_items))
+        _draw_items(_tx, rp_y + 4 * s, _hdr_items)
 
     if state in ('Scheduled', 'Pre-Game', 'Warmup'):
         _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, scale)
@@ -2840,6 +2823,38 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         return Himage
 
     ab_pitches = game_data.get('ab_pitches') or []
+
+    # Triple-cell: when there are no pitches to display, fill the cell 2 body
+    # with the last-play description as word-wrapped text.
+    if show_play_description and not ab_pitches:
+        _desc = (game_data.get('last_play_description') or '').strip()
+        if _desc:
+            _desc_font = _get_font(10 * s)
+            _body_x = rp_x + 4 * s
+            _body_w = rp_w - 8 * s
+            _body_y = rp_y + header_h + 4 * s
+            _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
+            _words = _desc.split()
+            _lines: list = []
+            _cur = ''
+            for _w in _words:
+                _test = (_cur + ' ' + _w).strip()
+                if int(_desc_font.getlength(_test)) <= _body_w:
+                    _cur = _test
+                else:
+                    if _cur:
+                        _lines.append(_cur)
+                    _cur = _w
+            if _cur:
+                _lines.append(_cur)
+            # Vertically centre the text block in the body area
+            _total_h = len(_lines) * _line_h
+            _body_h = rp_h - header_h - 4 * s
+            _ty = _body_y + max(0, (_body_h - _total_h) // 2)
+            for _line in _lines:
+                draw.text((_body_x, _ty), _line, font=_desc_font, fill=0)
+                _ty += _line_h
+            return
 
     # ── Strike zone bounds: use per-batter sz from pitch data ──────────
     _zone_top = _SZ_PZ_HI

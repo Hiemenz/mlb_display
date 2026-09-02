@@ -220,6 +220,25 @@ def draw_idle_screen(transactions, team_data, idle_state, config):
 # "On this date in history" screen
 # ---------------------------------------------------------------------------
 
+def _draw_history_badge(draw, sx, sy, game, fg, bg):
+    """Overlay a small badge on a history game cell for notable events."""
+    if game.get('perfect_game'):
+        label = 'PERFECT GAME'
+    elif game.get('no_hitter'):
+        label = 'NO-HITTER'
+    elif game.get('walk_off'):
+        label = 'WALK-OFF'
+    else:
+        return
+
+    font = _get_font(8)
+    cell_w, badge_h = 135, 11
+    badge_y = sy + 130 - badge_h
+    draw.rectangle([sx, badge_y, sx + cell_w - 1, sy + 129], fill=fg)
+    lw = int(font.getlength(label))
+    draw.text((sx + (cell_w - lw) // 2, badge_y + 1), label, font=font, fill=bg)
+
+
 def draw_history_screen(games, year, team_data, config):
     """Render an 800×480 screen showing historical games from today's date in a past year.
 
@@ -276,6 +295,7 @@ def draw_history_screen(games, year, team_data, config):
                 show_winner_logo=True,
                 force_linescore=True,
             )
+            _draw_history_badge(ImageDraw.Draw(Himage), sx, sy, game, fg, bg)
     finally:
         set_historical_mode(False)
 

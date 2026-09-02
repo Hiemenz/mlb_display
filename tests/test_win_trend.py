@@ -671,3 +671,106 @@ def test_render_wintrend_all_mode_dispatches_and_saves(tmp_path):
     assert result is not None
     mock_render.assert_called_once()
     assert os.path.exists(out)
+
+
+# ---------------------------------------------------------------------------
+# render_divisions_win_trend_view
+# ---------------------------------------------------------------------------
+
+@needs_pil
+def test_render_divisions_win_trend_view_no_data():
+    img = iwt.render_divisions_win_trend_view(None)
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_divisions_win_trend_view_empty_teams():
+    img = iwt.render_divisions_win_trend_view({'season': 2026, 'teams': {}})
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_divisions_win_trend_view_full():
+    """All 6 divisions render without error."""
+    img = iwt.render_divisions_win_trend_view(_all_teams_data(30))
+    assert img.size == (800, 480)
+    assert img.mode == '1'
+
+
+@needs_pil
+def test_render_divisions_win_trend_view_dark_mode():
+    img = iwt.render_divisions_win_trend_view(_all_teams_data(6), dark_mode=True)
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_divisions_win_trend_view_partial_teams():
+    """Fewer than 30 teams (some divisions incomplete) renders without error."""
+    img = iwt.render_divisions_win_trend_view(_all_teams_data(10))
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_divisions_win_trend_view_uses_division_abbrs():
+    """Teams are keyed by abbr from _DIVISIONS; unknown abbrs produce empty panels."""
+    data = {
+        'season': 2026,
+        'teams': {
+            '1': {'team_id': 1, 'team_abbr': 'NYY', 'games': [
+                {'date': '2026-04-01', 'wins': 10, 'losses': 5, 'result': 'W'},
+            ]},
+        },
+    }
+    img = iwt.render_divisions_win_trend_view(data)
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_divisions_win_trend_view_real_abbrs_hit_styled_lines():
+    """AL East teams with real abbrs exercise _draw_styled_line patterns (all 5 styles)."""
+    al_east = ['NYY', 'BOS', 'BAL', 'TOR', 'TB']
+    teams = {}
+    for i, abbr in enumerate(al_east):
+        wins = 90 - i * 10
+        losses = 52 + i * 10
+        games = []
+        w = l = 0
+        for j in range(wins + losses):
+            if j % (i + 2) == 0:
+                l += 1; r = 'L'
+            else:
+                w += 1; r = 'W'
+            games.append({'date': f'2026-04-{j+1:02d}', 'wins': w, 'losses': l, 'result': r})
+        teams[str(i)] = {'team_id': i, 'team_abbr': abbr, 'games': games}
+    data = {'season': 2026, 'fetched_at': 0, 'teams': teams}
+    img = iwt.render_divisions_win_trend_view(data)
+    assert img.size == (800, 480)
+
+
+def test_wintrend_div_is_a_valid_display_mode():
+    import render_scoreboard as rs
+    assert 'wintrend_div' in rs._VALID_MODES
+
+
+@needs_pil
+def test_render_wintrend_div_mode_no_data_returns_none():
+    import render_scoreboard as rs
+    with patch('render_scoreboard.load_json_file', side_effect=_rs_loader(None)):
+        result = rs.render(config={'display_mode': 'wintrend_div'}, output_path=None)
+    assert result is None
+
+
+@needs_pil
+def test_render_wintrend_div_mode_dispatches_and_saves(tmp_path):
+    import render_scoreboard as rs
+    out = str(tmp_path / 'out.bmp')
+    fake_img = Image.new('1', (800, 480), 255)
+
+    at_data = {'season': 2026, 'teams': {}}
+    with patch('render_scoreboard.load_json_file', side_effect=_rs_loader(at_data)), \
+         patch('render_scoreboard.render_divisions_win_trend_view', return_value=fake_img) as mock_render:
+        result = rs.render(config={'display_mode': 'wintrend_div'}, output_path=out)
+
+    assert result is not None
+    mock_render.assert_called_once()
+    assert os.path.exists(out)

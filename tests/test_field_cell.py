@@ -454,8 +454,8 @@ class TestTripleBox:
         draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA, use_logos=False)
 
     @needs_pil
-    def test_play_description_in_header(self):
-        """Triple-cell header shows last_play_description when game is In Progress."""
+    def test_play_description_in_body_when_no_pitches(self):
+        """Triple-cell shows last_play_description in cell-2 body when ab_pitches is empty."""
         from image_box import draw_triple_box
         img = Image.new('1', (800, 480), 1)
         game = _base_game(
@@ -485,8 +485,8 @@ class TestTripleBox:
         draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA, use_logos=False)
 
     @needs_pil
-    def test_play_description_truncated_when_too_long(self):
-        """Very long last_play_description is truncated with ellipsis."""
+    def test_play_description_long_text_wraps_in_body(self):
+        """Very long last_play_description word-wraps in the cell-2 body without crashing."""
         from image_box import draw_triple_box
         img = Image.new('1', (800, 480), 1)
         long_desc = 'A' * 300   # far too long to fit

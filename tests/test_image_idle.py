@@ -367,6 +367,27 @@ def test_draw_history_screen_no_year():
     assert img.size == (800, 480)
 
 
+def test_draw_history_screen_no_hitter_badge():
+    from image_idle import draw_history_screen
+    game = dict(_HISTORY_GAME, no_hitter=True)
+    img = draw_history_screen([game], 2024, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_draw_history_screen_perfect_game_badge():
+    from image_idle import draw_history_screen
+    game = dict(_HISTORY_GAME, perfect_game=True)
+    img = draw_history_screen([game], 1956, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_draw_history_screen_walk_off_badge():
+    from image_idle import draw_history_screen
+    game = dict(_HISTORY_GAME, walk_off=True)
+    img = draw_history_screen([game], 1986, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
 def test_load_mascot_image_download_succeeds_but_open_fails():
     """Cover except block (lines 107-108): download succeeded, but Image.open raises."""
     import image_idle
