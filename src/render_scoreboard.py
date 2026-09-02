@@ -23,13 +23,13 @@ from image_derby import render_derby_bracket
 from image_grid import draw_fields_grid
 from quadrant_view import render_quadrant_view
 from race_view import render_race_view
-from image_win_trend import render_win_trend_view
+from image_win_trend import render_win_trend_view, render_all_teams_win_trend_view
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
 
-_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'derby', 'fields', 'quadrant', 'race', 'wintrend')
+_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'derby', 'fields', 'quadrant', 'race', 'wintrend', 'wintrend_all')
 
 
 def _get_display_mode(config):
@@ -229,6 +229,18 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
             return None
         image = render_win_trend_view(win_trend_data, config=config,
                                       dark_mode=config.get('dark_mode', False))
+        if output_path:
+            image.save(output_path)
+            print(f"Image saved to {output_path}")
+        return (image, [(0, 0, image.width, image.height)])
+
+    if mode == 'wintrend_all':
+        all_trend_data = load_json_file('all_teams_trend.json')
+        if not all_trend_data:
+            print("No all_teams_trend.json — run src/fetch_win_trend.py --all")
+            return None
+        image = render_all_teams_win_trend_view(all_trend_data, config=config,
+                                               dark_mode=config.get('dark_mode', False))
         if output_path:
             image.save(output_path)
             print(f"Image saved to {output_path}")

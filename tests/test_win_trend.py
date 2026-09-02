@@ -386,3 +386,288 @@ def test_render_win_trend_view_large_season():
     with patch('image_win_trend._logo_ghost', return_value=None):
         img = iwt.render_win_trend_view(data)
     assert img.size == (800, 480)
+
+
+# ---------------------------------------------------------------------------
+# fetch_all_teams_trend
+# ---------------------------------------------------------------------------
+
+def _all_teams_api_resp():
+    """Minimal API response with two teams playing each other on one date."""
+    return {
+        'dates': [
+            {
+                'date': '2026-04-01',
+                'games': [
+                    {
+                        'status': {'detailedState': 'Final'},
+                        'teams': {
+                            'away': {'team': {'id': 147}, 'isWinner': True},
+                            'home': {'team': {'id': 111}, 'isWinner': False},
+                        },
+                    },
+                ],
+            },
+            {
+                'date': '2026-04-02',
+                'games': [
+                    {
+                        'status': {'detailedState': 'Postponed'},
+                        'teams': {
+                            'away': {'team': {'id': 147}, 'isWinner': False},
+                            'home': {'team': {'id': 111}, 'isWinner': False},
+                        },
+                    },
+                ],
+            },
+        ]
+    }
+
+
+def _teams_json():
+    return {'team_abbreviation': {'147': 'NYY', '111': 'BOS'}}
+
+
+def test_fetch_all_teams_trend_success():
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = _all_teams_api_resp()
+
+    with patch('fetch_win_trend.load_json_file', return_value=_teams_json()), \
+         patch('fetch_win_trend.save_off_results'), \
+         patch('fetch_win_trend.requests.get', return_value=mock_resp):
+        result = fwt.fetch_all_teams_trend(season=2026)
+
+    assert result is not None
+    assert result['season'] == 2026
+    teams = result['teams']
+    assert '147' in teams
+    assert '111' in teams
+    nyy = teams['147']
+    assert nyy['team_abbr'] == 'NYY'
+    assert nyy['games'][-1]['wins'] == 1
+    assert nyy['games'][-1]['losses'] == 0
+    bos = teams['111']
+    assert bos['games'][-1]['wins'] == 0
+    assert bos['games'][-1]['losses'] == 1
+
+
+def test_fetch_all_teams_trend_skips_non_final():
+    """Postponed games should not appear in any team's game list."""
+    api_resp = {
+        'dates': [
+            {
+                'date': '2026-04-15',
+                'games': [
+                    {
+                        'status': {'detailedState': 'Postponed'},
+                        'teams': {
+                            'away': {'team': {'id': 147}, 'isWinner': False},
+                            'home': {'team': {'id': 111}, 'isWinner': False},
+                        },
+                    },
+                ],
+            }
+        ]
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_resp
+
+    with patch('fetch_win_trend.load_json_file', return_value=_teams_json()), \
+         patch('fetch_win_trend.save_off_results'), \
+         patch('fetch_win_trend.requests.get', return_value=mock_resp):
+        result = fwt.fetch_all_teams_trend(season=2026)
+
+    assert result is not None
+    assert result['teams'] == {}
+
+
+def test_fetch_all_teams_trend_api_error(capsys):
+    with patch('fetch_win_trend.load_json_file', return_value=_teams_json()), \
+         patch('fetch_win_trend.requests.get', side_effect=Exception('net error')):
+        result = fwt.fetch_all_teams_trend(season=2026)
+    assert result is None
+
+
+def test_fetch_all_teams_trend_skips_null_team_id():
+    """Games where team.id is missing are skipped gracefully."""
+    api_resp = {
+        'dates': [
+            {
+                'date': '2026-04-01',
+                'games': [
+                    {
+                        'status': {'detailedState': 'Final'},
+                        'teams': {
+                            'away': {'team': None},
+                            'home': {'team': {'id': 111}, 'isWinner': True},
+                        },
+                    },
+                ],
+            }
+        ]
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = api_resp
+
+    with patch('fetch_win_trend.load_json_file', return_value=_teams_json()), \
+         patch('fetch_win_trend.save_off_results'), \
+         patch('fetch_win_trend.requests.get', return_value=mock_resp):
+        result = fwt.fetch_all_teams_trend(season=2026)
+
+    # Only home team (111) recorded; away had None team
+    assert '111' in result['teams']
+    assert '147' not in result['teams']
+
+
+def test_fetch_all_teams_trend_default_season():
+    """Calling without season arg uses the current year."""
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {'dates': []}
+
+    captured_urls = []
+
+    def _mock_get(url, **kw):
+        captured_urls.append(url)
+        return mock_resp
+
+    with patch('fetch_win_trend.load_json_file', return_value={}), \
+         patch('fetch_win_trend.save_off_results'), \
+         patch('fetch_win_trend.requests.get', side_effect=_mock_get):
+        fwt.fetch_all_teams_trend()
+
+    assert captured_urls
+    assert '2026' in captured_urls[0]  # current mocked year is 2026
+
+
+# ---------------------------------------------------------------------------
+# render_all_teams_win_trend_view
+# ---------------------------------------------------------------------------
+
+def _all_teams_data(n_teams=30):
+    """Build a synthetic all_teams_trend dict with n_teams entries."""
+    teams = {}
+    for i in range(n_teams):
+        tid = 100 + i
+        wins = 50 + i % 20
+        losses = 40 - i % 10
+        games = []
+        w = l = 0
+        for j in range(wins + losses):
+            if j < wins:
+                w += 1
+                r = 'W'
+            else:
+                l += 1
+                r = 'L'
+            games.append({'date': f'2026-04-{j+1:02d}', 'wins': w, 'losses': l, 'result': r})
+        teams[str(tid)] = {
+            'team_id': tid,
+            'team_abbr': f'T{i:02d}',
+            'games': games,
+        }
+    return {'season': 2026, 'fetched_at': 0, 'teams': teams}
+
+
+@needs_pil
+def test_render_all_teams_win_trend_view_no_data():
+    img = iwt.render_all_teams_win_trend_view(None)
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_all_teams_win_trend_view_empty_teams():
+    img = iwt.render_all_teams_win_trend_view({'season': 2026, 'teams': {}})
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_all_teams_win_trend_view_30_teams():
+    img = iwt.render_all_teams_win_trend_view(_all_teams_data(30))
+    assert img.size == (800, 480)
+    assert img.mode == '1'
+
+
+@needs_pil
+def test_render_all_teams_win_trend_view_dark_mode():
+    img = iwt.render_all_teams_win_trend_view(_all_teams_data(6), dark_mode=True)
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_all_teams_win_trend_view_team_without_games():
+    """A team entry with no games list should render its abbr without crashing."""
+    data = _all_teams_data(4)
+    # Strip games from one team
+    first_key = next(iter(data['teams']))
+    data['teams'][first_key]['games'] = []
+    img = iwt.render_all_teams_win_trend_view(data)
+    assert img.size == (800, 480)
+
+
+@needs_pil
+def test_render_all_teams_win_trend_view_sorted_best_first():
+    """Teams are ordered best-to-worst so top-left cell has the highest W-L diff."""
+    data = {
+        'season': 2026,
+        'teams': {
+            '1': {'team_id': 1, 'team_abbr': 'BAD', 'games': [
+                {'date': '2026-04-01', 'wins': 1, 'losses': 9, 'result': 'L'},
+            ]},
+            '2': {'team_id': 2, 'team_abbr': 'GRT', 'games': [
+                {'date': '2026-04-01', 'wins': 9, 'losses': 1, 'result': 'W'},
+            ]},
+        },
+    }
+    # Just confirm it renders; actual pixel checking is left to golden tests
+    img = iwt.render_all_teams_win_trend_view(data)
+    assert img.size == (800, 480)
+
+
+# ---------------------------------------------------------------------------
+# render_scoreboard wintrend_all mode
+# ---------------------------------------------------------------------------
+
+def test_wintrend_all_is_a_valid_display_mode():
+    import render_scoreboard as rs
+    assert 'wintrend_all' in rs._VALID_MODES
+
+
+def _rs_loader(all_teams_payload=None):
+    """load_json_file side_effect for render_scoreboard tests."""
+    def _fn(filename, file_path=None):
+        if filename == 'games.json':
+            return {'games': []}
+        if filename == 'teams.json':
+            return {'team_abbreviation': {}}
+        if filename == 'all_teams_trend.json':
+            return all_teams_payload
+        return {}
+    return _fn
+
+
+@needs_pil
+def test_render_wintrend_all_mode_no_data_returns_none(tmp_path, capsys):
+    import render_scoreboard as rs
+    with patch('render_scoreboard.load_json_file', side_effect=_rs_loader(None)):
+        result = rs.render(config={'display_mode': 'wintrend_all'}, output_path=None)
+    assert result is None
+
+
+@needs_pil
+def test_render_wintrend_all_mode_dispatches_and_saves(tmp_path):
+    import render_scoreboard as rs
+    out = str(tmp_path / 'out.bmp')
+    fake_img = Image.new('1', (800, 480), 255)
+
+    at_data = {'season': 2026, 'teams': {}}
+    with patch('render_scoreboard.load_json_file', side_effect=_rs_loader(at_data)), \
+         patch('render_scoreboard.render_all_teams_win_trend_view', return_value=fake_img) as mock_render:
+        result = rs.render(config={'display_mode': 'wintrend_all'}, output_path=out)
+
+    assert result is not None
+    mock_render.assert_called_once()
+    assert os.path.exists(out)

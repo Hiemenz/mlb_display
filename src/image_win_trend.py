@@ -1,10 +1,12 @@
 """Season win-trend renderer.
 
 Provides:
-  draw_win_trend_cell(Himage, x, y, data, config)   – 135×130 px grid tile
-  render_win_trend_view(data, config, dark_mode)    – 800×480 full-screen view
+  draw_win_trend_cell(Himage, x, y, data, config)       – 135×130 px grid tile
+  render_win_trend_view(data, config, dark_mode)        – 800×480 single-team view
+  render_all_teams_win_trend_view(data, config, dark_mode) – 800×480 all-teams grid
 
-data is a dict from win_trend.json (see fetch_win_trend.py).
+Single-team data from win_trend.json; all-teams data from all_teams_trend.json.
+See fetch_win_trend.py.
 """
 from PIL import Image, ImageDraw
 
@@ -292,5 +294,111 @@ def render_win_trend_view(data, config=None, dark_mode=False):
         el_x = min(ex + 6, cx0 + cw - el_w - 2)
         el_y = ey - 8
         draw.text((el_x, el_y), end_lbl, font=font_sm, fill=fg)
+
+    return Himage
+
+
+# ---------------------------------------------------------------------------
+# All-teams full-screen view (800 × 480 px)
+# ---------------------------------------------------------------------------
+
+_AT_COLS = 6
+_AT_ROWS = 5
+_AT_HEADER_H = 22
+_AT_CELL_W = 800 // _AT_COLS          # 133 px
+_AT_CELL_H = (EPD_H - _AT_HEADER_H) // _AT_ROWS   # 91 px
+_AT_HDR_ROW_H = 14  # px of header inside each mini-cell
+_AT_PAD = 3         # inner padding for sparkline
+
+
+def _at_cell_header(draw, cx, cy, abbr, wins, losses, diff, font_abbr, font_rec, fg):
+    """Draw the top row (abbr + record) inside one all-teams mini-cell."""
+    diff_str = ('+' if diff >= 0 else '') + str(diff)
+    rec = f'{wins}-{losses}'
+    draw.text((cx + 2, cy + 1), abbr, font=font_abbr, fill=fg)
+    rw = int(font_rec.getlength(rec))
+    draw.text((cx + _AT_CELL_W - rw - 2, cy + 2), rec, font=font_rec, fill=fg)
+    dw = int(font_rec.getlength(diff_str))
+    draw.text((cx + _AT_CELL_W - dw - 2, cy + _AT_HDR_ROW_H - 9), diff_str,
+              font=font_rec, fill=fg)
+
+
+def render_all_teams_win_trend_view(data, config=None, dark_mode=False):
+    """Render an 800×480 grid of all MLB teams' season win-loss sparklines.
+
+    data is the dict from all_teams_trend.json (fetch_win_trend.fetch_all_teams_trend).
+    Teams are sorted best-to-worst by current games-above-.500, laid out 6×5.
+    """
+    config = config or {}
+    bg = 0 if dark_mode else 255
+    fg = 255 if dark_mode else 0
+
+    Himage = Image.new('1', (EPD_W, EPD_H), bg)
+    draw = ImageDraw.Draw(Himage)
+
+    if not data or not data.get('teams'):
+        f = _get_font(16)
+        draw.text((20, 200), 'No data — run fetch_win_trend.py --all', font=f, fill=fg)
+        return Himage
+
+    season = data.get('season', '')
+    teams_map = data['teams']
+
+    def _sort_key(entry):
+        games = entry.get('games', [])
+        if not games:
+            return (0, 0)
+        last = games[-1]
+        return (last['wins'] - last['losses'], last['wins'])
+
+    sorted_teams = sorted(teams_map.values(), key=_sort_key, reverse=True)
+
+    # ── Global header ─────────────────────────────────────────────────────
+    font_title = _get_font(14)
+    font_abbr  = _get_font(10)
+    font_rec   = _get_font(8)
+
+    title = f'{season} SEASON PACE — ALL TEAMS'
+    draw.text((4, 3), title, font=font_title, fill=fg)
+    draw.text((5, 3), title, font=font_title, fill=fg)
+    draw.line((0, _AT_HEADER_H, EPD_W, _AT_HEADER_H), fill=fg)
+
+    y_base = _AT_HEADER_H
+
+    for idx, team_entry in enumerate(sorted_teams[:_AT_COLS * _AT_ROWS]):
+        col = idx % _AT_COLS
+        row = idx // _AT_COLS
+
+        cx = col * _AT_CELL_W
+        cy = y_base + row * _AT_CELL_H
+
+        # Cell border — right and bottom lines only (avoids double-drawing)
+        if col > 0:
+            draw.line((cx, cy, cx, cy + _AT_CELL_H - 1), fill=fg)
+        draw.line((cx, cy + _AT_CELL_H - 1, cx + _AT_CELL_W - 1, cy + _AT_CELL_H - 1), fill=fg)
+
+        games = team_entry.get('games', [])
+        abbr  = team_entry.get('team_abbr', '???')
+
+        if not games:
+            draw.text((cx + 2, cy + 2), abbr, font=font_abbr, fill=fg)
+            continue
+
+        last   = games[-1]
+        wins   = last['wins']
+        losses = last['losses']
+        diff   = wins - losses
+
+        # Header row separator
+        draw.line((cx, cy + _AT_HDR_ROW_H, cx + _AT_CELL_W - 1, cy + _AT_HDR_ROW_H), fill=fg)
+        _at_cell_header(draw, cx, cy, abbr, wins, losses, diff, font_abbr, font_rec, fg)
+
+        # Sparkline
+        pts   = _games_above_500(games)
+        sp_y0 = cy + _AT_HDR_ROW_H + _AT_PAD
+        sp_h  = _AT_CELL_H - _AT_HDR_ROW_H - _AT_PAD * 2
+        sp_x0 = cx + _AT_PAD
+        sp_w  = _AT_CELL_W - _AT_PAD * 2
+        _draw_trend_line(draw, pts, sp_x0, sp_y0, sp_w, sp_h, dark_mode=dark_mode)
 
     return Himage
