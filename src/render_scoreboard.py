@@ -23,12 +23,13 @@ from image_derby import render_derby_bracket
 from image_grid import draw_fields_grid
 from quadrant_view import render_quadrant_view
 from race_view import render_race_view
+from image_win_trend import render_win_trend_view
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_OUTPUT = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
 
-_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'derby', 'fields', 'quadrant', 'race')
+_VALID_MODES = ('scoreboard', 'linescore', 'scorecard', 'derby', 'fields', 'quadrant', 'race', 'wintrend')
 
 
 def _get_display_mode(config):
@@ -216,6 +217,18 @@ def render(config, date_str=None, output_path=None, bypass_cache=False):
         except ValueError as e:
             print(f"Race view unavailable: {e}")
             return None
+        if output_path:
+            image.save(output_path)
+            print(f"Image saved to {output_path}")
+        return (image, [(0, 0, image.width, image.height)])
+
+    if mode == 'wintrend':
+        win_trend_data = load_json_file('win_trend.json')
+        if not win_trend_data:
+            print("No win_trend.json data found — run src/fetch_win_trend.py")
+            return None
+        image = render_win_trend_view(win_trend_data, config=config,
+                                      dark_mode=config.get('dark_mode', False))
         if output_path:
             image.save(output_path)
             print(f"Image saved to {output_path}")

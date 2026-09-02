@@ -30,7 +30,7 @@ from display import send_to_display
 from util import load_json_file, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
-from image_idle import draw_idle_screen
+from image_idle import draw_idle_screen, draw_history_screen
 
 
 # ---------------------------------------------------------------------------
@@ -496,12 +496,36 @@ def _show_idle_screen(config, auto_open=False):
     idle_config = dict(config, dark_mode=_is_dark)
 
     # Determine which view this 20-minute block should show.
-    # Block 0 (minutes 0-19) → transactions; Block 1 → quadrant; Block 2 → transactions; …
+    # Block 0 (min 0-19) → transactions
+    # Block 1 (min 20-39) → quadrant chart (if data available)
+    # Block 2 (min 40-59) → this day in history (if data available)
+    _block = datetime.now().minute // 20
     _show_quadrant_slot = (
         config.get('idle_quadrant_rotation', True)
-        and (datetime.now().minute // 20) % 2 == 1
+        and _block == 1
     )
-    if _show_quadrant_slot:
+    _show_history_slot = (
+        config.get('idle_history_rotation', True)
+        and _block == 2
+    )
+    if _show_history_slot:
+        try:
+            from fetch_idle import fetch_this_day_in_history
+            _today = datetime.now().strftime('%Y-%m-%d')
+            _hist_year, _hist_games = fetch_this_day_in_history(_today)
+            if _hist_games:
+                _team_data = load_json_file('teams.json')
+                if not _team_data or 'team_abbreviation' not in _team_data:
+                    _team_data = {'team_abbreviation': {}}
+                image = draw_history_screen(_hist_games, _hist_year, _team_data, idle_config)
+                print(f"Idle: showing history screen (year={_hist_year})")
+            else:
+                _show_history_slot = False
+        except Exception as _he:
+            print(f"Idle: history render failed ({_he}), falling back to transactions")
+            _show_history_slot = False
+
+    if not _show_history_slot and _show_quadrant_slot:
         quadrant_data = load_json_file('team_quadrant.json')
         if quadrant_data:
             try:
@@ -517,7 +541,7 @@ def _show_idle_screen(config, auto_open=False):
         else:
             _show_quadrant_slot = False
 
-    if not _show_quadrant_slot:
+    if not _show_history_slot and not _show_quadrant_slot:
         team_data = load_json_file('teams.json')
         if not team_data or 'team_abbreviation' not in team_data:
             team_data = {'team_abbreviation': {}}

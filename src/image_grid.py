@@ -987,6 +987,16 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 use_logos=use_logos,
             )
 
+    # Season win-trend tile — favorite team's cumulative W/L as a sparkline.
+    if config.get('show_win_trend_panel', False) and _free_slots:
+        _wt_data = load_json_file('win_trend.json')
+        if _wt_data and _wt_data.get('games'):
+            from image_win_trend import draw_win_trend_cell
+            _wt_col, _wt_row = _free_slots.pop(0)
+            _wt_lx = _wt_col * 150 + x_start
+            _wt_ly = _wt_row * 150 + y_start
+            Himage = draw_win_trend_cell(Himage, _wt_lx, _wt_ly, _wt_data, config)
+
     Himage.save('score_board.bmp')
     return Himage
 

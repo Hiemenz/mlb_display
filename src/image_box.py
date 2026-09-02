@@ -2646,7 +2646,7 @@ def _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, g
     _render_col(home_lineup, mid_x, home_label)
 
 
-def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1):
+def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1, show_play_description=False):
     """Right panel of 2-cell wide tile.
 
     Header strip (20 px): last half-inning event (cycling 8-sec) + count right-aligned.
@@ -2798,20 +2798,36 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             else:
                 cx = _draw_text_seg(cx, y, val)
 
-    # Show up to the last 7 events; drop oldest (leftmost) until it fits so the
-    # most recent events always stay visible.
-    _hdr_items = []
-    while _recent_plays:
-        _hdr_items = _build_items(_recent_plays)
-        if _measure_items(_hdr_items) <= _hdr_max_w:
-            break
-        _recent_plays.pop(0)
-        # Don't leave a lone triangle boundary marker at the front
-        while _recent_plays and _recent_plays[0] in ('^', 'v'):
+    # When show_play_description is set (triple cell), prefer the human-readable
+    # last-play description text over the abbreviated token list.
+    if show_play_description:
+        _desc = (game_data.get('last_play_description') or '').strip()
+        if _desc and _hdr_max_w > 0:
+            _desc_font = font12
+            # Truncate until the text fits the available header width.
+            _desc_text = _desc
+            while _desc_text and int(_desc_font.getlength(_desc_text)) > _hdr_max_w:
+                _desc_text = _desc_text[:-1]
+            if _desc_text and _desc_text != _desc:
+                _desc_text = _desc_text.rstrip(' ') + '…'
+            if _desc_text:
+                draw.text((_hdr_left, rp_y + 4 * s), _desc_text, font=_desc_font, fill=0)
+                draw.text((_hdr_left + 1, rp_y + 4 * s), _desc_text, font=_desc_font, fill=0)
+    else:
+        # Show up to the last 7 events; drop oldest (leftmost) until it fits so the
+        # most recent events always stay visible.
+        _hdr_items = []
+        while _recent_plays:
+            _hdr_items = _build_items(_recent_plays)
+            if _measure_items(_hdr_items) <= _hdr_max_w:
+                break
             _recent_plays.pop(0)
-    if _recent_plays and _hdr_items:
-        _tx = max(_hdr_left, _hdr_right - _measure_items(_hdr_items))
-        _draw_items(_tx, rp_y + 4 * s, _hdr_items)
+            # Don't leave a lone triangle boundary marker at the front
+            while _recent_plays and _recent_plays[0] in ('^', 'v'):
+                _recent_plays.pop(0)
+        if _recent_plays and _hdr_items:
+            _tx = max(_hdr_left, _hdr_right - _measure_items(_hdr_items))
+            _draw_items(_tx, rp_y + 4 * s, _hdr_items)
 
     if state in ('Scheduled', 'Pre-Game', 'Warmup'):
         _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, scale)
@@ -3851,6 +3867,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         team_data=team_data,
         use_logos=use_logos,
         scale=scale,
+        show_play_description=True,
     )
 
     # Cell 3: field diagram. vis_h=150 centres the field across the full

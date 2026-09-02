@@ -562,3 +562,48 @@ def test_main_open_flag_invokes_macos_open(monkeypatch, tmp_path):
          patch('subprocess.run') as m_run:
         render_scoreboard.main()
     m_run.assert_called_once_with(['open', out_path], check=False)
+
+
+# ---------------------------------------------------------------------------
+# wintrend mode
+# ---------------------------------------------------------------------------
+
+def test_wintrend_is_a_valid_display_mode():
+    assert 'wintrend' in render_scoreboard._VALID_MODES
+    assert render_scoreboard._get_display_mode({'display_mode': 'wintrend'}) == 'wintrend'
+
+
+def test_render_wintrend_mode_no_data_returns_none():
+    """No cached win_trend.json → render() returns None."""
+    config = {'display_mode': 'wintrend'}
+    with patch('render_scoreboard.load_json_file', side_effect=_loader()):
+        result = render_scoreboard.render(config, output_path='/tmp/nope.bmp')
+    assert result is None
+
+
+@needs_pil
+def test_render_wintrend_mode_dispatches_and_saves(tmp_path):
+    """render() in wintrend mode renders and saves the chart."""
+    wt_data = {
+        'team_id': 147, 'team_abbr': 'NYY', 'season': 2026, 'fetched_at': 0,
+        'games': [{'date': '2026-04-01', 'wins': 1, 'losses': 0, 'result': 'W'}],
+    }
+    fake_image = Image.new('1', (800, 480), 255)
+    out_path = str(tmp_path / 'wintrend.bmp')
+    config = {'display_mode': 'wintrend'}
+
+    def _ld(filename, file_path=None):
+        if filename == 'win_trend.json':
+            return wt_data
+        if filename == 'teams.json':
+            return {'team_abbreviation': {}}
+        return {}
+
+    with patch('render_scoreboard.load_json_file', side_effect=_ld), \
+         patch('render_scoreboard.render_win_trend_view', return_value=fake_image) as m_view:
+        result = render_scoreboard.render(config, output_path=out_path)
+
+    assert result == (fake_image, [(0, 0, 800, 480)])
+    m_view.assert_called_once()
+    import os
+    assert os.path.exists(out_path)
