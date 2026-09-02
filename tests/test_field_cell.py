@@ -453,6 +453,69 @@ class TestTripleBox:
         )
         draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA, use_logos=False)
 
+    @needs_pil
+    def test_play_description_in_body_when_no_pitches(self):
+        """Triple-cell shows last_play_description in cell-2 body when ab_pitches is empty."""
+        from image_box import draw_triple_box
+        img = Image.new('1', (800, 480), 1)
+        game = _base_game(
+            detailed_state='In Progress',
+            inningState='Top',
+            current_inning=5,
+            num_of_outs=1,
+            balls=2,
+            strikes=1,
+            current_pitcher='Sandy Koufax',
+            current_hitter='Pete Rose',
+            last_play='Single',
+            last_play_description='Pete Rose singles to left field. Runs batted in: 1.',
+            last_play_inning=5,
+            last_play_is_top=True,
+            away_hits=None,
+            home_hits=None,
+            away_errors=None,
+            home_errors=None,
+            away_team_is_winner=None,
+            home_team_is_winner=None,
+            winner_name=None,
+            loser_name=None,
+            winner_record=None,
+            loser_record=None,
+        )
+        draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA, use_logos=False)
+
+    @needs_pil
+    def test_play_description_long_text_wraps_in_body(self):
+        """Very long last_play_description word-wraps in the cell-2 body without crashing."""
+        from image_box import draw_triple_box
+        img = Image.new('1', (800, 480), 1)
+        long_desc = 'A' * 300   # far too long to fit
+        game = _base_game(
+            detailed_state='In Progress',
+            inningState='Top',
+            current_inning=3,
+            num_of_outs=0,
+            balls=0,
+            strikes=0,
+            current_pitcher='Sandy Koufax',
+            current_hitter='Pete Rose',
+            last_play='GO',
+            last_play_description=long_desc,
+            last_play_inning=3,
+            last_play_is_top=True,
+            away_hits=None,
+            home_hits=None,
+            away_errors=None,
+            home_errors=None,
+            away_team_is_winner=None,
+            home_team_is_winner=None,
+            winner_name=None,
+            loser_name=None,
+            winner_record=None,
+            loser_record=None,
+        )
+        draw_triple_box(img, 0, 0, game, _MINIMAL_TEAM_DATA, use_logos=False)
+
 
 # ---------------------------------------------------------------------------
 # Runner-on-base and last-hit rendering

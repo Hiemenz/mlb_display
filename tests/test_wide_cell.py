@@ -1098,3 +1098,25 @@ def test_wide_box_pregame_state_no_crash(white_image, team_data):
     )
     result = draw_wide_box(white_image, 0, 0, game, team_data)
     assert isinstance(result, Image.Image)
+
+
+@needs_pil
+def test_grid_shows_win_trend_panel(white_image, team_data):
+    """show_win_trend_panel draws the tile into a free grid slot."""
+    from image_grid import draw_out_of_town_score_board
+
+    wt_data = {
+        'team_id': 147, 'team_abbr': 'NYY', 'season': 2026, 'fetched_at': 0,
+        'games': [
+            {'date': '2026-04-01', 'wins': 1, 'losses': 0, 'result': 'W'},
+            {'date': '2026-04-03', 'wins': 2, 'losses': 0, 'result': 'W'},
+        ],
+    }
+    games = [_base_game(game_pk=i) for i in range(5)]
+
+    with patch('image_grid.load_yaml_file', return_value={
+            'show_win_trend_panel': True,
+        }), \
+         patch('image_grid.load_json_file', side_effect=lambda f: wt_data if f == 'win_trend.json' else {}):
+        result = draw_out_of_town_score_board(white_image, games, team_data)
+    assert isinstance(result, Image.Image)

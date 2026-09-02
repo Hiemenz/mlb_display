@@ -291,3 +291,122 @@ def test_load_mascot_image_download_path():
 
     # Result may be None if _photo_to_1bit fails, but the path was executed
     # (lines 113-115 covered regardless of return value)
+
+
+# ---------------------------------------------------------------------------
+# draw_history_screen
+# ---------------------------------------------------------------------------
+
+_HISTORY_GAME = {
+    'game_pk': 1,
+    'away_team_id': 147, 'home_team_id': 111,
+    'away_team_name': 'New York Yankees', 'home_team_name': 'Boston Red Sox',
+    'away_runs': 5, 'home_runs': 3,
+    'away_hits': 10, 'home_hits': 8,
+    'away_errors': 0, 'home_errors': 0,
+    'away_inning_runs': [0, 2, 0, 0, 3, 0, 0, 0, 0],
+    'home_inning_runs': [1, 0, 0, 0, 0, 0, 2, 0, 0],
+    'detailed_state': 'Final',
+    'away_team_is_winner': True, 'home_team_is_winner': False,
+    'winner_name': None, 'loser_name': None, 'saver_name': None,
+    'no_hitter': False, 'perfect_game': False, 'walk_off': False,
+    'double_header': None, 'game_number': 1,
+    'series_description': None, 'series_game_number': None,
+    'series_total_games': None, 'series_wins': None, 'series_losses': None,
+    'series_is_tied': None, 'series_is_over': None, 'series_result': '',
+    'current_inning': 9, 'currentInningOrdinal': '9th', 'inningState': 'End',
+    'num_of_outs': None, 'balls': None, 'strikes': None,
+    'runner_on_first': None, 'runner_on_second': None, 'runner_on_third': None,
+    'current_hitter': None, 'due_up': None, 'in_hole': None,
+    'current_pitcher': None, 'last_play': None, 'sub_event': None,
+    'challenge_team_abbr': None, 'save_situation': False,
+    'away_team_record_wins': None, 'away_team_record_losses': None,
+    'home_team_record_wins': None, 'home_team_record_losses': None,
+    'away_probable': None, 'home_probable': None,
+    'away_probable_note': None, 'home_probable_note': None,
+    'away_left_on_base': None, 'home_left_on_base': None,
+    'game_date': '2024-09-01T17:10:00Z', 'game_start': None, 'day_night': 'day',
+    'description': None, 'postpone_reason': None, 'tv_channel': None,
+    'win_probability': None, 'win_prob_home': None,
+    'weather_temp_f': None, 'weather_wind_mph': None,
+    'weather_wind_dir': None, 'weather_precip_pct': None, 'roof_state': None,
+}
+
+_HISTORY_TEAM_DATA = {'team_abbreviation': {'147': 'NYY', '111': 'BOS'}}
+
+
+def test_draw_history_screen_returns_800x480():
+    from image_idle import draw_history_screen
+    img = draw_history_screen([_HISTORY_GAME], 2024, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+    assert img.mode == '1'
+
+
+def test_draw_history_screen_no_games():
+    from image_idle import draw_history_screen
+    img = draw_history_screen([], None, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_draw_history_screen_multiple_games():
+    from image_idle import draw_history_screen
+    games = [_HISTORY_GAME] * 10
+    img = draw_history_screen(games, 2020, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_draw_history_screen_dark_mode():
+    from image_idle import draw_history_screen
+    img = draw_history_screen([_HISTORY_GAME], 2024, _HISTORY_TEAM_DATA, {'dark_mode': True})
+    assert img.getpixel((0, 0)) == 0
+
+
+def test_draw_history_screen_no_year():
+    from image_idle import draw_history_screen
+    img = draw_history_screen([_HISTORY_GAME], None, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_draw_history_screen_no_hitter_badge():
+    from image_idle import draw_history_screen
+    game = dict(_HISTORY_GAME, no_hitter=True)
+    img = draw_history_screen([game], 2024, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_draw_history_screen_perfect_game_badge():
+    from image_idle import draw_history_screen
+    game = dict(_HISTORY_GAME, perfect_game=True)
+    img = draw_history_screen([game], 1956, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_draw_history_screen_walk_off_badge():
+    from image_idle import draw_history_screen
+    game = dict(_HISTORY_GAME, walk_off=True)
+    img = draw_history_screen([game], 1986, _HISTORY_TEAM_DATA, {})
+    assert img.size == (800, 480)
+
+
+def test_load_mascot_image_download_succeeds_but_open_fails():
+    """Cover except block (lines 107-108): download succeeded, but Image.open raises."""
+    import image_idle
+    import sys
+    import unittest.mock as _m
+    from PIL import Image as _Img
+
+    with patch('image_idle.os.path.exists', return_value=False), \
+         patch('image_idle.os.path.isdir', return_value=True), \
+         patch('image_idle.Image.open', side_effect=OSError('bad file')), \
+         patch('image_idle._load_logo_gray', return_value=None), \
+         patch('image_idle._try_download_logo'), \
+         patch('image_idle._load_logo_gray', return_value=None):
+        fake_module = _m.MagicMock()
+        fake_module.download_mascot.return_value = True
+        sys.modules['download_mascots'] = fake_module
+        try:
+            result = image_idle._load_mascot_image('NYY', '147', 80)
+        finally:
+            sys.modules.pop('download_mascots', None)
+    # Should not crash; returns None or a fallback
+    assert result is None or hasattr(result, 'mode')

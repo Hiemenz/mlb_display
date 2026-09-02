@@ -127,6 +127,51 @@ def _parse_idle_game(game):
     }
 
 
+def fetch_this_day_in_history(today_str, sport_id=1, max_games=12):
+    """Fetch completed games from today's calendar date (same month/day) in past years.
+
+    Tries years 1–10 in reverse order. Returns (year, game_list) or (None, [])
+    when no year produced enough games.
+    """
+    today = datetime.strptime(today_str, '%Y-%m-%d').date()
+    for years_back in range(1, 11):
+        target_year = today.year - years_back
+        try:
+            past_date = today.replace(year=target_year)
+        except ValueError:
+            continue   # Feb 29 in a non-leap year
+        if not (_MLB_SEASON_START_MONTH <= past_date.month <= _MLB_SEASON_END_MONTH):
+            continue
+        past_str = past_date.strftime('%Y-%m-%d')
+        try:
+            url = (
+                f'https://statsapi.mlb.com/api/v1/schedule?'
+                f'startDate={past_str}&endDate={past_str}&sportId={sport_id}'
+                '&hydrate=linescore,decisions,flags'
+            )
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            dates = data.get('dates', [])
+            if not dates:
+                continue
+            games = dates[0].get('games', [])
+            finals = [
+                g for g in games
+                if g.get('status', {}).get('detailedState', '').startswith(('Final', 'Completed Early'))
+                and g.get('gameType') not in ('S', 'E', 'A')
+            ]
+            if len(finals) < 4:
+                continue
+            parsed = [_parse_idle_game(g) for g in finals[:max_games]]
+            print(f"History screen: {len(parsed)} games from {past_str}")
+            return target_year, parsed
+        except Exception as e:
+            print(f"fetch_this_day_in_history year={target_year}: {e}")
+    return None, []
+
+
 def fetch_idle_games(today_str, sport_id=1, max_games=5):
     """Fetch completed games from a random past MLB date.
 

@@ -4,6 +4,8 @@ Layout (800x480):
   Header (28px): "RECENT MOVES"
   Two equal transaction columns (each 398px wide, ~20 rows each → ~40 total)
   Mascot photo bounces over the full screen as an overlay
+
+Also provides draw_history_screen() for the "on this date in history" rotation slot.
 """
 import json
 import os
@@ -210,5 +212,91 @@ def draw_idle_screen(transactions, team_data, idle_state, config):
 
     if not entries:
         draw.text((_PAD, _HEADER_H + 20), 'No recent transactions', font=font_row, fill=fg)
+
+    return Himage
+
+
+# ---------------------------------------------------------------------------
+# "On this date in history" screen
+# ---------------------------------------------------------------------------
+
+def _draw_history_badge(draw, sx, sy, game, fg, bg):
+    """Overlay a small badge on a history game cell for notable events."""
+    if game.get('perfect_game'):
+        label = 'PERFECT GAME'
+    elif game.get('no_hitter'):
+        label = 'NO-HITTER'
+    elif game.get('walk_off'):
+        label = 'WALK-OFF'
+    else:
+        return
+
+    font = _get_font(8)
+    cell_w, badge_h = 135, 11
+    badge_y = sy + 130 - badge_h
+    draw.rectangle([sx, badge_y, sx + cell_w - 1, sy + 129], fill=fg)
+    lw = int(font.getlength(label))
+    draw.text((sx + (cell_w - lw) // 2, badge_y + 1), label, font=font, fill=bg)
+
+
+def draw_history_screen(games, year, team_data, config):
+    """Render an 800×480 screen showing historical games from today's date in a past year.
+
+    games    : list of game dicts from fetch_idle.fetch_this_day_in_history()
+    year     : the historical year (int) shown in the header
+    team_data: {'team_abbreviation': {id: abbr, ...}}
+    config   : app config dict (dark_mode, ...)
+    """
+    from image_box import draw_box, set_historical_mode
+
+    dark_mode = config.get('dark_mode', False)
+    bg = 0 if dark_mode else 255
+    fg = 255 if dark_mode else 0
+
+    Himage = Image.new('1', (800, 480), bg)
+    draw   = ImageDraw.Draw(Himage)
+
+    # ── Header ────────────────────────────────────────────────────────────
+    HDR_H    = 28
+    font_hdr = _get_font(18)
+
+    if year:
+        header_text = f'ON THIS DATE IN {year}'
+    else:
+        header_text = 'ON THIS DATE IN HISTORY'
+
+    draw.text((6, 5),  header_text, font=font_hdr, fill=fg)
+    draw.text((7, 5),  header_text, font=font_hdr, fill=fg)   # bold stroke
+    draw.line((0, HDR_H, 800, HDR_H), fill=fg)
+
+    if not games:
+        draw.text((6, HDR_H + 20), 'No historical games found for this date', font=_get_font(14), fill=fg)
+        return Himage
+
+    # ── Game grid (5 col × up to 3 rows, 150 px slots, matching main board) ──
+    set_historical_mode(True)
+    try:
+        x_start  = 32
+        y_start  = HDR_H + 2
+        slot_w   = 150
+        slot_h   = 150
+        max_cols = 5
+        max_rows = 3
+
+        for idx, game in enumerate(games[:max_cols * max_rows]):
+            col = idx % max_cols
+            row = idx // max_cols
+            sx  = x_start + col * slot_w
+            sy  = y_start + row * slot_h
+            Himage = draw_box(
+                Himage, sx, sy, game, team_data or {},
+                use_logos=config.get('use_team_logos', False),
+                logo_x_offset=config.get('small_logo_x_offset', 2),
+                show_winner_logo=True,
+                force_linescore=True,
+            )
+            _draw_history_badge(ImageDraw.Draw(Himage), sx, sy, game, fg, bg)
+    finally:
+        set_historical_mode(False)
 
     return Himage

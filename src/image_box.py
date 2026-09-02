@@ -2646,7 +2646,7 @@ def _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, g
     _render_col(home_lineup, mid_x, home_label)
 
 
-def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1):
+def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1, show_play_description=False):
     """Right panel of 2-cell wide tile.
 
     Header strip (20 px): last half-inning event (cycling 8-sec) + count right-aligned.
@@ -2798,8 +2798,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             else:
                 cx = _draw_text_seg(cx, y, val)
 
-    # Show up to the last 7 events; drop oldest (leftmost) until it fits so the
-    # most recent events always stay visible.
+    # Header: abbreviated half-inning token list (always; description goes in body).
     _hdr_items = []
     while _recent_plays:
         _hdr_items = _build_items(_recent_plays)
@@ -2824,6 +2823,38 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         return Himage
 
     ab_pitches = game_data.get('ab_pitches') or []
+
+    # Triple-cell: when there are no pitches to display, fill the cell 2 body
+    # with the last-play description as word-wrapped text.
+    if show_play_description and not ab_pitches:
+        _desc = (game_data.get('last_play_description') or '').strip()
+        if _desc:
+            _desc_font = _get_font(10 * s)
+            _body_x = rp_x + 4 * s
+            _body_w = rp_w - 8 * s
+            _body_y = rp_y + header_h + 4 * s
+            _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
+            _words = _desc.split()
+            _lines: list = []
+            _cur = ''
+            for _w in _words:
+                _test = (_cur + ' ' + _w).strip()
+                if int(_desc_font.getlength(_test)) <= _body_w:
+                    _cur = _test
+                else:
+                    if _cur:
+                        _lines.append(_cur)
+                    _cur = _w
+            if _cur:
+                _lines.append(_cur)
+            # Vertically centre the text block in the body area
+            _total_h = len(_lines) * _line_h
+            _body_h = rp_h - header_h - 4 * s
+            _ty = _body_y + max(0, (_body_h - _total_h) // 2)
+            for _line in _lines:
+                draw.text((_body_x, _ty), _line, font=_desc_font, fill=0)
+                _ty += _line_h
+            return
 
     # ── Strike zone bounds: use per-batter sz from pitch data ──────────
     _zone_top = _SZ_PZ_HI
@@ -3851,6 +3882,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         team_data=team_data,
         use_logos=use_logos,
         scale=scale,
+        show_play_description=True,
     )
 
     # Cell 3: field diagram. vis_h=150 centres the field across the full
