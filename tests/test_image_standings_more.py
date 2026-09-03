@@ -1163,6 +1163,53 @@ class TestWildcardMovers:
         # No crash and result is the image.
         assert img.size == (800, 480)
 
+    def test_derive_wildcard_wc3_gets_magic_badge_within_threshold(self):
+        """The team holding the 3rd (last) wildcard spot gets a magic_badge
+        once its magic number to hold off the closest chaser is within
+        ELIM_THRESHOLD."""
+        from image_standings import derive_wildcard_from_standings
+        data = {
+            'standings': {
+                'American League East': [
+                    {'team_id': '1', 'divisionRank': '1', 'team_name': 'Leader',
+                     'league_rank': '1', 'wild_card_games_back': '-'},
+                    {'team_id': '2', 'divisionRank': '2', 'team_name': 'WC1',
+                     'league_rank': '4', 'wild_card_games_back': '-5.0',
+                     'league_record_wins': 100, 'league_record_losses': 44},
+                    {'team_id': '3', 'divisionRank': '2', 'team_name': 'WC2',
+                     'league_rank': '5', 'wild_card_games_back': '-3.0',
+                     'league_record_wins': 95, 'league_record_losses': 49},
+                    {'team_id': '4', 'divisionRank': '2', 'team_name': 'WC3',
+                     'league_rank': '6', 'wild_card_games_back': '-1.0',
+                     'league_record_wins': 100, 'league_record_losses': 44},
+                    {'team_id': '5', 'divisionRank': '2', 'team_name': 'Chaser',
+                     'league_rank': '7', 'wild_card_games_back': '1.0',
+                     'league_record_wins': 90, 'league_record_losses': 50},
+                ],
+            },
+            'team_abbreviation': {},
+        }
+        result = derive_wildcard_from_standings(data)
+        by_id = {t['team_id']: t for t in result['AL']}
+        # E = 163 - 100 - 50 = 13 <= ELIM_THRESHOLD (20)
+        assert by_id['4']['magic_badge'] == 'M13'
+        # Only the cutline (3rd spot) team gets a magic_badge.
+        assert by_id['2'].get('magic_badge', '') == ''
+        assert by_id['3'].get('magic_badge', '') == ''
+
+    def test_wildcard_header_draws_magic_badge_for_cutline_team(self):
+        """A team carrying magic_badge shows it instead of the raw GB
+        (highest-priority branch in _draw_slot)."""
+        al = [{'abbr': 'NYY', 'team_id': '147', 'gb': '-1.0', 'rank': 3,
+               'elim_badge': '', 'magic_badge': 'M13'}]
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            draw_wildcard_header(img, {'AL': al, 'NL': []})
+        from image_standings import _WC_BADGE_H, _WC_STRIP_H
+        badge_row_y = _WC_STRIP_H - _WC_BADGE_H - 1
+        has_ink = any(img.getpixel((x, badge_row_y)) == 0 for x in range(32, 56))
+        assert has_ink, 'expected magic badge text ink in the slot'
+
     def test_derive_wildcard_bad_wins_losses_type_falls_back(self):
         """Non-numeric league_record_wins/losses hit the ValueError branch."""
         from image_standings import derive_wildcard_from_standings
@@ -1291,6 +1338,11 @@ class TestMeBadgeValue:
     def test_trailer_games_back_falls_back_to_dash_when_missing(self):
         team = {'league_record_losses': 10}
         assert _me_badge_value(team, self._leader(wins=60), False, 50) == '-'
+
+    def test_trailer_within_ten_games_back_hides_elimination_number(self):
+        # 163 - 100 - 44 = 19 ≤ 20, but games_back (9.5) < 10 → games back wins
+        team = {'league_record_losses': 44, 'games_back': '9.5'}
+        assert _me_badge_value(team, self._leader(wins=100), False, 50) == '9.5'
 
     def test_clinch_indicator_case_insensitive(self):
         assert _me_badge_value({'clinch_indicator': 'Z'}, self._leader(), True, 50) == 'CL'

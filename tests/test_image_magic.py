@@ -186,6 +186,23 @@ class TestMagicOrElim:
         result = _magic_or_elim(team, leader, is_leader=False, rival_losses=35)
         assert result == 'E19'
 
+    def test_trailer_within_ten_games_back_hides_elimination_number(self):
+        """Even when the elimination number is within threshold, a team less
+        than 10 games back is still close enough that games back is more
+        informative than a dramatic E-number."""
+        leader = self._leader(wins=100)
+        team = self._team(losses=44, games_back='9.5')
+        # E = 163-100-44 = 19 < 20, but games_back (9.5) < 10 → games back wins
+        result = _magic_or_elim(team, leader, is_leader=False, rival_losses=35)
+        assert result == '9.5'
+
+    def test_trailer_ten_games_back_still_shows_elimination_number(self):
+        """Exactly 10 games back is the boundary — still shows the E-number."""
+        leader = self._leader(wins=100)
+        team = self._team(losses=44, games_back='10.0')
+        result = _magic_or_elim(team, leader, is_leader=False, rival_losses=35)
+        assert result == 'E19'
+
     def test_trailer_eliminated(self):
         leader = self._leader(wins=120)
         team = self._team(losses=63)
