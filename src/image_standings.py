@@ -67,6 +67,22 @@ def _wc_elim_badge(team_entry, wc3_wins, wc3_losses):
     return ''
 
 
+def _wc_magic_value(team, rival_losses):
+    """Magic number for the team currently holding the last wildcard spot
+    (the cutline the bubble teams below are chasing) — 'M{n}' once it drops
+    to or below ELIM_THRESHOLD, 'CL' once the closest chaser can no longer
+    catch up. Mirrors a division leader's magic number (image_utils's
+    is_leader branch of magic_or_elim_value), just benchmarked against the
+    nearest bubble team instead of a division rival.
+    """
+    adapter = {
+        'league_record_wins': team.get('wins'),
+        'league_record_losses': team.get('losses'),
+        'clinch_indicator': team.get('clinch_indicator', ''),
+    }
+    return magic_or_elim_value(adapter, adapter, True, rival_losses)
+
+
 def derive_wildcard_from_standings(standings_data):
     """Build {'AL': [...], 'NL': [...]} from standings.json.
 
@@ -114,8 +130,16 @@ def derive_wildcard_from_standings(standings_data):
         wc3 = teams[2] if len(teams) >= 3 else None
         wc3_wins = wc3['wins'] if wc3 else None
         wc3_losses = wc3['losses'] if wc3 else None
+        # Nearest chaser just outside the cutline — the rival the wc3 team
+        # itself needs to hold off to clinch the spot outright.
+        chaser_losses = min(
+            (t['losses'] for t in teams[_WC_WILDCARD_SPOTS:] if t.get('losses') is not None),
+            default=None,
+        )
         for i, team in enumerate(teams):
             if i < _WC_WILDCARD_SPOTS:
+                if i == _WC_WILDCARD_SPOTS - 1:
+                    team['magic_badge'] = _wc_magic_value(team, chaser_losses)
                 team['elim_badge'] = ''
                 team['elim_number'] = None
             else:
@@ -154,11 +178,15 @@ def draw_wildcard_header(Himage, wildcard_data):
         """Draw one wildcard slot with games-back label at the bottom corner."""
         abbr    = (team.get('abbr') or '???')[:4]
         team_id = str(team.get('team_id', ''))
-        # Badge selection: OUT > close E# (≤ threshold) > GB if ≤ 10 > E# if > 10 games back.
+        # Badge selection: cutline magic number > OUT > close E# (≤ threshold)
+        # > GB if ≤ 10 > E# if > 10 games back.
+        magic_badge = team.get('magic_badge', '')
         elim_badge  = team.get('elim_badge', '')
         elim_number = team.get('elim_number')
         gb          = team.get('gb', '') or ''
-        if elim_badge == 'OUT':
+        if magic_badge:
+            badge = magic_badge
+        elif elim_badge == 'OUT':
             badge = 'OUT'
         elif gb == '-':
             badge = ''

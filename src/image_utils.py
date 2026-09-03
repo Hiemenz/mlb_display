@@ -165,9 +165,17 @@ def magic_or_elim_value(team, leader, is_leader, rival_losses):
     elim = MAGIC_BASE - lead_w - team_l
     if elim <= 0:
         return 'OUT'
+    games_back = team.get('games_back')
     if elim <= ELIM_THRESHOLD:
-        return f'E{elim}'
-    return str(team.get('games_back') or '-')
+        try:
+            gb_val = float(games_back)
+        except (TypeError, ValueError):
+            gb_val = None
+        # A team still within 10 games back isn't "on the brink" yet — keep
+        # showing games back rather than the more dramatic elimination number.
+        if gb_val is None or gb_val >= 10:
+            return f'E{elim}'
+    return str(games_back or '-')
 
 
 def _format_player_name(name):
