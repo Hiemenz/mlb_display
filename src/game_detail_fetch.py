@@ -742,9 +742,12 @@ def fetch_between_inning_info(game_pk, inning_state):
                     .get('fullName', '')
                 )
 
-        # Extract the last completed play from the half-inning that just ended.
-        # This provides scorecard notation (e.g. 'F7', '6-3') for the header display,
-        # sourced from the live feed which has credits/fielder position data.
+        # Extract every completed play from the half-inning that just ended, so the
+        # break can summarize the whole half rather than only its final out. This
+        # runs for every game between innings (unlike the featured-only, whole-game
+        # 'half_inning_plays' ticker), so it's the source every box can rely on.
+        # Sourced from the live feed, which has credits/fielder position data for
+        # scorecard notation (e.g. 'F7', '6-3').
         _ended_half = 'top' if inning_state == 'Middle' else 'bottom'
         _SUBST_TYPES = {
             'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
@@ -753,6 +756,8 @@ def fetch_between_inning_info(game_pk, inning_state):
         last_play_notation = None
         last_play_inning = None
         last_play_is_top = None
+        _half_notations = []
+        _half_inning_num = None
         for _lp in reversed(plays.get('allPlays', [])):
             if not _lp.get('about', {}).get('isComplete'):
                 continue
@@ -761,11 +766,20 @@ def fetch_between_inning_info(game_pk, inning_state):
                 continue
             if not (_lp.get('result', {}).get('event') or ''):
                 continue
-            if _lp.get('about', {}).get('halfInning', '') == _ended_half:
-                last_play_notation = _build_scorecard_notation(_lp)
-                last_play_inning = _lp.get('about', {}).get('inning')
-                last_play_is_top = _lp.get('about', {}).get('isTopInning')
+            _about = _lp.get('about', {})
+            if _about.get('halfInning', '') != _ended_half:
                 break
+            _inn = _about.get('inning')
+            if _half_inning_num is None:
+                _half_inning_num = _inn
+            elif _inn != _half_inning_num:
+                break
+            _half_notations.append(_build_scorecard_notation(_lp))
+            if last_play_notation is None:
+                last_play_notation = _half_notations[-1]
+                last_play_inning = _inn
+                last_play_is_top = _about.get('isTopInning')
+        _half_notations.reverse()
 
         return {
             'next_batter_1': names[0] if len(names) > 0 else '',
@@ -775,6 +789,7 @@ def fetch_between_inning_info(game_pk, inning_state):
             'last_play':         last_play_notation,
             'last_play_inning':  last_play_inning,
             'last_play_is_top':  last_play_is_top,
+            'half_inning_summary': _half_notations,
         }
     except Exception:
         return {}

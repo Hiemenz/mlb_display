@@ -2293,10 +2293,15 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         elif _between_innings and play_display:
             # Two-minute break: summarize the whole half-inning that just ended
             # (every batter faced), not just the play that recorded the final out.
-            _hip = game_data.get('half_inning_plays') or []
-            _hip_breaks = [_i for _i, _tok in enumerate(_hip) if _tok in ('^', 'v')]
-            _hip_start = _hip_breaks[-1] + 1 if _hip_breaks else 0
-            _half_events = [_tok for _tok in _hip[_hip_start:] if _tok not in ('^', 'v')]
+            # 'half_inning_summary' is fetched for every game between innings;
+            # 'half_inning_plays' (the featured-only, whole-game ticker) is a
+            # fallback for when that per-half data isn't available.
+            _half_events = game_data.get('half_inning_summary')
+            if not _half_events:
+                _hip = game_data.get('half_inning_plays') or []
+                _hip_breaks = [_i for _i, _tok in enumerate(_hip) if _tok in ('^', 'v')]
+                _hip_start = _hip_breaks[-1] + 1 if _hip_breaks else 0
+                _half_events = [_tok for _tok in _hip[_hip_start:] if _tok not in ('^', 'v')]
             _half_summary = ' | '.join(_half_events) if _half_events else play_display
             _draw_play_right(_half_summary)
         elif _between_innings:
@@ -2976,12 +2981,27 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             if not (outs_list[_oi] and _olabel):
                 continue
             _ol_str = _olabel
-            while _ol_str and int(font7.getlength(_ol_str)) > _ol_max_w:
+            _ol_meas = _ol_str.replace('Kl', 'K')
+            while _ol_meas and int(font7.getlength(_ol_meas)) > _ol_max_w:
                 _ol_str = _ol_str[:-1]
-            if not _ol_str:  # pragma: no cover
+                _ol_meas = _ol_str.replace('Kl', 'K')
+            if not _ol_meas:  # pragma: no cover
                 continue
-            _ol_w = int(font7.getlength(_ol_str))
-            draw.text((_outs_x[_oi] - _ol_w / 2, _outs_y + 7 * s), _ol_str, font=font7, fill=0)
+            _ol_w = int(font7.getlength(_ol_meas))
+            _ol_x = _outs_x[_oi] - _ol_w / 2
+            _ol_y = _outs_y + 7 * s
+            if 'Kl' not in _ol_str:
+                draw.text((_ol_x, _ol_y), _ol_str, font=font7, fill=0)
+            else:
+                _ol_parts = _ol_str.split('Kl')
+                _ol_cx = _ol_x
+                for _ol_i, _ol_seg in enumerate(_ol_parts):
+                    if _ol_seg:
+                        draw.text((_ol_cx, _ol_y), _ol_seg, font=font7, fill=0)
+                        _ol_cx += int(font7.getlength(_ol_seg))
+                    if _ol_i < len(_ol_parts) - 1:
+                        _draw_backwards_k(Himage, _ol_cx, _ol_y, font7)
+                        _ol_cx += int(font7.getlength('K'))
 
         # ── Pitch list: vertical, right of bases/outs, left of zone ───
         # Anchored to a fixed top (not the zone) so moving the zone down doesn't
