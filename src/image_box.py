@@ -2714,9 +2714,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         else f"{_inn_label} {game_data.get('current_inning') or 1}".strip()
     _inn_w = int(font14.getlength(_inn_text)) + 2 * s   # +2 for the inning's bold strike
 
-    # Only show the multi-event summary during the between-innings break — live,
-    # mid-inning play shouldn't grow a running ticker after every out/event.
-    half_inning_plays = (game_data.get('half_inning_plays') or []) if _between_innings else []
+    # The last-7-plays ticker is always shown, live or between innings.
+    half_inning_plays = game_data.get('half_inning_plays') or []
     # Keep the last 7 *events* plus intervening half-inning markers ('^'/'v').
     # A plain [-7:] would count markers as entries and show fewer than 7 events.
     _recent_plays = []
@@ -2748,11 +2747,23 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             pts = [(x, top), (x + _TRI_W, top), (cx, bot)]
         draw.polygon(pts, fill=0)
 
+    # A run-scoring event gets its own highlighted, padded chip in the ticker
+    # rather than blending in with the surrounding outs — 'RBI'/'HR'/'Grand
+    # Slam' are the only notations _build_game_plays_log ever emits for one.
+    _SCORE_PAD = 2 * s
+
+    def _is_scoring_event(tok):
+        """Is scoring event."""
+        return tok == 'Grand Slam' or 'RBI' in tok or 'HR' in tok
+
     def _build_items(plays):
-        """Turn play tokens into render segments: ('text', str) | ('tri', 'up'|'dn').
+        """Turn play tokens into render segments:
+        ('text', str) | ('score', str) | ('tri', 'up'|'dn').
 
         '^'/'v' tokens become triangle inning-break separators; consecutive
-        events in the same half-inning are joined with ' | '.
+        events in the same half-inning are joined with ' | '. A run-scoring
+        event becomes a 'score' segment instead of 'text', so it gets a
+        highlighted chip with room around it when drawn.
         A trailing '^'/'v' with no following event is emitted as a lone arrow
         so the display shows which half-inning is now active.
         """
@@ -2770,7 +2781,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                     items.append(('text', ' '))
                     items.append(('tri', pending))
                     items.append(('text', ' '))
-                items.append(('text', str(ev)))
+                _ev_str = str(ev)
+                items.append(('score' if _is_scoring_event(_ev_str) else 'text', _ev_str))
                 pending = 'bar'
         if pending in ('up', 'dn'):
             if items:
@@ -2784,6 +2796,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         for kind, val in items:
             if kind == 'tri':
                 total += int(_TRI_W)
+            elif kind == 'score':
+                total += int(font12.getlength(val.replace('Kl', 'K'))) + 2 * _SCORE_PAD
             else:
                 total += int(font12.getlength(val.replace('Kl', 'K')))
         return total
@@ -2812,11 +2826,19 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             if kind == 'tri':
                 _draw_triangle(cx, y, 'up' if val == 'up' else 'dn')
                 cx += int(_TRI_W)
+            elif kind == 'score':
+                _sx0 = cx + _SCORE_PAD
+                _sx1 = _draw_text_seg(_sx0, y, val)
+                _chip = (int(cx), rp_y + 2 * s, int(_sx1 + _SCORE_PAD), rp_y + 19 * s)
+                Himage.paste(
+                    ImageOps.invert(Himage.crop(_chip).convert('L')).convert('1'),
+                    (_chip[0], _chip[1]))
+                cx = _sx1 + _SCORE_PAD
             else:
                 cx = _draw_text_seg(cx, y, val)
 
-    # Header: abbreviated half-inning token list — between-innings only; description
-    # still goes in the body during live play (see show_play_description below).
+    # Header: abbreviated last-7-plays token list (always shown, live or between
+    # innings); description goes in the body (see show_play_description below).
     _hdr_items = []
     while _recent_plays:
         _hdr_items = _build_items(_recent_plays)
@@ -2988,7 +3010,14 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         for _oi, _olabel in enumerate(_outs_labels[:3]):
             if not (outs_list[_oi] and _olabel):
                 continue
-            _ol_str = _olabel
+            # Simplify long fielder chains ('6-4-3 DP', '5-4-3 TP') to just the
+            # play type — there's no room for the full chain inside the circle.
+            if _olabel.endswith(' DP'):
+                _ol_str = 'DP'
+            elif _olabel.endswith(' TP'):
+                _ol_str = 'TP'
+            else:
+                _ol_str = _olabel
             _ol_meas = _ol_str.replace('Kl', 'K')
             # A single-symbol out (K, Kl) has room to run bigger than a
             # multi-character one (F8, 6-3, 6-4-3 DP) and still fit the circle.
