@@ -2291,8 +2291,14 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         elif _pitching_change:
             _draw_play_right('P.CHG')
         elif _between_innings and play_display:
-            # Mid-inning break: show abbreviated play that ended the half-inning
-            _draw_play_right(play_display)
+            # Two-minute break: summarize the whole half-inning that just ended
+            # (every batter faced), not just the play that recorded the final out.
+            _hip = game_data.get('half_inning_plays') or []
+            _hip_breaks = [_i for _i, _tok in enumerate(_hip) if _tok in ('^', 'v')]
+            _hip_start = _hip_breaks[-1] + 1 if _hip_breaks else 0
+            _half_events = [_tok for _tok in _hip[_hip_start:] if _tok not in ('^', 'v')]
+            _half_summary = ' | '.join(_half_events) if _half_events else play_display
+            _draw_play_right(_half_summary)
         elif _between_innings:
             # No last-play text — fall back to who's due up
             _due_name = _format_player_name(game_data.get('current_hitter') or '')
