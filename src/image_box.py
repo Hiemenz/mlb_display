@@ -2866,7 +2866,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     # Triple-cell: when there are no pitches to display, fill the cell 2 body
     # with the last-play description as word-wrapped text.
-    if show_play_description and not ab_pitches:
+    if show_play_description and not ab_pitches and _between_innings:
         _desc = (game_data.get('last_play_description') or '').strip()
         if _desc:
             _desc_font = _get_font(10 * s)
