@@ -2867,8 +2867,13 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     # Triple-cell: when there are no pitches to display, fill the cell 2 body
     # with the last-play description as word-wrapped text.
     if show_play_description and not ab_pitches and _between_innings:
-        _desc = (game_data.get('last_play_description') or '').strip()
-        if _desc:
+        _half_events = game_data.get('half_inning_summary')
+        if not _half_events:
+            _hip = game_data.get('half_inning_plays') or []
+            _hip_breaks = [_i for _i, _tok in enumerate(_hip) if _tok in ('^', 'v')]
+            _hip_start = _hip_breaks[-1] + 1 if _hip_breaks else 0
+            _half_events = [_tok for _tok in _hip[_hip_start:] if _tok not in ('^', 'v')]
+        if _half_events:
             _desc_font = _get_font(10 * s)
             _body_x = rp_x + 4 * s
             _body_w = rp_w - 8 * s
@@ -2876,17 +2881,17 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _body_y = int(rp_y + header_h + 46 * s)
             _body_h = int(rp_y + 107 * s) - _body_y - int(2 * s)
             _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
-            _words = _desc.split()
+            # Pack as many play tokens per line as will fit, wrapping at token boundaries
             _lines: list = []
             _cur = ''
-            for _w in _words:
-                _test = (_cur + ' ' + _w).strip()
-                if int(_desc_font.getlength(_test)) <= _body_w:
-                    _cur = _test
+            for _tok in _half_events:
+                _candidate = f'{_cur} | {_tok}' if _cur else _tok
+                if int(_desc_font.getlength(_candidate)) <= _body_w:
+                    _cur = _candidate
                 else:
                     if _cur:
                         _lines.append(_cur)
-                    _cur = _w
+                    _cur = _tok
             if _cur:
                 _lines.append(_cur)
             _max_lines = max(1, _body_h // _line_h) if _line_h > 0 else 1
