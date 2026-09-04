@@ -757,6 +757,7 @@ def fetch_between_inning_info(game_pk, inning_state):
         last_play_inning = None
         last_play_is_top = None
         _half_notations = []
+        _half_descriptions = []
         _half_inning_num = None
         for _lp in reversed(plays.get('allPlays', [])):
             if not _lp.get('about', {}).get('isComplete'):
@@ -775,11 +776,13 @@ def fetch_between_inning_info(game_pk, inning_state):
             elif _inn != _half_inning_num:
                 break
             _half_notations.append(_build_scorecard_notation(_lp))
+            _half_descriptions.append((_lp.get('result', {}).get('description') or '').strip())
             if last_play_notation is None:
                 last_play_notation = _half_notations[-1]
                 last_play_inning = _inn
                 last_play_is_top = _about.get('isTopInning')
         _half_notations.reverse()
+        _half_descriptions.reverse()
 
         return {
             'next_batter_1': names[0] if len(names) > 0 else '',
@@ -790,6 +793,7 @@ def fetch_between_inning_info(game_pk, inning_state):
             'last_play_inning':  last_play_inning,
             'last_play_is_top':  last_play_is_top,
             'half_inning_summary': _half_notations,
+            'half_inning_descriptions': _half_descriptions,
         }
     except Exception:
         return {}
