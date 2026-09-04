@@ -2868,6 +2868,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     # with the last-play description as word-wrapped text.
     if show_play_description and not ab_pitches and _between_innings:
         _half_descs = game_data.get('half_inning_descriptions') or []
+        _half_notes = game_data.get('half_inning_summary') or []
         if _half_descs:
             _desc_font = _get_font(10 * s)
             _body_x = rp_x + 4 * s
@@ -2877,10 +2878,28 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _body_h = int(rp_y + 107 * s) - _body_y - int(2 * s)
             _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
             _max_lines = max(1, _body_h // _line_h) if _line_h > 0 else 1
-            # Word-wrap each description; collect lines until the area is full
-            _lines: list = []
-            for _desc in _half_descs:
+
+            def _play_tier(desc, notation=''):
+                """0=scoring, 1=hit, 2=out."""
+                dl = desc.lower()
+                nl = notation.upper()
+                if (any(w in dl for w in ('homer', 'grand slam', ' score', 'home run', 'grand slam'))
+                        or 'HR' in nl or 'RBI' in nl or 'Grand Slam' in nl):
+                    return 0
+                if (any(w in dl for w in ('singles', 'doubles', 'triples', 'walks', 'hit by pitch',
+                                          'intentional', 'reaches on', 'on a single', 'on a double',
+                                          'on a triple'))
+                        or any(nl.startswith(t) for t in ('1B', '2B', '3B', 'BB', 'IBB', 'HBP'))):
+                    return 1
+                return 2
+
+            # Tag each play with its tier and word-wrap it
+            _tagged = []
+            for _i, _desc in enumerate(_half_descs):
+                _note = _half_notes[_i] if _i < len(_half_notes) else ''
+                _tier = _play_tier(_desc, _note)
                 _words = _desc.split()
+                _wrapped: list = []
                 _cur = ''
                 for _w in _words:
                     _test = (_cur + ' ' + _w).strip()
@@ -2888,16 +2907,35 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                         _cur = _test
                     else:
                         if _cur:
-                            _lines.append(_cur)
+                            _wrapped.append(_cur)
                         _cur = _w
                 if _cur:
-                    _lines.append(_cur)
-                if len(_lines) >= _max_lines:
+                    _wrapped.append(_cur)
+                _tagged.append((_i, _tier, _wrapped))
+
+            # Fill lines greedily: scoring first, then hits, then outs.
+            # Within each tier keep chronological order; final display is by original index.
+            _selected_idx: set = set()
+            _used_lines = 0
+            for _priority in (0, 1, 2):
+                for _i, _tier, _wrapped in _tagged:
+                    if _tier != _priority or _i in _selected_idx:
+                        continue
+                    if _used_lines + len(_wrapped) <= _max_lines:
+                        _selected_idx.add(_i)
+                        _used_lines += len(_wrapped)
+                    if _used_lines >= _max_lines:
+                        break
+                if _used_lines >= _max_lines:
                     break
+
             _ty = _body_y
-            for _line in _lines[:_max_lines]:
-                draw.text((_body_x, _ty), _line, font=_desc_font, fill=0)
-                _ty += _line_h
+            for _i, _tier, _wrapped in _tagged:
+                if _i not in _selected_idx:
+                    continue
+                for _line in _wrapped:
+                    draw.text((_body_x, _ty), _line, font=_desc_font, fill=0)
+                    _ty += _line_h
             # Fall through — let the between-innings batter list and pitcher still render
 
     # ── Strike zone bounds: use per-batter sz from pitch data ──────────
