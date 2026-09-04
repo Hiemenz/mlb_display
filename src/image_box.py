@@ -2990,27 +2990,30 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 continue
             _ol_str = _olabel
             _ol_meas = _ol_str.replace('Kl', 'K')
-            while _ol_meas and int(font7.getlength(_ol_meas)) > _ol_max_w:
+            # A single-symbol out (K, Kl) has room to run bigger than a
+            # multi-character one (F8, 6-3, 6-4-3 DP) and still fit the circle.
+            _ol_fnt = font9 if len(_ol_meas) == 1 else font7
+            while _ol_meas and int(_ol_fnt.getlength(_ol_meas)) > _ol_max_w:
                 _ol_str = _ol_str[:-1]
                 _ol_meas = _ol_str.replace('Kl', 'K')
             if not _ol_meas:  # pragma: no cover
                 continue
-            _ol_bb = font7.getbbox(_ol_meas)
+            _ol_bb = _ol_fnt.getbbox(_ol_meas)
             _ol_cx, _ol_cy = _outs_x[_oi], _outs_y
             _ol_x = _ol_cx - (_ol_bb[0] + _ol_bb[2] - 1) // 2
             _ol_y = _ol_cy - (_ol_bb[1] + _ol_bb[3] - 1) // 2
             if 'Kl' not in _ol_str:
-                draw.text((_ol_x, _ol_y), _ol_str, font=font7, fill=255)
+                draw.text((_ol_x, _ol_y), _ol_str, font=_ol_fnt, fill=255)
             else:
                 _ol_parts = _ol_str.split('Kl')
                 _ol_dx = _ol_x
                 for _ol_i, _ol_seg in enumerate(_ol_parts):
                     if _ol_seg:
-                        draw.text((_ol_dx, _ol_y), _ol_seg, font=font7, fill=255)
-                        _ol_dx += int(font7.getlength(_ol_seg))
+                        draw.text((_ol_dx, _ol_y), _ol_seg, font=_ol_fnt, fill=255)
+                        _ol_dx += int(_ol_fnt.getlength(_ol_seg))
                     if _ol_i < len(_ol_parts) - 1:
-                        _draw_backwards_k(Himage, _ol_dx, _ol_y, font7, fill=255)
-                        _ol_dx += int(font7.getlength('K'))
+                        _draw_backwards_k(Himage, _ol_dx, _ol_y, _ol_fnt, fill=255)
+                        _ol_dx += int(_ol_fnt.getlength('K'))
 
         # ── Pitch list: vertical, right of bases/outs, left of zone ───
         # Anchored to a fixed top (not the zone) so moving the zone down doesn't
