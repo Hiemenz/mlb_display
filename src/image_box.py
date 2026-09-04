@@ -132,8 +132,12 @@ def _fielder_seq_from_desc(description, max_pos=5):
     return ''
 
 
-def _draw_backwards_k(img, x, y, fnt):
-    """Paste a horizontally-mirrored 'K' glyph at text anchor (x, y) on a mode-'1' img."""
+def _draw_backwards_k(img, x, y, fnt, fill=0):
+    """Paste a horizontally-mirrored 'K' glyph at text anchor (x, y) on a mode-'1' img.
+
+    ``fill`` is normally black (0) text on the white canvas; pass 255 to draw
+    a white backwards-K, e.g. inside a filled (solid black) out circle.
+    """
     bbox = fnt.getbbox('K')
     ox, oy, ox2, oy2 = bbox
     gw, gh = ox2 - ox, oy2 - oy
@@ -145,7 +149,7 @@ def _draw_backwards_k(img, x, y, fnt):
     # Build mask: 255 where glyph is black, 0 where background is white
     mask = ImageOps.invert(tmp.convert('L'))
     px, py = x + ox - pad, y + oy - pad
-    img.paste(0, (px, py, px + gw + 2 * pad, py + gh + 2 * pad), mask)
+    img.paste(fill, (px, py, px + gw + 2 * pad, py + gh + 2 * pad), mask)
 
 
 def set_historical_mode(enabled=True):
@@ -2710,7 +2714,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         else f"{_inn_label} {game_data.get('current_inning') or 1}".strip()
     _inn_w = int(font14.getlength(_inn_text)) + 2 * s   # +2 for the inning's bold strike
 
-    half_inning_plays = game_data.get('half_inning_plays') or []
+    # Only show the multi-event summary during the between-innings break — live,
+    # mid-inning play shouldn't grow a running ticker after every out/event.
+    half_inning_plays = (game_data.get('half_inning_plays') or []) if _between_innings else []
     # Keep the last 7 *events* plus intervening half-inning markers ('^'/'v').
     # A plain [-7:] would count markers as entries and show fewer than 7 events.
     _recent_plays = []
@@ -2809,7 +2815,8 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             else:
                 cx = _draw_text_seg(cx, y, val)
 
-    # Header: abbreviated half-inning token list (always; description goes in body).
+    # Header: abbreviated half-inning token list — between-innings only; description
+    # still goes in the body during live play (see show_play_description below).
     _hdr_items = []
     while _recent_plays:
         _hdr_items = _build_items(_recent_plays)
@@ -2972,11 +2979,12 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         Himage = draw_circle(Himage, (_outs_x[2], _outs_y), 6 * s, outs_list[2], outline_width=2)
         draw = ImageDraw.Draw(Himage)
 
-        # Play-type label under each recorded out this half-inning (e.g. 'K', 'F8').
+        # Play-type label inside each recorded out circle (e.g. 'K', 'F8').
         # Only outs the batter makes at the plate are labelled — base-running
-        # outs (caught stealing, pickoffs) aren't tracked here.
+        # outs (caught stealing, pickoffs) aren't tracked here. Recorded outs
+        # are filled solid black, so the label is drawn in white.
         _outs_labels = game_data.get('outs_this_half') or []
-        _ol_max_w = 12 * s
+        _ol_max_w = 11 * s
         for _oi, _olabel in enumerate(_outs_labels[:3]):
             if not (outs_list[_oi] and _olabel):
                 continue
@@ -2987,21 +2995,22 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 _ol_meas = _ol_str.replace('Kl', 'K')
             if not _ol_meas:  # pragma: no cover
                 continue
-            _ol_w = int(font7.getlength(_ol_meas))
-            _ol_x = _outs_x[_oi] - _ol_w / 2
-            _ol_y = _outs_y + 7 * s
+            _ol_bb = font7.getbbox(_ol_meas)
+            _ol_cx, _ol_cy = _outs_x[_oi], _outs_y
+            _ol_x = _ol_cx - (_ol_bb[0] + _ol_bb[2] - 1) // 2
+            _ol_y = _ol_cy - (_ol_bb[1] + _ol_bb[3] - 1) // 2
             if 'Kl' not in _ol_str:
-                draw.text((_ol_x, _ol_y), _ol_str, font=font7, fill=0)
+                draw.text((_ol_x, _ol_y), _ol_str, font=font7, fill=255)
             else:
                 _ol_parts = _ol_str.split('Kl')
-                _ol_cx = _ol_x
+                _ol_dx = _ol_x
                 for _ol_i, _ol_seg in enumerate(_ol_parts):
                     if _ol_seg:
-                        draw.text((_ol_cx, _ol_y), _ol_seg, font=font7, fill=0)
-                        _ol_cx += int(font7.getlength(_ol_seg))
+                        draw.text((_ol_dx, _ol_y), _ol_seg, font=font7, fill=255)
+                        _ol_dx += int(font7.getlength(_ol_seg))
                     if _ol_i < len(_ol_parts) - 1:
-                        _draw_backwards_k(Himage, _ol_cx, _ol_y, font7)
-                        _ol_cx += int(font7.getlength('K'))
+                        _draw_backwards_k(Himage, _ol_dx, _ol_y, font7, fill=255)
+                        _ol_dx += int(font7.getlength('K'))
 
         # ── Pitch list: vertical, right of bases/outs, left of zone ───
         # Anchored to a fixed top (not the zone) so moving the zone down doesn't

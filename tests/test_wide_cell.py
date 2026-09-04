@@ -365,11 +365,11 @@ def test_wide_box_batter_row_shows_bat_side(team_data):
 
 @needs_pil
 def test_wide_box_out_circles_show_play_type_labels(team_data):
-    """Each recorded out's circle gets a small play-type label under it
-    (e.g. 'K' for the first out, 'F8' for the second)."""
+    """Each recorded out's circle gets a small play-type label inside it, in
+    white (e.g. 'K' for the first out, 'F8' for the second)."""
     from image_box import draw_wide_box
-    # Outs row: circles at rp_y+71, labels drawn a few px below.
-    outs_label_row = (135 + 12, 77, 135 + 54, 90)
+    # Outs row: circles at rp_y+71, radius 6 — labels drawn inside them in white.
+    outs_label_row = (135 + 12, 65, 135 + 54, 78)
 
     def _crop(game):
         img = Image.new('1', (800, 480), 255)
@@ -379,7 +379,8 @@ def test_wide_box_out_circles_show_play_type_labels(team_data):
     with_labels = _crop(_live_game(num_of_outs=2, outs_this_half=['K', 'F8']))
     no_labels   = _crop(_live_game(num_of_outs=2))
 
-    assert any(p == 0 for p in with_labels), 'out labels should draw ink under the circles'
+    assert any(p == 255 for p in with_labels), \
+        'out labels should carve white text into the filled (black) out circle'
     assert with_labels != no_labels, 'labelled and unlabelled out rows must differ'
 
 
