@@ -2872,7 +2872,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _desc_font = _get_font(10 * s)
             _body_x = rp_x + 4 * s
             _body_w = rp_w - 8 * s
-            _body_y = rp_y + header_h + 4 * s
+            # Place in the gap between the 3-batter list (ends ~66 s) and pitcher row (107 s)
+            _body_y = int(rp_y + header_h + 46 * s)
+            _body_h = int(rp_y + 107 * s) - _body_y - int(2 * s)
             _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
             _words = _desc.split()
             _lines: list = []
@@ -2887,14 +2889,12 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                     _cur = _w
             if _cur:
                 _lines.append(_cur)
-            # Vertically centre the text block in the body area
-            _total_h = len(_lines) * _line_h
-            _body_h = rp_h - header_h - 4 * s
-            _ty = _body_y + max(0, (_body_h - _total_h) // 2)
-            for _line in _lines:
+            _max_lines = max(1, _body_h // _line_h) if _line_h > 0 else 1
+            _ty = _body_y
+            for _line in _lines[:_max_lines]:
                 draw.text((_body_x, _ty), _line, font=_desc_font, fill=0)
                 _ty += _line_h
-            return
+            # Fall through — let the between-innings batter list and pitcher still render
 
     # ── Strike zone bounds: use per-batter sz from pitch data ──────────
     _zone_top = _SZ_PZ_HI
