@@ -714,10 +714,14 @@ def parse_games(data, sport_id=None, config=None):
                 game_dict.update(extras)
                 # Between-innings PC: inningState may flip to Top/Bottom before the first pitch.
                 # Restore it so the break is still treated as active and fetch_between_inning_info runs.
+                # Gated on num_of_outs == 0 too: a mid-inning PC made right at a batter's first
+                # pitch (at_bat_pitch_count == 0) but with outs already recorded this half is a
+                # live at-bat, not a half-inning transition — Top/Bottom must stay as reported.
                 if (
                     (game_dict.get('sub_event') or '').startswith('PC:')
                     and game_dict.get('inningState') in ('Top', 'Bottom')
                     and not (game_dict.get('at_bat_pitch_count') or 0)
+                    and not (game_dict.get('num_of_outs') or 0)
                 ):
                     if game_dict['inningState'] == 'Bottom':
                         game_dict['inningState'] = 'Middle'
