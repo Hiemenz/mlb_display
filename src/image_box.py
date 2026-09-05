@@ -2874,35 +2874,44 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     _BI_LX = zone_lx - 14 * s
     _BI_W  = zone_rx - _BI_LX
 
-    # Triple-cell: when there are no pitches to display, fill the cell 2 body
-    # with the last-play description as word-wrapped text. The summary runs from
-    # the very top of the panel (overwriting the ticker header) so it has the full
-    # panel height; the upcoming batters sit on the left (field/outs) side.
+    # Between-innings summary: every play from the half that just ended, listed
+    # top-to-bottom in the strike-zone column.  Scoring plays (RBI/HR) are drawn
+    # bolder and larger so they stand out; routine outs use a smaller font.
+    # The list is allowed to extend to the cell footer (rp_h).
     if show_play_description and not ab_pitches:
-        _desc = (game_data.get('last_play_description') or '').strip()
-        if _desc:
-            _desc_font = _get_font(10 * s)
-            _body_x = _BI_LX
-            _body_w = _BI_W
-            _body_y = rp_y + header_h + 2 * s
-            _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
-            _words = _desc.split()
-            _lines: list = []
-            _cur = ''
-            for _w in _words:
-                _test = (_cur + ' ' + _w).strip()
-                if int(_desc_font.getlength(_test)) <= _body_w:
-                    _cur = _test
-                else:
-                    if _cur:
-                        _lines.append(_cur)
-                    _cur = _w
-            if _cur:
-                _lines.append(_cur)
-            _ty = _body_y
-            for _line in _lines:
-                draw.text((_body_x, _ty), _line, font=_desc_font, fill=0)
-                _ty += _line_h
+        _half_plays = list(game_data.get('half_inning_summary') or [])
+        if not _half_plays:
+            _hip = game_data.get('half_inning_plays') or []
+            _hip_breaks = [_i for _i, _tok in enumerate(_hip) if _tok in ('^', 'v')]
+            _hip_start = _hip_breaks[-1] + 1 if _hip_breaks else 0
+            _half_plays = [t for t in _hip[_hip_start:] if t not in ('^', 'v')]
+
+        _play_fnt   = _get_font(9 * s)
+        _score_fnt  = _get_font(12 * s)
+        _play_lh    = int(_play_fnt.getlength('Ag')) // 2 + 5
+        _score_lh   = int(_score_fnt.getlength('Ag')) // 2 + 7
+        _ty = rp_y + header_h + 2 * s
+        _max_y = rp_y + rp_h - 2 * s
+
+        for _tok in _half_plays:
+            if _ty >= _max_y:
+                break
+            _scoring = (_tok == 'Grand Slam' or 'RBI' in _tok or 'HR' in _tok)
+            _fnt = _score_fnt if _scoring else _play_fnt
+            _lh  = _score_lh if _scoring else _play_lh
+            _disp = _tok
+            _meas = _disp.replace('Kl', 'K')
+            while _disp and int(_fnt.getlength(_meas)) > _BI_W - 2 * s:
+                _disp = _disp[:-1]
+                _meas = _disp.replace('Kl', 'K')
+            if not _disp:
+                _ty += _lh
+                continue
+            if _scoring:
+                _draw_bold_text(draw, (_BI_LX, _ty), _disp, _fnt, s)
+            else:
+                draw.text((_BI_LX, _ty), _disp, font=_fnt, fill=0)
+            _ty += _lh
 
         # Upcoming batters on the left (field/outs) side, next to the errors
         _batter_names_desc = [
@@ -3343,6 +3352,7 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         team_data=team_data,
         use_logos=use_logos,
         scale=scale,
+        show_play_description=True,
     )
 
     # Invert the whole two-cell header when a run scores (or the score changed),
