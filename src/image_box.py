@@ -2869,6 +2869,10 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     ZONE_W = 56 * s
     zone_rx = rp_x + rp_w - 17 * s
     zone_lx = zone_rx - ZONE_W
+    # Between-innings text uses a region a bit wider than the zone itself,
+    # starting just below the header divider.
+    _BI_LX = zone_lx - 14 * s
+    _BI_W  = zone_rx - _BI_LX
 
     # Triple-cell: when there are no pitches to display, fill the cell 2 body
     # with the last-play description as word-wrapped text, positioned over the
@@ -2877,9 +2881,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         _desc = (game_data.get('last_play_description') or '').strip()
         if _desc:
             _desc_font = _get_font(10 * s)
-            _body_x = zone_lx
-            _body_w = ZONE_W
-            _body_y = rp_y + header_h + 4 * s
+            _body_x = _BI_LX
+            _body_w = _BI_W
+            _body_y = rp_y + header_h + 2 * s
             _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
             _words = _desc.split()
             _lines: list = []
@@ -3108,15 +3112,15 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
             _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
         ]
-        _bat_y = rp_y + header_h + 10 * s
-        _bat_max_w = ZONE_W - 4 * s
+        _bat_y = rp_y + header_h + 2 * s
+        _bat_max_w = _BI_W - 4 * s
         for _nm in _batter_names:
             if _nm:
                 _bat_str = _nm
                 while _bat_str and int(font11.getlength(_bat_str)) > _bat_max_w:
                     _bat_str = _bat_str[:-1]
                 if _bat_str:
-                    _draw_bold_text(draw, (zone_lx + 2 * s, _bat_y), _bat_str, font11, s)
+                    _draw_bold_text(draw, (_BI_LX + 2 * s, _bat_y), _bat_str, font11, s)
             _bat_y += 16 * s
 
     # ── Pitcher row (pushed below B/S indicators) ──────────────────────
