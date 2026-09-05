@@ -2872,12 +2872,13 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     # Between-innings text uses a region a bit wider than the zone itself,
     # starting just below the header divider.
     _BI_LX = zone_lx - 14 * s
-    _BI_W  = zone_rx - _BI_LX
+    _BI_RX = rp_x + rp_w - 4 * s
+    _BI_W  = _BI_RX - _BI_LX
 
-    # Between-innings summary: every play from the half that just ended, listed
-    # top-to-bottom in the strike-zone column.  Scoring plays (RBI/HR) are drawn
-    # bolder and larger so they stand out; routine outs use a smaller font.
-    # The list is allowed to extend to the cell footer (rp_h).
+    # Between-innings summary: all plays from the half that just ended as
+    # word-wrapped flowing text in the strike-zone column.  Build the text from
+    # half_inning_summary tokens (joined with ' | '), falling back to slicing the
+    # game-log.  Text flows from the header down to the cell footer (rp_h).
     if show_play_description and not ab_pitches:
         _half_plays = list(game_data.get('half_inning_summary') or [])
         if not _half_plays:
@@ -2886,32 +2887,40 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _hip_start = _hip_breaks[-1] + 1 if _hip_breaks else 0
             _half_plays = [t for t in _hip[_hip_start:] if t not in ('^', 'v')]
 
-        _play_fnt   = _get_font(9 * s)
-        _score_fnt  = _get_font(12 * s)
-        _play_lh    = int(_play_fnt.getlength('Ag')) // 2 + 5
-        _score_lh   = int(_score_fnt.getlength('Ag')) // 2 + 7
-        _ty = rp_y + header_h + 2 * s
-        _max_y = rp_y + rp_h - 2 * s
+        _half_descs = list(game_data.get('half_inning_descriptions') or [])
+        if _half_descs:
+            _summary_text = '  '.join(d for d in _half_descs if d)
+        elif _half_plays:
+            _summary_text = ' | '.join(_half_plays)
+        else:
+            _summary_text = (game_data.get('last_play_description') or '').strip()
 
-        for _tok in _half_plays:
-            if _ty >= _max_y:
-                break
-            _scoring = (_tok == 'Grand Slam' or 'RBI' in _tok or 'HR' in _tok)
-            _fnt = _score_fnt if _scoring else _play_fnt
-            _lh  = _score_lh if _scoring else _play_lh
-            _disp = _tok
-            _meas = _disp.replace('Kl', 'K')
-            while _disp and int(_fnt.getlength(_meas)) > _BI_W - 2 * s:
-                _disp = _disp[:-1]
-                _meas = _disp.replace('Kl', 'K')
-            if not _disp:
-                _ty += _lh
-                continue
-            if _scoring:
-                _draw_bold_text(draw, (_BI_LX, _ty), _disp, _fnt, s)
-            else:
-                draw.text((_BI_LX, _ty), _disp, font=_fnt, fill=0)
-            _ty += _lh
+        if _summary_text:
+            _desc_font = _get_font(10 * s)
+            _body_x = _BI_LX
+            _body_w = _BI_W
+            _body_y = rp_y + header_h + 2 * s
+            _max_y  = rp_y + rp_h - 2 * s
+            _line_h = int(_desc_font.getlength('Ag')) // 2 + 6
+            _words = _summary_text.split()
+            _lines: list = []
+            _cur = ''
+            for _w in _words:
+                _test = (_cur + ' ' + _w).strip()
+                if int(_desc_font.getlength(_test)) <= _body_w:
+                    _cur = _test
+                else:
+                    if _cur:
+                        _lines.append(_cur)
+                    _cur = _w
+            if _cur:
+                _lines.append(_cur)
+            _ty = _body_y
+            for _line in _lines:
+                if _ty + _line_h > _max_y:
+                    break
+                draw.text((_body_x, _ty), _line, font=_desc_font, fill=0)
+                _ty += _line_h
 
         # Upcoming batters on the left (field/outs) side, next to the errors
         _batter_names_desc = [
