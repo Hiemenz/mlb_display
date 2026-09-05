@@ -2864,14 +2864,21 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
 
     ab_pitches = game_data.get('ab_pitches') or []
 
+    # Strike zone pixel bounds (right side of panel) — needed both for drawing
+    # the zone during live play and for positioning between-innings text.
+    ZONE_W = 56 * s
+    zone_rx = rp_x + rp_w - 17 * s
+    zone_lx = zone_rx - ZONE_W
+
     # Triple-cell: when there are no pitches to display, fill the cell 2 body
-    # with the last-play description as word-wrapped text.
+    # with the last-play description as word-wrapped text, positioned over the
+    # strike zone area (right side) rather than the bases/field area (left side).
     if show_play_description and not ab_pitches:
         _desc = (game_data.get('last_play_description') or '').strip()
         if _desc:
             _desc_font = _get_font(10 * s)
-            _body_x = rp_x + 4 * s
-            _body_w = rp_w - 8 * s
+            _body_x = zone_lx
+            _body_w = ZONE_W
             _body_y = rp_y + header_h + 4 * s
             _line_h = int(_desc_font.getlength('Ag')) // 2 + 6  # approx line height
             _words = _desc.split()
@@ -2908,10 +2915,7 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             break
 
     # ── Strike zone (RIGHT side, fixed pixel dimensions) ───────────────
-    ZONE_W = 56 * s
     ZONE_H = 58 * s
-    zone_rx = rp_x + rp_w - 17 * s   # nudged left 7px more to leave room for outside pitches
-    zone_lx = zone_rx - ZONE_W
     zone_ty = rp_y + header_h + 12 * s   # nudged down
     zone_by = zone_ty + ZONE_H
 
@@ -3098,21 +3102,21 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         draw = ImageDraw.Draw(Himage)
 
     else:
-        # ── Between innings: next 3 batters, outs hidden ───────────────
+        # ── Between innings: next 3 batters, positioned over the strike zone ──
         _batter_names = [
             _last_name(game_data.get('next_batter_1') or game_data.get('current_hitter') or ''),
             _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
             _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
         ]
         _bat_y = rp_y + header_h + 10 * s
-        _bat_max_w = rp_w - 4 * s - 3
+        _bat_max_w = ZONE_W - 4 * s
         for _nm in _batter_names:
             if _nm:
                 _bat_str = _nm
                 while _bat_str and int(font11.getlength(_bat_str)) > _bat_max_w:
                     _bat_str = _bat_str[:-1]
                 if _bat_str:
-                    _draw_bold_text(draw, (rp_x + 2 * s + 3, _bat_y), _bat_str, font11, s)
+                    _draw_bold_text(draw, (zone_lx + 2 * s, _bat_y), _bat_str, font11, s)
             _bat_y += 16 * s
 
     # ── Pitcher row (pushed below B/S indicators) ──────────────────────
