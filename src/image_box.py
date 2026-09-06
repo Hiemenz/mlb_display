@@ -2661,7 +2661,7 @@ def _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, g
     _render_col(home_lineup, mid_x, home_label)
 
 
-def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1):
+def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1, show_play_description=False):
     """Right panel of 2-cell wide tile.
 
     Header strip (20 px): last half-inning event (cycling 8-sec) + count right-aligned.
@@ -2883,6 +2883,9 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     ZONE_H = 58 * s
     zone_rx = rp_x + rp_w - 17 * s   # nudged left 7px more to leave room for outside pitches
     zone_lx = zone_rx - ZONE_W
+    _BI_LX = zone_lx - 14 * s
+    _BI_RX = rp_x + rp_w - 4 * s
+    _BI_W  = _BI_RX - _BI_LX
     zone_ty = rp_y + header_h + 12 * s   # nudged down
     zone_by = zone_ty + ZONE_H
 
@@ -3075,8 +3078,12 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
             _last_name(game_data.get('next_batter_2') or game_data.get('due_up') or ''),
             _last_name(game_data.get('next_batter_3') or game_data.get('in_hole') or ''),
         ]
-        _bat_y = rp_y + header_h + 10 * s
-        _bat_max_w = rp_w - 4 * s - 3
+        if show_play_description:
+            _bat_y = rp_y + header_h + 2 * s
+            _bat_max_w = _BI_LX - rp_x - 4 * s
+        else:
+            _bat_y = rp_y + header_h + 10 * s
+            _bat_max_w = rp_w - 4 * s - 3
         for _nm in _batter_names:
             if _nm:
                 _bat_str = _nm
@@ -3085,6 +3092,39 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
                 if _bat_str:
                     _draw_bold_text(draw, (rp_x + 2 * s + 3, _bat_y), _bat_str, font11, s)
             _bat_y += 16 * s
+
+        # Zone-column: full-sentence play descriptions, word-wrapped
+        if show_play_description:
+            _half_descs = list(game_data.get('half_inning_descriptions') or [])
+            if not _half_descs:
+                _summary = ' | '.join(game_data.get('half_inning_summary') or [])
+                if not _summary:
+                    _summary = (game_data.get('last_play_description') or '').strip()
+            else:
+                _summary = '  '.join(d for d in _half_descs if d)
+            if _summary:
+                _desc_font = _get_font(10 * s)
+                _line_h = int(_desc_font.getlength('Ag')) // 2 + 6
+                _ty = rp_y + header_h + 2 * s
+                _max_y = rp_y + rp_h - 2 * s
+                _words = _summary.split()
+                _lines: list = []
+                _cur = ''
+                for _w in _words:
+                    _test = (_cur + ' ' + _w).strip()
+                    if int(_desc_font.getlength(_test)) <= _BI_W:
+                        _cur = _test
+                    else:
+                        if _cur:
+                            _lines.append(_cur)
+                        _cur = _w
+                if _cur:
+                    _lines.append(_cur)
+                for _line in _lines:
+                    if _ty + _line_h > _max_y:
+                        break
+                    draw.text((_BI_LX, _ty), _line, font=_desc_font, fill=0)
+                    _ty += _line_h
 
     # ── Pitcher row (pushed below B/S indicators) ──────────────────────
     _py = rp_y + 107 * s
@@ -3291,6 +3331,7 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         team_data=team_data,
         use_logos=use_logos,
         scale=scale,
+        show_play_description=True,
     )
 
     # Invert the whole two-cell header when a run scores (or the score changed),
@@ -3910,7 +3951,8 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     # Header divider only under panel 2 — panel 3 (field diagram) has no header row
     draw.line((rp_x, start_y + HEADER_H,   fp_x,        start_y + HEADER_H),   fill=0)
 
-    # Cell 2: pitch zone / situation
+    # Cell 2: pitch zone / situation; between innings also shows play descriptions
+    # in the strike-zone column and upcoming batters on the left.
     _draw_wide_right_panel(
         draw, Himage,
         rp_x=rp_x, rp_y=start_y,
@@ -3920,86 +3962,15 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         team_data=team_data,
         use_logos=use_logos,
         scale=scale,
+        show_play_description=True,
     )
 
     draw = ImageDraw.Draw(Himage)
 
-    # Cell 3: between innings → play descriptions; live → field diagram.
-    _bi_cell3 = game_data.get('inningState') in ('Middle', 'End')
-    _half_descs = game_data.get('half_inning_descriptions') or []
-    _half_notes = game_data.get('half_inning_summary') or []
-
-    if _bi_cell3 and _half_descs:
-        # Fill cell 3 with the half-inning play descriptions, prioritised by tier.
-        _desc_font = _get_font(10 * s)
-        _dx = fp_x + 4 * s
-        _dw = int(FIELD_W) - 8 * s
-        _dy = int(start_y + 4 * s)
-        _dh = int(TOTAL_H) - 8 * s
-        _line_h = int(_desc_font.getlength('Ag')) // 2 + 6
-
-        def _ptier(desc, notation=''):
-            """0=scoring, 1=hit, 2=out."""
-            dl = desc.lower()
-            nl = notation.upper()
-            if (any(w in dl for w in ('homer', 'grand slam', ' score', 'home run'))
-                    or 'HR' in nl or 'RBI' in nl or 'Grand Slam' in nl):
-                return 0
-            if (any(w in dl for w in ('singles', 'doubles', 'triples', 'walks', 'hit by pitch',
-                                      'intentional', 'reaches on'))
-                    or any(nl.startswith(t) for t in ('1B', '2B', '3B', 'BB', 'IBB', 'HBP'))):
-                return 1
-            return 2
-
-        _max_lines = max(1, _dh // _line_h) if _line_h > 0 else 1
-        _tagged3 = []
-        for _i, _desc in enumerate(_half_descs):
-            _note = _half_notes[_i] if _i < len(_half_notes) else ''
-            _words = _desc.split()
-            _wrapped: list = []
-            _cur = ''
-            for _w in _words:
-                _test = (_cur + ' ' + _w).strip()
-                if int(_desc_font.getlength(_test)) <= _dw:
-                    _cur = _test
-                else:
-                    if _cur:
-                        _wrapped.append(_cur)
-                    _cur = _w
-            if _cur:
-                _wrapped.append(_cur)
-            _tagged3.append((_i, _ptier(_desc, _note), _wrapped))
-
-        _sel: set = set()
-        _used = 0
-        for _pri in (0, 1, 2):
-            for _i, _tier, _wrapped in _tagged3:
-                if _tier != _pri or _i in _sel:
-                    continue
-                if _used + len(_wrapped) <= _max_lines:
-                    _sel.add(_i)
-                    _used += len(_wrapped)
-                if _used >= _max_lines:
-                    break
-            if _used >= _max_lines:
-                break
-
-        _ty = _dy
-        for _i, _tier, _wrapped in _tagged3:
-            if _i not in _sel:
-                continue
-            for _line in _wrapped:
-                draw.text((_dx, _ty), _line, font=_desc_font, fill=0)
-                _ty += _line_h
-
-    else:
-        # Live play: field diagram. vis_h=150 centres the field across the full
-        # 150 px grid slot (tile + footer gap), since cell 3 has no bottom border.
-        _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
-
-    # Batted-ball stat badge and venue name only appear with the live field diagram.
-    if _bi_cell3 and _half_descs:
-        return Himage
+    # Cell 3: field diagram (always — descriptions are in cell 2's zone column).
+    # vis_h=150 centres the field across the full 150 px grid slot (tile + footer
+    # gap), since cell 3 has no bottom border.
+    _draw_field_cell(draw, Himage, fp_x, start_y, 150, 150, game_data, scale=scale, vis_h=150)
 
     # Batted-ball stat badge: right-aligned in the bottom-right corner of the
     # field cell, directly above the venue name, for the most recent ball put
