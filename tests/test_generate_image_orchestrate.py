@@ -976,7 +976,7 @@ def test_playoff_bracket_header_drawn_when_bracket_data_present():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket:
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket:
         result = generate_image.orchestrate_score_board(
             [], TEAM_DATA, date_str='2026-06-20',
             bypass_cache=True, config=bracket_cfg,
@@ -1020,7 +1020,7 @@ def test_overflow_ticker_wins_over_playoff_bracket_when_games_dropped():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket, \
          patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20',
@@ -1062,7 +1062,7 @@ def test_overflow_ticker_shown_for_tile_expansion_drops():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket, \
          patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20',
@@ -1095,7 +1095,7 @@ def test_no_dropped_games_falls_back_to_playoff_bracket():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket, \
          patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20',
@@ -1126,7 +1126,7 @@ def test_header_fingerprint_covers_bracket_and_wildcard_modes():
          patch('generate_image.save_off_results') as mock_save, \
          patch('image_grid.load_yaml_file', return_value=bracket_cfg), \
          patch('image_box.load_yaml_file', return_value=bracket_cfg), \
-         patch('generate_image.draw_playoff_bracket_header', side_effect=lambda img, b: img):
+         patch('generate_image.draw_playoff_round_header', side_effect=lambda img, b: img):
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=bracket_cfg,
         )

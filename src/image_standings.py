@@ -1298,12 +1298,77 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
 
 
 # ---------------------------------------------------------------------------
-# Playoff seedings — shown in the sidebar during the postseason
+# Playoff series — shown in the sidebar during the postseason
 # ---------------------------------------------------------------------------
 
 _ROUND_ORDER = {'WC': 0, 'DS': 1, 'CS': 2, 'WS': 3}
+_ROUND_LABEL = {'WC': 'WILD CARD', 'DS': 'DIVISION SERIES', 'CS': 'CHAMP. SERIES', 'WS': 'WORLD SERIES'}
 _AL_DIVS = set(_AL_DIV_ORDER)
 _NL_DIVS = set(_NL_DIV_ORDER)
+
+
+def derive_playoff_active_round(bracket_data):
+    """Return the round abbreviation ('WC', 'DS', 'CS', 'WS') for the current playoff stage.
+
+    The current round is the highest round that has at least one incomplete series.
+    Falls back to the highest completed round (i.e. after the WS is over).
+    """
+    active_ro  = -1
+    highest_ro = -1
+    for s in bracket_data.get('series', []):
+        ro = _ROUND_ORDER.get(s.get('round', ''), -1)
+        highest_ro = max(highest_ro, ro)
+        if not s.get('complete', False):
+            active_ro = max(active_ro, ro)
+    target = active_ro if active_ro >= 0 else highest_ro
+    for rnd, ro in _ROUND_ORDER.items():
+        if ro == target:
+            return rnd
+    return None
+
+
+def derive_playoff_series_by_league(bracket_data, standings_data):
+    """Return current-round series grouped by league.
+
+    Returns {'AL': [...], 'NL': [...]} where each entry is the raw series dict
+    from bracket_data augmented with 'league'.  WS series appears in both.
+    Series are ordered by seeding (lower seed first as away team, roughly).
+    """
+    team_league: dict = {}
+    for div_name, teams in standings_data.get('standings', {}).items():
+        if div_name in _AL_DIVS:
+            lg = 'AL'
+        elif div_name in _NL_DIVS:
+            lg = 'NL'
+        else:
+            continue
+        for t in teams:
+            tid = str(t.get('team_id', ''))
+            if tid:
+                team_league[tid] = lg
+
+    current_round = derive_playoff_active_round(bracket_data)
+    if not current_round:
+        return {'AL': [], 'NL': []}
+
+    result: dict = {'AL': [], 'NL': []}
+    for s in bracket_data.get('series', []):
+        if s.get('round') != current_round:
+            continue
+        away_id = str(s.get('away_id', ''))
+        home_id = str(s.get('home_id', ''))
+        if current_round == 'WS':
+            result['AL'].append(s)
+            result['NL'].append(s)
+        else:
+            lg = team_league.get(away_id) or team_league.get(home_id)
+            if lg:
+                result[lg].append(s)
+
+    for lg in ('AL', 'NL'):
+        result[lg].sort(key=lambda s: s.get('away_abbr', ''))
+
+    return result
 
 
 def derive_playoff_seedings(bracket_data, standings_data):
@@ -1382,93 +1447,121 @@ def derive_playoff_seedings(bracket_data, standings_data):
     return result
 
 
-def draw_playoff_seedings_sidebar(Himage, seedings, team_data, side='left'):
-    """Draw AL or NL playoff seedings (seeds 1-6) in the narrow 32px sidebar.
+def draw_playoff_round_header(Himage, bracket_data):
+    """Draw the current playoff round name centred in the 30px top strip.
 
-    Replaces draw_standings_sidebar during the postseason.  Each seed slot
-    shows the team logo centered in the column; a tiny seed number at the
-    top-left corner of the logo slot; and a round label (WC/DS/CS/WS) just
-    below the logo.  Eliminated teams show their last round in lighter style
-    (single-draw instead of bold).  A dashed divider separates seeds 3 and 4
-    (division winners vs wildcard).
+    Replaces draw_playoff_bracket_header during the postseason when the
+    sidebar is showing series matchups (the strip name + sidebar logos give
+    the full picture; per-series scores in the strip would be redundant).
     """
-    league = 'AL' if side == 'left' else 'NL'
-    teams  = seedings.get(league, [])
-    if not teams:
+    rnd = derive_playoff_active_round(bracket_data)
+    if not rnd:
+        return Himage
+    label = _ROUND_LABEL.get(rnd, rnd)
+    draw  = ImageDraw.Draw(Himage)
+    font  = _get_font(11)
+    tw    = int(font.getlength(label))
+    tx    = (800 - tw) // 2
+    ty    = (_WC_STRIP_H - 11) // 2
+    draw.text((tx, ty), label, font=font, fill=0)
+    draw.text((tx + 1, ty), label, font=font, fill=0)
+    return Himage
+
+
+def _paste_logo(canvas, abbr, team_id, size, cx, cy):
+    """Paste a logo centred at pixel (cx, cy); fall back to abbr text if missing."""
+    logo = _logo_small(abbr, team_id, size=size)
+    if logo is not None:
+        lw, lh = logo.size
+        canvas.paste(logo, (cx - lw // 2, cy - lh // 2))
+    else:
+        font = _get_font(max(6, size - 2))
+        draw = ImageDraw.Draw(canvas)
+        tw   = int(font.getlength(abbr[:3]))
+        draw.text((cx - tw // 2, cy - size // 2 + 2), abbr[:3], font=font, fill=0)
+
+
+def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='left'):
+    """Draw AL or NL current-round series in the narrow 32px sidebar.
+
+    Each series block shows:
+      • Away-team logo at the top
+      • One tiny win-logo per away win, stacked downward
+      • A short centre-line separator
+      • One tiny win-logo per home win, stacked downward
+      • Home-team logo at the bottom
+    """
+    league  = 'AL' if side == 'left' else 'NL'
+    series  = series_by_league.get(league, [])
+    if not series:
         return Himage
 
     abbr_map = team_data.get('team_abbreviation', {})
     draw     = ImageDraw.Draw(Himage)
-    font7    = _get_font(7)
 
-    logo_x   = (32 - _SIDEBAR_LOGO_SIZE) // 2 if side == 'left' else (800 - 32) + (32 - _SIDEBAR_LOGO_SIZE) // 2
-    n_seeds  = 6
-    slot_h   = (480 - _WC_STRIP_H) // n_seeds   # 75px
+    col_cx   = 16 if side == 'left' else 784   # centre-x of the 32px sidebar column
+    _MAIN    = _SIDEBAR_LOGO_SIZE               # 20px — main team logo
+    _WIN     = 8                                # tiny win-indicator logo
+    _GAP     = 3                                # px gap at each side of centre separator
+    _SEP_W   = 10                               # half-width of separator line
 
-    # Content block per slot: seed(7) + gap(2) + logo(20) + gap(2) + round(7) = 38px
-    _CONTENT_H = 7 + 2 + _SIDEBAR_LOGO_SIZE + 2 + 7
-    _BLOCK_OFF  = (slot_h - _CONTENT_H) // 2    # vertical offset to center content
+    n        = len(series)
+    block_h  = (480 - _WC_STRIP_H) // n
 
-    for idx, team in enumerate(teams[:n_seeds]):
-        slot_y     = _WC_STRIP_H + idx * slot_h
-        seed_y     = slot_y + _BLOCK_OFF
-        logo_y     = seed_y + 7 + 2
-        round_y    = logo_y + _SIDEBAR_LOGO_SIZE + 2
-        is_active  = team.get('active', False)
-        eliminated = team.get('eliminated', False)
+    for idx, s in enumerate(series):
+        block_y    = _WC_STRIP_H + idx * block_h
+        away_abbr  = abbr_map.get(str(s.get('away_id', '')), s.get('away_abbr', '?'))
+        home_abbr  = abbr_map.get(str(s.get('home_id', '')), s.get('home_abbr', '?'))
+        away_id    = str(s.get('away_id', ''))
+        home_id    = str(s.get('home_id', ''))
+        away_wins  = s.get('away_wins', 0)
+        home_wins  = s.get('home_wins', 0)
 
-        # Seed number — top-left of logo slot, small
-        seed_str = str(team['seed'])
-        seed_w   = int(font7.getlength(seed_str))
-        draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - seed_w) // 2, seed_y), seed_str, font=font7, fill=0)
+        # Total content height: main logo + wins + separator gap + wins + main logo
+        content_h = _MAIN + away_wins * _WIN + 2 * _GAP + home_wins * _WIN + _MAIN
+        top_y     = block_y + (block_h - content_h) // 2
 
-        # Logo
-        abbr = abbr_map.get(team['team_id'], team['abbr'])
-        logo_img = _logo_small(abbr, team['team_id'], size=_SIDEBAR_LOGO_SIZE)
-        if logo_img is not None:
-            lw, lh = logo_img.size
-            Himage.paste(logo_img, (logo_x + (_SIDEBAR_LOGO_SIZE - lw) // 2,
-                                     logo_y + (_SIDEBAR_LOGO_SIZE - lh) // 2))
-        else:
-            tw = int(font7.getlength(abbr[:3]))
-            draw.text((logo_x + (_SIDEBAR_LOGO_SIZE - tw) // 2, logo_y + 6),
-                      abbr[:3], font=font7, fill=0)
+        # Away team logo
+        _paste_logo(Himage, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
+        cur_y = top_y + _MAIN
 
-        # Round label: bold (double-draw) when active, single when done
-        round_str = team.get('round', '')
-        if round_str:
-            rw  = int(font7.getlength(round_str))
-            rx  = logo_x + (_SIDEBAR_LOGO_SIZE - rw) // 2
-            draw.text((rx, round_y), round_str, font=font7, fill=0)
-            if is_active:
-                draw.text((rx + 1, round_y), round_str, font=font7, fill=0)
+        # Away wins — tiny logos stacked downward
+        for _ in range(away_wins):
+            _paste_logo(Himage, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
+            cur_y += _WIN
 
-        # Dashed divider between seed 3 and seed 4
-        if idx == 2:
-            div_y   = slot_y + slot_h - 1
-            dash_w  = 4
-            n_dash  = _SIDEBAR_LOGO_SIZE // (dash_w * 2)
-            dx      = logo_x
-            for _ in range(n_dash):
-                draw.line((dx, div_y, dx + dash_w - 1, div_y), fill=0, width=1)
-                dx += dash_w * 2
+        # Centre separator
+        sep_y = cur_y + _GAP
+        draw.line((col_cx - _SEP_W, sep_y, col_cx + _SEP_W, sep_y), fill=0, width=1)
+        cur_y = sep_y + _GAP
+
+        # Home wins — tiny logos stacked downward
+        for _ in range(home_wins):
+            _paste_logo(Himage, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
+            cur_y += _WIN
+
+        # Home team logo
+        _paste_logo(Himage, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
+
+        # Block divider (skip after last series)
+        if idx < n - 1:
+            div_y = block_y + block_h - 1
+            draw.line((col_cx - _MAIN // 2, div_y, col_cx + _MAIN // 2, div_y), fill=0, width=1)
 
     return Himage
 
 
-def draw_playoff_seedings_fullscreen(canvas, seedings, team_data, side='left',
+def draw_playoff_seedings_fullscreen(canvas, series_by_league, team_data, side='left',
                                      y_start=_WC_STRIP_H, height=450,
                                      x_anchor=None, sidebar_w=None, logo_sz=None):
-    """Draw AL or NL playoff seedings (seeds 1-6) in the fullscreen sidebar.
+    """Draw AL or NL current-round series in the fullscreen sidebar.
 
-    Replaces draw_standings_sidebar_fullscreen during the postseason.
-    Seeds 1-3 (division winners) fill the left half of the sidebar; seeds 4-6
-    (wildcard) fill the right half.  Each cell shows: seed number at outer
-    edge, logo centered, round label below logo.  Active series are bold.
+    Each series block shows: away logo → away win-logos (stacked) → separator →
+    home win-logos (stacked) → home logo.  Up to two series fit per sidebar.
     """
     league = 'AL' if side == 'left' else 'NL'
-    teams  = seedings.get(league, [])
-    if not teams:
+    series = series_by_league.get(league, [])
+    if not series:
         return canvas
 
     if x_anchor is None:
@@ -1480,59 +1573,47 @@ def draw_playoff_seedings_fullscreen(canvas, seedings, team_data, side='left',
 
     abbr_map = team_data.get('team_abbreviation', {})
     draw     = ImageDraw.Draw(canvas)
-    font11   = _get_font(11)
-    font7    = _get_font(7)
 
-    col_w    = sidebar_w // 2          # seeds 1-3 left col, 4-6 right col
-    n_rows   = 3
-    slot_h   = height // n_rows        # 150px per row
+    col_cx   = x_anchor + sidebar_w // 2   # horizontal centre of sidebar
+    _MAIN    = logo_sz                      # 44px (or caller-supplied)
+    _WIN     = max(12, _MAIN // 3)          # win-logo size
+    _GAP     = 4                            # px on each side of centre separator
+    _SEP_W   = sidebar_w // 3              # half-width of separator line
 
-    for idx, team in enumerate(teams[:6]):
-        col      = idx // n_rows       # 0 = div winners, 1 = WC
-        row      = idx % n_rows
-        col_x    = x_anchor + col * col_w
-        slot_y   = y_start + row * slot_h
-        is_active  = team.get('active', False)
-        eliminated = team.get('eliminated', False)
+    n        = len(series)
+    block_h  = height // n
 
-        logo_x = col_x + (col_w - logo_sz) // 2
-        logo_y = slot_y + (slot_h - logo_sz) // 2
+    for idx, s in enumerate(series):
+        block_y   = y_start + idx * block_h
+        away_id   = str(s.get('away_id', ''))
+        home_id   = str(s.get('home_id', ''))
+        away_abbr = abbr_map.get(away_id, s.get('away_abbr', '?'))
+        home_abbr = abbr_map.get(home_id, s.get('home_abbr', '?'))
+        away_wins = s.get('away_wins', 0)
+        home_wins = s.get('home_wins', 0)
 
-        # Logo
-        abbr = abbr_map.get(team['team_id'], team['abbr'])
-        logo_img = _logo_small(abbr, team['team_id'], size=logo_sz)
-        if logo_img is not None:
-            lw, lh = logo_img.size
-            canvas.paste(logo_img, (logo_x + (logo_sz - lw) // 2,
-                                     logo_y + (logo_sz - lh) // 2))
-            _logo_bottom = logo_y + (logo_sz - lh) // 2 + lh
-        else:
-            tw = int(font7.getlength(abbr[:3]))
-            draw.text((logo_x + (logo_sz - tw) // 2, logo_y + (logo_sz - 7) // 2),
-                      abbr[:3], font=font7, fill=0)
-            _logo_bottom = logo_y + logo_sz
+        content_h = _MAIN + away_wins * _WIN + 2 * _GAP + home_wins * _WIN + _MAIN
+        top_y     = block_y + (block_h - content_h) // 2
 
-        # Seed number — small, at outer edge of the logo slot (top corner)
-        seed_str = str(team['seed'])
-        seed_f   = _get_font(8)
-        if side == 'left':
-            seed_x = col_x + 1
-        else:
-            seed_x = col_x + col_w - 1 - int(seed_f.getlength(seed_str))
-        draw.text((seed_x, logo_y), seed_str, font=seed_f, fill=0)
+        _paste_logo(canvas, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
+        cur_y = top_y + _MAIN
 
-        # Round label below logo — bold when active
-        round_str = team.get('round', '')
-        if round_str:
-            rw = int(font7.getlength(round_str))
-            rx = logo_x + (logo_sz - rw) // 2
-            ry = _logo_bottom + 1
-            draw.text((rx, ry), round_str, font=font7, fill=0)
-            if is_active:
-                draw.text((rx + 1, ry), round_str, font=font7, fill=0)
+        for _ in range(away_wins):
+            _paste_logo(canvas, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
+            cur_y += _WIN
 
-    # Thin vertical divider between div-winner and WC columns
-    mid_x = x_anchor + col_w
-    draw.line((mid_x, y_start, mid_x, y_start + height - 1), fill=0, width=1)
+        sep_y = cur_y + _GAP
+        draw.line((col_cx - _SEP_W, sep_y, col_cx + _SEP_W, sep_y), fill=0, width=1)
+        cur_y = sep_y + _GAP
+
+        for _ in range(home_wins):
+            _paste_logo(canvas, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
+            cur_y += _WIN
+
+        _paste_logo(canvas, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
+
+        if idx < n - 1:
+            div_y = block_y + block_h - 1
+            draw.line((col_cx - _SEP_W, div_y, col_cx + _SEP_W, div_y), fill=0, width=2)
 
     return canvas

@@ -16,7 +16,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header,
     draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
-    derive_playoff_seedings, draw_playoff_seedings_fullscreen,
+    derive_playoff_series_by_league, draw_playoff_round_header, draw_playoff_seedings_fullscreen,
 )
 from image_box import draw_box, _abbr_play, _draw_backwards_k
 
@@ -821,7 +821,7 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
                 _bracket = _candidate
 
         if _bracket:
-            canvas = draw_playoff_bracket_header(canvas, _bracket)
+            canvas = draw_playoff_round_header(canvas, _bracket)
         elif standings_data and 'standings' in standings_data and \
                 config.get('show_wildcard_standings', False) and league_mode != 'aaa':
             wildcard_data = derive_wildcard_from_standings(standings_data)
@@ -829,12 +829,12 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
     if not _is_live and standings_data and 'standings' in standings_data:
         if config.get('show_standings_sidebar', False):
             if _bracket and league_mode != 'aaa':
-                _seedings = derive_playoff_seedings(_bracket, standings_data)
+                _series = derive_playoff_series_by_league(_bracket, standings_data)
                 canvas = draw_playoff_seedings_fullscreen(
-                    canvas, _seedings, team_data, side='left',
+                    canvas, _series, team_data, side='left',
                     x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
                 canvas = draw_playoff_seedings_fullscreen(
-                    canvas, _seedings, team_data, side='right',
+                    canvas, _series, team_data, side='right',
                     x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
             else:
                 canvas = draw_standings_sidebar_fullscreen(
