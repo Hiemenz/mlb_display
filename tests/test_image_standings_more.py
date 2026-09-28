@@ -513,8 +513,8 @@ class TestDrawStandingsSidebarFullscreen:
         canvas_untied, _ = self._render('left', {'American League East': cur_untied})
         assert canvas_tied.tobytes() != canvas_untied.tobytes()
 
-    def test_clinch_indicator_draws_box(self):
-        """Clinch indicator draws box."""
+    def test_clinch_indicator_draws_marker(self):
+        """Clinch indicator draws a 'c' marker in the bottom-right of the logo slot."""
         cur_clinch = [_team(1, 1, wins=100, losses=50, clinch='z')]
         cur_plain = [_team(1, 1, wins=100, losses=50)]
         canvas_clinch, _ = self._render('left', {'American League East': cur_clinch})
