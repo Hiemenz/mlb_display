@@ -288,26 +288,44 @@ def fetch_playoff_bracket(season=None):
 
             if key not in series_map:
                 series_map[key] = {
-                    'round':       _ROUND_ABB.get(gtype, '?'),
-                    'round_order': _ROUND_ORD.get(gtype, 9),
-                    'game_type':   gtype,
-                    'away_abbr':   away_obj.get('abbreviation', '???'),
-                    'home_abbr':   home_obj.get('abbreviation', '???'),
-                    'away_id':     away_id,
-                    'home_id':     home_id,
-                    'away_wins':   0,
-                    'home_wins':   0,
-                    'complete':    False,
-                    'winner_abbr': None,
+                    'round':        _ROUND_ABB.get(gtype, '?'),
+                    'round_order':  _ROUND_ORD.get(gtype, 9),
+                    'game_type':    gtype,
+                    'away_abbr':    away_obj.get('abbreviation', '???'),
+                    'home_abbr':    home_obj.get('abbreviation', '???'),
+                    'away_id':      away_id,
+                    'home_id':      home_id,
+                    'away_wins':    0,
+                    'home_wins':    0,
+                    'complete':     False,
+                    'winner_abbr':  None,
+                    'game_results': [],  # [{winner_id, game_pk, date}, ...] in play order
                 }
 
-            entry = series_map[key]
-            state = game.get('status', {}).get('detailedState', '')
+            entry    = series_map[key]
+            state    = game.get('status', {}).get('detailedState', '')
+            game_pk  = game.get('gamePk', 0)
             if state in ('Final', 'Game Over', 'Final: Tied'):
+                # Determine winner by team ID so attribution is correct even when
+                # teams swap home/away roles in later games of the series.
+                winning_id = None
                 if away_t.get('isWinner'):
-                    entry['away_wins'] += 1
+                    winning_id = away_id
                 elif home_t.get('isWinner'):
-                    entry['home_wins'] += 1
+                    winning_id = home_id
+
+                if winning_id and not any(
+                    gr['game_pk'] == game_pk for gr in entry['game_results']
+                ):
+                    if winning_id == entry['away_id']:
+                        entry['away_wins'] += 1
+                    elif winning_id == entry['home_id']:
+                        entry['home_wins'] += 1
+                    entry['game_results'].append({
+                        'winner_id': winning_id,
+                        'game_pk':   game_pk,
+                        'date':      date_entry.get('date', ''),
+                    })
 
             wins_needed = _WIN_GOAL[gtype]
             if entry['away_wins'] >= wins_needed:

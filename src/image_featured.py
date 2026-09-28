@@ -818,6 +818,15 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
         if config.get('show_playoff_bracket', True) and league_mode != 'aaa':
             _candidate = load_json_file('playoff_bracket.json')
             if _candidate and _candidate.get('series') and _candidate.get('season') == datetime.now().year:
+                # Backfill game_results if any series was saved without per-game history
+                if any('game_results' not in s for s in _candidate['series']):
+                    try:
+                        from standings import fetch_playoff_bracket
+                        _refetched = fetch_playoff_bracket(season=_candidate['season'])
+                        if _refetched:
+                            _candidate = _refetched
+                    except Exception:
+                        pass
                 _bracket = _candidate
 
         if _bracket:

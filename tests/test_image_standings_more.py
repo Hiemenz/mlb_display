@@ -1884,6 +1884,20 @@ class TestDrawPlayoffSeedingsSidebar:
             result = draw_playoff_seedings_sidebar(img, two, {}, side='left')
         assert result is img
 
+    def test_game_results_path_used_when_present(self):
+        # series with game_results: G1=away win, G2=home win, G3=away win
+        series = _ps('WC', '1', '2', 'T1', 'T2', away_wins=2, home_wins=1)
+        series['game_results'] = [
+            {'winner_id': '1', 'game_pk': 101, 'date': '2026-10-01'},
+            {'winner_id': '2', 'game_pk': 102, 'date': '2026-10-02'},
+            {'winner_id': '1', 'game_pk': 103, 'date': '2026-10-03'},
+        ]
+        sbl = {'AL': [series], 'NL': []}
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, sbl, {}, side='left')
+        assert result is img
+
 
 @needs_pil
 class TestDrawPlayoffSeedingsFullscreen:
@@ -1937,3 +1951,17 @@ class TestDrawPlayoffSeedingsFullscreen:
             result = draw_playoff_seedings_fullscreen(canvas, two_series, {}, side='left')
         assert result is canvas
         assert canvas.tobytes() != blank_bytes
+
+    def test_game_results_path_used_when_present(self):
+        # game_results present → chronological path used instead of grouped fallback
+        series = _ps('WC', '1', '2', 'T1', 'T2', away_wins=1, home_wins=2)
+        series['game_results'] = [
+            {'winner_id': '2', 'game_pk': 201, 'date': '2026-10-01'},
+            {'winner_id': '2', 'game_pk': 202, 'date': '2026-10-02'},
+            {'winner_id': '1', 'game_pk': 203, 'date': '2026-10-03'},
+        ]
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_fullscreen(
+                canvas, {'AL': [series], 'NL': []}, {}, side='left')
+        assert result is canvas

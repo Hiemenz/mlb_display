@@ -1521,23 +1521,32 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         away_wins  = s.get('away_wins', 0)
         home_wins  = s.get('home_wins', 0)
 
-        # Game results stacked top→bottom: away-team header, each game won (away wins
-        # first then home wins), home-team header.  No separator — reads as a sequence.
-        total_games = away_wins + home_wins
-        content_h = _MAIN + total_games * _WIN + _MAIN
-        top_y     = block_y + (block_h - content_h) // 2
+        # Game results stacked top→bottom: away-team header, each game played in
+        # chronological order (via game_results if available, else away-wins-first
+        # fallback), then home-team header.
+        game_results = s.get('game_results', [])
+        total_games  = len(game_results) if game_results else away_wins + home_wins
+        content_h    = _MAIN + total_games * _WIN + _MAIN
+        top_y        = block_y + (block_h - content_h) // 2
 
         # Away team header logo
         _paste_logo(Himage, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
         cur_y = top_y + _MAIN
 
-        # Each game result in order: away wins first, then home wins
-        for _ in range(away_wins):
-            _paste_logo(Himage, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
-            cur_y += _WIN
-        for _ in range(home_wins):
-            _paste_logo(Himage, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
-            cur_y += _WIN
+        # Each game in play order
+        if game_results:
+            for gr in game_results:
+                abbr = away_abbr if gr.get('winner_id') == away_id else home_abbr
+                wid  = away_id   if gr.get('winner_id') == away_id else home_id
+                _paste_logo(Himage, abbr, wid, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+        else:
+            for _ in range(away_wins):
+                _paste_logo(Himage, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+            for _ in range(home_wins):
+                _paste_logo(Himage, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
 
         # Home team header logo
         _paste_logo(Himage, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
@@ -1590,19 +1599,27 @@ def draw_playoff_seedings_fullscreen(canvas, series_by_league, team_data, side='
         away_wins = s.get('away_wins', 0)
         home_wins = s.get('home_wins', 0)
 
-        total_games = away_wins + home_wins
-        content_h = _MAIN + total_games * _WIN + _MAIN
-        top_y     = block_y + (block_h - content_h) // 2
+        game_results = s.get('game_results', [])
+        total_games  = len(game_results) if game_results else away_wins + home_wins
+        content_h    = _MAIN + total_games * _WIN + _MAIN
+        top_y        = block_y + (block_h - content_h) // 2
 
         _paste_logo(canvas, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
         cur_y = top_y + _MAIN
 
-        for _ in range(away_wins):
-            _paste_logo(canvas, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
-            cur_y += _WIN
-        for _ in range(home_wins):
-            _paste_logo(canvas, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
-            cur_y += _WIN
+        if game_results:
+            for gr in game_results:
+                abbr = away_abbr if gr.get('winner_id') == away_id else home_abbr
+                wid  = away_id   if gr.get('winner_id') == away_id else home_id
+                _paste_logo(canvas, abbr, wid, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+        else:
+            for _ in range(away_wins):
+                _paste_logo(canvas, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+            for _ in range(home_wins):
+                _paste_logo(canvas, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
 
         _paste_logo(canvas, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
 

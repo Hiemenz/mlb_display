@@ -932,6 +932,46 @@ def test_featured_fullscreen_playoff_bracket_sidebar_branch():
 
 
 @needs_pil
+def test_featured_fullscreen_bracket_backfill_triggered_when_game_results_missing():
+    """Bracket file without game_results triggers a one-time backfill fetch."""
+    from image_featured import draw_featured_game_fullscreen
+    from datetime import datetime
+    yr = datetime.now().year
+    bracket_cfg = dict(CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    old_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 1, 'home_wins': 0, 'complete': False}]}
+    new_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 1, 'home_wins': 0, 'complete': False,
+                                'game_results': [{'winner_id': '147', 'game_pk': 1,
+                                                  'date': '2026-10-01'}]}]}
+    with patch('image_featured.load_json_file', return_value=old_bracket), \
+         patch('standings.fetch_playoff_bracket', return_value=new_bracket) as mock_fetch, \
+         patch('image_featured.draw_playoff_round_header', side_effect=lambda c, b: c):
+        img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
+    mock_fetch.assert_called_once_with(season=yr)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_bracket_backfill_exception_ignored():
+    """backfill fetch exception is swallowed and old bracket is used."""
+    from image_featured import draw_featured_game_fullscreen
+    from datetime import datetime
+    yr = datetime.now().year
+    bracket_cfg = dict(CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    old_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 0, 'home_wins': 0, 'complete': False}]}
+    with patch('image_featured.load_json_file', return_value=old_bracket), \
+         patch('standings.fetch_playoff_bracket', side_effect=OSError('net')), \
+         patch('image_featured.draw_playoff_round_header', side_effect=lambda c, b: c):
+        img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
 def test_live_fullscreen_kl_in_header_right_text():
     """last_play resulting in 'Kl' in the right-side header text exercises the
     Kl-rendering branch when the right text fits on screen."""
