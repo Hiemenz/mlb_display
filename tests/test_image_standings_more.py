@@ -1800,6 +1800,16 @@ class TestDerivePlayoffSeriesByLeague:
         assert len(result['AL']) == 1
         assert len(result['NL']) == 0
 
+    def test_invalid_league_rank_in_standings_falls_back(self):
+        # league_rank that can't be cast to int should not crash
+        standings = self._base_standings()
+        standings['standings']['American League East'].append(
+            {'team_id': 3, 'league_rank': 'bad'}
+        )
+        b = _pbracket([_ps('DS', '1', '3', 'T1', 'T3', away_wins=1)])
+        result = derive_playoff_series_by_league(b, standings)
+        assert isinstance(result, dict)
+
 
 def _series_by_league():
     return {

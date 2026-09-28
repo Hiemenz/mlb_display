@@ -1332,9 +1332,10 @@ def derive_playoff_series_by_league(bracket_data, standings_data):
 
     Returns {'AL': [...], 'NL': [...]} where each entry is the raw series dict
     from bracket_data augmented with 'league'.  WS series appears in both.
-    Series are ordered by seeding (lower seed first as away team, roughly).
+    Series are sorted by home team's playoff seed (lower = better = first).
     """
     team_league: dict = {}
+    team_seed: dict = {}
     for div_name, teams in standings_data.get('standings', {}).items():
         if div_name in _AL_DIVS:
             lg = 'AL'
@@ -1346,6 +1347,10 @@ def derive_playoff_series_by_league(bracket_data, standings_data):
             tid = str(t.get('team_id', ''))
             if tid:
                 team_league[tid] = lg
+                try:
+                    team_seed[tid] = int(t.get('league_rank') or 99)
+                except (ValueError, TypeError):
+                    team_seed[tid] = 99
 
     current_round = derive_playoff_active_round(bracket_data)
     if not current_round:
@@ -1366,7 +1371,7 @@ def derive_playoff_series_by_league(bracket_data, standings_data):
                 result[lg].append(s)
 
     for lg in ('AL', 'NL'):
-        result[lg].sort(key=lambda s: s.get('away_abbr', ''))
+        result[lg].sort(key=lambda s: team_seed.get(str(s.get('home_id', '')), 99))
 
     return result
 
@@ -1501,8 +1506,7 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
 
     col_cx   = 16 if side == 'left' else 784   # centre-x of the 32px sidebar column
     _MAIN    = _SIDEBAR_LOGO_SIZE               # 20px — main team logo
-    _WIN     = 8                                # tiny win-indicator logo
-    _GAP     = 3                                # px gap at each side of centre separator
+    _WIN     = _MAIN                            # win-indicator logo — same size as team logo
     _SEP_W   = 10                               # half-width of separator line
 
     n        = len(series)
@@ -1517,30 +1521,25 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         away_wins  = s.get('away_wins', 0)
         home_wins  = s.get('home_wins', 0)
 
-        # Total content height: main logo + wins + separator gap + wins + main logo
-        content_h = _MAIN + away_wins * _WIN + 2 * _GAP + home_wins * _WIN + _MAIN
+        # Game results stacked top→bottom: away-team header, each game won (away wins
+        # first then home wins), home-team header.  No separator — reads as a sequence.
+        total_games = away_wins + home_wins
+        content_h = _MAIN + total_games * _WIN + _MAIN
         top_y     = block_y + (block_h - content_h) // 2
 
-        # Away team logo
+        # Away team header logo
         _paste_logo(Himage, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
         cur_y = top_y + _MAIN
 
-        # Away wins — tiny logos stacked downward
+        # Each game result in order: away wins first, then home wins
         for _ in range(away_wins):
             _paste_logo(Himage, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
             cur_y += _WIN
-
-        # Centre separator
-        sep_y = cur_y + _GAP
-        draw.line((col_cx - _SEP_W, sep_y, col_cx + _SEP_W, sep_y), fill=0, width=1)
-        cur_y = sep_y + _GAP
-
-        # Home wins — tiny logos stacked downward
         for _ in range(home_wins):
             _paste_logo(Himage, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
             cur_y += _WIN
 
-        # Home team logo
+        # Home team header logo
         _paste_logo(Himage, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
 
         # Block divider (skip after last series)
@@ -1576,9 +1575,8 @@ def draw_playoff_seedings_fullscreen(canvas, series_by_league, team_data, side='
 
     col_cx   = x_anchor + sidebar_w // 2   # horizontal centre of sidebar
     _MAIN    = logo_sz                      # 44px (or caller-supplied)
-    _WIN     = max(12, _MAIN // 3)          # win-logo size
-    _GAP     = 4                            # px on each side of centre separator
-    _SEP_W   = sidebar_w // 3              # half-width of separator line
+    _WIN     = _MAIN                        # win-logo same size as team logo
+    _SEP_W   = sidebar_w // 3              # half-width of series divider
 
     n        = len(series)
     block_h  = height // n
@@ -1592,7 +1590,8 @@ def draw_playoff_seedings_fullscreen(canvas, series_by_league, team_data, side='
         away_wins = s.get('away_wins', 0)
         home_wins = s.get('home_wins', 0)
 
-        content_h = _MAIN + away_wins * _WIN + 2 * _GAP + home_wins * _WIN + _MAIN
+        total_games = away_wins + home_wins
+        content_h = _MAIN + total_games * _WIN + _MAIN
         top_y     = block_y + (block_h - content_h) // 2
 
         _paste_logo(canvas, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
@@ -1601,11 +1600,6 @@ def draw_playoff_seedings_fullscreen(canvas, series_by_league, team_data, side='
         for _ in range(away_wins):
             _paste_logo(canvas, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
             cur_y += _WIN
-
-        sep_y = cur_y + _GAP
-        draw.line((col_cx - _SEP_W, sep_y, col_cx + _SEP_W, sep_y), fill=0, width=1)
-        cur_y = sep_y + _GAP
-
         for _ in range(home_wins):
             _paste_logo(canvas, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
             cur_y += _WIN
