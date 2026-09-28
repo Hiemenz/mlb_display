@@ -16,6 +16,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header,
     draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
+    derive_playoff_seedings, draw_playoff_seedings_fullscreen,
 )
 from image_box import draw_box, _abbr_play, _draw_backwards_k
 
@@ -827,12 +828,21 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
             canvas = draw_wildcard_header(canvas, wildcard_data)
     if not _is_live and standings_data and 'standings' in standings_data:
         if config.get('show_standings_sidebar', False):
-            canvas = draw_standings_sidebar_fullscreen(
-                canvas, standings_data, team_data, side='left', league_mode=league_mode,
-                x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
-            canvas = draw_standings_sidebar_fullscreen(
-                canvas, standings_data, team_data, side='right', league_mode=league_mode,
-                x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
+            if _bracket and league_mode != 'aaa':
+                _seedings = derive_playoff_seedings(_bracket, standings_data)
+                canvas = draw_playoff_seedings_fullscreen(
+                    canvas, _seedings, team_data, side='left',
+                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+                canvas = draw_playoff_seedings_fullscreen(
+                    canvas, _seedings, team_data, side='right',
+                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
+            else:
+                canvas = draw_standings_sidebar_fullscreen(
+                    canvas, standings_data, team_data, side='left', league_mode=league_mode,
+                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+                canvas = draw_standings_sidebar_fullscreen(
+                    canvas, standings_data, team_data, side='right', league_mode=league_mode,
+                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
     # Game-state-specific header label centered in the top strip.
     # 4 states: Scheduled, Finished, Postponed/Cancelled, other (fallback).
