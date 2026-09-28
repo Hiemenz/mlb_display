@@ -1275,12 +1275,11 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                     draw.line((_vx, _vtop, _vx, _foot), fill=0, width=_lw)
                     draw.line((_vx - _arm, _foot, _vx, _foot), fill=0, width=_lw)
 
-            # Clinch indicator
+            # Clinch indicator: small 'c' at bottom-right of logo slot
             clinch = (team.get('clinch_indicator') or '').lower()
             if clinch in ('y', 'z'):
-                box_w = 2 if clinch == 'z' else 1
-                draw.rectangle([logo_x, logo_y, logo_x + logo_sz - 1, logo_y + logo_sz - 1],
-                               outline=0, width=box_w)
+                _cf = _get_font(8)
+                draw.text((logo_x + logo_sz - 1, logo_y + logo_sz - 1), 'c', font=_cf, fill=0, anchor='rb')
 
             # Tied-team dashes between consecutive slots with the same W-L record
             if slot_idx + 1 < n_teams and slot_idx + 1 < len(teams):
