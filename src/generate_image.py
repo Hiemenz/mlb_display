@@ -23,6 +23,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
     draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
+    derive_playoff_series_by_league, draw_playoff_round_header, draw_playoff_seedings_sidebar,
     draw_overflow_ticker, _ticker_window, draw_transactions_header,
     draw_recap_header,
 )
@@ -514,6 +515,15 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     if config.get('show_playoff_bracket', True) and league_mode != 'aaa':
         _candidate = load_json_file('playoff_bracket.json')
         if _candidate and _candidate.get('series') and _candidate.get('season') == datetime.now().year:
+            # Backfill game_results if any series was saved without per-game history
+            if any('game_results' not in s for s in _candidate['series']):
+                try:
+                    from standings import fetch_playoff_bracket
+                    _refetched = fetch_playoff_bracket(season=_candidate['season'])
+                    if _refetched:
+                        _candidate = _refetched
+                except Exception:
+                    pass
             _bracket = _candidate
 
     # Header strip priority:
@@ -533,7 +543,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             rotation_minutes=config.get('overflow_ticker_rotation_minutes', 2),
         )
     elif _bracket:
-        Himage = draw_playoff_bracket_header(Himage, _bracket)
+        Himage = draw_playoff_round_header(Himage, _bracket)
     elif config.get('show_wildcard_standings', False) and league_mode != 'aaa':
         if standings_data and 'standings' in standings_data:
             wildcard_data = derive_wildcard_from_standings(standings_data)
@@ -553,9 +563,14 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     if config.get('show_standings_sidebar', False):
         if standings_data and 'standings' in standings_data:
-            _magic_badges = config.get('sidebar_magic_badges', False)
-            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode, show_magic_badges=_magic_badges)
-            Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode, show_magic_badges=_magic_badges)
+            if _bracket and league_mode != 'aaa':
+                _series = derive_playoff_series_by_league(_bracket, standings_data)
+                Himage = draw_playoff_seedings_sidebar(Himage, _series, team_data, side='left')
+                Himage = draw_playoff_seedings_sidebar(Himage, _series, team_data, side='right')
+            else:
+                _magic_badges = config.get('sidebar_magic_badges', False)
+                Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode, show_magic_badges=_magic_badges)
+                Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode, show_magic_badges=_magic_badges)
 
     if config.get('show_debug_overlay', False):
         Himage = _draw_debug_overlay(Himage, config)

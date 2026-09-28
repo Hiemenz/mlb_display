@@ -34,6 +34,12 @@ from image_standings import (
     _ticker_status,
     _ticker_score,
     _ticker_window,
+    derive_playoff_seedings,
+    derive_playoff_active_round,
+    derive_playoff_series_by_league,
+    draw_playoff_round_header,
+    draw_playoff_seedings_sidebar,
+    draw_playoff_seedings_fullscreen,
 )
 
 try:
@@ -1580,3 +1586,382 @@ class TestDrawRecapHeader:
         with patch('image_standings._logo_small', return_value=None):
             result = draw_recap_header(canvas, games, self._team_data())
         assert isinstance(result, Image.Image)
+
+
+# ===========================================================================
+# derive_playoff_seedings — pure logic
+# ===========================================================================
+
+def _pbracket(series_list):
+    return {'season': 2026, 'series': series_list}
+
+def _ps(round_lbl, away_id, home_id, away_abbr, home_abbr,
+        away_wins=0, home_wins=0, complete=False, winner_abbr=None):
+    return {
+        'round': round_lbl,
+        'away_id': away_id, 'home_id': home_id,
+        'away_abbr': away_abbr, 'home_abbr': home_abbr,
+        'away_wins': away_wins, 'home_wins': home_wins,
+        'complete': complete, 'winner_abbr': winner_abbr,
+    }
+
+def _playoff_standings(*entries):
+    """entries: (team_id, div_name, league_rank)"""
+    by_div = {}
+    for tid, div, lr in entries:
+        t = {'team_id': tid, 'divisionRank': '1', 'league_rank': lr,
+             'league_record_wins': 90, 'league_record_losses': 60}
+        by_div.setdefault(div, []).append(t)
+    return {'standings': by_div, 'team_abbreviation': {str(tid): f'T{tid}' for tid, *_ in entries}}
+
+
+class TestDerivePlayoffSeedings:
+    def _standings_6(self):
+        return _playoff_standings(
+            (1, 'American League East',    1),
+            (2, 'American League Central', 2),
+            (3, 'American League West',    3),
+            (4, 'American League East',    4),
+            (5, 'American League Central', 5),
+            (6, 'American League West',    6),
+            (11, 'National League East',    1),
+            (12, 'National League Central', 2),
+            (13, 'National League West',    3),
+            (14, 'National League East',    4),
+            (15, 'National League Central', 5),
+            (16, 'National League West',    6),
+        )
+
+    def _bracket_6(self):
+        # WC: seeds 3v6 and 4v5; DS: seeds 1 and 2 vs WC winners
+        return _pbracket([
+            _ps('WC', '6', '3', 'T6', 'T3', home_wins=2, complete=True, winner_abbr='T3'),
+            _ps('WC', '4', '5', 'T4', 'T5', away_wins=2, complete=True, winner_abbr='T4'),
+            _ps('WC', '16', '13', 'T16', 'T13', home_wins=2, complete=True, winner_abbr='T13'),
+            _ps('WC', '14', '15', 'T14', 'T15', away_wins=2, complete=True, winner_abbr='T14'),
+            _ps('DS', '1', '4', 'T1', 'T4', away_wins=1),
+            _ps('DS', '2', '3', 'T2', 'T3', away_wins=0),
+            _ps('DS', '11', '14', 'T11', 'T14', away_wins=1),
+            _ps('DS', '12', '13', 'T12', 'T13', away_wins=0),
+        ])
+
+    def test_returns_al_and_nl_keys(self):
+        result = derive_playoff_seedings(self._bracket_6(), self._standings_6())
+        assert set(result.keys()) == {'AL', 'NL'}
+
+    def test_al_has_six_seeds(self):
+        result = derive_playoff_seedings(self._bracket_6(), self._standings_6())
+        assert len(result['AL']) == 6
+
+    def test_seeds_sorted_ascending(self):
+        result = derive_playoff_seedings(self._bracket_6(), self._standings_6())
+        seeds = [t['seed'] for t in result['AL']]
+        assert seeds == sorted(seeds)
+
+    def test_eliminated_team_flagged(self):
+        result = derive_playoff_seedings(self._bracket_6(), self._standings_6())
+        # T5 lost WC to T4
+        t5 = next(t for t in result['AL'] if t['team_id'] == '5')
+        assert t5['eliminated'] is True
+
+    def test_winner_not_eliminated(self):
+        result = derive_playoff_seedings(self._bracket_6(), self._standings_6())
+        t4 = next(t for t in result['AL'] if t['team_id'] == '4')
+        assert t4['eliminated'] is False
+
+    def test_highest_round_tracked(self):
+        # T4 played WC (won) then DS — should show DS, not WC
+        result = derive_playoff_seedings(self._bracket_6(), self._standings_6())
+        t4 = next(t for t in result['AL'] if t['team_id'] == '4')
+        assert t4['round'] == 'DS'
+
+    def test_active_series_flagged(self):
+        result = derive_playoff_seedings(self._bracket_6(), self._standings_6())
+        t1 = next(t for t in result['AL'] if t['team_id'] == '1')
+        assert t1['active'] is True
+
+    def test_empty_bracket_returns_empty(self):
+        result = derive_playoff_seedings(_pbracket([]), self._standings_6())
+        assert result['AL'] == []
+
+    def test_team_not_in_standings_excluded(self):
+        # bracket references team 99 which isn't in standings
+        b = _pbracket([_ps('WC', '99', '5', 'UNK', 'T5')])
+        result = derive_playoff_seedings(b, self._standings_6())
+        ids = {t['team_id'] for t in result['AL']}
+        assert '99' not in ids
+
+    def test_unknown_division_skipped(self):
+        # standings key that is not in AL or NL div sets should be ignored
+        standings = _playoff_standings(
+            (1, 'American League East', 1),
+        )
+        standings['standings']['AAA Pacific Coast'] = [
+            {'team_id': 99, 'league_rank': 1}
+        ]
+        b = _pbracket([_ps('WC', '1', '99', 'T1', 'T99')])
+        result = derive_playoff_seedings(b, standings)
+        ids_al = {t['team_id'] for t in result['AL']}
+        assert '99' not in ids_al
+
+    def test_empty_team_id_in_bracket_skipped(self):
+        # series entry missing team_id should not crash
+        series = _ps('WC', '', '1', 'MISS', 'T1')
+        b = _pbracket([series])
+        result = derive_playoff_seedings(b, self._standings_6())
+        assert isinstance(result, dict)
+
+    def test_invalid_league_rank_falls_back_to_99(self):
+        standings = {
+            'standings': {
+                'American League East': [
+                    {'team_id': 1, 'league_rank': 'bad_value'},
+                ]
+            },
+            'team_abbreviation': {'1': 'T1'},
+        }
+        b = _pbracket([_ps('WC', '1', '2', 'T1', 'T2')])
+        result = derive_playoff_seedings(b, standings)
+        if result['AL']:
+            assert result['AL'][0]['seed'] == 99
+
+
+class TestDerivePlayoffActiveRound:
+    def test_active_round_is_highest_incomplete(self):
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A'),
+            _ps('DS', '1', '3', 'A', 'C', away_wins=1),
+        ])
+        assert derive_playoff_active_round(b) == 'DS'
+
+    def test_all_complete_returns_highest(self):
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A'),
+            _ps('DS', '1', '3', 'A', 'C', away_wins=3, complete=True, winner_abbr='A'),
+        ])
+        assert derive_playoff_active_round(b) == 'DS'
+
+    def test_empty_bracket_returns_none(self):
+        assert derive_playoff_active_round(_pbracket([])) is None
+
+    def test_ws_is_current_when_active(self):
+        b = _pbracket([_ps('WS', '1', '2', 'A', 'B', away_wins=2)])
+        assert derive_playoff_active_round(b) == 'WS'
+
+
+class TestDerivePlayoffSeriesByLeague:
+    def _base_standings(self):
+        return _playoff_standings(
+            (1, 'American League East',    1),
+            (2, 'American League Central', 2),
+            (11, 'National League East',   1),
+            (12, 'National League Central', 2),
+        )
+
+    def test_al_series_grouped_correctly(self):
+        b = _pbracket([_ps('DS', '1', '2', 'T1', 'T2', away_wins=1)])
+        result = derive_playoff_series_by_league(b, self._base_standings())
+        assert len(result['AL']) == 1
+        assert result['AL'][0]['away_abbr'] == 'T1'
+
+    def test_nl_series_excluded_from_al(self):
+        b = _pbracket([_ps('DS', '11', '12', 'N1', 'N2', away_wins=1)])
+        result = derive_playoff_series_by_league(b, self._base_standings())
+        assert result['AL'] == []
+        assert len(result['NL']) == 1
+
+    def test_ws_appears_in_both_leagues(self):
+        b = _pbracket([_ps('WS', '1', '11', 'T1', 'N1', away_wins=2)])
+        result = derive_playoff_series_by_league(b, self._base_standings())
+        assert len(result['AL']) == 1
+        assert len(result['NL']) == 1
+
+    def test_only_current_round_returned(self):
+        b = _pbracket([
+            _ps('WC', '1', '2', 'T1', 'T2', away_wins=2, complete=True, winner_abbr='T1'),
+            _ps('DS', '1', '11', 'T1', 'N1', away_wins=1),
+        ])
+        result = derive_playoff_series_by_league(b, self._base_standings())
+        # DS is current round — WC should not appear
+        for lg in ('AL', 'NL'):
+            for s in result[lg]:
+                assert s['round'] == 'DS'
+
+    def test_empty_bracket_returns_empty(self):
+        result = derive_playoff_series_by_league(_pbracket([]), self._base_standings())
+        assert result == {'AL': [], 'NL': []}
+
+    def test_unknown_division_ignored(self):
+        # a standings key that isn't AL/NL should not crash or add teams
+        standings = self._base_standings()
+        standings['standings']['AAA Fake League'] = [{'team_id': 99, 'league_rank': 1}]
+        b = _pbracket([_ps('DS', '1', '2', 'T1', 'T2', away_wins=1)])
+        result = derive_playoff_series_by_league(b, standings)
+        assert len(result['AL']) == 1
+        assert len(result['NL']) == 0
+
+    def test_invalid_league_rank_in_standings_falls_back(self):
+        # league_rank that can't be cast to int should not crash
+        standings = self._base_standings()
+        standings['standings']['American League East'].append(
+            {'team_id': 3, 'league_rank': 'bad'}
+        )
+        b = _pbracket([_ps('DS', '1', '3', 'T1', 'T3', away_wins=1)])
+        result = derive_playoff_series_by_league(b, standings)
+        assert isinstance(result, dict)
+
+
+def _series_by_league():
+    return {
+        'AL': [_ps('DS', '1', '2', 'T1', 'T2', away_wins=2, home_wins=1)],
+        'NL': [_ps('DS', '11', '12', 'N1', 'N2', away_wins=1, home_wins=2)],
+    }
+
+
+@needs_pil
+class TestDrawPlayoffRoundHeader:
+    def test_returns_image(self):
+        img = _blank()
+        b = _pbracket([_ps('DS', '1', '2', 'A', 'B', away_wins=1)])
+        result = draw_playoff_round_header(img, b)
+        assert result is img
+
+    def test_draws_pixels_different_from_blank(self):
+        img = _blank()
+        b = _pbracket([_ps('DS', '1', '2', 'A', 'B', away_wins=1)])
+        draw_playoff_round_header(img, b)
+        assert img.tobytes() != _blank().tobytes()
+
+    def test_empty_bracket_unchanged(self):
+        img = _blank()
+        draw_playoff_round_header(img, _pbracket([]))
+        assert img.tobytes() == _blank().tobytes()
+
+
+@needs_pil
+class TestDrawPlayoffSeedingsSidebar:
+    def test_left_sidebar_returns_image(self):
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, _series_by_league(), {}, side='left')
+        assert result is img
+
+    def test_right_sidebar_returns_image(self):
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, _series_by_league(), {}, side='right')
+        assert result is img
+
+    def test_draws_pixels_different_from_blank(self):
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            draw_playoff_seedings_sidebar(img, _series_by_league(), {}, side='left')
+        assert img.tobytes() != _blank().tobytes()
+
+    def test_empty_series_returns_unchanged(self):
+        img = _blank()
+        result = draw_playoff_seedings_sidebar(img, {'AL': [], 'NL': []}, {}, side='left')
+        assert result is img
+        assert img.tobytes() == _blank().tobytes()
+
+    def test_with_real_logo_image(self):
+        logo = Image.new('1', (16, 16), 0)
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=logo):
+            result = draw_playoff_seedings_sidebar(img, _series_by_league(), {}, side='left')
+        assert result is img
+
+    def test_two_series_renders_without_crash(self):
+        two = {
+            'AL': [
+                _ps('DS', '1', '2', 'T1', 'T2', away_wins=2, home_wins=1),
+                _ps('DS', '3', '4', 'T3', 'T4', away_wins=0, home_wins=3),
+            ],
+            'NL': [],
+        }
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, two, {}, side='left')
+        assert result is img
+
+    def test_game_results_path_used_when_present(self):
+        # series with game_results: G1=away win, G2=home win, G3=away win
+        series = _ps('WC', '1', '2', 'T1', 'T2', away_wins=2, home_wins=1)
+        series['game_results'] = [
+            {'winner_id': '1', 'game_pk': 101, 'date': '2026-10-01'},
+            {'winner_id': '2', 'game_pk': 102, 'date': '2026-10-02'},
+            {'winner_id': '1', 'game_pk': 103, 'date': '2026-10-03'},
+        ]
+        sbl = {'AL': [series], 'NL': []}
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, sbl, {}, side='left')
+        assert result is img
+
+
+@needs_pil
+class TestDrawPlayoffSeedingsFullscreen:
+    def _canvas(self):
+        return Image.new('1', (800, 480), 255)
+
+    def test_left_side_returns_canvas(self):
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_fullscreen(canvas, _series_by_league(), {}, side='left')
+        assert result is canvas
+
+    def test_right_side_returns_canvas(self):
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_fullscreen(canvas, _series_by_league(), {}, side='right')
+        assert result is canvas
+
+    def test_draws_pixels_different_from_blank(self):
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=None):
+            draw_playoff_seedings_fullscreen(canvas, _series_by_league(), {}, side='left')
+        assert canvas.tobytes() != self._canvas().tobytes()
+
+    def test_empty_series_returns_unchanged(self):
+        canvas = self._canvas()
+        blank_bytes = canvas.tobytes()
+        result = draw_playoff_seedings_fullscreen(canvas, {'AL': [], 'NL': []}, {}, side='right')
+        assert result is canvas
+        assert canvas.tobytes() == blank_bytes
+
+    def test_with_logo_image(self):
+        logo = Image.new('1', (40, 40), 0)
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=logo):
+            result = draw_playoff_seedings_fullscreen(canvas, _series_by_league(), {}, side='left')
+        assert result is canvas
+
+    def test_multiple_series_draws_divider(self):
+        # two AL series → idx < n-1 triggers the divider line between them
+        two_series = {
+            'AL': [
+                _ps('WC', '1', '2', 'T1', 'T2', away_wins=1),
+                _ps('WC', '3', '4', 'T3', 'T4', home_wins=1),
+            ],
+            'NL': [],
+        }
+        canvas = self._canvas()
+        blank_bytes = canvas.tobytes()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_fullscreen(canvas, two_series, {}, side='left')
+        assert result is canvas
+        assert canvas.tobytes() != blank_bytes
+
+    def test_game_results_path_used_when_present(self):
+        # game_results present → chronological path used instead of grouped fallback
+        series = _ps('WC', '1', '2', 'T1', 'T2', away_wins=1, home_wins=2)
+        series['game_results'] = [
+            {'winner_id': '2', 'game_pk': 201, 'date': '2026-10-01'},
+            {'winner_id': '2', 'game_pk': 202, 'date': '2026-10-02'},
+            {'winner_id': '1', 'game_pk': 203, 'date': '2026-10-03'},
+        ]
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_fullscreen(
+                canvas, {'AL': [series], 'NL': []}, {}, side='left')
+        assert result is canvas

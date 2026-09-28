@@ -1295,3 +1295,336 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
                         draw.line((x0, gap_y, x0 + dash_w - 1, gap_y), fill=0, width=1)
 
     return canvas
+
+
+# ---------------------------------------------------------------------------
+# Playoff series — shown in the sidebar during the postseason
+# ---------------------------------------------------------------------------
+
+_ROUND_ORDER = {'WC': 0, 'DS': 1, 'CS': 2, 'WS': 3}
+_ROUND_LABEL = {'WC': 'WILD CARD', 'DS': 'DIVISION SERIES', 'CS': 'CHAMP. SERIES', 'WS': 'WORLD SERIES'}
+_AL_DIVS = set(_AL_DIV_ORDER)
+_NL_DIVS = set(_NL_DIV_ORDER)
+
+
+def derive_playoff_active_round(bracket_data):
+    """Return the round abbreviation ('WC', 'DS', 'CS', 'WS') for the current playoff stage.
+
+    The current round is the highest round that has at least one incomplete series.
+    Falls back to the highest completed round (i.e. after the WS is over).
+    """
+    active_ro  = -1
+    highest_ro = -1
+    for s in bracket_data.get('series', []):
+        ro = _ROUND_ORDER.get(s.get('round', ''), -1)
+        highest_ro = max(highest_ro, ro)
+        if not s.get('complete', False):
+            active_ro = max(active_ro, ro)
+    target = active_ro if active_ro >= 0 else highest_ro
+    for rnd, ro in _ROUND_ORDER.items():
+        if ro == target:
+            return rnd
+    return None
+
+
+def derive_playoff_series_by_league(bracket_data, standings_data):
+    """Return current-round series grouped by league.
+
+    Returns {'AL': [...], 'NL': [...]} where each entry is the raw series dict
+    from bracket_data augmented with 'league'.  WS series appears in both.
+    Series are sorted by home team's playoff seed (lower = better = first).
+    """
+    team_league: dict = {}
+    team_seed: dict = {}
+    for div_name, teams in standings_data.get('standings', {}).items():
+        if div_name in _AL_DIVS:
+            lg = 'AL'
+        elif div_name in _NL_DIVS:
+            lg = 'NL'
+        else:
+            continue
+        for t in teams:
+            tid = str(t.get('team_id', ''))
+            if tid:
+                team_league[tid] = lg
+                try:
+                    team_seed[tid] = int(t.get('league_rank') or 99)
+                except (ValueError, TypeError):
+                    team_seed[tid] = 99
+
+    current_round = derive_playoff_active_round(bracket_data)
+    if not current_round:
+        return {'AL': [], 'NL': []}
+
+    result: dict = {'AL': [], 'NL': []}
+    for s in bracket_data.get('series', []):
+        if s.get('round') != current_round:
+            continue
+        away_id = str(s.get('away_id', ''))
+        home_id = str(s.get('home_id', ''))
+        if current_round == 'WS':
+            result['AL'].append(s)
+            result['NL'].append(s)
+        else:
+            lg = team_league.get(away_id) or team_league.get(home_id)
+            if lg:
+                result[lg].append(s)
+
+    for lg in ('AL', 'NL'):
+        result[lg].sort(key=lambda s: team_seed.get(str(s.get('home_id', '')), 99))
+
+    return result
+
+
+def derive_playoff_seedings(bracket_data, standings_data):
+    """Build {'AL': [...], 'NL': [...]} playoff seedings from bracket + standings.
+
+    Each entry: {team_id, abbr, seed, round, wins, losses, eliminated, active}
+    seed comes from league_rank in standings (1-3 div winners, 4-6 WC).
+    round/status come from the most advanced series in bracket_data.
+    """
+    abbr_map = standings_data.get('team_abbreviation', {})
+
+    # Build current status for every team in the bracket.
+    # Track the highest round reached, not just the last series.
+    team_status = {}
+    for series in bracket_data.get('series', []):
+        away_id   = str(series.get('away_id', ''))
+        home_id   = str(series.get('home_id', ''))
+        round_lbl = series.get('round', '?')
+        away_wins = series.get('away_wins', 0)
+        home_wins = series.get('home_wins', 0)
+        complete  = series.get('complete', False)
+        winner    = series.get('winner_abbr')
+
+        for tid, wins, losses, abbr in (
+            (away_id, away_wins, home_wins, series.get('away_abbr', '')),
+            (home_id, home_wins, away_wins, series.get('home_abbr', '')),
+        ):
+            if not tid:
+                continue
+            eliminated = complete and bool(winner) and winner != abbr
+            ro = _ROUND_ORDER.get(round_lbl, 9)
+            prev = team_status.get(tid)
+            if prev is None or ro > prev['ro']:
+                team_status[tid] = {
+                    'round': round_lbl,
+                    'ro': ro,
+                    'wins': wins,
+                    'losses': losses,
+                    'eliminated': eliminated,
+                    'active': not complete,
+                }
+
+    # Walk standings to assign seeds and league.
+    result = {'AL': [], 'NL': []}
+    for div_name, teams in standings_data.get('standings', {}).items():
+        if div_name in _AL_DIVS:
+            league = 'AL'
+        elif div_name in _NL_DIVS:
+            league = 'NL'
+        else:
+            continue
+        for t in teams:
+            tid = str(t.get('team_id', ''))
+            if tid not in team_status:
+                continue
+            abbr = abbr_map.get(tid, f'T{tid}')
+            try:
+                seed = int(t.get('league_rank') or 99)
+            except (ValueError, TypeError):
+                seed = 99
+            status = team_status[tid]
+            result[league].append({
+                'team_id':   tid,
+                'abbr':      abbr,
+                'seed':      seed,
+                'round':     status['round'],
+                'wins':      status['wins'],
+                'losses':    status['losses'],
+                'eliminated': status['eliminated'],
+                'active':    status['active'],
+            })
+
+    for league in ('AL', 'NL'):
+        result[league].sort(key=lambda t: t['seed'])
+
+    return result
+
+
+def draw_playoff_round_header(Himage, bracket_data):
+    """Draw the current playoff round name centred in the 30px top strip.
+
+    Replaces draw_playoff_bracket_header during the postseason when the
+    sidebar is showing series matchups (the strip name + sidebar logos give
+    the full picture; per-series scores in the strip would be redundant).
+    """
+    rnd = derive_playoff_active_round(bracket_data)
+    if not rnd:
+        return Himage
+    label = _ROUND_LABEL.get(rnd, rnd)
+    draw  = ImageDraw.Draw(Himage)
+    font  = _get_font(11)
+    tw    = int(font.getlength(label))
+    tx    = (800 - tw) // 2
+    ty    = (_WC_STRIP_H - 11) // 2
+    draw.text((tx, ty), label, font=font, fill=0)
+    draw.text((tx + 1, ty), label, font=font, fill=0)
+    return Himage
+
+
+def _paste_logo(canvas, abbr, team_id, size, cx, cy):
+    """Paste a logo centred at pixel (cx, cy); fall back to abbr text if missing."""
+    logo = _logo_small(abbr, team_id, size=size)
+    if logo is not None:
+        lw, lh = logo.size
+        canvas.paste(logo, (cx - lw // 2, cy - lh // 2))
+    else:
+        font = _get_font(max(6, size - 2))
+        draw = ImageDraw.Draw(canvas)
+        tw   = int(font.getlength(abbr[:3]))
+        draw.text((cx - tw // 2, cy - size // 2 + 2), abbr[:3], font=font, fill=0)
+
+
+def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='left'):
+    """Draw AL or NL current-round series in the narrow 32px sidebar.
+
+    Each series block shows:
+      • Away-team logo at the top
+      • One tiny win-logo per away win, stacked downward
+      • A short centre-line separator
+      • One tiny win-logo per home win, stacked downward
+      • Home-team logo at the bottom
+    """
+    league  = 'AL' if side == 'left' else 'NL'
+    series  = series_by_league.get(league, [])
+    if not series:
+        return Himage
+
+    abbr_map = team_data.get('team_abbreviation', {})
+    draw     = ImageDraw.Draw(Himage)
+
+    col_cx   = 16 if side == 'left' else 784   # centre-x of the 32px sidebar column
+    _MAIN    = _SIDEBAR_LOGO_SIZE               # 20px — main team logo
+    _WIN     = _MAIN                            # win-indicator logo — same size as team logo
+    _SEP_W   = 10                               # half-width of separator line
+
+    n        = len(series)
+    block_h  = (480 - _WC_STRIP_H) // n
+
+    for idx, s in enumerate(series):
+        block_y    = _WC_STRIP_H + idx * block_h
+        away_abbr  = abbr_map.get(str(s.get('away_id', '')), s.get('away_abbr', '?'))
+        home_abbr  = abbr_map.get(str(s.get('home_id', '')), s.get('home_abbr', '?'))
+        away_id    = str(s.get('away_id', ''))
+        home_id    = str(s.get('home_id', ''))
+        away_wins  = s.get('away_wins', 0)
+        home_wins  = s.get('home_wins', 0)
+
+        # Game results stacked top→bottom: away-team header, each game played in
+        # chronological order (via game_results if available, else away-wins-first
+        # fallback), then home-team header.
+        game_results = s.get('game_results', [])
+        total_games  = len(game_results) if game_results else away_wins + home_wins
+        content_h    = _MAIN + total_games * _WIN + _MAIN
+        top_y        = block_y + (block_h - content_h) // 2
+
+        # Away team header logo
+        _paste_logo(Himage, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
+        cur_y = top_y + _MAIN
+
+        # Each game in play order
+        if game_results:
+            for gr in game_results:
+                abbr = away_abbr if gr.get('winner_id') == away_id else home_abbr
+                wid  = away_id   if gr.get('winner_id') == away_id else home_id
+                _paste_logo(Himage, abbr, wid, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+        else:
+            for _ in range(away_wins):
+                _paste_logo(Himage, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+            for _ in range(home_wins):
+                _paste_logo(Himage, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+
+        # Home team header logo
+        _paste_logo(Himage, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
+
+        # Block divider (skip after last series)
+        if idx < n - 1:
+            div_y = block_y + block_h - 1
+            draw.line((col_cx - _MAIN // 2, div_y, col_cx + _MAIN // 2, div_y), fill=0, width=1)
+
+    return Himage
+
+
+def draw_playoff_seedings_fullscreen(canvas, series_by_league, team_data, side='left',
+                                     y_start=_WC_STRIP_H, height=450,
+                                     x_anchor=None, sidebar_w=None, logo_sz=None):
+    """Draw AL or NL current-round series in the fullscreen sidebar.
+
+    Each series block shows: away logo → away win-logos (stacked) → separator →
+    home win-logos (stacked) → home logo.  Up to two series fit per sidebar.
+    """
+    league = 'AL' if side == 'left' else 'NL'
+    series = series_by_league.get(league, [])
+    if not series:
+        return canvas
+
+    if x_anchor is None:
+        x_anchor = 0 if side == 'left' else (800 - _FS_SIDEBAR_W)
+    if sidebar_w is None:
+        sidebar_w = _FS_SIDEBAR_W
+    if logo_sz is None:
+        logo_sz = _FS_LOGO_SZ
+
+    abbr_map = team_data.get('team_abbreviation', {})
+    draw     = ImageDraw.Draw(canvas)
+
+    col_cx   = x_anchor + sidebar_w // 2   # horizontal centre of sidebar
+    _MAIN    = logo_sz                      # 44px (or caller-supplied)
+    _WIN     = _MAIN                        # win-logo same size as team logo
+    _SEP_W   = sidebar_w // 3              # half-width of series divider
+
+    n        = len(series)
+    block_h  = height // n
+
+    for idx, s in enumerate(series):
+        block_y   = y_start + idx * block_h
+        away_id   = str(s.get('away_id', ''))
+        home_id   = str(s.get('home_id', ''))
+        away_abbr = abbr_map.get(away_id, s.get('away_abbr', '?'))
+        home_abbr = abbr_map.get(home_id, s.get('home_abbr', '?'))
+        away_wins = s.get('away_wins', 0)
+        home_wins = s.get('home_wins', 0)
+
+        game_results = s.get('game_results', [])
+        total_games  = len(game_results) if game_results else away_wins + home_wins
+        content_h    = _MAIN + total_games * _WIN + _MAIN
+        top_y        = block_y + (block_h - content_h) // 2
+
+        _paste_logo(canvas, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
+        cur_y = top_y + _MAIN
+
+        if game_results:
+            for gr in game_results:
+                abbr = away_abbr if gr.get('winner_id') == away_id else home_abbr
+                wid  = away_id   if gr.get('winner_id') == away_id else home_id
+                _paste_logo(canvas, abbr, wid, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+        else:
+            for _ in range(away_wins):
+                _paste_logo(canvas, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+            for _ in range(home_wins):
+                _paste_logo(canvas, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+
+        _paste_logo(canvas, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
+
+        if idx < n - 1:
+            div_y = block_y + block_h - 1
+            draw.line((col_cx - _SEP_W, div_y, col_cx + _SEP_W, div_y), fill=0, width=2)
+
+    return canvas

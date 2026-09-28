@@ -604,6 +604,48 @@ def test_featured_fullscreen_final_game_no_standings():
     assert isinstance(img, Image.Image)
 
 
+@needs_pil
+def test_featured_fullscreen_final_game_with_saver():
+    """Final game with a save — exercises the SV: candidate in the state label."""
+    from image_featured import draw_featured_game_fullscreen
+    game = _final_game(saver_name='Edwin Diaz')
+    with patch('image_featured.load_json_file', return_value={}):
+        img = draw_featured_game_fullscreen(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_scheduled_game_with_tv_channel():
+    """Scheduled game with tv_channel set — exercises the tv_channel candidate
+    in the state-label rotation (image_featured.py line 868)."""
+    from image_featured import draw_featured_game_fullscreen
+    game = _scheduled_game(tv_channel='ESPN')
+    with patch('image_featured.load_json_file', return_value={}):
+        img = draw_featured_game_fullscreen(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_postponed_game():
+    """Postponed game exercises the postponed/cancelled state label branch."""
+    from image_featured import draw_featured_game_fullscreen
+    game = _scheduled_game(detailed_state='Postponed', postpone_reason='Rain')
+    with patch('image_featured.load_json_file', return_value={}):
+        img = draw_featured_game_fullscreen(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_fallback_state_label():
+    """An unrecognised detailed_state falls through to the series+venue fallback."""
+    from image_featured import draw_featured_game_fullscreen
+    game = _scheduled_game(detailed_state='Rain Delay', venue='Fenway Park',
+                           series_game_number=2, series_total_games=3)
+    with patch('image_featured.load_json_file', return_value={}):
+        img = draw_featured_game_fullscreen(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
 _STANDINGS_DATA = {
     'standings': {
         '1': [{'team_id': 147, 'streak': 'W2', 'last_ten_wins': 6, 'last_ten_losses': 4}],
@@ -849,7 +891,7 @@ def test_featured_fullscreen_winner_ghost_logo_away_winner():
 
 @needs_pil
 def test_featured_fullscreen_playoff_bracket_header_branch():
-    """show_playoff_bracket=True exercises the playoff-bracket header path."""
+    """show_playoff_bracket=True exercises the playoff round-header path."""
     from image_featured import draw_featured_game_fullscreen
     from datetime import datetime
     bracket_cfg = dict(CONFIG, show_playoff_bracket=True, league_mode='mlb')
@@ -857,10 +899,75 @@ def test_featured_fullscreen_playoff_bracket_header_branch():
                      'series': [{'round': 'WS', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
                                 'away_wins': 2, 'home_wins': 1, 'complete': False}]}
     with patch('image_featured.load_json_file', return_value=bracket_data), \
-         patch('image_featured.draw_playoff_bracket_header',
+         patch('image_featured.draw_playoff_round_header',
                side_effect=lambda canvas, b: canvas) as mock_bracket:
         img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
     mock_bracket.assert_called_once()
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_playoff_bracket_sidebar_branch():
+    """show_playoff_bracket=True + show_standings_sidebar=True exercises the
+    playoff seedings sidebar path (lines 832-836 of image_featured.py)."""
+    from image_featured import draw_featured_game_fullscreen
+    from datetime import datetime
+    bracket_cfg = dict(CONFIG, show_playoff_bracket=True, show_standings_sidebar=True,
+                       league_mode='mlb')
+    bracket_data = {'season': datetime.now().year,
+                    'series': [{'round': 'WS', 'away_id': '1', 'home_id': '2',
+                                'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 2, 'home_wins': 1, 'complete': False}]}
+    standings_data = _STANDINGS_DATA
+    def _load_stub(path, *a, **k):
+        if 'bracket' in str(path):
+            return bracket_data
+        return standings_data
+    with patch('image_featured.load_json_file', side_effect=_load_stub), \
+         patch('image_featured.draw_playoff_seedings_fullscreen',
+               side_effect=lambda canvas, *a, **k: canvas) as mock_sb:
+        img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
+    assert mock_sb.call_count == 2
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_bracket_backfill_triggered_when_game_results_missing():
+    """Bracket file without game_results triggers a one-time backfill fetch."""
+    from image_featured import draw_featured_game_fullscreen
+    from datetime import datetime
+    yr = datetime.now().year
+    bracket_cfg = dict(CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    old_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 1, 'home_wins': 0, 'complete': False}]}
+    new_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 1, 'home_wins': 0, 'complete': False,
+                                'game_results': [{'winner_id': '147', 'game_pk': 1,
+                                                  'date': '2026-10-01'}]}]}
+    with patch('image_featured.load_json_file', return_value=old_bracket), \
+         patch('standings.fetch_playoff_bracket', return_value=new_bracket) as mock_fetch, \
+         patch('image_featured.draw_playoff_round_header', side_effect=lambda c, b: c):
+        img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
+    mock_fetch.assert_called_once_with(season=yr)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_featured_fullscreen_bracket_backfill_exception_ignored():
+    """backfill fetch exception is swallowed and old bracket is used."""
+    from image_featured import draw_featured_game_fullscreen
+    from datetime import datetime
+    yr = datetime.now().year
+    bracket_cfg = dict(CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    old_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 0, 'home_wins': 0, 'complete': False}]}
+    with patch('image_featured.load_json_file', return_value=old_bracket), \
+         patch('standings.fetch_playoff_bracket', side_effect=OSError('net')), \
+         patch('image_featured.draw_playoff_round_header', side_effect=lambda c, b: c):
+        img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
     assert isinstance(img, Image.Image)
 
 

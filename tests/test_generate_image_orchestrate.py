@@ -976,13 +976,70 @@ def test_playoff_bracket_header_drawn_when_bracket_data_present():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket:
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket:
         result = generate_image.orchestrate_score_board(
             [], TEAM_DATA, date_str='2026-06-20',
             bypass_cache=True, config=bracket_cfg,
         )
 
     mock_bracket.assert_called_once()
+    assert result is not None
+
+
+@needs_pil
+def test_playoff_bracket_backfill_triggered_when_game_results_missing():
+    """Bracket file lacking game_results triggers a backfill fetch."""
+    import generate_image
+    from datetime import datetime
+    bracket_cfg = dict(FIXED_CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    stub_img = MagicMock(); stub_img.size = (800, 480)
+    yr = datetime.now().year
+    # Old-format series: no game_results key
+    old_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 1, 'home_wins': 0, 'complete': False}]}
+    # Backfilled version includes game_results
+    new_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 1, 'home_wins': 0, 'complete': False,
+                                'game_results': [{'winner_id': '147', 'game_pk': 1, 'date': '2026-10-01'}]}]}
+
+    def fake_load(filename, *a, **kw):
+        return {'playoff_bracket.json': old_bracket}.get(filename, {})
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img), \
+         patch('standings.fetch_playoff_bracket', return_value=new_bracket) as mock_fetch:
+        result = generate_image.orchestrate_score_board(
+            [], TEAM_DATA, date_str='2026-06-20', bypass_cache=True, config=bracket_cfg)
+    mock_fetch.assert_called_once_with(season=yr)
+    assert result is not None
+
+
+@needs_pil
+def test_playoff_bracket_backfill_exception_falls_back_gracefully():
+    """fetch_playoff_bracket raising an exception during backfill is swallowed."""
+    import generate_image
+    from datetime import datetime
+    bracket_cfg = dict(FIXED_CONFIG, show_playoff_bracket=True, league_mode='mlb')
+    stub_img = MagicMock(); stub_img.size = (800, 480)
+    yr = datetime.now().year
+    old_bracket = {'season': yr,
+                   'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                                'away_wins': 0, 'home_wins': 0, 'complete': False}]}
+
+    def fake_load(filename, *a, **kw):
+        return {'playoff_bracket.json': old_bracket}.get(filename, {})
+
+    with patch('generate_image.load_json_file', side_effect=fake_load), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img), \
+         patch('standings.fetch_playoff_bracket', side_effect=OSError('timeout')):
+        result = generate_image.orchestrate_score_board(
+            [], TEAM_DATA, date_str='2026-06-20', bypass_cache=True, config=bracket_cfg)
     assert result is not None
 
 
@@ -1020,7 +1077,7 @@ def test_overflow_ticker_wins_over_playoff_bracket_when_games_dropped():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket, \
          patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20',
@@ -1062,7 +1119,7 @@ def test_overflow_ticker_shown_for_tile_expansion_drops():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket, \
          patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20',
@@ -1095,7 +1152,7 @@ def test_no_dropped_games_falls_back_to_playoff_bracket():
     with patch('generate_image.load_json_file', side_effect=fake_load), \
          patch('generate_image.save_off_results'), \
          patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
-         patch('generate_image.draw_playoff_bracket_header', return_value=stub_img) as mock_bracket, \
+         patch('generate_image.draw_playoff_round_header', return_value=stub_img) as mock_bracket, \
          patch('generate_image.draw_overflow_ticker', return_value=stub_img) as mock_ticker:
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20',
@@ -1126,7 +1183,7 @@ def test_header_fingerprint_covers_bracket_and_wildcard_modes():
          patch('generate_image.save_off_results') as mock_save, \
          patch('image_grid.load_yaml_file', return_value=bracket_cfg), \
          patch('image_box.load_yaml_file', return_value=bracket_cfg), \
-         patch('generate_image.draw_playoff_bracket_header', side_effect=lambda img, b: img):
+         patch('generate_image.draw_playoff_round_header', side_effect=lambda img, b: img):
         result = generate_image.orchestrate_score_board(
             games, TEAM_DATA, date_str='2026-06-20', bypass_cache=False, config=bracket_cfg,
         )

@@ -16,6 +16,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header,
     draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
+    derive_playoff_series_by_league, draw_playoff_round_header, draw_playoff_seedings_fullscreen,
 )
 from image_box import draw_box, _abbr_play, _draw_backwards_k
 
@@ -817,22 +818,40 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
         if config.get('show_playoff_bracket', True) and league_mode != 'aaa':
             _candidate = load_json_file('playoff_bracket.json')
             if _candidate and _candidate.get('series') and _candidate.get('season') == datetime.now().year:
+                # Backfill game_results if any series was saved without per-game history
+                if any('game_results' not in s for s in _candidate['series']):
+                    try:
+                        from standings import fetch_playoff_bracket
+                        _refetched = fetch_playoff_bracket(season=_candidate['season'])
+                        if _refetched:
+                            _candidate = _refetched
+                    except Exception:
+                        pass
                 _bracket = _candidate
 
         if _bracket:
-            canvas = draw_playoff_bracket_header(canvas, _bracket)
+            canvas = draw_playoff_round_header(canvas, _bracket)
         elif standings_data and 'standings' in standings_data and \
                 config.get('show_wildcard_standings', False) and league_mode != 'aaa':
             wildcard_data = derive_wildcard_from_standings(standings_data)
             canvas = draw_wildcard_header(canvas, wildcard_data)
     if not _is_live and standings_data and 'standings' in standings_data:
         if config.get('show_standings_sidebar', False):
-            canvas = draw_standings_sidebar_fullscreen(
-                canvas, standings_data, team_data, side='left', league_mode=league_mode,
-                x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
-            canvas = draw_standings_sidebar_fullscreen(
-                canvas, standings_data, team_data, side='right', league_mode=league_mode,
-                x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
+            if _bracket and league_mode != 'aaa':
+                _series = derive_playoff_series_by_league(_bracket, standings_data)
+                canvas = draw_playoff_seedings_fullscreen(
+                    canvas, _series, team_data, side='left',
+                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+                canvas = draw_playoff_seedings_fullscreen(
+                    canvas, _series, team_data, side='right',
+                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
+            else:
+                canvas = draw_standings_sidebar_fullscreen(
+                    canvas, standings_data, team_data, side='left', league_mode=league_mode,
+                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+                canvas = draw_standings_sidebar_fullscreen(
+                    canvas, standings_data, team_data, side='right', league_mode=league_mode,
+                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
     # Game-state-specific header label centered in the top strip.
     # 4 states: Scheduled, Finished, Postponed/Cancelled, other (fallback).

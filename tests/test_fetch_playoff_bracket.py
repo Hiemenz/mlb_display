@@ -20,9 +20,10 @@ def _resp(status_code=200, json_data=None):
 
 
 def _game(gtype, away_id, home_id, away_abbr, home_abbr,
-          state='Scheduled', away_winner=False, home_winner=False):
+          state='Scheduled', away_winner=False, home_winner=False, game_pk=0):
     """Game."""
     return {
+        'gamePk': game_pk,
         'gameType': gtype,
         'status': {'detailedState': state},
         'teams': {
@@ -149,8 +150,8 @@ class TestFetchPlayoffBracket:
     def test_wc_series_complete_after_2_away_wins(self):
         """Wild card is best-of-3 (2 wins to clinch)."""
         games = [
-            _game('F', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True),
-            _game('F', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True),
+            _game('F', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True, game_pk=1),
+            _game('F', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True, game_pk=2),
         ]
         payload = {'dates': [{'games': games}]}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
@@ -162,7 +163,10 @@ class TestFetchPlayoffBracket:
 
     def test_ds_series_complete_after_3_home_wins(self):
         """Division series is best-of-5 (3 wins to clinch)."""
-        games = [_game('D', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True)] * 3
+        games = [
+            _game('D', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True, game_pk=i)
+            for i in range(1, 4)
+        ]
         payload = {'dates': [{'games': games}]}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
              patch('standings.save_off_results'):
@@ -173,7 +177,10 @@ class TestFetchPlayoffBracket:
 
     def test_ws_series_complete_after_4_wins(self):
         """World Series is best-of-7 (4 wins to clinch)."""
-        games = [_game('W', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True)] * 4
+        games = [
+            _game('W', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True, game_pk=i)
+            for i in range(1, 5)
+        ]
         payload = {'dates': [{'games': games}]}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
              patch('standings.save_off_results'):
@@ -288,7 +295,10 @@ class TestFetchPlayoffBracket:
 
     def test_cs_series_complete_after_4_wins(self):
         """Championship series is best-of-7 (4 wins)."""
-        games = [_game('L', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True)] * 4
+        games = [
+            _game('L', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True, game_pk=i)
+            for i in range(1, 5)
+        ]
         payload = {'dates': [{'games': games}]}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
              patch('standings.save_off_results'):
@@ -300,8 +310,8 @@ class TestFetchPlayoffBracket:
     def test_incomplete_series_not_marked_complete(self):
         """Incomplete series not marked complete."""
         games = [
-            _game('D', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True),
-            _game('D', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True),
+            _game('D', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True, game_pk=1),
+            _game('D', 147, 111, 'NYY', 'BOS', state='Final', home_winner=True, game_pk=2),
         ]
         payload = {'dates': [{'games': games}]}
         with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
@@ -310,3 +320,122 @@ class TestFetchPlayoffBracket:
         s = result['series'][0]
         assert s['complete'] is False
         assert s['winner_abbr'] is None
+
+    def test_game_results_empty_for_unplayed_series(self):
+        """game_results list present and empty when no games are Final yet."""
+        payload = {'dates': [{'games': [_game('F', 147, 111, 'NYY', 'BOS', game_pk=1)]}]}
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2025)
+        s = result['series'][0]
+        assert 'game_results' in s
+        assert s['game_results'] == []
+
+    def test_game_results_records_away_win_in_order(self):
+        """Finished game adds entry with winner_id matching the winning team."""
+        payload = {
+            'dates': [{'games': [
+                _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                      away_winner=True, game_pk=1001),
+            ]}]
+        }
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2025)
+        s = result['series'][0]
+        assert len(s['game_results']) == 1
+        assert s['game_results'][0]['winner_id'] == '147'   # NYY away
+        assert s['game_results'][0]['game_pk'] == 1001
+
+    def test_game_results_records_home_win(self):
+        """Home winner is recorded with home team id."""
+        payload = {
+            'dates': [{'games': [
+                _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                      home_winner=True, game_pk=1002),
+            ]}]
+        }
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2025)
+        s = result['series'][0]
+        assert s['game_results'][0]['winner_id'] == '111'   # BOS home
+
+    def test_game_results_order_preserved_across_dates(self):
+        """Games from multiple dates appear in the order they were played."""
+        payload = {
+            'dates': [
+                {'date': '2026-10-01', 'games': [
+                    _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                          home_winner=True, game_pk=101),
+                ]},
+                {'date': '2026-10-02', 'games': [
+                    _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                          away_winner=True, game_pk=102),
+                ]},
+                {'date': '2026-10-03', 'games': [
+                    _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                          home_winner=True, game_pk=103),
+                ]},
+            ]
+        }
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2025)
+        s = result['series'][0]
+        assert len(s['game_results']) == 3
+        assert [gr['winner_id'] for gr in s['game_results']] == ['111', '147', '111']
+
+    def test_game_results_deduplicates_by_game_pk(self):
+        """Same game_pk appearing twice is counted only once."""
+        payload = {
+            'dates': [{'games': [
+                _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                      away_winner=True, game_pk=999),
+                _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                      away_winner=True, game_pk=999),
+            ]}]
+        }
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2025)
+        s = result['series'][0]
+        assert len(s['game_results']) == 1
+        assert s['away_wins'] == 1
+
+    def test_game_results_correct_when_teams_swap_home_away(self):
+        """Win is attributed to the correct series team even when home/away is
+        swapped (e.g. game 3 of a WC series is at the 'away' team's park).
+
+        Canonical entry: away=NYY(147), home=BOS(111) (set by G1).
+        G3 lists BOS as away and NYY as home (teams flipped at NYY's park).
+        NYY wins G3 → should credit the canonical away team (NYY=147).
+        """
+        payload = {
+            'dates': [
+                {'date': '2026-10-01', 'games': [
+                    _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                          home_winner=True, game_pk=201),  # BOS wins G1
+                ]},
+                {'date': '2026-10-02', 'games': [
+                    _game('F', 147, 111, 'NYY', 'BOS', state='Final',
+                          away_winner=True, game_pk=202),  # NYY wins G2
+                ]},
+                {'date': '2026-10-03', 'games': [
+                    # G3 at NYY's park — teams listed with BOS=away, NYY=home
+                    _game('F', 111, 147, 'BOS', 'NYY', state='Final',
+                          home_winner=True, game_pk=203),  # NYY (home here) wins G3
+                ]},
+            ]
+        }
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2025)
+        s = result['series'][0]
+        # NYY won G2 and G3; BOS won G1
+        assert s['away_wins'] == 2   # NYY (canonical away)
+        assert s['home_wins'] == 1   # BOS (canonical home)
+        assert s['complete'] is True
+        assert s['winner_abbr'] == 'NYY'
+        # game_results in order: BOS(G1), NYY(G2), NYY(G3)
+        assert [gr['winner_id'] for gr in s['game_results']] == ['111', '147', '147']
