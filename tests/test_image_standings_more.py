@@ -1834,7 +1834,7 @@ class TestDrawPlayoffRoundHeader:
 
     def test_empty_bracket_unchanged(self):
         img = _blank()
-        result = draw_playoff_round_header(img, _pbracket([]))
+        draw_playoff_round_header(img, _pbracket([]))
         assert img.tobytes() == _blank().tobytes()
 
 
