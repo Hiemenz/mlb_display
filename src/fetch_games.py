@@ -654,6 +654,7 @@ def parse_games(data, sport_id=None, config=None):
             'last_play': last_play_result,
             'save_situation': save_situation,
             'game_pk': game_id,
+            'game_type': game.get('gameType'),
             'series_result': game.get('seriesStatus', {}).get('result', ''),
             'series_game_number': game.get('seriesStatus', {}).get('gameNumber'),
             'series_total_games': game.get('seriesStatus', {}).get('totalGames'),

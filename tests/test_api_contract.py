@@ -1035,6 +1035,12 @@ class TestParseGamesContract:
         games = _parse([api_game])
         assert games[0]['tv_channel'] is None
 
+    def test_game_type_extracted(self):
+        """game_type must carry the API gameType (drives the series-clinch banner)."""
+        api_game = _minimal_game_api()
+        api_game['gameType'] = 'D'
+        assert _parse([api_game])[0]['game_type'] == 'D'
+
     def test_no_hitter_flag_extracted(self):
         """no_hitter must reflect flags.noHitter from the API."""
         api_game = _minimal_game_api()
