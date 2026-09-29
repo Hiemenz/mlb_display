@@ -16,7 +16,7 @@ from image_assets import (
 from image_utils import (
     draw_diamond, draw_circle, draw_tight_number, check_if_two_chars,
     _format_player_name, _last_name, _pitcher_line, _clean_venue_name,
-    _is_game_effectively_over,
+    _is_game_effectively_over, series_clinch_chance,
 )
 from util import load_json_file, load_yaml_file, save_off_results
 from stadium_polygons import get_polygon as _field_get_polygon
@@ -2546,8 +2546,10 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # Invert header to indicate a score change or run-scoring play during an active game
     _run_scored = game_data['detailed_state'] == 'In Progress' and not is_game_finished and int(game_data.get('last_play_rbi') or 0) > 0
+    _hdr_inverted = False
     if (score_changed or _run_scored) and is_game_started and not is_game_finished and not _between_innings and not _pitching_change and not skip_header_invert:
         _invert_region(Himage, start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s)
+        _hdr_inverted = True
 
     # Invert header for stolen base events
     _lp_lower = (game_data.get('last_play') or '').lower()
@@ -2557,10 +2559,17 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
     )
     if _sb_event and not skip_header_invert:
         _invert_region(Himage, start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s)
+        _hdr_inverted = not _hdr_inverted
 
     # Invert header for special states: no-hitter (>= 6 innings), perfect game
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
        (is_game_finished or _active_no_no) and not skip_header_invert:
+        _invert_region(Himage, start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s)
+        _hdr_inverted = not _hdr_inverted
+
+    # One win from clinching a postseason series: standing inverted header.
+    # Yields to the event flashes above so the two never cancel each other out.
+    if series_clinch_chance(game_data) and not _hdr_inverted and not skip_header_invert:
         _invert_region(Himage, start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s)
 
     return Himage
@@ -3341,6 +3350,7 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         game_data.get('detailed_state') == 'In Progress'
         and int(game_data.get('last_play_rbi') or 0) > 0
     )
+    _cell_hdr_inverted = bool((score_changed or _run_scored) and not _between)
     if (score_changed or _run_scored) and not _between:
         _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
         draw = ImageDraw.Draw(Himage)
@@ -3356,6 +3366,10 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
        (_wide_is_final or _wide_active_no_no) and \
        not (score_changed or _run_scored):
+        _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
+        _cell_hdr_inverted = True
+
+    if series_clinch_chance(game_data) and not _cell_hdr_inverted:
         _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
 
     return Himage
@@ -4058,6 +4072,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         game_data.get('detailed_state') == 'In Progress'
         and int(game_data.get('last_play_rbi') or 0) > 0
     )
+    _cell_hdr_inverted = bool((score_changed or _run_scored) and not _between)
     if (score_changed or _run_scored) and not _between:
         # Only cells 1+2 (up to fp_x) light up — cell 3 is the field diagram
         # and has no header row of its own.
@@ -4074,6 +4089,10 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
        (_triple_is_final or _triple_active_no_no) and \
        not (score_changed or _run_scored):
+        _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
+        _cell_hdr_inverted = True
+
+    if series_clinch_chance(game_data) and not _cell_hdr_inverted:
         _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
 
     return Himage

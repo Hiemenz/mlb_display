@@ -607,3 +607,38 @@ def test_render_wintrend_mode_dispatches_and_saves(tmp_path):
     m_view.assert_called_once()
     import os
     assert os.path.exists(out_path)
+
+
+def test_bracket_is_a_valid_display_mode():
+    assert 'bracket' in render_scoreboard._VALID_MODES
+    assert render_scoreboard._get_display_mode({'display_mode': 'bracket'}) == 'bracket'
+
+
+def test_render_bracket_mode_no_data_returns_none():
+    with patch('render_scoreboard.load_json_file', return_value={}):
+        assert render_scoreboard.render({'display_mode': 'bracket'},
+                                        output_path='/nonexistent/x.bmp') is None
+
+
+def test_render_bracket_mode_unusable_data_returns_none():
+    with patch('render_scoreboard.load_json_file', return_value={'series': []}), \
+         patch('render_scoreboard.render_bracket_view', side_effect=ValueError('empty')):
+        assert render_scoreboard.render({'display_mode': 'bracket'},
+                                        output_path='/nonexistent/x.bmp') is None
+
+
+@needs_pil
+def test_render_bracket_mode_dispatches_and_saves(tmp_path):
+    fake_image = Image.new('1', (800, 480), 255)
+    out_path = tmp_path / 'bracket.bmp'
+    payloads = {'playoff_bracket.json': {'series': [{'round': 'WC'}]},
+                'standings.json': {'standings': {}}}
+    with patch('render_scoreboard.load_json_file',
+               side_effect=lambda name, *a, **k: payloads.get(name, {})), \
+         patch('render_scoreboard.render_bracket_view', return_value=fake_image) as m_view:
+        result = render_scoreboard.render({'display_mode': 'bracket', 'dark_mode': True},
+                                          output_path=str(out_path))
+    assert result == (fake_image, [(0, 0, 800, 480)])
+    m_view.assert_called_once_with(payloads['playoff_bracket.json'],
+                                   payloads['standings.json'], dark_mode=True)
+    assert out_path.exists()

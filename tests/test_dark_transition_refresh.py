@@ -49,6 +49,12 @@ def _run_main(monkeypatch, tmp_path, sched, render_mock, config=None):
     monkeypatch.setattr(main_mod, 'fetch_scoreboard_for_date', lambda *a, **k: None)
     monkeypatch.setattr(main_mod, 'fetch_tomorrow_games', lambda *a, **k: None)
     monkeypatch.setattr(main_mod, 'render', render_mock)
+    # The no-games guard reads games.json (absent on CI); give it a game so
+    # the render path under test is reached regardless of local data.
+    _real_load = main_mod.load_json_file
+    monkeypatch.setattr(main_mod, 'load_json_file',
+                        lambda name, *a, **k: {'games': [{}]} if name == 'games.json'
+                        else _real_load(name, *a, **k))
     monkeypatch.setattr(main_mod, 'send_to_display', MagicMock(return_value='full'))
 
     main_mod.main()

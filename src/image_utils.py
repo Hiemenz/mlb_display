@@ -293,6 +293,31 @@ def _series_display_str(game_data):
     return None
 
 
+_POSTSEASON_GAME_TYPES = ('F', 'D', 'L', 'W')
+_NOT_PLAYING_STATES = ('Postponed', 'Cancelled')
+
+
+def series_clinch_chance(game_data):
+    """True when this game could end a postseason series.
+
+    That is: a best-of-N postseason game that has not finished, where the
+    series leader is one win short of the N//2 + 1 needed. The check looks at
+    max(wins, losses) because the API's ``wins``/``losses`` are the leader's and
+    trailer's counts, not tied to the away/home side of this tile.
+    """
+    if game_data.get('game_type') not in _POSTSEASON_GAME_TYPES:
+        return False
+    if game_data.get('series_is_over') or _is_game_effectively_over(game_data):
+        return False
+    if game_data.get('detailed_state') in _NOT_PLAYING_STATES:
+        return False
+    total = game_data.get('series_total_games') or 0
+    if total < 3:
+        return False
+    leader = max(game_data.get('series_wins') or 0, game_data.get('series_losses') or 0)
+    return leader == total // 2
+
+
 def _clean_venue_name(venue):
     """Return a short, ad-free venue name for display in the scoreboard header."""
     if not venue:

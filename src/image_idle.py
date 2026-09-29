@@ -5,11 +5,15 @@ Layout (800x480):
   Two equal transaction columns (each 398px wide, ~20 rows each → ~40 total)
   Mascot photo bounces over the full screen as an overlay
 
-Also provides draw_history_screen() for the "on this date in history" rotation slot.
+Also provides draw_history_screen() for the "on this date in history" rotation slot
+and draw_next_games_screen() for the "next day's games" slot.
 """
 import json
 import os
 import random
+from datetime import datetime, timedelta
+
+import pytz
 
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance
 
@@ -299,4 +303,170 @@ def draw_history_screen(games, year, team_data, config):
     finally:
         set_historical_mode(False)
 
+    return Himage
+
+
+# ---------------------------------------------------------------------------
+# Next game day (off-day schedule preview)
+# ---------------------------------------------------------------------------
+
+_NG_HEADER_H  = 28
+_NG_MAX_GAMES = 16          # 2 columns x 8 rows — MLB never schedules more than 15
+_NG_MAX_ROW_H = 150         # a lone game shouldn't balloon past this
+_NG_POSTSEASON = ('F', 'D', 'L', 'W')
+
+
+def _first_pitch_countdown(start_utc, now):
+    """Coarse "time until first pitch" label, or None once it has started.
+
+    Whole hours only: the idle screen repaints (and full-refreshes the panel)
+    whenever a pixel changes, so a minute-by-minute countdown would flash the
+    e-ink every cron tick.
+    """
+    if not start_utc:
+        return None
+    try:
+        start = datetime.strptime(start_utc, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=pytz.utc)
+    except ValueError:
+        return None
+    minutes = int((start - now).total_seconds() // 60)
+    if minutes <= 0:
+        return None
+    if minutes < 60:
+        return '<1H'
+    hours = minutes // 60
+    if hours < 24:
+        return f'{hours}H'
+    return f'{hours // 24}D {hours % 24}H'
+
+
+def _local_time_label(start_utc, tz):
+    """Local first-pitch time like '7:08 PM', or 'TBD' when unknown."""
+    try:
+        start = datetime.strptime(start_utc, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=pytz.utc)
+    except (TypeError, ValueError):
+        return 'TBD'
+    return start.astimezone(tz).strftime('%-I:%M %p')
+
+
+def _next_games_title(date_str, games, today):
+    """Header title: 'TOMORROW', or the weekday/date when the gap is longer."""
+    day = datetime.strptime(date_str, '%Y-%m-%d').date()
+    is_post = any(g.get('game_type') in _NG_POSTSEASON for g in games)
+    prefix = 'POSTSEASON - ' if is_post else ''
+    stamp = f"{day.strftime('%a %b')} {day.day}".upper()
+    if day == today + timedelta(days=1):
+        return f'{prefix}TOMORROW  {stamp}'
+    if day == today:
+        return f'{prefix}TODAY  {stamp}'
+    return f'{prefix}NEXT GAMES  {stamp}'
+
+
+def _draw_next_game_cell(Himage, draw, x, y, w, h, game, tz):
+    """One matchup: logos + abbrs + first-pitch time, then series / pitcher lines.
+
+    Everything scales off the cell height so the same code draws one big
+    postseason card and a 16-row regular-season slate.
+    """
+    from image_utils import _last_name
+
+    pad = max(3, h // 25)
+    away, home = game['away'], game['home']
+    series = game.get('series') or {}
+
+    series_line = ' - '.join(t for t in (series.get('desc'), series.get('result')) if t)
+    pitcher_line = None
+    if away.get('probable') or home.get('probable'):
+        pitcher_line = (f"{_last_name(away.get('probable')) or 'TBD'} vs "
+                        f"{_last_name(home.get('probable')) or 'TBD'}")
+    sub_lines = [t for t in (series_line, pitcher_line) if t]
+    max_sub = 2 if h >= 100 else 1 if h >= 48 else 0
+    sub_lines = sub_lines[:max_sub]
+
+    sub_size = max(11, min(18, h // 7))
+    sub_font = _get_font(sub_size)
+    sub_h = sub_size + 3
+    logo = max(16, min(90, h - 2 * pad - len(sub_lines) * sub_h - 5))
+    name_font = _get_font(max(13, min(34, int(logo * 0.45))))
+    name_h = max(13, min(34, int(logo * 0.45)))
+
+    cy = y + pad + logo // 2
+
+    def _team(x0, side):
+        img = _logo_small(side['abbr'], side['id'], size=logo)
+        if img is not None:
+            Himage.paste(img, (x0 + (logo - img.width) // 2, cy - img.height // 2))
+        tx = x0 + logo + 4
+        draw.text((tx, cy - name_h // 2 - 1), side['abbr'], font=name_font, fill=0)
+        draw.text((tx + 1, cy - name_h // 2 - 1), side['abbr'], font=name_font, fill=0)
+        return tx + int(name_font.getlength(side['abbr'])) + 1
+
+    x_cur = x + pad + 2
+    x_cur = _team(x_cur, away)
+    at_w = int(name_font.getlength('@'))
+    draw.text((x_cur + 6, cy - name_h // 2 - 1), '@', font=name_font, fill=0)
+    x_cur = _team(x_cur + 12 + at_w, home)
+
+    time_label = _local_time_label(game.get('start_utc'), tz)
+    time_w = int(name_font.getlength(time_label))
+    time_x = x + w - pad - 2 - time_w
+    if time_x > x_cur + 8:
+        draw.text((time_x, cy - name_h // 2 - 1), time_label, font=name_font, fill=0)
+        draw.text((time_x + 1, cy - name_h // 2 - 1), time_label, font=name_font, fill=0)
+
+    sy = y + pad + logo + 2
+    for line in sub_lines:
+        text = line
+        while text and int(sub_font.getlength(text)) > w - 2 * pad - 4:
+            text = text[:-1]
+        draw.text((x + pad + 2, sy), text, font=sub_font, fill=0)
+        sy += sub_h
+
+
+def draw_next_games_screen(next_day, config, now=None):
+    """Render an 800x480 preview of the next day that has games.
+
+    next_day: dict from fetch_idle.get_next_game_day ({'date', 'games': [...]})
+    config  : app config dict (timezone, dark_mode, ...)
+    now     : aware datetime, injectable so renders stay deterministic in tests
+    """
+    tz = pytz.timezone(config.get('timezone', 'America/Chicago'))
+    now = now or datetime.now(tz)
+    games = (next_day.get('games') or [])[:_NG_MAX_GAMES]
+
+    Himage = Image.new('1', (800, 480), 255)
+    draw = ImageDraw.Draw(Himage)
+
+    title = _next_games_title(next_day['date'], games, now.astimezone(tz).date())
+    font_hdr = _get_font(18)
+    draw.text((6, 5), title, font=font_hdr, fill=0)
+    draw.text((7, 5), title, font=font_hdr, fill=0)
+
+    countdown = _first_pitch_countdown(games[0].get('start_utc'), now) if games else None
+    if countdown:
+        label = f'FIRST PITCH IN {countdown}'
+        lw = int(font_hdr.getlength(label))
+        draw.text((794 - lw, 5), label, font=font_hdr, fill=0)
+        draw.text((795 - lw, 5), label, font=font_hdr, fill=0)
+    draw.line((0, _NG_HEADER_H, 800, _NG_HEADER_H), fill=0)
+
+    if games:
+        cols = 1 if len(games) <= 4 else 2
+        rows = -(-len(games) // cols)
+        avail = 480 - _NG_HEADER_H - 4
+        row_h = min(avail // rows, _NG_MAX_ROW_H)
+        col_w = 800 // cols
+        y0 = _NG_HEADER_H + 2 + (avail - row_h * rows) // 2
+
+        for idx, game in enumerate(games):
+            col, row = divmod(idx, rows)
+            cx, cy = col * col_w, y0 + row * row_h
+            _draw_next_game_cell(Himage, draw, cx, cy, col_w, row_h, game, tz)
+            if row < rows - 1:
+                draw.line((cx + 6, cy + row_h - 1, cx + col_w - 6, cy + row_h - 1), fill=0)
+        if cols == 2:
+            draw.line((400, _NG_HEADER_H + 4, 400, 476), fill=0)
+
+    if config.get('dark_mode', False):
+        Himage = ImageOps.invert(Himage.convert('L')).convert('1')
     return Himage
