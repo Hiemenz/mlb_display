@@ -835,7 +835,8 @@ def _refresh_historical_standings(config, date_str, league_mode):
 
 def _refresh_playoff_bracket(config, league_mode, force=False, context=''):
     """Refetch the postseason bracket during the postseason calendar window."""
-    if not (config.get('show_playoff_bracket', True) and league_mode != 'aaa'):
+    wants_bracket = config.get('show_playoff_bracket', True) or _get_display_mode(config) == 'bracket'
+    if not (wants_bracket and league_mode != 'aaa'):
         return
     if not (is_postseason_window() and _should_refresh_playoff_bracket(force=force)):
         return

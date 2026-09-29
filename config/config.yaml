@@ -2,7 +2,7 @@
 # scoreboard: true = 15 game grid, false = 2 detailed linescores + standings
 scoreboard: true
 
-# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "derby" | "quadrant"
+# Display mode: "scoreboard" | "linescore" | "field" | "scorecard" | "derby" | "quadrant" | "bracket"
 # If set, overrides the scoreboard: true/false flag above.
 # "field"     = single-game field diagram with runners, hit location, strike zone overlay
 # "scorecard" = official scorer-style per-batter at-bat grid for both teams
@@ -14,6 +14,9 @@ scoreboard: true
 # "quadrant"  = all 30 teams plotted offense (wRC+*) vs pitching (ERA), split into four
 #               corners by the league average, with an arrow trailing each logo back to
 #               where that team sat over the baseline window. See quadrant_grain below.
+# "bracket"   = full-screen MLB postseason tree (WC → DS → CS → WS) with seeds, series scores,
+#               and winners highlighted. Reads data/playoff_bracket.json, which is refreshed
+#               automatically while this mode is set.
 display_mode: "scoreboard"
 
 # Which window the quadrant chart plots — these are three different views of the same data:
@@ -28,6 +31,12 @@ quadrant_rotate_minutes: 30
 # date, but only on days with no games to show (e.g. the All-Star break) — days with real games
 # always take priority. Set to false to disable and rely solely on display_mode above.
 auto_derby_mode: true
+
+# On days with no games, the idle screen rotates through 15-minute blocks: next games,
+# recent transactions, the quadrant chart, and "this day in history". The first block
+# shows the next day that has games (first-pitch times, probable pitchers, and a
+# countdown) so an off day is never blank. Set to false to skip that block.
+idle_schedule_rotation: true
 
 primary: NYY
 primary_backup: BOS

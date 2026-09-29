@@ -16,7 +16,7 @@ in [CLAUDE.md](CLAUDE.md).
 
 ## Display Modes
 
-Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `derby`, `quadrant` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
+Switch modes any time via `display_mode` in `config/config.yaml`, the `DISPLAY_MODE` environment variable (env wins), or the Discord bot. Valid modes: `scoreboard`, `fields`, `scorecard`, `derby`, `quadrant`, `bracket` (plus the legacy `linescore` two-game layout). The **idle screen** and **Home Run Derby** bracket appear automatically when conditions call for them — see below.
 
 ### Scoreboard — 5×3 grid (15 games)
 
@@ -42,6 +42,8 @@ Each tile adapts to game state — see [Tile States](#scoreboard-tile-states) be
 **No-hitter / perfect game** — when a pitcher carries a no-hitter into the 6th inning, the game tile's header inverts (white-on-black banner) as a visual alert. The inversion applies to the regular tile, the wide featured cell, and the fullscreen view.
 
 ![Scoreboard — active no-hitter header inversion](docs/scoreboard_nohitter.png)
+
+**Series clinch alert** — in the postseason, when a team is one win from taking the series (e.g. 2-1 in a best-of-5, 3-2 in a best-of-7), the game tile header inverts the same way. It yields to score-change and no-hitter inversions so the two never cancel out.
 
 ---
 
@@ -104,7 +106,14 @@ When the slate has fewer than 15 games, the spare grid cells are filled with inf
 
 ### Idle Screen
 
-When there are no games at all for the day (e.g. the All-Star break or a deep off-season day), the display shows an idle **"Recent Moves"** screen: two columns of recent MLB transactions with a team **mascot** image bouncing across the screen as an overlay. Mascots are fetched by `src/download_mascots.py`.
+When there are no games at all for the day (e.g. the All-Star break, a postseason off day, or a deep off-season day), the display never goes blank. It rotates through 15-minute wall-clock blocks:
+
+1. **Next games** — the next day that has games: matchups, first-pitch times, probable pitchers, and series status in the postseason, with an hour-granular countdown to first pitch. Disable with `idle_schedule_rotation: false`.
+2. **Recent Moves** — two columns of recent MLB transactions with a team **mascot** bouncing across the screen. Mascots are fetched by `src/download_mascots.py`.
+3. **Quadrant** — the offense-vs-pitching chart.
+4. **This day in history** — disable with `idle_history_rotation: false`.
+
+A block that has nothing to show falls back to the next one, and an empty transactions list falls back to the next-games screen.
 
 ---
 
@@ -113,6 +122,10 @@ When there are no games at all for the day (e.g. the All-Star break or a deep of
 On the Derby's date, when there are no regular games to show, the display auto-switches to a single-elimination **Home Run Derby bracket** (8 batters) — see `auto_derby_mode`. Setting `display_mode: derby` forces it on unconditionally. Bracket data lives in `data/derby_bracket.json`; once the event goes live the run polls MLB every 60 seconds until it ends (capped at 3 hours).
 
 ---
+
+### Postseason Bracket (`display_mode: bracket`)
+
+A full-screen tree of the MLB postseason: AL Wild Card, Division Series and Championship Series on the left, NL on the right, converging on the World Series in the centre. Each series box shows seeds, logos, and series wins; a finished series inverts the winner's row and strikes through the loser, and a caption gives the state (`Tied 1-1`, `NYY 2-1`, `FINAL`). Undecided slots (e.g. `ATL/PHI`) are drawn text-only from the API's placeholder teams. Honors `dark_mode`. Data comes from `data/playoff_bracket.json`, which is refreshed automatically while this mode is set. Preview from the command line with `poetry run python src/bracket_view.py --open`.
 
 ### Team Quadrant (`display_mode: quadrant`)
 
@@ -249,7 +262,9 @@ Shows R/H/E, **winning/losing pitcher** with record, and save. The winning team'
 | **Leaders panel** | HR / AVG / ERA / Saves / Hits / RBI / SB leaders in a spare cell, rotating |
 | **Transactions ticker** | Recent IL moves, call-ups, and signings in a spare cell |
 | **Magic / elimination numbers** | Leader shows magic number; trailing teams show games back, switching to elimination number under 20 |
-| **Idle screen** | "Recent Moves" + bouncing mascot when there are no games today |
+| **Series clinch alert** | Header inverts when a postseason team is one win from clinching the series |
+| **Bracket mode** | `display_mode: bracket` — full-screen WC/DS/CS/WS tree with seeds, series scores and winners |
+| **Idle screen** | Off days rotate next games (with countdown), recent moves + bouncing mascot, quadrant, and this-day-in-history |
 | **Derby bracket** | Auto Home Run Derby single-elimination bracket on Derby day |
 | **Team logos** | Auto-fetched from ESPN CDN; per-team invert/darken config |
 | **Ghost logo** | Winning team logo as watermark on Final tiles |
