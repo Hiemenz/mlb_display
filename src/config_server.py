@@ -61,6 +61,8 @@ FIELD_SPECS = [
     {'key': 'sidebar_magic_badges', 'source': 'yaml', 'type': 'bool', 'label': 'M/E Badges on Sidebar'},
     {'key': 'show_streaks_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Hot Hitters Panel'},
     {'key': 'show_scoreless_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Hot Arms Panel'},
+    {'key': 'show_bullpen_panel', 'source': 'yaml', 'type': 'bool', 'label': 'Bullpen Usage Tiles',
+     'help': 'Two tiles: relief pitches thrown recently by your team and today\'s opponent.'},
     {'key': 'show_debug_overlay', 'source': 'yaml', 'type': 'bool', 'label': 'Debug Overlay'},
     {'key': 'replay_date', 'source': 'yaml', 'type': 'text',
      'label': 'Replay Date', 'help': 'Date to replay (YYYY-MM-DD). Leave blank when not replaying.'},

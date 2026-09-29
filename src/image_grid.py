@@ -967,6 +967,20 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         _sc_ly = _sc_row * 150 + y_start
         Himage = draw_scoreless_cell(Himage, _sc_lx, _sc_ly, _sc_data, team_data, use_logos=use_logos)
 
+    # Bullpen workload — one tile each for the primary team and today's opponent.
+    if config.get('show_bullpen_panel', False) and _free_slots:
+        _bp_data = load_json_file('bullpen.json')
+        _bp_teams = (_bp_data or {}).get('teams', {})
+        from image_bullpen import draw_bullpen_cell
+        for _bp_tid in (_bp_data or {}).get('team_order', []):
+            if not _free_slots or _bp_tid not in _bp_teams:
+                break
+            _bp_col, _bp_row = _free_slots.pop(0)
+            Himage = draw_bullpen_cell(
+                Himage, _bp_col * 150 + x_start, _bp_row * 150 + y_start,
+                _bp_teams[_bp_tid], days=_bp_data.get('days', 3),
+            )
+
     if config.get('show_leaders_panel', False) and _free_slots:
         _leaders_data = load_json_file('leaders.json').get('leaders', {})
         _rotation_min = config.get('leaders_rotation_minutes', 5)
