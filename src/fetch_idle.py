@@ -1,8 +1,11 @@
-"""Fetch historical game data for the idle (no-games-today) screen."""
+"""Fetch data for the idle (no-games-today) screens: history and next game day."""
 import random
+import time
 from datetime import datetime, timedelta
 
 import requests
+
+from util import load_json_file, save_off_results
 
 
 _MLB_SEASON_START_MONTH = 4   # April
@@ -209,3 +212,116 @@ def fetch_idle_games(today_str, sport_id=1, max_games=5):
             print(f"fetch_idle_games attempt {attempt+1}: {e}")
 
     return None, []
+
+
+_POSTSEASON_TYPES = ('F', 'D', 'L', 'W')
+_NEXT_GAMES_TTL_SECONDS = 3600
+_NEXT_GAMES_LOOKAHEAD_DAYS = 30
+
+
+def _parse_next_game(game):
+    """Reduce a raw schedule entry to what the next-games screen draws.
+
+    Series context is kept for postseason games only — "Game 2 of 3" is noise
+    in the regular season, but in October it is the whole story.
+    """
+    teams = game.get('teams', {})
+    sides = {}
+    for side in ('away', 'home'):
+        entry = teams.get(side, {})
+        info = entry.get('team', {})
+        record = entry.get('leagueRecord') or {}
+        wins, losses = record.get('wins'), record.get('losses')
+        sides[side] = {
+            'id': info.get('id'),
+            'abbr': info.get('abbreviation') or '???',
+            'record': f'{wins}-{losses}' if wins is not None and losses is not None else None,
+            'probable': (entry.get('probablePitcher') or {}).get('fullName'),
+        }
+
+    game_type = game.get('gameType')
+    series = None
+    if game_type in _POSTSEASON_TYPES:
+        status = game.get('seriesStatus') or {}
+        series = {
+            'desc': status.get('shortDescription') or game.get('seriesDescription'),
+            'result': status.get('result'),
+            'game_number': game.get('seriesGameNumber'),
+            'total_games': game.get('gamesInSeries'),
+        }
+
+    return {
+        'game_pk': game.get('gamePk'),
+        'start_utc': game.get('gameDate'),
+        'game_type': game_type,
+        'venue': (game.get('venue') or {}).get('name'),
+        'away': sides['away'],
+        'home': sides['home'],
+        'series': series,
+    }
+
+
+def fetch_next_game_day(from_date_str, sport_id_priority=(1,),
+                        lookahead_days=_NEXT_GAMES_LOOKAHEAD_DAYS):
+    """Find the first date on/after ``from_date_str`` with games and return them.
+
+    Walks ``sport_id_priority`` in order and stops at the first sport with games
+    in the window, mirroring how the scoreboard picks its league. Spring
+    training / exhibition games are dropped when real games share the day.
+
+    Returns ``{'date', 'sport_id', 'games'}`` (games sorted by first pitch) or
+    None when nothing is scheduled or the API is unreachable.
+    """
+    start = datetime.strptime(from_date_str, '%Y-%m-%d').date()
+    end_str = (start + timedelta(days=lookahead_days)).strftime('%Y-%m-%d')
+
+    for sid in sport_id_priority:
+        url = (
+            f'https://statsapi.mlb.com/api/v1/schedule?'
+            f'startDate={from_date_str}&endDate={end_str}&sportId={sid}'
+            '&hydrate=team,probablePitcher,seriesStatus'
+        )
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                print(f"fetch_next_game_day sport={sid}: HTTP {resp.status_code}")
+                continue
+            for entry in resp.json().get('dates', []):
+                games = entry.get('games', [])
+                if sid == 1:
+                    regular = [g for g in games if g.get('gameType') not in ('S', 'E')]
+                    if regular:
+                        games = regular
+                games = [g for g in games
+                         if g.get('status', {}).get('detailedState') not in ('Postponed', 'Cancelled')]
+                if not games:
+                    continue
+                parsed = sorted((_parse_next_game(g) for g in games),
+                                key=lambda g: g.get('start_utc') or '')
+                print(f"Next games: {len(parsed)} on {entry.get('date')} (sport_id={sid})")
+                return {'date': entry.get('date'), 'sport_id': sid, 'games': parsed}
+        except Exception as e:
+            print(f"fetch_next_game_day sport={sid}: {e}")
+    return None
+
+
+def get_next_game_day(from_date_str, sport_id_priority=(1,), ttl=_NEXT_GAMES_TTL_SECONDS):
+    """Cached wrapper around fetch_next_game_day (data/next_games.json).
+
+    The idle screen re-renders every cron tick, so the schedule is only
+    refetched once the cache is stale or no longer starts on/after the
+    requested date. A failed refetch falls back to the last cached copy as
+    long as it is still in the future — a stale schedule beats a blank panel.
+    """
+    cached = load_json_file('next_games.json') or {}
+    fresh = time.time() - cached.get('fetched_at', 0) <= ttl
+    usable = bool(cached.get('games')) and (cached.get('date') or '') >= from_date_str
+    if usable and fresh and cached.get('from_date') == from_date_str:
+        return cached
+
+    result = fetch_next_game_day(from_date_str, sport_id_priority)
+    if result:
+        result.update({'fetched_at': time.time(), 'from_date': from_date_str})
+        save_off_results(result, 'next_games')
+        return result
+    return cached if usable else None

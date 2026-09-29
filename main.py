@@ -484,31 +484,61 @@ def _maybe_show_quadrant(config, no_throttle=False, auto_open=False):
     return True
 
 
+def _idle_sport_priority(config):
+    """Sport ids the idle previews search, matching how the scoreboard picks its league."""
+    if _resolve_league_mode(config) == 'aaa':
+        return [11]
+    priority = config.get('sport_id_priority')
+    if priority and isinstance(priority, list):
+        return priority
+    return [config.get('sport_id', 1)]
+
+
+def _render_next_games(config, idle_config):
+    """Render the preview of the next day with games, or None when there is none.
+
+    An off day should never leave the panel blank: this is both a rotation slot
+    and the fallback for any slot that has nothing to draw.
+    """
+    try:
+        from fetch_idle import get_next_game_day
+        from image_idle import draw_next_games_screen
+        now = _local_now(config)
+        from_date = (now.date() + timedelta(days=1)).strftime('%Y-%m-%d')
+        next_day = get_next_game_day(from_date, _idle_sport_priority(config))
+        if not next_day or not next_day.get('games'):
+            return None
+        image = draw_next_games_screen(next_day, idle_config, now=now)
+        print(f"Idle: showing next games ({next_day['date']}, {len(next_day['games'])} games)")
+        return image
+    except Exception as e:
+        print(f"Idle: next-games render failed ({e})")
+        return None
+
+
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen.
 
-    Alternates between the recent-transactions view and the team quadrant
-    chart every 20 minutes (keyed to the wall clock so the output is
-    deterministic for any given cron tick).  The quadrant slot is skipped
-    when quadrant data isn't cached — transactions are shown instead.
+    Rotates through four views in 15-minute blocks keyed to the wall clock (so
+    the output is deterministic for any given cron tick): next day's games,
+    recent transactions, the team quadrant chart and this-day-in-history. A
+    view with nothing to draw falls back to the next-games preview, then to
+    transactions, so the panel is never blank.
     """
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
 
-    # Determine which view this 20-minute block should show.
-    # Block 0 (min 0-19) → transactions
-    # Block 1 (min 20-39) → quadrant chart (if data available)
-    # Block 2 (min 40-59) → this day in history (if data available)
-    _block = datetime.now().minute // 20
-    _show_quadrant_slot = (
-        config.get('idle_quadrant_rotation', True)
-        and _block == 1
-    )
-    _show_history_slot = (
-        config.get('idle_history_rotation', True)
-        and _block == 2
-    )
-    if _show_history_slot:
+    # Block 0 (min 0-14)  -> next day's games
+    # Block 1 (min 15-29) -> transactions
+    # Block 2 (min 30-44) -> quadrant chart (if data available)
+    # Block 3 (min 45-59) -> this day in history (if data available)
+    _block = datetime.now().minute // 15
+    image = None
+
+    if _block == 0 and config.get('idle_schedule_rotation', True):
+        image = _render_next_games(config, idle_config)
+
+    if image is None and _block == 3 and config.get('idle_history_rotation', True):
         try:
             from fetch_idle import fetch_this_day_in_history
             _today = datetime.now().strftime('%Y-%m-%d')
@@ -519,13 +549,10 @@ def _show_idle_screen(config, auto_open=False):
                     _team_data = {'team_abbreviation': {}}
                 image = draw_history_screen(_hist_games, _hist_year, _team_data, idle_config)
                 print(f"Idle: showing history screen (year={_hist_year})")
-            else:
-                _show_history_slot = False
         except Exception as _he:
-            print(f"Idle: history render failed ({_he}), falling back to transactions")
-            _show_history_slot = False
+            print(f"Idle: history render failed ({_he}), falling back")
 
-    if not _show_history_slot and _show_quadrant_slot:
+    if image is None and _block == 2 and config.get('idle_quadrant_rotation', True):
         quadrant_data = load_json_file('team_quadrant.json')
         if quadrant_data:
             try:
@@ -536,12 +563,9 @@ def _show_idle_screen(config, auto_open=False):
                 )
                 print("Idle: showing quadrant view")
             except Exception as _qe:
-                print(f"Idle: quadrant render failed ({_qe}), falling back to transactions")
-                _show_quadrant_slot = False
-        else:
-            _show_quadrant_slot = False
+                print(f"Idle: quadrant render failed ({_qe}), falling back")
 
-    if not _show_history_slot and not _show_quadrant_slot:
+    if image is None:
         team_data = load_json_file('teams.json')
         if not team_data or 'team_abbreviation' not in team_data:
             team_data = {'team_abbreviation': {}}
@@ -556,7 +580,15 @@ def _show_idle_screen(config, auto_open=False):
             except Exception as _e:
                 print(f"Warning: idle transactions fetch failed: {_e}")
         transactions = tx_data.get('transactions', [])
-        image = draw_idle_screen(transactions, team_data, {}, idle_config)
+        if transactions:
+            image = draw_idle_screen(transactions, team_data, {}, idle_config)
+        else:
+            # An empty transactions list draws as a near-blank screen — the
+            # schedule preview is the more useful fallback, if it is enabled.
+            if config.get('idle_schedule_rotation', True):
+                image = _render_next_games(config, idle_config)
+            if image is None:
+                image = draw_idle_screen(transactions, team_data, {}, idle_config)
 
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
 
@@ -1186,6 +1218,17 @@ Examples:
     if _date_ctx.mode_override:
         view_config = dict(config, display_mode=_date_ctx.mode_override)
     _refresh_team_quadrant(view_config, league_mode, force=_force_data_refresh)
+
+    # A day with no games would render an empty grid (just the sidebars). The
+    # throttled path above already shows the idle screen for that; --local /
+    # --full-refresh runs and the morning rotation skip that branch, so catch
+    # them here instead of pushing a blank scoreboard.
+    if (not args.date
+            and _get_display_mode(view_config) in ('scoreboard', 'linescore', 'fields')
+            and not load_json_file('games.json').get('games')):
+        print("No games to display — showing idle screen")
+        _show_idle_screen(config, auto_open=args.local and system_platform == 'Darwin')
+        return
 
     # 9. Render and push to the panel.
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
