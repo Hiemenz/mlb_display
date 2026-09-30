@@ -910,7 +910,9 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 break
             _sr_col, _sr_row = _free_slots.pop(0)
             Himage = draw_series_cell(
-                Himage, _sr_col * 150 + x_start, _sr_row * 150 + y_start, _sr)
+                Himage, _sr_col * 150 + x_start, _sr_row * 150 + y_start, _sr,
+                use_logos=use_logos,
+            )
 
     # Bullpen workload — one tile each for primary team then today's opponent.
     # Shown at the top of the queue when the primary team's game is live so it

@@ -35,10 +35,10 @@ _WC_COMPLETE = dict(_WC_SERIES, away_wins=2, home_wins=0, complete=True, winner_
 _NO_GAMES = dict(_WC_SERIES, away_wins=0, home_wins=0, game_results=[])
 
 
-def _draw(series, x=10, y=10):
+def _draw(series, x=10, y=10, use_logos=False):
     from image_series import draw_series_cell
     img = Image.new('1', (300, 200), 255)
-    draw_series_cell(img, x, y, series)
+    draw_series_cell(img, x, y, series, use_logos=use_logos)
     return img
 
 
@@ -63,23 +63,28 @@ class TestDrawSeriesCell:
         result = draw_series_cell(img, 10, 10, None)
         assert result is not None
 
-    def test_winner_inverts_winning_side(self):
-        """Completed series: winner half is black, loser half stays white."""
+    def test_winner_floods_tile_body_black(self):
+        """Completed series: body floods black (more black pixels than no-games tile)."""
         img_win = _draw(_WC_COMPLETE)
         img_none = _draw(_NO_GAMES)
-        win_pixels = list(img_win.crop((10, 31, 77, 47)).getdata())
-        none_pixels = list(img_none.crop((10, 31, 77, 47)).getdata())
-        # Winner (away) half should have more black pixels in the name row
-        assert win_pixels.count(0) > none_pixels.count(0)
+        # Body = everything below the header rule
+        win_body  = list(img_win.crop((10, 30, 145, 140)).getdata()).count(0)
+        none_body = list(img_none.crop((10, 30, 145, 140)).getdata()).count(0)
+        assert win_body > none_body
 
-    def test_home_winner_inverts_right_half(self):
+    def test_home_winner_also_floods_body(self):
         home_win = dict(_WC_SERIES, away_wins=0, home_wins=2,
                         complete=True, winner_abbr='ATL', game_results=[])
         img = _draw(home_win)
-        # Right half (home side) should be darker than left half (away side)
-        left = list(img.crop((10, 31, 77, 47)).getdata()).count(0)
-        right = list(img.crop((77, 31, 145, 47)).getdata()).count(0)
-        assert right > left
+        img_none = _draw(_NO_GAMES)
+        win_body  = list(img.crop((10, 30, 145, 140)).getdata()).count(0)
+        none_body = list(img_none.crop((10, 30, 145, 140)).getdata()).count(0)
+        assert win_body > none_body
+
+    def test_logos_render_without_crash(self):
+        """use_logos=True should not raise even when logo files are absent."""
+        img = _draw(_WC_COMPLETE, use_logos=True)
+        assert img.getbbox() is not None
 
     def test_complete_series_more_ink_than_empty(self):
         img_done = _draw(_WC_COMPLETE)
@@ -116,6 +121,81 @@ class TestDrawSeriesCell:
         outside = img.crop((147, 0, 300, 200)).getextrema()
         assert outside == (255, 255)
 
+    def test_seven_games_two_column_has_more_ink_than_five(self):
+        """7-game series (2-col layout) has more ink than 5-game (1-col)."""
+        five = dict(_WC_SERIES, round='WS',
+                    game_results=[
+                        {'winner_id': '143', 'game_pk': i, 'date': '2026-10-0' + str(i + 1),
+                         'away_id': '143', 'home_id': '144', 'away_score': 3, 'home_score': 1}
+                        for i in range(5)
+                    ])
+        seven = dict(five, game_results=[
+                        {'winner_id': '143', 'game_pk': i, 'date': '2026-10-0' + str(i + 1),
+                         'away_id': '143', 'home_id': '144', 'away_score': 3, 'home_score': 1}
+                        for i in range(7)
+                    ])
+        ink5 = list(_draw(five).getdata()).count(0)
+        ink7 = list(_draw(seven).getdata()).count(0)
+        assert ink7 > ink5
+
+    def test_six_games_two_column_no_g7_row(self):
+        """6 results → 2-col layout but no G7 row."""
+        six = dict(_WC_SERIES, round='WS',
+                   game_results=[
+                       {'winner_id': '143', 'game_pk': i, 'date': '2026-10-0' + str(i + 1),
+                        'away_id': '143', 'home_id': '144', 'away_score': 3, 'home_score': 1}
+                       for i in range(6)
+                   ])
+        img = _draw(six)
+        assert img.getbbox() is not None
+        outside = img.crop((147, 0, 300, 200)).getextrema()
+        assert outside == (255, 255)
+
+    def test_result_row_with_no_score_draws_dash(self):
+        no_score = dict(_WC_SERIES, game_results=[
+            {'winner_id': '143', 'game_pk': 1, 'date': '2026-10-01',
+             'away_id': '143', 'home_id': '144'}
+        ])
+        img = _draw(no_score)
+        assert img.getbbox() is not None
+
+    def test_next_game_time_shown_when_no_games(self):
+        from unittest.mock import patch
+        from image_series import draw_series_cell
+        fake_games = {'games': [{
+            'detailed_state': 'Scheduled',
+            'away_team_id': '143', 'home_team_id': '144',
+            'game_date': '2026-10-05T17:05:00Z',
+        }]}
+        img = Image.new('1', (300, 200), 255)
+        with patch('image_series.load_json_file', return_value=fake_games):
+            draw_series_cell(img, 10, 10, _NO_GAMES, use_logos=False)
+        blank_img = Image.new('1', (300, 200), 255)
+        from image_series import draw_series_cell as dsc2
+        with patch('image_series.load_json_file', return_value={'games': []}):
+            dsc2(blank_img, 10, 10, _NO_GAMES, use_logos=False)
+        assert list(img.getdata()).count(0) > list(blank_img.getdata()).count(0)
+
+    def test_next_game_time_no_matching_game_returns_none(self):
+        from unittest.mock import patch
+        from image_series import _next_game_time
+        with patch('image_series.load_json_file', return_value={'games': []}):
+            assert _next_game_time('143', '144') is None
+
+    def test_next_game_time_wrong_state_skipped(self):
+        from unittest.mock import patch
+        from image_series import _next_game_time
+        fake = {'games': [{'detailed_state': 'Final', 'away_team_id': '143',
+                           'home_team_id': '144', 'game_date': '2026-10-01T17:00:00Z'}]}
+        with patch('image_series.load_json_file', return_value=fake):
+            assert _next_game_time('143', '144') is None
+
+    def test_next_game_time_load_error_returns_none(self):
+        from unittest.mock import patch
+        from image_series import _next_game_time
+        with patch('image_series.load_json_file', side_effect=Exception('boom')):
+            assert _next_game_time('143', '144') is None
+
 
 TEAM_DATA = {'team_abbreviation': {'147': 'NYY'}}
 BASE_CONFIG = {
@@ -145,9 +225,9 @@ def _render_grid(n_games, config=BASE_CONFIG, bracket=_BRACKET):
     calls = []
     from image_series import draw_series_cell as real
 
-    def spy(img, x, y, s):
+    def spy(img, x, y, s, use_logos=True):
         calls.append((x, y, s.get('away_abbr'), s.get('home_abbr')))
-        return real(img, x, y, s)
+        return real(img, x, y, s, use_logos=use_logos)
 
     with patch('image_grid.load_yaml_file', return_value=config), \
          patch('image_box.load_yaml_file', return_value=config), \
