@@ -77,9 +77,7 @@ def _scheduled_games(away_id, home_id):
         try:
             dt    = datetime.fromisoformat(raw.replace('Z', '+00:00'))
             local = dt.astimezone()
-            day   = local.strftime('%a')
-            time  = local.strftime('%-I:%M%p').lower().rstrip('m') + 'm'
-            time_str = f'{day} {time}'
+            time_str = local.strftime('%-I%p').lower()  # e.g. "8pm"
         except Exception:
             time_str = ''
         out.append({
@@ -99,7 +97,7 @@ def _draw_result_row(draw, Himage, cx, gy, game_num, gr,
                      use_logos, fg):
     """Draw a completed game result centred at (cx, gy)."""
     font     = _get_font(_GAME_FONT_SZ)
-    label    = f'G{game_num}'
+    label    = f'GM {game_num}'
     label_w  = int(font.getlength(label))
 
     a_sc = gr.get('away_score')
@@ -144,12 +142,14 @@ def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
     h_id      = sched.get('home_id', '')
     time_str  = sched.get('time', '')
 
+    at_str = '@'
+    at_w   = int(font.getlength(at_str)) + 2
     a_logo = _logo_small(a_abbr, a_id, size=_SCORE_LOGO) if use_logos else None
     h_logo = _logo_small(h_abbr, h_id, size=_SCORE_LOGO) if use_logos else None
     a_w    = (a_logo.width + 2) if a_logo else (int(font.getlength(a_abbr)) + 2)
     h_w    = (h_logo.width + 2) if h_logo else (int(font.getlength(h_abbr)) + 2)
     t_w    = int(font.getlength(time_str))
-    total  = a_w + h_w + t_w
+    total  = a_w + at_w + h_w + t_w
 
     lx = cx - total // 2
 
@@ -159,6 +159,9 @@ def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
     else:
         draw.text((lx, gy), a_abbr, font=font, fill=fg)
         lx += int(font.getlength(a_abbr)) + 2
+
+    draw.text((lx, gy), at_str, font=font, fill=fg)
+    lx += at_w
 
     if h_logo:
         _paste_logo_transparent(Himage, h_logo, lx, gy + (_SCORE_LOGO - h_logo.height) // 2 + 1)
