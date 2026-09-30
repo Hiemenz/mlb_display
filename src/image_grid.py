@@ -890,6 +890,51 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
 
     _free_slots = _free_grid_slots(_slots)
 
+    # Detect whether the primary team's game is currently live — used below
+    # to boost bullpen tiles to the top of the free-slot queue.
+    _primary_abbr_live = config.get('primary', '')
+    _primary_game_live = any(
+        g.get('detailed_state') in _LIVE_WIDE_STATES
+        and (_primary_abbr_live in (g.get('away_team', ''), g.get('home_team', '')))
+        for g in (game_state_data or [])
+    )
+
+    # Playoff series tiles — one per Wild Card matchup, shown in priority order.
+    # Drawn before everything else so they appear even on a full-ish grid.
+    if config.get('show_series_panel', False) and _free_slots:
+        _sr_data = load_json_file('playoff_bracket.json')
+        _sr_series = (_sr_data or {}).get('series', [])  # all rounds: WC, DS, CS, WS
+        from image_series import draw_series_cell
+        for _sr in _sr_series:
+            if not _free_slots:
+                break
+            _sr_col, _sr_row = _free_slots.pop(0)
+            Himage = draw_series_cell(
+                Himage, _sr_col * 150 + x_start, _sr_row * 150 + y_start, _sr,
+                use_logos=use_logos,
+            )
+
+    # Bullpen workload — one tile each for primary team then today's opponent.
+    # Shown at the top of the queue when the primary team's game is live so it
+    # always gets a slot; pushed below the deadline panel otherwise.
+    def _draw_bullpen():
+        if not (config.get('show_bullpen_panel', False) and _free_slots):
+            return
+        _bp_data = load_json_file('bullpen.json')
+        _bp_teams = (_bp_data or {}).get('teams', {})
+        from image_bullpen import draw_bullpen_cell
+        for _bp_tid in (_bp_data or {}).get('team_order', []):
+            if not _free_slots or _bp_tid not in _bp_teams:
+                break
+            _bp_col, _bp_row = _free_slots.pop(0)
+            draw_bullpen_cell(
+                Himage, _bp_col * 150 + x_start, _bp_row * 150 + y_start,
+                _bp_teams[_bp_tid], days=_bp_data.get('days', 3),
+            )
+
+    if _primary_game_live:
+        _draw_bullpen()
+
     # Free-slot panels, in priority order (first match claims the slot).
     # Trade deadline countdown is first — it's the most time-sensitive panel.
     # It only appears within the two weeks before the deadline, and disappears
@@ -966,6 +1011,10 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         _sc_lx = _sc_col * 150 + x_start
         _sc_ly = _sc_row * 150 + y_start
         Himage = draw_scoreless_cell(Himage, _sc_lx, _sc_ly, _sc_data, team_data, use_logos=use_logos)
+
+    # Bullpen workload (non-live path — live path runs before deadline panel above).
+    if not _primary_game_live:
+        _draw_bullpen()
 
     if config.get('show_leaders_panel', False) and _free_slots:
         _leaders_data = load_json_file('leaders.json').get('leaders', {})

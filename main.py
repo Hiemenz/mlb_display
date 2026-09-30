@@ -22,6 +22,7 @@ from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
 from fetch_streaks import fetch_streaks
+from fetch_bullpen import fetch_bullpen
 from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from fetch_team_quadrant import fetch_team_quadrant
@@ -905,6 +906,21 @@ def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=
 
 
 
+def _refresh_bullpen(config, league_mode, force=False, context=''):
+    """Refetch relief-pitcher workload for the primary team and its opponent.
+
+    fetch_bullpen keeps its own once-a-day / 6-hour cache, so this is safe to
+    call every cycle. MLB-only.
+    """
+    if not (config.get('show_bullpen_panel', False) and league_mode != 'aaa'):
+        return
+    try:
+        fetch_bullpen(config.get('primary', ''),
+                      days=config.get('bullpen_lookback_days', 3), force=force)
+    except Exception as e:
+        print(f"Warning: bullpen fetch{context} failed: {e}")
+
+
 def _refresh_team_quadrant(config, league_mode, force=False, context=''):
     """Refetch the offense-vs-pitching quadrant data when that mode is on screen.
 
@@ -1210,6 +1226,7 @@ Examples:
     _refresh_news(config, force=_force_data_refresh)
     _refresh_leaders(config, sched, league_mode, sport_id, force=_force_data_refresh)
     _refresh_streaks(config, sched, league_mode, sport_id, force=_force_data_refresh)
+    _refresh_bullpen(config, league_mode, force=_force_data_refresh)
 
     # A morning rotation block showing the quadrant overrides the display mode
     # for this run only — config itself is left alone so the mode the user

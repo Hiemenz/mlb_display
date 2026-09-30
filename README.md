@@ -100,6 +100,7 @@ When the slate has fewer than 15 games, the spare grid cells are filled with inf
 - **News headlines** (`show_news_panel`) — recent MLB news, optionally scoped to the primary team (`news_team_only`).
 - **Magic / elimination numbers** (`show_magic_numbers`) — the primary team's division standings. The leader's row always shows its magic number (`M12`); trailing teams show games back until their elimination number drops below 20, at which point that row switches to the elimination number (`E7`) instead. A miniature version of the same M12/E7 badge (`sidebar_magic_badges`) can also be shown next to each team's logo in the standings sidebar.
 - **Hot Hitters / Hot Arms** (`show_streaks_panel` / `show_scoreless_panel`) — 14-day rolling batting average and ERA leaders.
+- **Bullpen usage** (`show_bullpen_panel`) — two tiles, one for the primary team and one for today's opponent, showing each reliever's pitches yesterday and over the last `bullpen_lookback_days` (default 3) days.
 - **Season leaders panel** (`show_leaders_panel`) — cycles through HR / AVG / ERA / Saves / Hits / RBI / SB, rotating category every `leaders_rotation_minutes` (default 5) and refreshed once a day.
 
 ---
@@ -503,6 +504,7 @@ mlb_display/
 │   ├── fetch_derby.py            # Derby bracket fetcher → data/derby_bracket.json
 │   ├── fetch_leaders.py          # Season-leaders fetcher (MLB Stats API)
 │   ├── fetch_streaks.py          # Hot Hitters / Hot Arms rolling streaks
+│   ├── fetch_bullpen.py          # Reliever pitch counts, primary team + opponent
 │   ├── fetch_news.py             # Team or league headlines
 │   ├── fetch_idle.py             # Historical game fetcher for the idle screen
 │   ├── fetch_team_quadrant.py    # Team offense/pitching quadrant data (all grains)
@@ -522,6 +524,7 @@ mlb_display/
 │   ├── image_utils.py            # Shared pure helpers (names, geometry, magic numbers)
 │   ├── image_leaders.py          # Season-leaders panel cell
 │   ├── image_streaks.py          # Hot Hitters / Hot Arms panel cell
+│   ├── image_bullpen.py          # Bullpen usage panel cell
 │   ├── image_scoreless.py        # Scoreless-streak panel cell
 │   ├── image_magic.py            # Magic / elimination number panel cell
 │   ├── image_news.py             # News headlines panel cell
