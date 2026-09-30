@@ -10,7 +10,7 @@ import time as _time_feat
 from image_utils import (
     draw_diamond, draw_circle, draw_tight_number,
     _last_name, _is_game_effectively_over,
-    _series_display_str, _clean_venue_name, series_clinch_chance,
+    _series_display_str, _clean_venue_name,
 )
 from image_standings import (
     _WC_STRIP_H,
@@ -569,13 +569,6 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         (game_data.get('current_inning') or 0) >= 6
     )
     if _fs_active_no_no and not _run_scored:
-        _hdr_crop = canvas.crop((0, 0, 800, HEADER_H))
-        canvas.paste(ImageOps.invert(_hdr_crop.convert('L')).convert('1'), (0, 0))
-        draw = ImageDraw.Draw(canvas)
-
-    # One win from clinching a postseason series: standing inverted header,
-    # unless an event flash above already inverted it.
-    if series_clinch_chance(game_data) and not _run_scored and not _fs_active_no_no:
         _hdr_crop = canvas.crop((0, 0, 800, HEADER_H))
         canvas.paste(ImageOps.invert(_hdr_crop.convert('L')).convert('1'), (0, 0))
         draw = ImageDraw.Draw(canvas)

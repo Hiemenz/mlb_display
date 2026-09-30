@@ -1909,6 +1909,18 @@ class TestDrawPlayoffSeedingsSidebar:
             result = draw_playoff_seedings_sidebar(img, sbl, {}, side='left')
         assert result is img
 
+    def test_game_results_lag_behind_win_counts(self):
+        # game_results has only 1 entry but win counts say 1-1 (data lag)
+        series = _ps('WC', '143', '144', 'PHI', 'ATL', away_wins=1, home_wins=1)
+        series['game_results'] = [
+            {'winner_id': '144', 'game_pk': 849845, 'date': '2026-09-29'},
+        ]
+        sbl = {'AL': [], 'NL': [series]}
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, sbl, {}, side='right')
+        assert result is img  # must not crash; draws 2 result slots + 1 empty
+
 
 @needs_pil
 class TestDrawPlayoffSeedingsFullscreen:

@@ -1537,7 +1537,9 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         game_results  = s.get('game_results', [])
         game_type     = s.get('game_type', 'F')
         max_games     = _MAX_GAMES.get(game_type, 7)
-        games_played  = len(game_results) if game_results else away_wins + home_wins
+        # game_results may lag behind win counts (e.g. one entry for a 1-1 series);
+        # use the larger of the two so slot counts and empty placeholders are correct.
+        games_played  = max(len(game_results), away_wins + home_wins)
         is_complete   = s.get('complete', False)
         empty_slots   = 0 if is_complete else max_games - games_played
         total_slots   = games_played + empty_slots
@@ -1553,12 +1555,23 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         draw.line((col_cx - _WIN // 2, cur_y, col_cx + _WIN // 2, cur_y), fill=0, width=1)
         cur_y += 2
 
-        # Games in chronological order (winner logo or dotted circle)
+        # Games in chronological order (winner logo or dotted circle).
+        # Draw known results first; fall back to win-count logos for any games
+        # not yet reflected in game_results (e.g. data lag).
         if game_results:
             for gr in game_results:
                 abbr = away_abbr if gr.get('winner_id') == away_id else home_abbr
                 wid  = away_id   if gr.get('winner_id') == away_id else home_id
                 _paste_logo(Himage, abbr, wid, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+            # Any wins not yet in game_results — draw away wins first, then home
+            gr_away = sum(1 for gr in game_results if str(gr.get('winner_id', '')) == str(away_id))
+            gr_home = sum(1 for gr in game_results if str(gr.get('winner_id', '')) == str(home_id))
+            for _ in range(away_wins - gr_away):
+                _paste_logo(Himage, away_abbr, away_id, _WIN, col_cx, cur_y + _WIN // 2)
+                cur_y += _WIN
+            for _ in range(home_wins - gr_home):
+                _paste_logo(Himage, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
                 cur_y += _WIN
         else:
             for _ in range(away_wins):
