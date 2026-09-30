@@ -16,7 +16,7 @@ from image_assets import (
 from image_utils import (
     draw_diamond, draw_circle, draw_tight_number, check_if_two_chars,
     _format_player_name, _last_name, _pitcher_line, _clean_venue_name,
-    _is_game_effectively_over, series_clinch_chance,
+    _is_game_effectively_over,
 )
 from util import load_json_file, load_yaml_file, save_off_results
 from stadium_polygons import get_polygon as _field_get_polygon
@@ -2567,11 +2567,6 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _invert_region(Himage, start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s)
         _hdr_inverted = not _hdr_inverted
 
-    # One win from clinching a postseason series: standing inverted header.
-    # Yields to the event flashes above so the two never cancel each other out.
-    if series_clinch_chance(game_data) and not _hdr_inverted and not skip_header_invert:
-        _invert_region(Himage, start_x, start_y, start_x + horizonta_len + 1 * s, start_y + 21 * s)
-
     return Himage
 
 
@@ -3369,9 +3364,6 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
         _cell_hdr_inverted = True
 
-    if series_clinch_chance(game_data) and not _cell_hdr_inverted:
-        _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
-
     return Himage
 
 
@@ -4091,8 +4083,5 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
        not (score_changed or _run_scored):
         _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
         _cell_hdr_inverted = True
-
-    if series_clinch_chance(game_data) and not _cell_hdr_inverted:
-        _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
 
     return Himage
