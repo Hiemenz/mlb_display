@@ -77,7 +77,7 @@ def _scheduled_games(away_id, home_id):
         try:
             dt    = datetime.fromisoformat(raw.replace('Z', '+00:00'))
             local = dt.astimezone()
-            time_str = local.strftime('%-I%p').lower()  # e.g. "8pm"
+            time_str = local.strftime('%a') + ' ' + local.strftime('%-I%p').lower()  # e.g. "Sun 8pm"
         except Exception:
             time_str = ''
         out.append({
@@ -109,28 +109,29 @@ def _draw_result_row(draw, Himage, cx, gy, game_num, gr,
         draw.text((gx + label_w + 2, gy), '—', font=font, fill=fg)
         return
 
-    a_sc, h_sc  = int(a_sc), int(h_sc)
-    win_id      = gr.get('winner_id', '')
-    win_abbr    = away_abbr if win_id == away_id else home_abbr
-    win_tid     = away_id   if win_id == away_id else home_id
-    score       = f'{max(a_sc, h_sc)}-{min(a_sc, h_sc)}'
-    score_w     = int(font.getlength(score))
+    a_sc, h_sc = int(a_sc), int(h_sc)
+    score      = f'{max(a_sc, h_sc)}-{min(a_sc, h_sc)}'
+    score_w    = int(font.getlength(score))
 
-    logo = _logo_small(win_abbr, win_tid, size=_SCORE_LOGO) if use_logos else None
-    win_w = (logo.width + 2) if logo else (int(font.getlength(win_abbr)) + 2)
-
-    gx = cx - (label_w + 2 + win_w + score_w) // 2
-    _bold_text(draw, gx, gy, label, font, fg)
-    lx = gx + label_w + 2
-
-    if logo:
-        _paste_logo_transparent(Himage, logo, lx, gy + (_SCORE_LOGO - logo.height) // 2 + 1)
-        lx += logo.width + 2
+    # Winner logo after the score.
+    winner_id  = str(gr.get('winner_id', ''))
+    if use_logos and winner_id:
+        win_abbr = away_abbr if str(away_id) == winner_id else home_abbr
+        win_tid  = away_id   if str(away_id) == winner_id else home_id
+        win_logo = _logo_small(win_abbr, win_tid, size=_SCORE_LOGO)
     else:
-        _bold_text(draw, lx, gy, win_abbr, font, fg)
-        lx += int(font.getlength(win_abbr)) + 2
+        win_logo = None
 
-    _bold_text(draw, lx, gy, score, font, fg)
+    logo_gap = 3
+    logo_w   = (win_logo.width + logo_gap) if win_logo else 0
+    total    = label_w + 4 + score_w + logo_w
+    gx       = cx - total // 2
+    _bold_text(draw, gx, gy, label, font, fg)
+    _bold_text(draw, gx + label_w + 4, gy, score, font, fg)
+    if win_logo:
+        lx = gx + label_w + 4 + score_w + logo_gap
+        _paste_logo_transparent(Himage, win_logo,
+                                lx, gy + (_SCORE_LOGO - win_logo.height) // 2 + 1)
 
 
 def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
@@ -147,7 +148,7 @@ def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
     a_logo = _logo_small(a_abbr, a_id, size=_SCORE_LOGO) if use_logos else None
     h_logo = _logo_small(h_abbr, h_id, size=_SCORE_LOGO) if use_logos else None
     a_w    = (a_logo.width + 2) if a_logo else (int(font.getlength(a_abbr)) + 2)
-    h_w    = (h_logo.width + 2) if h_logo else (int(font.getlength(h_abbr)) + 2)
+    h_w    = (h_logo.width + 5) if h_logo else (int(font.getlength(h_abbr)) + 5)
     t_w    = int(font.getlength(time_str))
     total  = a_w + at_w + h_w + t_w
 
@@ -165,10 +166,10 @@ def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
 
     if h_logo:
         _paste_logo_transparent(Himage, h_logo, lx, gy + (_SCORE_LOGO - h_logo.height) // 2 + 1)
-        lx += h_logo.width + 2
+        lx += h_logo.width + 5
     else:
         draw.text((lx, gy), h_abbr, font=font, fill=fg)
-        lx += int(font.getlength(h_abbr)) + 2
+        lx += int(font.getlength(h_abbr)) + 5
 
     draw.text((lx, gy), time_str, font=font, fill=fg)
 
@@ -264,17 +265,30 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     row = 0
     slot = 1
     while slot <= max_games and games_start + row * _GAME_ROW_H + _GAME_ROW_H <= body_bottom:
-        gy = games_start + row * _GAME_ROW_H
+        gy   = games_start + row * _GAME_ROW_H
+        kind, _ = _slot(slot)
+
         if slot == max_games:
-            # Decisive last game — centre it.
+            # Decisive last game — always centred.
+            _draw_slot(mid_x, gy, slot)
+            row += 1
+            slot += 1
+        elif kind == 'upcoming':
+            # Upcoming game: full-width row so "logo @ logo day Xpm" has room.
             _draw_slot(mid_x, gy, slot)
             row += 1
             slot += 1
         else:
-            # Pair: left then right.
-            _draw_slot(away_cx, gy, slot)
-            _draw_slot(home_cx, gy, slot + 1)
+            # Completed result: pair with the next slot if it's also a result;
+            # otherwise draw it full-width so there's no orphaned left-aligned row.
+            next_kind, _ = _slot(slot + 1) if slot + 1 <= max_games else ('empty', None)
+            if next_kind == 'result':
+                _draw_slot(away_cx, gy, slot)
+                _draw_slot(home_cx, gy, slot + 1)
+                slot += 2
+            else:
+                _draw_slot(mid_x, gy, slot)
+                slot += 1
             row += 1
-            slot += 2
 
     return Himage
