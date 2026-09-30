@@ -322,9 +322,13 @@ def fetch_playoff_bracket(season=None):
                     elif winning_id == entry['home_id']:
                         entry['home_wins'] += 1
                     entry['game_results'].append({
-                        'winner_id': winning_id,
-                        'game_pk':   game_pk,
-                        'date':      date_entry.get('date', ''),
+                        'winner_id':  winning_id,
+                        'game_pk':    game_pk,
+                        'date':       date_entry.get('date', ''),
+                        'away_score': away_t.get('score'),
+                        'home_score': home_t.get('score'),
+                        'away_id':    away_id,
+                        'home_id':    home_id,
                     })
 
             wins_needed = _WIN_GOAL[gtype]
