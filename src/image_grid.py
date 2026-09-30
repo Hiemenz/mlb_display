@@ -903,7 +903,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     # Drawn before everything else so they appear even on a full-ish grid.
     if config.get('show_series_panel', False) and _free_slots:
         _sr_data = load_json_file('playoff_bracket.json')
-        _sr_series = [s for s in (_sr_data or {}).get('series', []) if s.get('round') == 'WC']
+        _sr_series = (_sr_data or {}).get('series', [])  # all rounds: WC, DS, CS, WS
         from image_series import draw_series_cell
         for _sr in _sr_series:
             if not _free_slots:

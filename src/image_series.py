@@ -1,23 +1,30 @@
 """Draw a playoff series tile (135x130) for an empty grid slot.
 
-Shows the matchup (AWAY vs HOME) with team logos, win-dots, and game-by-game
-scores. When the series is over a large ghost logo of the winning team fills
-the tile body as a background watermark.  For series not yet started, the
-next scheduled game time is shown from games.json.
+Game slots (G1…Gmax) show either a completed result or the scheduled
+away-logo home-logo time for upcoming games.  The decisive last game when a
+series goes to its maximum is centred; all others pair left|right per row.
 """
 from datetime import datetime
+
+from PIL import Image
 
 import panel_cell
 from image_assets import ImageDraw, _get_font, _logo_small, _logo_ghost
 from util import load_json_file
 
-_WIN_GOAL   = {'WC': 2, 'DS': 3, 'CS': 4, 'WS': 4}
-_ROUND_LABEL = {'WC': 'Wild Card', 'DS': 'Div Series', 'CS': 'Champ Series', 'WS': 'World Series'}
-_DOT_R      = 4
-_DOT_GAP    = 3
-_LOGO_SZ    = 28
-_SCORE_LOGO = 9    # logo height inside a game-result row
-_GAME_ROW_H = 10   # vertical step between game-result rows
+_WIN_GOAL    = {'WC': 2, 'DS': 3, 'CS': 4, 'WS': 4}
+_ROUND_LABEL = {
+    'WC': '{l} Wild Card',
+    'DS': '{l} Div Series',
+    'CS': '{l} Champ Series',
+    'WS': 'World Series',
+}
+_DOT_R        = 4
+_DOT_GAP      = 3
+_LOGO_SZ      = 28
+_SCORE_LOGO   = 14   # logo height inside a game-result / upcoming row
+_GAME_ROW_H   = 15   # vertical step between game rows (4 rows fit in cell)
+_GAME_FONT_SZ = 11   # font size for scores and upcoming time
 
 
 def _dot_row(draw, cx, cy, filled, total, fg, bg):
@@ -29,19 +36,36 @@ def _dot_row(draw, cx, cy, filled, total, fg, bg):
                      fill=fg if i < filled else bg, outline=fg)
 
 
+def _paste_logo_transparent(Himage, logo, px, py):
+    """Paste only the dark pixels so the ghost watermark shows through."""
+    mask = logo.convert('L').point(lambda p: 255 - p)
+    Himage.paste(Image.new('1', logo.size, 0), (px, py), mask)
+
+
 def _paste_small_logo(Himage, abbr, team_id, cx, cy, size):
     logo = _logo_small(abbr, team_id, size=size)
     if logo is None:
         return
-    Himage.paste(logo, (cx - logo.width // 2, cy - logo.height // 2))
+    _paste_logo_transparent(Himage, logo,
+                             cx - logo.width // 2, cy - logo.height // 2)
 
 
-def _next_game_time(away_id, home_id):
-    """Return 'Day H:MMam/pm' for the next scheduled game, or None."""
+def _bold_text(draw, x, y, text, font, fill):
+    """Simulate bold by double-printing with a 1px horizontal offset."""
+    draw.text((x,     y), text, font=font, fill=fill)
+    draw.text((x + 1, y), text, font=font, fill=fill)
+
+
+def _scheduled_games(away_id, home_id):
+    """Return upcoming scheduled games for this series, sorted by date.
+
+    Each entry: {time, away_id, home_id, away_abbr, home_abbr}.
+    """
     try:
         games = load_json_file('games.json').get('games', [])
     except Exception:
-        return None
+        return []
+    out = []
     for g in games:
         if g.get('detailed_state') not in ('Scheduled', 'Pre-Game', 'Warmup'):
             continue
@@ -50,67 +74,118 @@ def _next_game_time(away_id, home_id):
         if {a_id, h_id} != {str(away_id), str(home_id)}:
             continue
         raw = g.get('game_date', '')
-        if not raw:
-            continue
         try:
             dt    = datetime.fromisoformat(raw.replace('Z', '+00:00'))
             local = dt.astimezone()
             day   = local.strftime('%a')
             time  = local.strftime('%-I:%M%p').lower().rstrip('m') + 'm'
-            return f'{day} {time}'
+            time_str = f'{day} {time}'
         except Exception:
-            return None
-    return None
+            time_str = ''
+        out.append({
+            'time':       time_str,
+            'away_id':    a_id,
+            'home_id':    h_id,
+            'away_abbr':  g.get('away_team', a_id),
+            'home_abbr':  g.get('home_team', h_id),
+            'sort_key':   raw,
+        })
+    out.sort(key=lambda x: x['sort_key'])
+    return out
 
 
-def _draw_result_row(draw, Himage, gx, gy, game_num, gr,
+def _draw_result_row(draw, Himage, cx, gy, game_num, gr,
                      away_abbr, away_id, home_abbr, home_id,
-                     use_logos, font_sm, fg):
-    """Draw one game-result row starting at (gx, gy)."""
-    label = f'G{game_num}'
-    draw.text((gx, gy), label, font=font_sm, fill=fg)
-    lx = gx + int(font_sm.getlength(label)) + 2
+                     use_logos, fg):
+    """Draw a completed game result centred at (cx, gy)."""
+    font     = _get_font(_GAME_FONT_SZ)
+    label    = f'G{game_num}'
+    label_w  = int(font.getlength(label))
 
     a_sc = gr.get('away_score')
     h_sc = gr.get('home_score')
     if a_sc is None or h_sc is None:
-        draw.text((lx, gy), '—', font=font_sm, fill=fg)
+        dash_w = int(font.getlength('—'))
+        gx = cx - (label_w + 2 + dash_w) // 2
+        _bold_text(draw, gx, gy, label, font, fg)
+        draw.text((gx + label_w + 2, gy), '—', font=font, fill=fg)
         return
 
-    a_sc, h_sc = int(a_sc), int(h_sc)
-    win_id   = gr.get('winner_id', '')
-    win_abbr = away_abbr if win_id == away_id else home_abbr
-    win_tid  = away_id   if win_id == away_id else home_id
-    score    = f'{max(a_sc, h_sc)}-{min(a_sc, h_sc)}'
+    a_sc, h_sc  = int(a_sc), int(h_sc)
+    win_id      = gr.get('winner_id', '')
+    win_abbr    = away_abbr if win_id == away_id else home_abbr
+    win_tid     = away_id   if win_id == away_id else home_id
+    score       = f'{max(a_sc, h_sc)}-{min(a_sc, h_sc)}'
+    score_w     = int(font.getlength(score))
 
-    if use_logos:
-        logo = _logo_small(win_abbr, win_tid, size=_SCORE_LOGO)
-        if logo:
-            Himage.paste(logo, (lx, gy + (_SCORE_LOGO - logo.height) // 2 + 1))
-            lx += logo.width + 2
-        else:
-            draw.text((lx, gy), win_abbr, font=font_sm, fill=fg)
-            lx += int(font_sm.getlength(win_abbr)) + 2
+    logo = _logo_small(win_abbr, win_tid, size=_SCORE_LOGO) if use_logos else None
+    win_w = (logo.width + 2) if logo else (int(font.getlength(win_abbr)) + 2)
+
+    gx = cx - (label_w + 2 + win_w + score_w) // 2
+    _bold_text(draw, gx, gy, label, font, fg)
+    lx = gx + label_w + 2
+
+    if logo:
+        _paste_logo_transparent(Himage, logo, lx, gy + (_SCORE_LOGO - logo.height) // 2 + 1)
+        lx += logo.width + 2
     else:
-        draw.text((lx, gy), win_abbr, font=font_sm, fill=fg)
-        lx += int(font_sm.getlength(win_abbr)) + 2
+        _bold_text(draw, lx, gy, win_abbr, font, fg)
+        lx += int(font.getlength(win_abbr)) + 2
 
-    draw.text((lx, gy), score, font=font_sm, fill=fg)
+    _bold_text(draw, lx, gy, score, font, fg)
+
+
+def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
+    """Draw an upcoming game slot: away-logo home-logo time, centred at cx."""
+    font      = _get_font(_GAME_FONT_SZ)
+    a_abbr    = sched.get('away_abbr', '?')
+    h_abbr    = sched.get('home_abbr', '?')
+    a_id      = sched.get('away_id', '')
+    h_id      = sched.get('home_id', '')
+    time_str  = sched.get('time', '')
+
+    a_logo = _logo_small(a_abbr, a_id, size=_SCORE_LOGO) if use_logos else None
+    h_logo = _logo_small(h_abbr, h_id, size=_SCORE_LOGO) if use_logos else None
+    a_w    = (a_logo.width + 2) if a_logo else (int(font.getlength(a_abbr)) + 2)
+    h_w    = (h_logo.width + 2) if h_logo else (int(font.getlength(h_abbr)) + 2)
+    t_w    = int(font.getlength(time_str))
+    total  = a_w + h_w + t_w
+
+    lx = cx - total // 2
+
+    if a_logo:
+        _paste_logo_transparent(Himage, a_logo, lx, gy + (_SCORE_LOGO - a_logo.height) // 2 + 1)
+        lx += a_logo.width + 2
+    else:
+        draw.text((lx, gy), a_abbr, font=font, fill=fg)
+        lx += int(font.getlength(a_abbr)) + 2
+
+    if h_logo:
+        _paste_logo_transparent(Himage, h_logo, lx, gy + (_SCORE_LOGO - h_logo.height) // 2 + 1)
+        lx += h_logo.width + 2
+    else:
+        draw.text((lx, gy), h_abbr, font=font, fill=fg)
+        lx += int(font.getlength(h_abbr)) + 2
+
+    draw.text((lx, gy), time_str, font=font, fill=fg)
 
 
 def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     """Draw one playoff series into the 135x130 cell at (sx, sy).
 
-    ≤5 games: single-column list.
-    6-7 games: two columns (G1-G3 left, G4-G6 right) with G7 centred below.
+    Each game slot (G1…Gmax) shows either a completed result or, if not yet
+    played and scheduled, 'away-logo home-logo time'.  When a series goes to
+    its maximum games the decisive last game is centred under the '@' sign;
+    all other slots pair left|right on the same row.
     """
-    draw = ImageDraw.Draw(Himage)
+    draw   = ImageDraw.Draw(Himage)
     series = series or {}
 
     rnd    = series.get('round', 'WC')
     winner = series.get('winner_abbr')
+    league = series.get('league', '')
 
-    # Ghost watermark behind everything.
+    # Ghost watermark.
     if winner:
         winner_id = (series.get('away_id', '') if winner == series.get('away_abbr')
                      else series.get('home_id', ''))
@@ -124,14 +199,16 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
             Himage.paste(ghost, (gx, gy))
 
     fg = 0
-    panel_cell.draw_chrome(draw, sx, sy, _ROUND_LABEL.get(rnd, rnd))
+    label_tmpl  = _ROUND_LABEL.get(rnd, rnd)
+    header_text = label_tmpl.format(l=league).strip() if '{l}' in label_tmpl else label_tmpl
+    panel_cell.draw_chrome(draw, sx, sy, header_text)
 
-    away_abbr = series.get('away_abbr', '???')
-    home_abbr = series.get('home_abbr', '???')
-    away_id   = series.get('away_id',   '')
-    home_id   = series.get('home_id',   '')
-    away_wins = series.get('away_wins', 0)
-    home_wins = series.get('home_wins', 0)
+    away_abbr  = series.get('away_abbr', '???')
+    home_abbr  = series.get('home_abbr', '???')
+    away_id    = series.get('away_id',   '')
+    home_id    = series.get('home_id',   '')
+    away_wins  = series.get('away_wins', 0)
+    home_wins  = series.get('home_wins', 0)
     total_wins = _WIN_GOAL.get(rnd, 2)
 
     font_sm  = _get_font(9)
@@ -152,52 +229,49 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     _dot_row(draw, away_cx, dots_y, away_wins, total_wins, fg, 255)
     _dot_row(draw, home_cx, dots_y, home_wins, total_wins, fg, 255)
 
-    game_results = series.get('game_results', [])
-    games_start  = dots_y + _DOT_R + 6
+    game_results  = series.get('game_results', [])
+    games_start   = dots_y + _DOT_R + 6
+    body_bottom   = sy + panel_cell.CELL_H - 2
+    max_games     = total_wins * 2 - 1   # 3, 5, or 7
+    n_played      = len(game_results)
 
-    # No games yet — show next scheduled game time.
-    if not game_results and not winner:
-        next_time = _next_game_time(away_id, home_id)
-        if next_time:
-            tw = int(font_sm.getlength(next_time))
-            draw.text((sx + (panel_cell.CELL_W - tw) // 2, games_start), next_time,
-                      font=font_sm, fill=fg)
-        return Himage
+    # Upcoming scheduled games — filled into slots after the played games.
+    upcoming = [] if winner else _scheduled_games(away_id, home_id)
 
-    kw = dict(away_abbr=away_abbr, away_id=away_id,
-              home_abbr=home_abbr, home_id=home_id,
-              use_logos=use_logos, font_sm=font_sm, fg=fg)
-    n = len(game_results)
+    kw_result = dict(away_abbr=away_abbr, away_id=away_id,
+                     home_abbr=home_abbr, home_id=home_id,
+                     use_logos=use_logos, fg=fg)
 
-    if n <= 5:
-        # Single column — show up to what fits.
-        body_bottom = sy + panel_cell.CELL_H - 2
-        available_h = body_bottom - games_start
-        n_fit = min(n, total_wins * 2, available_h // _GAME_ROW_H)
-        for i, gr in enumerate(game_results[-n_fit:]):
-            game_num = n - n_fit + i + 1
-            _draw_result_row(draw, Himage, sx + panel_cell.PAD + 2,
-                             games_start + i * _GAME_ROW_H,
-                             game_num, gr, **kw)
-    else:
-        # Two-column layout: G1-G3 left, G4-G6 right, G7 centred below.
-        left_x  = sx + panel_cell.PAD + 2
-        right_x = sx + panel_cell.CELL_W // 2 + 1
+    def _slot(slot_num):
+        """Return (kind, data) for a game slot number (1-indexed)."""
+        if slot_num <= n_played:
+            return ('result', game_results[slot_num - 1])
+        idx = slot_num - n_played - 1
+        if idx < len(upcoming):
+            return ('upcoming', upcoming[idx])
+        return ('empty', None)
 
-        for i in range(min(3, n)):
-            _draw_result_row(draw, Himage, left_x,
-                             games_start + i * _GAME_ROW_H,
-                             i + 1, game_results[i], **kw)
+    def _draw_slot(cx, gy, slot_num):
+        kind, data = _slot(slot_num)
+        if kind == 'result':
+            _draw_result_row(draw, Himage, cx, gy, slot_num, data, **kw_result)
+        elif kind == 'upcoming':
+            _draw_upcoming_row(draw, Himage, cx, gy, data, use_logos, fg)
 
-        for i in range(min(3, n - 3)):
-            _draw_result_row(draw, Himage, right_x,
-                             games_start + i * _GAME_ROW_H,
-                             i + 4, game_results[i + 3], **kw)
-
-        if n >= 7:
-            g7_y = games_start + 3 * _GAME_ROW_H
-            # Centre G7 by placing it at the left-of-centre column.
-            g7_x  = sx + (panel_cell.CELL_W - 60) // 2
-            _draw_result_row(draw, Himage, g7_x, g7_y, 7, game_results[6], **kw)
+    row = 0
+    slot = 1
+    while slot <= max_games and games_start + row * _GAME_ROW_H + _GAME_ROW_H <= body_bottom:
+        gy = games_start + row * _GAME_ROW_H
+        if slot == max_games:
+            # Decisive last game — centre it.
+            _draw_slot(mid_x, gy, slot)
+            row += 1
+            slot += 1
+        else:
+            # Pair: left then right.
+            _draw_slot(away_cx, gy, slot)
+            _draw_slot(home_cx, gy, slot + 1)
+            row += 1
+            slot += 2
 
     return Himage

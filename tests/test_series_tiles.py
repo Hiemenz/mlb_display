@@ -10,7 +10,8 @@ except ImportError:
 needs_pil = pytest.mark.skipif(not PIL_AVAILABLE, reason='PIL not installed')
 
 _WC_SERIES = {
-    'round': 'WC', 'away_abbr': 'PHI', 'home_abbr': 'ATL',
+    'round': 'WC', 'league': 'AL',
+    'away_abbr': 'PHI', 'home_abbr': 'ATL',
     'away_id': '143', 'home_id': '144',
     'away_wins': 2, 'home_wins': 1,
     'complete': False, 'winner_abbr': None,
@@ -34,11 +35,21 @@ _WC_COMPLETE = dict(_WC_SERIES, away_wins=2, home_wins=0, complete=True, winner_
 
 _NO_GAMES = dict(_WC_SERIES, away_wins=0, home_wins=0, game_results=[])
 
+_FAKE_SCHED = {'games': [{
+    'detailed_state': 'Scheduled',
+    'away_team_id': '143', 'home_team_id': '144',
+    'away_team': 'PHI', 'home_team': 'ATL',
+    'game_date': '2026-10-05T20:08:00Z',
+}]}
 
-def _draw(series, x=10, y=10, use_logos=False):
+
+def _draw(series, x=10, y=10, use_logos=False, fake_games=None):
+    from unittest.mock import patch
     from image_series import draw_series_cell
     img = Image.new('1', (300, 200), 255)
-    draw_series_cell(img, x, y, series, use_logos=use_logos)
+    games_json = fake_games if fake_games is not None else {'games': []}
+    with patch('image_series.load_json_file', return_value=games_json):
+        draw_series_cell(img, x, y, series, use_logos=use_logos)
     return img
 
 
@@ -58,16 +69,16 @@ class TestDrawSeriesCell:
         assert img.getbbox() is not None
 
     def test_none_entry_does_not_crash(self):
+        from unittest.mock import patch
         from image_series import draw_series_cell
         img = Image.new('1', (300, 200), 255)
-        result = draw_series_cell(img, 10, 10, None)
+        with patch('image_series.load_json_file', return_value={'games': []}):
+            result = draw_series_cell(img, 10, 10, None)
         assert result is not None
 
     def test_winner_floods_tile_body_black(self):
-        """Completed series: body floods black (more black pixels than no-games tile)."""
         img_win = _draw(_WC_COMPLETE)
         img_none = _draw(_NO_GAMES)
-        # Body = everything below the header rule
         win_body  = list(img_win.crop((10, 30, 145, 140)).getdata()).count(0)
         none_body = list(img_none.crop((10, 30, 145, 140)).getdata()).count(0)
         assert win_body > none_body
@@ -77,24 +88,20 @@ class TestDrawSeriesCell:
                         complete=True, winner_abbr='ATL', game_results=[])
         img = _draw(home_win)
         img_none = _draw(_NO_GAMES)
-        win_body  = list(img.crop((10, 30, 145, 140)).getdata()).count(0)
-        none_body = list(img_none.crop((10, 30, 145, 140)).getdata()).count(0)
-        assert win_body > none_body
+        assert list(img.crop((10, 30, 145, 140)).getdata()).count(0) > \
+               list(img_none.crop((10, 30, 145, 140)).getdata()).count(0)
 
     def test_logos_render_without_crash(self):
-        """use_logos=True should not raise even when logo files are absent."""
         img = _draw(_WC_COMPLETE, use_logos=True)
         assert img.getbbox() is not None
 
     def test_complete_series_more_ink_than_empty(self):
-        img_done = _draw(_WC_COMPLETE)
-        img_empty = _draw(_NO_GAMES)
-        assert list(img_done.getdata()).count(0) > list(img_empty.getdata()).count(0)
+        assert list(_draw(_WC_COMPLETE).getdata()).count(0) > \
+               list(_draw(_NO_GAMES).getdata()).count(0)
 
     def test_game_results_with_scores(self):
-        img_scored = _draw(_WC_SERIES)
-        img_empty = _draw(_NO_GAMES)
-        assert list(img_scored.getdata()).count(0) > list(img_empty.getdata()).count(0)
+        assert list(_draw(_WC_SERIES).getdata()).count(0) > \
+               list(_draw(_NO_GAMES).getdata()).count(0)
 
     def test_game_results_without_scores_use_dash(self):
         no_score = dict(_WC_SERIES, game_results=[
@@ -104,11 +111,19 @@ class TestDrawSeriesCell:
         img = _draw(no_score)
         assert img.getbbox() is not None
 
-    @pytest.mark.parametrize('rnd', ['WC', 'DS', 'CS', 'WS'])
-    def test_all_round_types_render(self, rnd):
-        s = dict(_NO_GAMES, round=rnd)
+    @pytest.mark.parametrize('rnd,league', [('WC', 'AL'), ('DS', 'NL'), ('CS', 'AL'), ('WS', '')])
+    def test_all_round_types_render(self, rnd, league):
+        s = dict(_NO_GAMES, round=rnd, league=league)
         img = _draw(s)
         assert img.getbbox() is not None
+
+    def test_league_label_al_wildcard(self):
+        """Header should say 'AL Wild Card' when league='AL'."""
+        s = dict(_NO_GAMES, round='WC', league='AL')
+        img = _draw(s)
+        # More ink than same series with empty league (extra chars → more pixels)
+        s_no_league = dict(_NO_GAMES, round='WC', league='')
+        assert list(img.getdata()).count(0) >= list(_draw(s_no_league).getdata()).count(0)
 
     def test_many_game_results_clipped_to_cell(self):
         many = dict(_WC_SERIES, round='WS',
@@ -121,32 +136,35 @@ class TestDrawSeriesCell:
         outside = img.crop((147, 0, 300, 200)).getextrema()
         assert outside == (255, 255)
 
-    def test_seven_games_two_column_has_more_ink_than_five(self):
-        """7-game series (2-col layout) has more ink than 5-game (1-col)."""
-        five = dict(_WC_SERIES, round='WS',
-                    game_results=[
-                        {'winner_id': '143', 'game_pk': i, 'date': '2026-10-0' + str(i + 1),
-                         'away_id': '143', 'home_id': '144', 'away_score': 3, 'home_score': 1}
-                        for i in range(5)
-                    ])
-        seven = dict(five, game_results=[
-                        {'winner_id': '143', 'game_pk': i, 'date': '2026-10-0' + str(i + 1),
-                         'away_id': '143', 'home_id': '144', 'away_score': 3, 'home_score': 1}
-                        for i in range(7)
-                    ])
-        ink5 = list(_draw(five).getdata()).count(0)
-        ink7 = list(_draw(seven).getdata()).count(0)
-        assert ink7 > ink5
+    @staticmethod
+    def _make_games(n, round='WS'):
+        return dict(_WC_SERIES, round=round, game_results=[
+            {'winner_id': '143', 'game_pk': i,
+             'date': f'2026-10-{i+1:02d}',
+             'away_id': '143', 'home_id': '144',
+             'away_score': 3, 'home_score': 1}
+            for i in range(n)
+        ])
 
-    def test_six_games_two_column_no_g7_row(self):
-        """6 results → 2-col layout but no G7 row."""
-        six = dict(_WC_SERIES, round='WS',
-                   game_results=[
-                       {'winner_id': '143', 'game_pk': i, 'date': '2026-10-0' + str(i + 1),
-                        'away_id': '143', 'home_id': '144', 'away_score': 3, 'home_score': 1}
-                       for i in range(6)
-                   ])
-        img = _draw(six)
+    def test_wc_three_games_centred_g3(self):
+        img = _draw(self._make_games(3, 'WC'))
+        assert img.getbbox() is not None
+        outside = img.crop((147, 0, 300, 200)).getextrema()
+        assert outside == (255, 255)
+
+    def test_ds_five_games_centred_g5(self):
+        img = _draw(self._make_games(5, 'DS'))
+        assert img.getbbox() is not None
+        outside = img.crop((147, 0, 300, 200)).getextrema()
+        assert outside == (255, 255)
+
+    def test_seven_games_more_ink_than_six(self):
+        ink6 = list(_draw(self._make_games(6, 'WS')).getdata()).count(0)
+        ink7 = list(_draw(self._make_games(7, 'WS')).getdata()).count(0)
+        assert ink7 > ink6
+
+    def test_six_games_paired_rows_no_overflow(self):
+        img = _draw(self._make_games(6, 'WS'))
         assert img.getbbox() is not None
         outside = img.crop((147, 0, 300, 200)).getextrema()
         assert outside == (255, 255)
@@ -156,45 +174,54 @@ class TestDrawSeriesCell:
             {'winner_id': '143', 'game_pk': 1, 'date': '2026-10-01',
              'away_id': '143', 'home_id': '144'}
         ])
-        img = _draw(no_score)
+        assert _draw(no_score).getbbox() is not None
+
+    def test_upcoming_game_shown_in_empty_slot(self):
+        """Scheduled game appears in G2 slot when only G1 is played."""
+        one_game = dict(_WC_SERIES, game_results=[_WC_SERIES['game_results'][0]])
+        img_with  = _draw(one_game, fake_games=_FAKE_SCHED)
+        img_blank = _draw(one_game, fake_games={'games': []})
+        assert list(img_with.getdata()).count(0) > list(img_blank.getdata()).count(0)
+
+    def test_upcoming_game_with_logos(self):
+        one_game = dict(_WC_SERIES, game_results=[_WC_SERIES['game_results'][0]])
+        img = _draw(one_game, use_logos=True, fake_games=_FAKE_SCHED)
         assert img.getbbox() is not None
 
-    def test_next_game_time_shown_when_no_games(self):
+    def test_upcoming_skips_final_games(self):
+        from image_series import _scheduled_games
         from unittest.mock import patch
-        from image_series import draw_series_cell
-        fake_games = {'games': [{
-            'detailed_state': 'Scheduled',
-            'away_team_id': '143', 'home_team_id': '144',
-            'game_date': '2026-10-05T17:05:00Z',
-        }]}
-        img = Image.new('1', (300, 200), 255)
-        with patch('image_series.load_json_file', return_value=fake_games):
-            draw_series_cell(img, 10, 10, _NO_GAMES, use_logos=False)
-        blank_img = Image.new('1', (300, 200), 255)
-        from image_series import draw_series_cell as dsc2
-        with patch('image_series.load_json_file', return_value={'games': []}):
-            dsc2(blank_img, 10, 10, _NO_GAMES, use_logos=False)
-        assert list(img.getdata()).count(0) > list(blank_img.getdata()).count(0)
-
-    def test_next_game_time_no_matching_game_returns_none(self):
-        from unittest.mock import patch
-        from image_series import _next_game_time
-        with patch('image_series.load_json_file', return_value={'games': []}):
-            assert _next_game_time('143', '144') is None
-
-    def test_next_game_time_wrong_state_skipped(self):
-        from unittest.mock import patch
-        from image_series import _next_game_time
-        fake = {'games': [{'detailed_state': 'Final', 'away_team_id': '143',
-                           'home_team_id': '144', 'game_date': '2026-10-01T17:00:00Z'}]}
+        fake = {'games': [{'detailed_state': 'Final',
+                           'away_team_id': '143', 'home_team_id': '144',
+                           'game_date': '2026-10-01T17:00:00Z'}]}
         with patch('image_series.load_json_file', return_value=fake):
-            assert _next_game_time('143', '144') is None
+            assert _scheduled_games('143', '144') == []
 
-    def test_next_game_time_load_error_returns_none(self):
+    def test_upcoming_load_error_returns_empty(self):
+        from image_series import _scheduled_games
         from unittest.mock import patch
-        from image_series import _next_game_time
         with patch('image_series.load_json_file', side_effect=Exception('boom')):
-            assert _next_game_time('143', '144') is None
+            assert _scheduled_games('143', '144') == []
+
+    def test_upcoming_no_matching_teams(self):
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        fake = {'games': [{'detailed_state': 'Scheduled',
+                           'away_team_id': '111', 'home_team_id': '999',
+                           'game_date': '2026-10-01T17:00:00Z'}]}
+        with patch('image_series.load_json_file', return_value=fake):
+            assert _scheduled_games('143', '144') == []
+
+    def test_upcoming_invalid_date_handled(self):
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        fake = {'games': [{'detailed_state': 'Scheduled',
+                           'away_team_id': '143', 'home_team_id': '144',
+                           'game_date': 'NOT_A_DATE'}]}
+        with patch('image_series.load_json_file', return_value=fake):
+            result = _scheduled_games('143', '144')
+            # Entry should appear but with empty time
+            assert result[0]['time'] == ''
 
 
 TEAM_DATA = {'team_abbreviation': {'147': 'NYY'}}
@@ -232,6 +259,7 @@ def _render_grid(n_games, config=BASE_CONFIG, bracket=_BRACKET):
     with patch('image_grid.load_yaml_file', return_value=config), \
          patch('image_box.load_yaml_file', return_value=config), \
          patch('image_grid.load_json_file', return_value=bracket), \
+         patch('image_series.load_json_file', return_value={'games': []}), \
          patch('image_series.draw_series_cell', spy):
         image_box.set_historical_mode(True)
         try:
@@ -259,10 +287,13 @@ class TestSeriesGridPlacement:
     def test_disabled_shows_nothing(self):
         assert _render_grid(3, config=dict(BASE_CONFIG, show_series_panel=False)) == []
 
-    def test_no_wc_series_shows_nothing(self):
-        bracket = {'series': [dict(_NO_GAMES, round='DS', away_abbr='LAD', home_abbr='ATL',
-                                   away_id='119', home_id='144')]}
-        assert _render_grid(3, bracket=bracket) == []
+    def test_all_rounds_shown_not_just_wc(self):
+        """DS, CS, WS series should also appear when there are free slots."""
+        bracket = {'series': [
+            dict(_NO_GAMES, round='DS', away_abbr='LAD', home_abbr='ATL',
+                 away_id='119', home_id='144'),
+        ]}
+        assert len(_render_grid(3, bracket=bracket)) == 1
 
     def test_missing_bracket_data_shows_nothing(self):
         assert _render_grid(3, bracket={}) == []
