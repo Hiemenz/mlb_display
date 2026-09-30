@@ -1727,12 +1727,23 @@ class TestDerivePlayoffSeedings:
 
 
 class TestDerivePlayoffActiveRound:
-    def test_active_round_is_highest_incomplete(self):
+    def test_active_round_is_lowest_incomplete(self):
         b = _pbracket([
             _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A'),
             _ps('DS', '1', '3', 'A', 'C', away_wins=1),
         ])
         assert derive_playoff_active_round(b) == 'DS'
+
+    def test_placeholder_future_rounds_ignored(self):
+        # Real bracket: WC in progress, DS/CS/WS pre-populated as 0-0 placeholders
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=1),
+            _ps('WC', '3', '4', 'C', 'D', away_wins=0),
+            _ps('DS', '5', '6', 'E', 'F'),   # placeholder, complete=False, 0-0
+            _ps('CS', '7', '8', 'G', 'H'),   # placeholder
+            _ps('WS', '9', '10', 'I', 'J'),  # placeholder
+        ])
+        assert derive_playoff_active_round(b) == 'WC'
 
     def test_all_complete_returns_highest(self):
         b = _pbracket([
