@@ -500,8 +500,6 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     )
     _ticker_will_show = bool(_dropped_games and not _all_games_done)
 
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots), suppress_date=_ticker_will_show)
-
     standings_data = None
     if config.get('show_wildcard_standings', False) or config.get('show_standings_sidebar', False):
         standings_data = load_json_file('standings.json')
@@ -525,6 +523,12 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
                 except Exception:
                     pass
             _bracket = _candidate
+
+    # The date label is suppressed when the ticker will overwrite the header
+    # strip outright, or when the playoff round header will occupy it instead.
+    _suppress_date = _ticker_will_show or bool(_bracket)
+
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots), suppress_date=_suppress_date)
 
     # Header strip priority:
     #   1. Overflow ticker — shown whenever any game didn't get a grid slot
