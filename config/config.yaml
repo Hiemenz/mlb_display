@@ -267,7 +267,7 @@ show_scoreless_panel: false
 # and over the last bullpen_lookback_days days (hatched, plus the number).
 # Starters and today's game are excluded. Needs two free grid slots to show
 # both tiles; with one free slot only the primary team's tile appears.
-show_bullpen_panel: false
+show_bullpen_panel: true
 bullpen_lookback_days: 3
 
 # Playoff series tiles: one spare-cell tile per Wild Card series showing the
