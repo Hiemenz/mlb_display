@@ -1,3 +1,4 @@
+import math
 import re
 from PIL import ImageDraw
 
@@ -1310,17 +1311,21 @@ _NL_DIVS = set(_NL_DIV_ORDER)
 def derive_playoff_active_round(bracket_data):
     """Return the round abbreviation ('WC', 'DS', 'CS', 'WS') for the current playoff stage.
 
-    The current round is the highest round that has at least one incomplete series.
+    The current round is the lowest round that still has at least one incomplete series.
+    Future rounds are pre-populated as placeholders (complete=false, 0-0) by the fetcher,
+    so we want the earliest incomplete round — not the latest.
     Falls back to the highest completed round (i.e. after the WS is over).
     """
-    active_ro  = -1
+    active_ro: int | None = None
     highest_ro = -1
     for s in bracket_data.get('series', []):
         ro = _ROUND_ORDER.get(s.get('round', ''), -1)
+        if ro < 0:
+            continue
         highest_ro = max(highest_ro, ro)
         if not s.get('complete', False):
-            active_ro = max(active_ro, ro)
-    target = active_ro if active_ro >= 0 else highest_ro
+            active_ro = ro if active_ro is None else min(active_ro, ro)
+    target = active_ro if active_ro is not None else highest_ro
     for rnd, ro in _ROUND_ORDER.items():
         if ro == target:
             return rnd
@@ -1505,9 +1510,17 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
     draw     = ImageDraw.Draw(Himage)
 
     col_cx   = 16 if side == 'left' else 784   # centre-x of the 32px sidebar column
-    _MAIN    = _SIDEBAR_LOGO_SIZE               # 20px — main team logo
-    _WIN     = _MAIN                            # win-indicator logo — same size as team logo
-    _SEP_W   = 10                               # half-width of separator line
+    _PAIR    = 14                               # per-logo size when two logos sit side by side
+    _WIN     = _SIDEBAR_LOGO_SIZE              # 20px — game-slot logo
+    _EMPTY_R = _WIN // 2 - 3                   # radius of dotted placeholder circle
+
+    # Max games by game_type: F=WC(3), D=DS(5), L=CS(7), W=WS(7)
+    _MAX_GAMES = {'F': 3, 'D': 5, 'L': 7, 'W': 7}
+
+    # Horizontal centres for the side-by-side pair row
+    _pair_off = _PAIR // 2 + 1                 # offset left/right of col_cx
+    _away_cx  = col_cx - _pair_off
+    _home_cx  = col_cx + _pair_off
 
     n        = len(series)
     block_h  = (480 - _WC_STRIP_H) // n
@@ -1521,19 +1534,26 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         away_wins  = s.get('away_wins', 0)
         home_wins  = s.get('home_wins', 0)
 
-        # Game results stacked top→bottom: away-team header, each game played in
-        # chronological order (via game_results if available, else away-wins-first
-        # fallback), then home-team header.
-        game_results = s.get('game_results', [])
-        total_games  = len(game_results) if game_results else away_wins + home_wins
-        content_h    = _MAIN + total_games * _WIN + _MAIN
-        top_y        = block_y + (block_h - content_h) // 2
+        game_results  = s.get('game_results', [])
+        game_type     = s.get('game_type', 'F')
+        max_games     = _MAX_GAMES.get(game_type, 7)
+        games_played  = len(game_results) if game_results else away_wins + home_wins
+        is_complete   = s.get('complete', False)
+        empty_slots   = 0 if is_complete else max_games - games_played
+        total_slots   = games_played + empty_slots
 
-        # Away team header logo
-        _paste_logo(Himage, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
-        cur_y = top_y + _MAIN
+        # Content: one pair-row header + game slots
+        content_h = _PAIR + total_slots * _WIN
+        top_y     = block_y + (block_h - content_h) // 2
 
-        # Each game in play order
+        # Away | Home logos side by side on one row, with a separator line below
+        _paste_logo(Himage, away_abbr, away_id, _PAIR, _away_cx, top_y + _PAIR // 2)
+        _paste_logo(Himage, home_abbr, home_id, _PAIR, _home_cx, top_y + _PAIR // 2)
+        cur_y = top_y + _PAIR
+        draw.line((col_cx - _WIN // 2, cur_y, col_cx + _WIN // 2, cur_y), fill=0, width=1)
+        cur_y += 2
+
+        # Games in chronological order (winner logo or dotted circle)
         if game_results:
             for gr in game_results:
                 abbr = away_abbr if gr.get('winner_id') == away_id else home_abbr
@@ -1548,13 +1568,19 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
                 _paste_logo(Himage, home_abbr, home_id, _WIN, col_cx, cur_y + _WIN // 2)
                 cur_y += _WIN
 
-        # Home team header logo
-        _paste_logo(Himage, home_abbr, home_id, _MAIN, col_cx, cur_y + _MAIN // 2)
+        for _ in range(empty_slots):
+            cy = cur_y + _WIN // 2
+            for i in range(10):
+                a = 2 * math.pi * i / 10
+                px = col_cx + _EMPTY_R * math.cos(a)
+                py = cy     + _EMPTY_R * math.sin(a)
+                draw.ellipse((px - 1, py - 1, px + 1, py + 1), fill=0)
+            cur_y += _WIN
 
         # Block divider (skip after last series)
         if idx < n - 1:
             div_y = block_y + block_h - 1
-            draw.line((col_cx - _MAIN // 2, div_y, col_cx + _MAIN // 2, div_y), fill=0, width=1)
+            draw.line((col_cx - _WIN // 2, div_y, col_cx + _WIN // 2, div_y), fill=0, width=1)
 
     return Himage
 
