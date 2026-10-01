@@ -1,6 +1,6 @@
 import math
 import re
-from PIL import ImageDraw
+from PIL import Image, ImageDraw
 
 from image_assets import _get_font, _logo_small
 import time as _time
@@ -1544,33 +1544,30 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         empty_slots   = 0 if is_complete else max_games - games_played
         total_slots   = games_played + empty_slots
 
-        # Content: one pair-row header + game slots
-        content_h = _PAIR + total_slots * _WIN
-        top_y     = block_y + (block_h - content_h) // 2
-
-        # Away | Home logos side by side on one row, with a separator line below.
-        # For complete series, strike through the loser's logo to signal elimination.
         winner_abbr = s.get('winner_abbr') if is_complete else None
+
+        # Content: header pair + game slots + optional winner footer pill.
+        _PILL_H      = 23   # abbr line (12) + score line (11)
+        footer_h     = (2 + _PILL_H) if (is_complete and winner_abbr) else 0
+        content_h    = _PAIR + total_slots * _WIN + footer_h
+        top_y = block_y + (block_h - content_h) // 2
+
+        # Away | Home logos side by side, with a centre dot and a separator line below.
         _paste_logo(Himage, away_abbr, away_id, _PAIR, _away_cx, top_y + _PAIR // 2)
         _paste_logo(Himage, home_abbr, home_id, _PAIR, _home_cx, top_y + _PAIR // 2)
-        if winner_abbr:
-            loser_cx = _home_cx if winner_abbr == away_abbr else _away_cx
-            mid = top_y + _PAIR // 2
-            draw.line((loser_cx - _PAIR // 2, mid, loser_cx + _PAIR // 2, mid), fill=0, width=1)
+        dot_y = top_y + _PAIR // 2
+        draw.ellipse((col_cx - 1, dot_y - 1, col_cx + 1, dot_y + 1), fill=0)
         cur_y = top_y + _PAIR
         draw.line((col_cx - _WIN // 2, cur_y, col_cx + _WIN // 2, cur_y), fill=0, width=1)
         cur_y += 2
 
         # Games in chronological order (winner logo or dotted circle).
-        # Draw known results first; fall back to win-count logos for any games
-        # not yet reflected in game_results (e.g. data lag).
         if game_results:
             for gr in game_results:
                 abbr = away_abbr if gr.get('winner_id') == away_id else home_abbr
                 wid  = away_id   if gr.get('winner_id') == away_id else home_id
                 _paste_logo(Himage, abbr, wid, _WIN, col_cx, cur_y + _WIN // 2)
                 cur_y += _WIN
-            # Any wins not yet in game_results — draw away wins first, then home
             gr_away = sum(1 for gr in game_results if str(gr.get('winner_id', '')) == str(away_id))
             gr_home = sum(1 for gr in game_results if str(gr.get('winner_id', '')) == str(home_id))
             for _ in range(away_wins - gr_away):
@@ -1595,6 +1592,26 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
                 py = cy     + _EMPTY_R * math.sin(a)
                 draw.ellipse((px - 1, py - 1, px + 1, py + 1), fill=0)
             cur_y += _WIN
+
+        # Winner footer: black pill with bold abbreviation + series score stacked.
+        if is_complete and winner_abbr:
+            w_wins    = away_wins if winner_abbr == away_abbr else home_wins
+            l_wins    = home_wins if winner_abbr == away_abbr else away_wins
+            score_str = f'{w_wins}-{l_wins}'
+            font_ab   = _get_font(11)
+            font_sm   = _get_font(8)
+            ba        = font_ab.getbbox(winner_abbr)
+            bs        = font_sm.getbbox(score_str)
+            pill_w    = max(ba[2] - ba[0], bs[2] - bs[0]) + 8
+            cur_y    += 2
+            pill_x0   = col_cx - pill_w // 2
+            pill_x1   = col_cx + pill_w // 2
+            draw.rectangle((pill_x0, cur_y, pill_x1, cur_y + _PILL_H - 1), fill=0)
+            ax = round(col_cx - (ba[0] + ba[2]) / 2)
+            draw.text((ax,     cur_y + 1), winner_abbr, font=font_ab, fill=255)
+            draw.text((ax + 1, cur_y + 1), winner_abbr, font=font_ab, fill=255)
+            sx = round(col_cx - (bs[0] + bs[2]) / 2) + 1
+            draw.text((sx, cur_y + 13), score_str, font=font_sm, fill=255)
 
         # Block divider (skip after last series)
         if idx < n - 1:
