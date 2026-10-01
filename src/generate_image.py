@@ -343,6 +343,19 @@ def _compute_grid_changed_regions(ordered, slots, refreshed_game_ids, bypass_cac
         changed_regions.append((0, 0, 800, _WC_STRIP_H))
     save_off_results(_header_state, 'old_header_state')
 
+    # Sidebar win-logo tracking: when playoff series wins change, include both
+    # sidebar columns in changed_regions so the e-ink panel repaints them.
+    if bracket and changed_regions != [(0, 0, 800, 480)]:
+        _bracket_wins = {
+            f"{s.get('away_abbr')}/{s.get('home_abbr')}": (s.get('away_wins', 0), s.get('home_wins', 0))
+            for s in bracket.get('series', [])
+        }
+        _old_bracket_wins = load_json_file('old_bracket_wins.json') or {}
+        if _bracket_wins != _old_bracket_wins:
+            changed_regions.append((0, y_start, x_start, 480 - y_start))
+            changed_regions.append((800 - x_start, y_start, x_start, 480 - y_start))
+        save_off_results(_bracket_wins, 'old_bracket_wins')
+
     return changed_regions, layout_changed
 
 
