@@ -1548,9 +1548,15 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         content_h = _PAIR + total_slots * _WIN
         top_y     = block_y + (block_h - content_h) // 2
 
-        # Away | Home logos side by side on one row, with a separator line below
+        # Away | Home logos side by side on one row, with a separator line below.
+        # For complete series, strike through the loser's logo to signal elimination.
+        winner_abbr = s.get('winner_abbr') if is_complete else None
         _paste_logo(Himage, away_abbr, away_id, _PAIR, _away_cx, top_y + _PAIR // 2)
         _paste_logo(Himage, home_abbr, home_id, _PAIR, _home_cx, top_y + _PAIR // 2)
+        if winner_abbr:
+            loser_cx = _home_cx if winner_abbr == away_abbr else _away_cx
+            mid = top_y + _PAIR // 2
+            draw.line((loser_cx - _PAIR // 2, mid, loser_cx + _PAIR // 2, mid), fill=0, width=1)
         cur_y = top_y + _PAIR
         draw.line((col_cx - _WIN // 2, cur_y, col_cx + _WIN // 2, cur_y), fill=0, width=1)
         cur_y += 2
