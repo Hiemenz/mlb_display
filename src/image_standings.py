@@ -1607,10 +1607,10 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
             pill_x0   = col_cx - pill_w // 2
             pill_x1   = col_cx + pill_w // 2
             draw.rectangle((pill_x0, cur_y, pill_x1, cur_y + _PILL_H - 1), fill=0)
-            ax = round(col_cx - (ba[2] - ba[0]) / 2) - ba[0]
+            ax = round(col_cx - (ba[0] + ba[2]) / 2)
             draw.text((ax,     cur_y + 1), winner_abbr, font=font_ab, fill=255)
             draw.text((ax + 1, cur_y + 1), winner_abbr, font=font_ab, fill=255)
-            sx = round(col_cx - (bs[2] - bs[0]) / 2) - bs[0]
+            sx = round(col_cx - (bs[0] + bs[2]) / 2)
             draw.text((sx, cur_y + 13), score_str, font=font_sm, fill=255)
 
         # Block divider (skip after last series)
