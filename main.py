@@ -32,7 +32,7 @@ from util import load_json_file, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
 from image_idle import draw_idle_screen, draw_history_screen
-from slack_notify import notify_error
+from hiemenz_utils.slack_notify import notify_error
 
 
 # ---------------------------------------------------------------------------
