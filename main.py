@@ -630,15 +630,27 @@ _DateContext = namedtuple(
     ['date_str', 'showing_previous_day', 'morning_block', 'now', 'mode_override'])
 
 
-def morning_rotation(config):
+def morning_rotation(config, now=None):
     """The views the morning window cycles through, one per 5-minute block.
 
-    'quadrant' is a display mode rather than a date, so it rides along as a
-    mode override; the other two are ordinary game grids for a given day.
+    'quadrant' and 'bracket' are display modes rather than dates; they ride
+    along as mode overrides.  During the postseason window the playoff bracket
+    is automatically included when bracket data is available on disk.
+    ``now`` is passed in from _resolve_target_date so mocked times in tests
+    propagate into the postseason-window check.
     """
+    views: list[str]
     if config.get('morning_alternate_quadrant', True):
-        return ('today', 'yesterday', 'quadrant')
-    return ('yesterday', 'today')
+        views = ['today', 'yesterday', 'quadrant']
+    else:
+        views = ['yesterday', 'today']
+
+    if (config.get('morning_alternate_bracket', True)
+            and is_postseason_window(now)
+            and (load_json_file('playoff_bracket.json') or {}).get('series')):
+        views.append('bracket')
+
+    return tuple(views)
 
 
 def _resolve_target_date(args, config):
@@ -672,11 +684,14 @@ def _resolve_target_date(args, config):
 
     if now.hour >= morning_start and config.get('morning_alternate_games', True):
         block = (now.hour * 60 + now.minute) // 5
-        rotation = morning_rotation(config)
+        rotation = morning_rotation(config, now=now)
         view = rotation[block % len(rotation)]
         if view == 'quadrant':
             print(f"Morning alternating (block {block}) — showing team quadrant")
             return _DateContext(today, False, block, now, 'quadrant')
+        if view == 'bracket':
+            print(f"Morning alternating (block {block}) — showing playoff bracket")
+            return _DateContext(today, False, block, now, 'bracket')
         date_str = yesterday if view == 'yesterday' else today
         print(f"Morning alternating (block {block}) — showing {view}: {date_str}")
         return _DateContext(date_str, view == 'yesterday', block, now, None)

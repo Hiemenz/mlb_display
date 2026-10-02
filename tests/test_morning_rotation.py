@@ -49,12 +49,14 @@ def _view(ctx):
 
 def test_rotation_is_three_way_by_default():
     """Today, yesterday, then the quadrant."""
-    assert main.morning_rotation(_config()) == ('today', 'yesterday', 'quadrant')
+    _aug = _CT.localize(datetime(2026, 8, 10, 8, 0))  # outside postseason window
+    assert main.morning_rotation(_config(), now=_aug) == ('today', 'yesterday', 'quadrant')
 
 
 def test_rotation_falls_back_to_the_original_two_way_cycle():
     """Opting out restores the yesterday/today alternation that predates the quadrant."""
-    assert main.morning_rotation(_config(morning_alternate_quadrant=False)) == (
+    _aug = _CT.localize(datetime(2026, 8, 10, 8, 0))  # outside postseason window
+    assert main.morning_rotation(_config(morning_alternate_quadrant=False), now=_aug) == (
         'yesterday', 'today')
 
 
