@@ -32,6 +32,7 @@ from util import load_json_file, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
 from image_idle import draw_idle_screen, draw_history_screen
+from slack_notify import notify_error
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +620,8 @@ def _show_idle_screen(config, auto_open=False):
         send_to_display(output_path, force_full=True)
     except Exception as _disp_e:
         print(f"Warning: display send failed: {_disp_e}")
+        notify_error(f"idle send_to_display failed: {_disp_e}", _disp_e,
+                     error_key="idle_send_to_display")
 
     if auto_open:
         import subprocess
@@ -1009,8 +1012,13 @@ def _render_and_display(config, date_str, output_path, no_throttle,
     light-mode band on an otherwise dark screen. Bypass the cache so the
     transition always renders and reaches the display.
     """
-    result = render(config, date_str=date_str, output_path=output_path,
-                    bypass_cache=no_throttle or dark_transitioned)
+    try:
+        result = render(config, date_str=date_str, output_path=output_path,
+                        bypass_cache=no_throttle or dark_transitioned)
+    except Exception as _render_e:
+        notify_error(f"render failed for {date_str}", _render_e, error_key="render_failed")
+        raise
+
     if not result:
         print("No display update needed - image unchanged")
         return False
@@ -1029,7 +1037,12 @@ def _render_and_display(config, date_str, output_path, no_throttle,
     layout_changed = load_json_file('force_full_refresh.json').get('needed', False)
     force_full = morning_block is not None or layout_changed or dark_transitioned
 
-    refresh_mode = send_to_display(output_path, changed_regions, force_full=force_full)
+    try:
+        refresh_mode = send_to_display(output_path, changed_regions, force_full=force_full)
+    except Exception as _disp_e:
+        notify_error(f"send_to_display failed: {_disp_e}", _disp_e, error_key="send_to_display")
+        raise
+
     print(f"Scoreboard: {refresh_mode} refresh ({len(changed_regions)} region(s))")
     print("\n✓ Display updated successfully!")
     print(f"  Image: {output_path}")
@@ -1160,7 +1173,12 @@ Examples:
                 return
 
     # 6. Fetch
-    fetch_scoreboard_for_date(date_str, sport_id, config)
+    try:
+        fetch_scoreboard_for_date(date_str, sport_id, config)
+    except Exception as _fetch_e:
+        notify_error(f"fetch_scoreboard_for_date failed for {date_str}: {_fetch_e}",
+                     _fetch_e, error_key="fetch_scoreboard")
+        raise
 
     # 6b. Next-day schedule for the next-game preview strips.
     if not args.date:
