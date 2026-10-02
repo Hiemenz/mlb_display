@@ -1308,19 +1308,25 @@ _AL_DIVS = set(_AL_DIV_ORDER)
 _NL_DIVS = set(_NL_DIV_ORDER)
 
 
-def derive_playoff_active_round(bracket_data):
+def derive_playoff_active_round(bracket_data, today=None):
     """Return the round abbreviation ('WC', 'DS', 'CS', 'WS') for the current playoff stage.
 
-    A round is considered "started" only when at least one of its series has a game
-    played (away_wins + home_wins > 0).  This prevents the sidebar from jumping ahead
-    to pre-scheduled future rounds (e.g. Division Series listed at 0-0 before any
-    DS games are played) the moment the previous round's last series completes.
+    A round is considered "started" when at least one of its series has either
+    (a) a game played (away_wins + home_wins > 0), or (b) a ``first_game_date`` that
+    falls on or before ``today``.  This means the sidebar switches to the new round on
+    the calendar day that round's games are scheduled, rather than waiting for the first
+    game to finish.  Between rounds (gap days) the sidebar stays on the most-recently
+    completed round's results.
 
     Priority:
-      1. Lowest started-but-incomplete round (games are in progress / ongoing series).
+      1. Lowest started-but-incomplete round (games have begun / series still ongoing).
       2. Highest started round (all complete) — gap between rounds; show last results.
-      3. Any highest round by order — final fallback.
+      3. Highest round by order — final fallback.
     """
+    from datetime import date as _date
+    _t = today or _date.today()
+    today_str = _t if isinstance(_t, str) else _t.isoformat()
+
     started_incomplete_ro: int | None = None   # lowest started round still in progress
     started_complete_ro:   int | None = None   # highest started round that is all done
     highest_ro = -1
@@ -1331,8 +1337,10 @@ def derive_playoff_active_round(bracket_data):
             continue
         highest_ro = max(highest_ro, ro)
         games_played = s.get('away_wins', 0) + s.get('home_wins', 0)
-        if games_played == 0:
-            continue  # future/pre-scheduled series — not yet started
+        first_date   = s.get('first_game_date', '')
+        started = games_played > 0 or bool(first_date and first_date <= today_str)
+        if not started:
+            continue
         if not s.get('complete', False):
             started_incomplete_ro = (
                 ro if started_incomplete_ro is None else min(started_incomplete_ro, ro)
