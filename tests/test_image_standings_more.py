@@ -1759,6 +1759,25 @@ class TestDerivePlayoffActiveRound:
         b = _pbracket([_ps('WS', '1', '2', 'A', 'B', away_wins=2)])
         assert derive_playoff_active_round(b) == 'WS'
 
+    def test_gap_between_rounds_keeps_completed_round(self):
+        # WC is done (complete=True); DS is pre-scheduled but 0-0 (no games yet).
+        # The sidebar should stay on WC results, not jump to DS at 0-0.
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A'),
+            _ps('WC', '3', '4', 'C', 'D', home_wins=2, complete=True, winner_abbr='D'),
+            _ps('DS', '1', '3', 'A', 'C'),   # scheduled, no games played yet
+            _ps('CS', '5', '6', 'E', 'F'),   # scheduled, no games played yet
+        ])
+        assert derive_playoff_active_round(b) == 'WC'
+
+    def test_gap_switches_to_new_round_once_a_game_is_played(self):
+        # Once DS has even one game played, it becomes the active round.
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A'),
+            _ps('DS', '1', '3', 'A', 'C', away_wins=1),  # first DS game played
+        ])
+        assert derive_playoff_active_round(b) == 'DS'
+
 
 class TestDerivePlayoffSeriesByLeague:
     def _base_standings(self):

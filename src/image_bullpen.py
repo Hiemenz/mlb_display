@@ -65,10 +65,11 @@ def draw_bullpen_cell(Himage, sx, sy, team_entry, days=3):
         ry = sy + panel_cell.HEADER_H + 2 + i * row_h
         name = panel_cell.truncate(font, p.get('name', ''), _NAME_W)
         draw.text((sx + panel_cell.PAD, ry), name, font=font, fill=0)
-        _draw_bar(draw, bar_x, ry + 2, bar_w, p.get('yesterday', 0), p.get('total', 0))
-        total = str(p.get('total', 0))
-        draw.text((sx + panel_cell.CELL_W - panel_cell.PAD - int(font.getlength(total)), ry),
-                  total, font=font, fill=0)
+        ptotal = p.get('total', 0)
+        _draw_bar(draw, bar_x, ry + 2, bar_w, p.get('yesterday', 0), ptotal)
+        lbl = '–' if ptotal == 0 else str(ptotal)
+        draw.text((sx + panel_cell.CELL_W - panel_cell.PAD - int(font.getlength(lbl)), ry),
+                  lbl, font=font, fill=0)
 
     _draw_footer(draw, sx, sy, days, font)
     return Himage
