@@ -80,10 +80,6 @@ class TestChampionBox:
     def test_champ_box_drawn_when_ws_complete(self):
         """When WS is complete the champion double-border box should be drawn."""
         canvas = _canvas()
-        drawn_rects = []
-        orig = Image.Image.paste
-
-        # Use draw_bracket_tile and just verify it doesn't error
         result = bt.draw_bracket_tile(canvas, 0, 0, _full_bracket(ws_complete=True, ws_winner='NYY'))
         assert result is canvas
 
