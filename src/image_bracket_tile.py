@@ -134,7 +134,7 @@ def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mo
     from image_assets import _get_font
     font = _get_font(10)
     draw.line([(1, _HEADER_H), (TILE_W - 2, _HEADER_H)], fill=0)
-    for band_idx, (lg, rnd) in enumerate(_BANDS):
+    for band_idx, (_lg, rnd) in enumerate(_BANDS):
         bx = band_idx * _BAND_W
         cx = bx + _BAND_W // 2
         lw = int(font.getlength(rnd))
