@@ -386,7 +386,8 @@ def test_mid_inning_pc_pitcher_line_stays_clear_of_the_batter_block():
         current_pitcher='Bartholomew Longpitchernamefortruncation',
         sub_event='PC: Ferdinandlongincomingpitchername',
     )
-    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    with patch('image_featured.load_json_file', return_value=None):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
     px = img.load()
     assert not any(px[x, y] == 0 for x in range(392, 400) for y in range(325, 380)), \
         'the pitcher line must not reach the AB:/OD: column'
@@ -564,6 +565,34 @@ def test_live_fullscreen_between_innings_one_bullpen_only():
         },
     }
     game = _live_game(inningState='Middle')
+    with patch('image_featured.load_json_file', return_value=bp):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_active_pitch_shows_bullpens():
+    """Active play: bullpen tiles appear on both sides and content stays in centre."""
+    from image_featured import draw_live_fullscreen_game
+    bp = {
+        'days': 3,
+        'team_order': ['147', '111'],
+        'teams': {
+            '147': {'team_id': '147', 'abbr': 'NYY', 'pitchers': [
+                {'name': 'C. Holmes', 'yesterday': 14, 'total': 29},
+            ]},
+            '111': {'team_id': '111', 'abbr': 'BOS', 'pitchers': [
+                {'name': 'K. Jansen', 'yesterday': 0, 'total': 15},
+            ]},
+        },
+    }
+    game = _live_game(
+        inningState='Top',
+        current_pitcher='Gerrit Cole',
+        current_play_batter='Rafael Devers',
+        balls=2, strikes=1, outs=1,
+        last_pitch_speed=95, last_pitch_type='FF', pitch_count=67,
+    )
     with patch('image_featured.load_json_file', return_value=bp):
         img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
     assert isinstance(img, Image.Image)
