@@ -898,6 +898,13 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         and (_primary_abbr_live in (g.get('away_team', ''), g.get('home_team', '')))
         for g in (game_state_data or [])
     )
+    # Boost and auto-enable bullpen tiles for any live playoff game regardless of config.
+    _PLAYOFF_GAME_TYPES_G = {'W', 'D', 'L', 'F'}
+    _any_playoff_live = any(
+        g.get('detailed_state') in _LIVE_WIDE_STATES
+        and g.get('game_type') in _PLAYOFF_GAME_TYPES_G
+        for g in (game_state_data or [])
+    )
 
     # Playoff series tiles — current round + next round only, and next-round
     # tiles are suppressed until both teams in the matchup are determined
@@ -930,7 +937,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     # Shown at the top of the queue when the primary team's game is live so it
     # always gets a slot; pushed below the deadline panel otherwise.
     def _draw_bullpen():
-        if not (config.get('show_bullpen_panel', False) and _free_slots):
+        if not ((config.get('show_bullpen_panel', False) or _any_playoff_live) and _free_slots):
             return
         _bp_data = load_json_file('bullpen.json')
         _bp_teams = (_bp_data or {}).get('teams', {})
@@ -944,7 +951,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 _bp_teams[_bp_tid], days=_bp_data.get('days', 3),
             )
 
-    if _primary_game_live:
+    if _primary_game_live or _any_playoff_live:
         _draw_bullpen()
 
     # Free-slot panels, in priority order (first match claims the slot).
@@ -1025,7 +1032,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         Himage = draw_scoreless_cell(Himage, _sc_lx, _sc_ly, _sc_data, team_data, use_logos=use_logos)
 
     # Bullpen workload (non-live path — live path runs before deadline panel above).
-    if not _primary_game_live:
+    if not (_primary_game_live or _any_playoff_live):
         _draw_bullpen()
 
     if config.get('show_leaders_panel', False) and _free_slots:

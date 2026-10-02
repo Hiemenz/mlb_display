@@ -1160,6 +1160,14 @@ Examples:
                 return
 
     # 6. Fetch
+    # Capture playoff finals *before* the fetch so we can detect completions below.
+    _PLAYOFF_GAME_TYPES = {'W', 'D', 'L', 'F'}
+    _FINAL_STATES = {'Final', 'Game Over', 'Final: Tied', 'Completed Early'}
+    _pre_fetch_playoff_finals = {
+        g.get('game_pk') for g in load_json_file('games.json').get('games', [])
+        if g.get('game_type') in _PLAYOFF_GAME_TYPES
+        and g.get('detailed_state') in _FINAL_STATES
+    }
     fetch_scoreboard_for_date(date_str, sport_id, config)
 
     # 6b. Next-day schedule for the next-game preview strips.
@@ -1209,7 +1217,14 @@ Examples:
     # last night's leaders).
     _dark_transitioned = _apply_dark_mode(
         config, sched, track_transition=not _no_throttle and not args.date)
-    _force_data_refresh = args.full_refresh or _dark_transitioned
+    # Force bracket/sidebar refresh immediately when a playoff game just finished.
+    _playoff_just_finished = any(
+        g.get('game_type') in _PLAYOFF_GAME_TYPES
+        and g.get('detailed_state') in _FINAL_STATES
+        and g.get('game_pk') not in _pre_fetch_playoff_finals
+        for g in load_json_file('games.json').get('games', [])
+    )
+    _force_data_refresh = args.full_refresh or _dark_transitioned or _playoff_just_finished
 
     # 7b-7e. Support-data refresh — standings, playoff bracket, transactions,
     # news, leaders and streaks, each on its own staleness/Finals gate so a

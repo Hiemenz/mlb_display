@@ -526,7 +526,7 @@ def test_live_fullscreen_long_batter_names_shrink_font():
 
 @needs_pil
 def test_live_fullscreen_between_innings_shows_bullpens():
-    """Playoff between innings: bullpen tiles for both teams replace the side text."""
+    """Between innings: bullpen tiles for both teams replace the side text."""
     from image_featured import draw_live_fullscreen_game
     bp = {
         'days': 3,
@@ -541,7 +541,6 @@ def test_live_fullscreen_between_innings_shows_bullpens():
         },
     }
     game = _live_game(
-        game_type='W',
         inningState='Middle',
         next_pitcher='A. Bender',
         next_batter_1='Judge', next_batter_2='Soto', next_batter_3='Stanton',
@@ -553,7 +552,7 @@ def test_live_fullscreen_between_innings_shows_bullpens():
 
 @needs_pil
 def test_live_fullscreen_between_innings_one_bullpen_only():
-    """Playoff between innings: only one team's bullpen data available — still renders."""
+    """Between innings: only one team's bullpen data available — still renders."""
     from image_featured import draw_live_fullscreen_game
     bp = {
         'days': 3,
@@ -564,55 +563,7 @@ def test_live_fullscreen_between_innings_one_bullpen_only():
             ]},
         },
     }
-    game = _live_game(game_type='D', inningState='Middle')
-    with patch('image_featured.load_json_file', return_value=bp):
-        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
-    assert isinstance(img, Image.Image)
-
-
-@needs_pil
-def test_live_fullscreen_playoff_active_pitch_shows_bullpens():
-    """Playoff active pitch: bullpen tiles flank the centre-constrained game content."""
-    from image_featured import draw_live_fullscreen_game
-    bp = {
-        'days': 3,
-        'team_order': ['147', '111'],
-        'teams': {
-            '147': {'team_id': '147', 'abbr': 'NYY', 'pitchers': [
-                {'name': 'C. Holmes', 'yesterday': 20, 'total': 42},
-            ]},
-            '111': {'team_id': '111', 'abbr': 'BOS', 'pitchers': [
-                {'name': 'K. Jansen', 'yesterday': 12, 'total': 31},
-            ]},
-        },
-    }
-    game = _live_game(
-        game_type='F',
-        inningState='Top',
-        current_pitcher='Gerrit Cole',
-        current_play_batter='Rafael Devers',
-        balls=2, strikes=1,
-        last_pitch_speed=97, last_pitch_type='FF', pitch_count=73,
-    )
-    with patch('image_featured.load_json_file', return_value=bp):
-        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
-    assert isinstance(img, Image.Image)
-
-
-@needs_pil
-def test_live_fullscreen_regular_season_no_bullpens():
-    """Regular season games never show bullpen tiles even when data is present."""
-    from image_featured import draw_live_fullscreen_game
-    bp = {
-        'days': 3,
-        'team_order': ['147', '111'],
-        'teams': {
-            '147': {'team_id': '147', 'abbr': 'NYY', 'pitchers': [
-                {'name': 'C. Holmes', 'yesterday': 14, 'total': 29},
-            ]},
-        },
-    }
-    game = _live_game(inningState='Middle')  # no game_type → defaults to 'R'
+    game = _live_game(inningState='Middle')
     with patch('image_featured.load_json_file', return_value=bp):
         img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
     assert isinstance(img, Image.Image)
