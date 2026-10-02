@@ -776,13 +776,42 @@ def _free_grid_slots(slots):
     return [(_idx % 5, _idx // 5) for _idx in range(15) if (_idx % 5, _idx // 5) not in occupied]
 
 
-def _find_2x2_block(free_slots):
-    """Return the top-left (col, row) of the first 2×2 free block, or None.
+def _find_3x2_block(free_slots, prefer_bottom_right=False, max_col=1):
+    """Return top-left (col, row) of a 3-wide × 2-tall free block, or None.
 
-    Removes all four slots from *free_slots* in place when found.
+    Removes all six slots from *free_slots* in place when found.
+    *max_col* caps the left column (default 1 keeps the 3-wide tile within the
+    5-col grid; pass 2 when there is no sidebar).
     """
     free_set = set(free_slots)
-    for col, row in free_slots:
+    candidates = reversed(list(free_slots)) if prefer_bottom_right else free_slots
+    for col, row in candidates:
+        if col > max_col:
+            continue
+        block = [(col + c, row + r) for r in range(2) for c in range(3)]
+        if all(s in free_set for s in block):
+            for s in block:
+                if s in free_slots:
+                    free_slots.remove(s)
+            return col, row
+    return None
+
+
+def _find_2x2_block(free_slots, prefer_bottom_right=False, max_col=3):
+    """Return the top-left (col, row) of a 2×2 free block, or None.
+
+    Removes all four slots from *free_slots* in place when found.
+    When *prefer_bottom_right* is True, scans from the end of the list so the
+    bottom-right-most qualifying block is chosen first.
+    *max_col* caps the left column of the block (default 3 = rightmost valid
+    in a 5-col grid).  Pass 2 when a sidebar occupies the last 32px to prevent
+    the tile from overlapping it.
+    """
+    free_set = set(free_slots)
+    candidates = reversed(list(free_slots)) if prefer_bottom_right else free_slots
+    for col, row in candidates:
+        if col > max_col:
+            continue
         block = [(col, row), (col + 1, row), (col, row + 1), (col + 1, row + 1)]
         if all(s in free_set for s in block):
             for s in block:
@@ -922,18 +951,22 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         for g in (game_state_data or [])
     )
 
-    # 2×2 playoff bracket tile — placed FIRST so it claims its block before
-    # per-series tiles consume all free slots.
-    _PLAYOFF_GAME_TYPES_2x2 = {'W', 'D', 'L', 'F'}
+    # 2×2 playoff bracket tile (300×300px) — claims the bottom-right 2×2 block
+    # before per-series tiles consume the free slots.
+    _PLAYOFF_GAME_TYPES_BK = {'W', 'D', 'L', 'F'}
     _has_playoff_games = any(
-        g.get('game_type') in _PLAYOFF_GAME_TYPES_2x2
+        g.get('game_type') in _PLAYOFF_GAME_TYPES_BK
         for g in (game_state_data or [])
     )
     if (config.get('show_series_panel', False) and _has_playoff_games
             and len(_free_slots) >= 4):
-        _2x2 = _find_2x2_block(_free_slots)
-        if _2x2 is not None:
-            _bt_col, _bt_row = _2x2
+        _bt_sidebar  = config.get('show_standings_sidebar', False)
+        _bt_max_c    = 2 if _bt_sidebar else 3
+        _bt_pos      = _find_2x2_block(
+            _free_slots, prefer_bottom_right=True, max_col=_bt_max_c
+        )
+        if _bt_pos is not None:
+            _bt_col, _bt_row = _bt_pos
             _bt_data = load_json_file('playoff_bracket.json')
             if (_bt_data or {}).get('series'):
                 from image_bracket_tile import draw_bracket_tile as _draw_bt
