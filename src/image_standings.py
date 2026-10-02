@@ -2,7 +2,7 @@ import math
 import re
 from PIL import Image, ImageDraw
 
-from image_assets import _get_font, _logo_small, _logo_ghost
+from image_assets import _get_font, _logo_small
 import time as _time
 
 from util import load_json_file, save_off_results
@@ -1552,15 +1552,6 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         content_h    = _PAIR + total_slots * _WIN + footer_h
         top_y = block_y + (block_h - content_h) // 2
 
-        # Ghost watermark for series winner — same lightness as a single-game win.
-        if is_complete and winner_abbr:
-            winner_id = away_id if winner_abbr == away_abbr else home_id
-            ghost_sz = min(28, block_h - 4)
-            ghost = _logo_ghost(winner_abbr, winner_id, size=ghost_sz)
-            if ghost:
-                gw, gh = ghost.size
-                Himage.paste(ghost, (col_cx - gw // 2, block_y + (block_h - gh) // 2))
-
         # Away | Home logos side by side, with a centre dot and a separator line below.
         _paste_logo(Himage, away_abbr, away_id, _PAIR, _away_cx, top_y + _PAIR // 2)
         _paste_logo(Himage, home_abbr, home_id, _PAIR, _home_cx, top_y + _PAIR // 2)
@@ -1674,17 +1665,6 @@ def draw_playoff_seedings_fullscreen(canvas, series_by_league, team_data, side='
         total_games  = len(game_results) if game_results else away_wins + home_wins
         content_h    = _MAIN + total_games * _WIN + _MAIN
         top_y        = block_y + (block_h - content_h) // 2
-        is_complete  = s.get('complete', False)
-        winner_abbr  = s.get('winner_abbr') if is_complete else None
-
-        # Ghost watermark for series winner — same lightness as a single-game win.
-        if is_complete and winner_abbr:
-            winner_id = away_id if winner_abbr == away_abbr else home_id
-            ghost_sz = min(sidebar_w - 20, block_h - 20)
-            ghost = _logo_ghost(winner_abbr, winner_id, size=ghost_sz)
-            if ghost:
-                gw, gh = ghost.size
-                canvas.paste(ghost, (col_cx - gw // 2, block_y + (block_h - gh) // 2))
 
         _paste_logo(canvas, away_abbr, away_id, _MAIN, col_cx, top_y + _MAIN // 2)
         cur_y = top_y + _MAIN
