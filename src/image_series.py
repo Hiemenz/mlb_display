@@ -195,7 +195,7 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
                      else series.get('home_id', ''))
         ghost = _logo_ghost(winner, winner_id,
                             size=panel_cell.CELL_H - panel_cell.HEADER_H - 4,
-                            lightness=200)
+                            lightness=140)
         if ghost is not None:
             body_h = panel_cell.CELL_H - panel_cell.HEADER_H
             gx = sx + (panel_cell.CELL_W - ghost.width) // 2

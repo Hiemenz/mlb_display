@@ -1921,6 +1921,29 @@ class TestDrawPlayoffSeedingsSidebar:
             result = draw_playoff_seedings_sidebar(img, sbl, {}, side='right')
         assert result is img  # must not crash; draws 2 result slots + 1 empty
 
+    def test_game_results_lag_home_wins(self):
+        # game_results records only away win; home win not yet in results (data lag)
+        series = _ps('WC', '143', '144', 'PHI', 'ATL', away_wins=1, home_wins=1)
+        series['game_results'] = [
+            {'winner_id': '143', 'game_pk': 849845, 'date': '2026-09-29'},
+        ]
+        sbl = {'AL': [], 'NL': [series]}
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, sbl, {}, side='right')
+        assert result is img  # home-wins supplement path (lines 1577-1578)
+
+    def test_complete_series_draws_winner_pill(self):
+        sbl = {
+            'AL': [_ps('DS', '1', '2', 'T1', 'T2', away_wins=3, home_wins=1,
+                        complete=True, winner_abbr='T1')],
+            'NL': [],
+        }
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, sbl, {}, side='left')
+        assert result is img
+
 
 @needs_pil
 class TestDrawPlayoffSeedingsFullscreen:
