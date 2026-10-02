@@ -504,7 +504,8 @@ def test_live_fullscreen_long_pitcher_name_shrinks_font():
         inningState='Middle',
         next_pitcher='Christopher Alexander Bartholomew Doval-Rodriguez',
     )
-    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    with patch('image_featured.load_json_file', return_value=None):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
     assert isinstance(img, Image.Image)
 
 
@@ -518,7 +519,53 @@ def test_live_fullscreen_long_batter_names_shrink_font():
         next_batter_2='Frederick Charles Freeman The Third',
         next_batter_3='William Dean Smith',
     )
-    img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    with patch('image_featured.load_json_file', return_value=None):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_between_innings_shows_bullpens():
+    """Between innings: bullpen tiles for both teams replace the side text."""
+    from image_featured import draw_live_fullscreen_game
+    bp = {
+        'days': 3,
+        'team_order': ['147', '111'],
+        'teams': {
+            '147': {'team_id': '147', 'abbr': 'NYY', 'pitchers': [
+                {'name': 'C. Holmes', 'yesterday': 14, 'total': 29},
+            ]},
+            '111': {'team_id': '111', 'abbr': 'BOS', 'pitchers': [
+                {'name': 'K. Jansen', 'yesterday': 0, 'total': 15},
+            ]},
+        },
+    }
+    game = _live_game(
+        inningState='Middle',
+        next_pitcher='A. Bender',
+        next_batter_1='Judge', next_batter_2='Soto', next_batter_3='Stanton',
+    )
+    with patch('image_featured.load_json_file', return_value=bp):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
+    assert isinstance(img, Image.Image)
+
+
+@needs_pil
+def test_live_fullscreen_between_innings_one_bullpen_only():
+    """Between innings: only one team's bullpen data available — still renders."""
+    from image_featured import draw_live_fullscreen_game
+    bp = {
+        'days': 3,
+        'team_order': ['147'],
+        'teams': {
+            '147': {'team_id': '147', 'abbr': 'NYY', 'pitchers': [
+                {'name': 'C. Holmes', 'yesterday': 14, 'total': 29},
+            ]},
+        },
+    }
+    game = _live_game(inningState='Middle')
+    with patch('image_featured.load_json_file', return_value=bp):
+        img = draw_live_fullscreen_game(game, TEAM_DATA, CONFIG)
     assert isinstance(img, Image.Image)
 
 

@@ -59,7 +59,8 @@ def _find_featured_game(game_state_data, team_data, primary_abbr):
 
 
 def _draw_between_innings(draw, game_data, away_abbr, home_abbr, cur_inn,
-                          pit_nm, batter_names, SIT_Y, DIV_Y, WIN_PCT_Y):
+                          pit_nm, batter_names, SIT_Y, DIV_Y, WIN_PCT_Y,
+                          show_side_text=True):
     """Draw linescore + pitcher/due-up names in the between-innings situation area."""
     _bot = WIN_PCT_Y - 4
 
@@ -128,7 +129,7 @@ def _draw_between_innings(draw, game_data, away_abbr, home_abbr, cur_inn,
                 draw.text((_rx,     _ry), _rv, font=f_ls_runs, fill=0)
                 draw.text((_rx + 1, _ry), _rv, font=f_ls_runs, fill=0)
 
-    if pit_nm:
+    if show_side_text and pit_nm:
         _pit_max_w = _ls_x0 - 16 - 8
         _f_pit = _get_font(18)
         for _fsize in (42, 36, 28, 24, 20, 18):
@@ -141,7 +142,7 @@ def _draw_between_innings(draw, game_data, away_abbr, home_abbr, cur_inn,
         draw.text((16, _pit_y),     pit_nm, font=_f_pit, fill=0)
         draw.text((17, _pit_y),     pit_nm, font=_f_pit, fill=0)
 
-    if batter_names:
+    if show_side_text and batter_names:
         _bat_max_w = 800 - _ls_x1 - 16 - 8
         _f_bat = _get_font(18)
         for _fsize in (42, 36, 28, 24, 20, 18):
@@ -710,9 +711,30 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         game_data.get('next_pitcher') or game_data.get('current_pitcher') or ''
     )
 
+    # Load bullpen tiles for the two teams in this game.
+    _bp_data   = load_json_file('bullpen.json') or {}
+    _bp_teams  = _bp_data.get('teams', {})
+    _bp_days   = _bp_data.get('days', 3)
+    _away_bp   = _bp_teams.get(away_id) or _bp_teams.get(str(away_id))
+    _home_bp   = _bp_teams.get(home_id) or _bp_teams.get(str(home_id))
+    _has_bp    = bool(_away_bp or _home_bp)
+
+    import panel_cell as _pc
+    _BP_W      = _pc.CELL_W   # 135
+    _BP_H      = _pc.CELL_H   # 130
+    _BP_Y      = SIT_Y + (WIN_PCT_Y - SIT_Y - _BP_H) // 2  # vertically centred in situation area
+
     if _between_innings or (_pitching_change and not _mid_inning_pc):
         _draw_between_innings(draw, game_data, away_abbr, home_abbr, _cur_inn,
-                              _pit_nm, _batter_names, SIT_Y, DIV_Y, WIN_PCT_Y)
+                              _pit_nm, _batter_names, SIT_Y, DIV_Y, WIN_PCT_Y,
+                              show_side_text=not _has_bp)
+        if _has_bp:
+            from image_bullpen import draw_bullpen_cell as _draw_bp
+            if _away_bp:
+                _draw_bp(canvas, 0, _BP_Y, _away_bp, days=_bp_days)
+            if _home_bp:
+                _draw_bp(canvas, 800 - _BP_W, _BP_Y, _home_bp, days=_bp_days)
+            draw = ImageDraw.Draw(canvas)
     else:
         canvas, draw = _draw_active_pitch(canvas, draw, game_data, f42, f36, B_R, C_GAP,
                                           SIT_Y, WIN_PCT_Y, _mid_inning_pc)
