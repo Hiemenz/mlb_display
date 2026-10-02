@@ -167,16 +167,17 @@ def _draw_between_innings(draw, game_data, away_abbr, home_abbr, cur_inn,
 
 
 def _draw_active_pitch(canvas, draw, game_data, f42, f36, B_R, C_GAP,
-                       SIT_Y, WIN_PCT_Y, mid_inning_pc):
+                       SIT_Y, WIN_PCT_Y, mid_inning_pc, x_left=0, x_right=800):
     """Draw BSO circles, pitch info, and pitcher/batter in the live situation area.
 
+    x_left/x_right constrain content horizontally (default: full width).
     Returns (canvas, draw) — callers must use the returned pair.
     """
     _bso_y  = SIT_Y + 6
     _b_bbox = f42.getbbox('B')
     _bso_cy = _bso_y + (_b_bbox[1] + _b_bbox[3]) // 2
 
-    _bx = 16
+    _bx = x_left + 16
     draw.text((_bx,     _bso_y), 'B', font=f42, fill=0)
     draw.text((_bx + 1, _bso_y), 'B', font=f42, fill=0)
     _bx += int(f42.getlength('B')) + 8
@@ -216,9 +217,9 @@ def _draw_active_pitch(canvas, draw, game_data, f42, f36, B_R, C_GAP,
         _ptw     = int(f36.getlength(_ptxt))
         _pt_bbox = f36.getbbox(_ptxt)
         _pty     = _bso_cy - (_pt_bbox[1] + _pt_bbox[3]) // 2
-        draw.text((800 - _ptw - 8, _pty), _ptxt, font=f36, fill=0)
+        draw.text((x_right - _ptw - 8, _pty), _ptxt, font=f36, fill=0)
 
-    _lbl_x        = 400
+    _lbl_x        = (x_left + x_right) // 2
     _pb_y         = _bso_y + 48
     _pitcher_full = (game_data.get('current_pitcher') or '').strip()
     _pc_incoming  = (game_data.get('sub_event') or '')[3:].strip() if mid_inning_pc else ''
@@ -228,7 +229,7 @@ def _draw_active_pitch(canvas, draw, game_data, f42, f36, B_R, C_GAP,
     else:
         _pit_txt = f'P: {_pitcher_full}' if _pitcher_full else ''
     if _pit_txt and _pb_y + 42 <= WIN_PCT_Y:
-        _p_max_w = _lbl_x - 16 - 8
+        _p_max_w = _lbl_x - (x_left + 16) - 8
         _f_pit   = _get_font(20)
         for _fsize in (42, 36, 28, 24, 20):
             _f = _get_font(_fsize)
@@ -239,8 +240,8 @@ def _draw_active_pitch(canvas, draw, game_data, f42, f36, B_R, C_GAP,
             while _pit_txt and int(_f_pit.getlength(_pit_txt)) > _p_max_w:
                 _pit_txt = _pit_txt[:-1]
         _pit_ty = _pb_y + (42 - _f_pit.size)
-        draw.text((16, _pit_ty),     _pit_txt, font=_f_pit, fill=0)
-        draw.text((17, _pit_ty),     _pit_txt, font=_f_pit, fill=0)
+        draw.text((x_left + 16, _pit_ty),     _pit_txt, font=_f_pit, fill=0)
+        draw.text((x_left + 17, _pit_ty),     _pit_txt, font=_f_pit, fill=0)
 
     _ab_done = game_data.get('current_at_bat_complete', False)
     if _ab_done and not _is_game_effectively_over(game_data):
@@ -711,33 +712,40 @@ def draw_live_fullscreen_game(game_data, team_data, config=None):
         game_data.get('next_pitcher') or game_data.get('current_pitcher') or ''
     )
 
-    # Load bullpen tiles for the two teams in this game.
+    # Load bullpen tiles — shown throughout playoff games only.
+    _PLAYOFF_TYPES = {'W', 'D', 'L', 'F'}
+    _is_playoff    = game_data.get('game_type', 'R') in _PLAYOFF_TYPES
     _bp_data   = load_json_file('bullpen.json') or {}
     _bp_teams  = _bp_data.get('teams', {})
     _bp_days   = _bp_data.get('days', 3)
     _away_bp   = _bp_teams.get(away_id) or _bp_teams.get(str(away_id))
     _home_bp   = _bp_teams.get(home_id) or _bp_teams.get(str(home_id))
-    _has_bp    = bool(_away_bp or _home_bp)
+    _has_bp    = _is_playoff and bool(_away_bp or _home_bp)
 
     import panel_cell as _pc
     _BP_W      = _pc.CELL_W   # 135
     _BP_H      = _pc.CELL_H   # 130
     _BP_Y      = SIT_Y + (WIN_PCT_Y - SIT_Y - _BP_H) // 2  # vertically centred in situation area
 
+    _bp_x_left  = _BP_W if _has_bp else 0
+    _bp_x_right = 800 - _BP_W if _has_bp else 800
+
     if _between_innings or (_pitching_change and not _mid_inning_pc):
         _draw_between_innings(draw, game_data, away_abbr, home_abbr, _cur_inn,
                               _pit_nm, _batter_names, SIT_Y, DIV_Y, WIN_PCT_Y,
                               show_side_text=not _has_bp)
-        if _has_bp:
-            from image_bullpen import draw_bullpen_cell as _draw_bp
-            if _away_bp:
-                _draw_bp(canvas, 0, _BP_Y, _away_bp, days=_bp_days)
-            if _home_bp:
-                _draw_bp(canvas, 800 - _BP_W, _BP_Y, _home_bp, days=_bp_days)
-            draw = ImageDraw.Draw(canvas)
     else:
         canvas, draw = _draw_active_pitch(canvas, draw, game_data, f42, f36, B_R, C_GAP,
-                                          SIT_Y, WIN_PCT_Y, _mid_inning_pc)
+                                          SIT_Y, WIN_PCT_Y, _mid_inning_pc,
+                                          x_left=_bp_x_left, x_right=_bp_x_right)
+
+    if _has_bp:
+        from image_bullpen import draw_bullpen_cell as _draw_bp
+        if _away_bp:
+            _draw_bp(canvas, 0, _BP_Y, _away_bp, days=_bp_days)
+        if _home_bp:
+            _draw_bp(canvas, 800 - _BP_W, _BP_Y, _home_bp, days=_bp_days)
+        draw = ImageDraw.Draw(canvas)
 
     canvas, draw = _draw_win_pct_bar(canvas, draw, game_data,
                                      away_abbr, away_id, home_abbr, home_id,
