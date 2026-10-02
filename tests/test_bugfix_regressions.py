@@ -275,6 +275,42 @@ class TestMorningThrottle:
         assert ctx.morning_block is None
         assert ctx.showing_previous_day is False
 
+    def test_bracket_added_to_rotation_during_postseason(self, main_mod, monkeypatch):
+        """In October, 'bracket' is appended to the rotation when bracket data exists."""
+        import datetime as _dt
+        monkeypatch.setattr(
+            main_mod, '_local_now',
+            lambda cfg: _dt.datetime(2026, 10, 1, 8, 0, tzinfo=_dt.timezone.utc))
+        monkeypatch.setattr(
+            main_mod, 'load_json_file',
+            lambda name: ({'series': [{'round': 'WC'}]} if name == 'playoff_bracket.json'
+                          else {}))
+        rotation = main_mod.morning_rotation(
+            {'morning_alternate_quadrant': True, 'morning_alternate_bracket': True},
+            now=_dt.datetime(2026, 10, 1, 8, 0, tzinfo=_dt.timezone.utc))
+        assert 'bracket' in rotation
+
+    def test_bracket_not_added_outside_postseason(self, main_mod, monkeypatch):
+        """In June, 'bracket' is not included even if config says True."""
+        import datetime as _dt
+        june_now = _dt.datetime(2026, 6, 1, 8, 0, tzinfo=_dt.timezone.utc)
+        rotation = main_mod.morning_rotation(
+            {'morning_alternate_quadrant': True, 'morning_alternate_bracket': True},
+            now=june_now)
+        assert 'bracket' not in rotation
+
+    def test_bracket_excluded_by_config(self, main_mod, monkeypatch):
+        """morning_alternate_bracket: False keeps bracket out even in October."""
+        import datetime as _dt
+        monkeypatch.setattr(
+            main_mod, 'load_json_file',
+            lambda name: ({'series': [{'round': 'WC'}]} if name == 'playoff_bracket.json'
+                          else {}))
+        oct_now = _dt.datetime(2026, 10, 1, 8, 0, tzinfo=_dt.timezone.utc)
+        rotation = main_mod.morning_rotation(
+            {'morning_alternate_bracket': False}, now=oct_now)
+        assert 'bracket' not in rotation
+
 
 class TestLocalTimezone:
     """Date math mixed bare datetime.now() with the configured display timezone.

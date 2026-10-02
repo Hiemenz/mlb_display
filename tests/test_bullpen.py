@@ -41,14 +41,28 @@ def _box(away_side, home_side):
     return {'teams': {'away': away_side, 'home': home_side}}
 
 
-def _router(schedules, boxes):
-    """requests.get stand-in: schedule by (teamId, startDate), box by gamePk."""
+def _roster(pitchers):
+    """Build a fake /teams/{id}/roster response with the given list of (fullName,) tuples."""
+    return {'roster': [
+        {'person': {'fullName': name}, 'position': {'type': 'Pitcher'}}
+        for name in pitchers
+    ]}
+
+
+def _router(schedules, boxes, rosters=None):
+    """requests.get stand-in: schedule by (teamId, startDate), box by gamePk,
+    roster by teamId (optional; returns empty roster when not provided)."""
+    rosters = rosters or {}
+
     def fake_get(url, timeout=None):
         resp = MagicMock()
         if '/schedule' in url:
             team = int(url.split('teamId=')[1].split('&')[0])
             start = url.split('startDate=')[1].split('&')[0]
             resp.json.return_value = schedules[(team, start)]
+        elif '/teams/' in url and '/roster' in url:
+            tid = int(url.split('/teams/')[1].split('/')[0])
+            resp.json.return_value = rosters.get(tid, {'roster': []})
         else:
             resp.json.return_value = boxes[int(url.split('/game/')[1].split('/')[0])]
         return resp
@@ -182,6 +196,82 @@ class TestHelpers:
     def test_abbr_lookup_is_case_insensitive(self, isolated):
         assert fetch_bullpen._abbr_to_team_id('atl') == 144
 
+    def test_roster_pitchers_returns_short_names(self):
+        fake = MagicMock()
+        fake.json.return_value = {'roster': [
+            {'person': {'fullName': 'Joe Smith'}, 'position': {'type': 'Pitcher'}},
+            {'person': {'fullName': 'Bob Batter'}, 'position': {'type': 'Outfielder'}},
+            {'person': {'fullName': 'Ann Catcher'}, 'position': {'type': 'Catcher'}},
+        ]}
+        with patch('fetch_bullpen.requests.get', return_value=fake):
+            result = fetch_bullpen._roster_pitchers(144)
+        assert result == {'J. Smith'}
+
+    def test_roster_pitchers_skips_missing_name(self):
+        fake = MagicMock()
+        fake.json.return_value = {'roster': [
+            {'person': {'fullName': ''}, 'position': {'type': 'Pitcher'}},
+            {'person': {}, 'position': {'type': 'Pitcher'}},
+        ]}
+        with patch('fetch_bullpen.requests.get', return_value=fake):
+            result = fetch_bullpen._roster_pitchers(144)
+        assert result == set()
+
+    def test_roster_pitchers_returns_empty_on_error(self):
+        with patch('fetch_bullpen.requests.get', side_effect=RuntimeError('boom')):
+            assert fetch_bullpen._roster_pitchers(144) == set()
+
+
+class TestRestedPitchers:
+    """Rested roster pitchers (no pitches in the window) appear at the bottom."""
+
+    def test_rested_pitchers_added_from_roster(self, isolated):
+        """Pitchers on the active roster but silent during the look-back window are included."""
+        schedules, boxes = _fixture()
+        rosters = {
+            144: _roster(['A.J. Minter', 'Raisel Iglesias', 'Chris Sale', 'Nate Elder']),
+            121: _roster(['Edwin Diaz', 'Sean Reid-Foley']),
+        }
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes, rosters)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+
+        atl_names = [p['name'] for p in data['teams']['144']['pitchers']]
+        # Pitched in window — sorted heavy-first
+        assert atl_names[:2] == ['A. Minter', 'R. Iglesias']
+        # Rested roster pitchers appear after (alphabetical within the zero bucket)
+        assert set(atl_names[2:]) == {'C. Sale', 'N. Elder'}
+
+        # Rested pitchers have zero workload
+        rested = [p for p in data['teams']['144']['pitchers'] if p['name'] in {'C. Sale', 'N. Elder'}]
+        for p in rested:
+            assert p['yesterday'] == 0
+            assert p['total'] == 0
+
+    def test_rested_pitchers_not_duplicated(self, isolated):
+        """Pitchers already in usage are not added again."""
+        schedules, boxes = _fixture()
+        rosters = {144: _roster(['A.J. Minter']), 121: _roster([])}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes, rosters)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        # A. Minter pitched AND is on roster — must appear exactly once
+        minter_rows = [p for p in data['teams']['144']['pitchers'] if p['name'] == 'A. Minter']
+        assert len(minter_rows) == 1
+        assert minter_rows[0]['total'] == 25  # pitched, not zeroed out
+
+    def test_roster_error_does_not_break_fetch(self, isolated):
+        """If roster API fails, workload fetch continues without rested pitchers."""
+        schedules, boxes = _fixture()
+
+        def bad_get(url, timeout=None):
+            if '/roster' in url:
+                raise RuntimeError('network error')
+            return _router(schedules, boxes)(url, timeout)
+
+        with patch('fetch_bullpen.requests.get', bad_get):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        # Pitched-pitchers still present; no crash
+        assert any(p['total'] > 0 for p in data['teams']['144']['pitchers'])
+
 
 PITCHERS = [
     {'name': 'B. Suter', 'yesterday': 20, 'total': 43},
@@ -227,6 +317,15 @@ class TestDrawBullpenCell:
         from PIL import ImageDraw
         image_bullpen._draw_bar(ImageDraw.Draw(img), 5, 5, 60, 500, 900)
         assert img.crop((66, 0, 100, 40)).getextrema() == (255, 255)
+
+    def test_rested_pitcher_shows_dash_not_zero(self):
+        """A pitcher with total=0 gets a '–' label; the bar remains just an outline."""
+        rested = [{'name': 'C. Sale', 'yesterday': 0, 'total': 0}]
+        has_workload = [{'name': 'C. Sale', 'yesterday': 0, 'total': 1}]
+        img_rested = self._ink({'abbr': 'ATL', 'pitchers': rested})
+        img_nonzero = self._ink({'abbr': 'ATL', 'pitchers': has_workload})
+        # The two renders differ (dash vs "1")
+        assert list(img_rested.getdata()) != list(img_nonzero.getdata())
 
 
 TEAM_DATA = {'team_abbreviation': {'147': 'NYY'}}

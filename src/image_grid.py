@@ -776,6 +776,22 @@ def _free_grid_slots(slots):
     return [(_idx % 5, _idx // 5) for _idx in range(15) if (_idx % 5, _idx // 5) not in occupied]
 
 
+def _find_2x2_block(free_slots):
+    """Return the top-left (col, row) of the first 2×2 free block, or None.
+
+    Removes all four slots from *free_slots* in place when found.
+    """
+    free_set = set(free_slots)
+    for col, row in free_slots:
+        block = [(col, row), (col + 1, row), (col, row + 1), (col + 1, row + 1)]
+        if all(s in free_set for s in block):
+            for s in block:
+                if s in free_slots:
+                    free_slots.remove(s)
+            return col, row
+    return None
+
+
 def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None, suppress_date=False):
     """Render the full scoreboard grid of game boxes onto Himage.
 
@@ -898,6 +914,36 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         and (_primary_abbr_live in (g.get('away_team', ''), g.get('home_team', '')))
         for g in (game_state_data or [])
     )
+    # Boost and auto-enable bullpen tiles for any live playoff game regardless of config.
+    _PLAYOFF_GAME_TYPES_G = {'W', 'D', 'L', 'F'}
+    _any_playoff_live = any(
+        g.get('detailed_state') in _LIVE_WIDE_STATES
+        and g.get('game_type') in _PLAYOFF_GAME_TYPES_G
+        for g in (game_state_data or [])
+    )
+
+    # 2×2 playoff bracket tile — placed FIRST so it claims its block before
+    # per-series tiles consume all free slots.
+    _PLAYOFF_GAME_TYPES_2x2 = {'W', 'D', 'L', 'F'}
+    _has_playoff_games = any(
+        g.get('game_type') in _PLAYOFF_GAME_TYPES_2x2
+        for g in (game_state_data or [])
+    )
+    if (config.get('show_series_panel', False) and _has_playoff_games
+            and len(_free_slots) >= 4):
+        _2x2 = _find_2x2_block(_free_slots)
+        if _2x2 is not None:
+            _bt_col, _bt_row = _2x2
+            _bt_data = load_json_file('playoff_bracket.json')
+            if (_bt_data or {}).get('series'):
+                from image_bracket_tile import draw_bracket_tile as _draw_bt
+                _bt_sx = _bt_col * 150 + x_start
+                _bt_sy = _bt_row * 150 + y_start
+                Himage = _draw_bt(
+                    Himage, _bt_sx, _bt_sy, _bt_data,
+                    standings_data=load_json_file('standings.json'),
+                    dark_mode=config.get('dark_mode', False),
+                )
 
     # Playoff series tiles — current round + next round only, and next-round
     # tiles are suppressed until both teams in the matchup are determined
@@ -930,7 +976,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     # Shown at the top of the queue when the primary team's game is live so it
     # always gets a slot; pushed below the deadline panel otherwise.
     def _draw_bullpen():
-        if not (config.get('show_bullpen_panel', False) and _free_slots):
+        if not ((config.get('show_bullpen_panel', False) or _any_playoff_live) and _free_slots):
             return
         _bp_data = load_json_file('bullpen.json')
         _bp_teams = (_bp_data or {}).get('teams', {})
@@ -944,7 +990,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 _bp_teams[_bp_tid], days=_bp_data.get('days', 3),
             )
 
-    if _primary_game_live:
+    if _primary_game_live or _any_playoff_live:
         _draw_bullpen()
 
     # Free-slot panels, in priority order (first match claims the slot).
@@ -1025,7 +1071,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         Himage = draw_scoreless_cell(Himage, _sc_lx, _sc_ly, _sc_data, team_data, use_logos=use_logos)
 
     # Bullpen workload (non-live path — live path runs before deadline panel above).
-    if not _primary_game_live:
+    if not (_primary_game_live or _any_playoff_live):
         _draw_bullpen()
 
     if config.get('show_leaders_panel', False) and _free_slots:

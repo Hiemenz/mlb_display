@@ -290,19 +290,20 @@ def fetch_playoff_bracket(season=None):
                 league_id = away_obj.get('league', {}).get('id', 0)
                 league    = {103: 'AL', 104: 'NL'}.get(league_id, '')
                 series_map[key] = {
-                    'round':        _ROUND_ABB.get(gtype, '?'),
-                    'round_order':  _ROUND_ORD.get(gtype, 9),
-                    'game_type':    gtype,
-                    'league':       league,        # 'AL', 'NL', or '' for WS
-                    'away_abbr':    away_obj.get('abbreviation', '???'),
-                    'home_abbr':    home_obj.get('abbreviation', '???'),
-                    'away_id':      away_id,
-                    'home_id':      home_id,
-                    'away_wins':    0,
-                    'home_wins':    0,
-                    'complete':     False,
-                    'winner_abbr':  None,
-                    'game_results': [],  # [{winner_id, game_pk, date}, ...] in play order
+                    'round':          _ROUND_ABB.get(gtype, '?'),
+                    'round_order':    _ROUND_ORD.get(gtype, 9),
+                    'game_type':      gtype,
+                    'league':         league,        # 'AL', 'NL', or '' for WS
+                    'away_abbr':      away_obj.get('abbreviation', '???'),
+                    'home_abbr':      home_obj.get('abbreviation', '???'),
+                    'away_id':        away_id,
+                    'home_id':        home_id,
+                    'away_wins':      0,
+                    'home_wins':      0,
+                    'complete':       False,
+                    'winner_abbr':    None,
+                    'game_results':   [],  # [{winner_id, game_pk, date}, ...] in play order
+                    'first_game_date': date_entry.get('date', ''),  # calendar start of series
                 }
 
             entry    = series_map[key]

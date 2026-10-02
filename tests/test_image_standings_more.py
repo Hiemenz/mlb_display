@@ -1596,13 +1596,15 @@ def _pbracket(series_list):
     return {'season': 2026, 'series': series_list}
 
 def _ps(round_lbl, away_id, home_id, away_abbr, home_abbr,
-        away_wins=0, home_wins=0, complete=False, winner_abbr=None):
+        away_wins=0, home_wins=0, complete=False, winner_abbr=None,
+        first_game_date=''):
     return {
         'round': round_lbl,
         'away_id': away_id, 'home_id': home_id,
         'away_abbr': away_abbr, 'home_abbr': home_abbr,
         'away_wins': away_wins, 'home_wins': home_wins,
         'complete': complete, 'winner_abbr': winner_abbr,
+        'first_game_date': first_game_date,
     }
 
 def _playoff_standings(*entries):
@@ -1727,37 +1729,71 @@ class TestDerivePlayoffSeedings:
 
 
 class TestDerivePlayoffActiveRound:
+    TODAY = '2026-10-04'
+
     def test_active_round_is_lowest_incomplete(self):
         b = _pbracket([
-            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A'),
-            _ps('DS', '1', '3', 'A', 'C', away_wins=1),
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A',
+                first_game_date='2026-10-01'),
+            _ps('DS', '1', '3', 'A', 'C', away_wins=1, first_game_date='2026-10-04'),
         ])
-        assert derive_playoff_active_round(b) == 'DS'
+        assert derive_playoff_active_round(b, today='2026-10-04') == 'DS'
 
     def test_placeholder_future_rounds_ignored(self):
-        # Real bracket: WC in progress, DS/CS/WS pre-populated as 0-0 placeholders
+        # WC in progress today; DS/CS/WS scheduled for future dates — not yet started
         b = _pbracket([
-            _ps('WC', '1', '2', 'A', 'B', away_wins=1),
-            _ps('WC', '3', '4', 'C', 'D', away_wins=0),
-            _ps('DS', '5', '6', 'E', 'F'),   # placeholder, complete=False, 0-0
-            _ps('CS', '7', '8', 'G', 'H'),   # placeholder
-            _ps('WS', '9', '10', 'I', 'J'),  # placeholder
+            _ps('WC', '1', '2', 'A', 'B', away_wins=1, first_game_date='2026-10-01'),
+            _ps('WC', '3', '4', 'C', 'D', away_wins=0, first_game_date='2026-10-01'),
+            _ps('DS', '5', '6', 'E', 'F', first_game_date='2026-10-05'),  # future
+            _ps('CS', '7', '8', 'G', 'H', first_game_date='2026-10-15'),  # future
+            _ps('WS', '9', '10', 'I', 'J', first_game_date='2026-10-25'),  # future
         ])
-        assert derive_playoff_active_round(b) == 'WC'
+        assert derive_playoff_active_round(b, today='2026-10-01') == 'WC'
 
     def test_all_complete_returns_highest(self):
         b = _pbracket([
-            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A'),
-            _ps('DS', '1', '3', 'A', 'C', away_wins=3, complete=True, winner_abbr='A'),
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A',
+                first_game_date='2026-10-01'),
+            _ps('DS', '1', '3', 'A', 'C', away_wins=3, complete=True, winner_abbr='A',
+                first_game_date='2026-10-04'),
         ])
-        assert derive_playoff_active_round(b) == 'DS'
+        assert derive_playoff_active_round(b, today='2026-10-12') == 'DS'
 
     def test_empty_bracket_returns_none(self):
-        assert derive_playoff_active_round(_pbracket([])) is None
+        assert derive_playoff_active_round(_pbracket([]), today=self.TODAY) is None
 
     def test_ws_is_current_when_active(self):
-        b = _pbracket([_ps('WS', '1', '2', 'A', 'B', away_wins=2)])
-        assert derive_playoff_active_round(b) == 'WS'
+        b = _pbracket([_ps('WS', '1', '2', 'A', 'B', away_wins=2,
+                           first_game_date='2026-10-25')])
+        assert derive_playoff_active_round(b, today='2026-10-26') == 'WS'
+
+    def test_gap_between_rounds_keeps_completed_round(self):
+        # WC done; DS first game is Saturday (2026-10-04); today is still gap day (10-02).
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A',
+                first_game_date='2026-10-01'),
+            _ps('WC', '3', '4', 'C', 'D', home_wins=2, complete=True, winner_abbr='D',
+                first_game_date='2026-10-01'),
+            _ps('DS', '1', '3', 'A', 'C', first_game_date='2026-10-04'),
+        ])
+        assert derive_playoff_active_round(b, today='2026-10-02') == 'WC'
+
+    def test_gap_switches_to_new_round_on_game_day(self):
+        # On the day DS games are scheduled (10-04), switch to DS even before first pitch.
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A',
+                first_game_date='2026-10-01'),
+            _ps('DS', '1', '3', 'A', 'C', first_game_date='2026-10-04'),
+        ])
+        assert derive_playoff_active_round(b, today='2026-10-04') == 'DS'
+
+    def test_gap_switches_to_new_round_once_a_game_is_played(self):
+        b = _pbracket([
+            _ps('WC', '1', '2', 'A', 'B', away_wins=2, complete=True, winner_abbr='A',
+                first_game_date='2026-10-01'),
+            _ps('DS', '1', '3', 'A', 'C', away_wins=1, first_game_date='2026-10-04'),
+        ])
+        assert derive_playoff_active_round(b, today='2026-10-04') == 'DS'
 
 
 class TestDerivePlayoffSeriesByLeague:

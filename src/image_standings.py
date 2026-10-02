@@ -1308,24 +1308,55 @@ _AL_DIVS = set(_AL_DIV_ORDER)
 _NL_DIVS = set(_NL_DIV_ORDER)
 
 
-def derive_playoff_active_round(bracket_data):
+def derive_playoff_active_round(bracket_data, today=None):
     """Return the round abbreviation ('WC', 'DS', 'CS', 'WS') for the current playoff stage.
 
-    The current round is the lowest round that still has at least one incomplete series.
-    Future rounds are pre-populated as placeholders (complete=false, 0-0) by the fetcher,
-    so we want the earliest incomplete round — not the latest.
-    Falls back to the highest completed round (i.e. after the WS is over).
+    A round is considered "started" when at least one of its series has either
+    (a) a game played (away_wins + home_wins > 0), or (b) a ``first_game_date`` that
+    falls on or before ``today``.  This means the sidebar switches to the new round on
+    the calendar day that round's games are scheduled, rather than waiting for the first
+    game to finish.  Between rounds (gap days) the sidebar stays on the most-recently
+    completed round's results.
+
+    Priority:
+      1. Lowest started-but-incomplete round (games have begun / series still ongoing).
+      2. Highest started round (all complete) — gap between rounds; show last results.
+      3. Highest round by order — final fallback.
     """
-    active_ro: int | None = None
+    from datetime import date as _date
+    _t = today or _date.today()
+    today_str = _t if isinstance(_t, str) else _t.isoformat()
+
+    started_incomplete_ro: int | None = None   # lowest started round still in progress
+    started_complete_ro:   int | None = None   # highest started round that is all done
     highest_ro = -1
+
     for s in bracket_data.get('series', []):
         ro = _ROUND_ORDER.get(s.get('round', ''), -1)
         if ro < 0:
             continue
         highest_ro = max(highest_ro, ro)
+        games_played = s.get('away_wins', 0) + s.get('home_wins', 0)
+        first_date   = s.get('first_game_date', '')
+        started = games_played > 0 or bool(first_date and first_date <= today_str)
+        if not started:
+            continue
         if not s.get('complete', False):
-            active_ro = ro if active_ro is None else min(active_ro, ro)
-    target = active_ro if active_ro is not None else highest_ro
+            started_incomplete_ro = (
+                ro if started_incomplete_ro is None else min(started_incomplete_ro, ro)
+            )
+        else:
+            started_complete_ro = (
+                ro if started_complete_ro is None else max(started_complete_ro, ro)
+            )
+
+    if started_incomplete_ro is not None:
+        target = started_incomplete_ro
+    elif started_complete_ro is not None:
+        target = started_complete_ro
+    else:
+        target = highest_ro
+
     for rnd, ro in _ROUND_ORDER.items():
         if ro == target:
             return rnd
@@ -1611,7 +1642,8 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
             draw.text((ax,     cur_y + 1), winner_abbr, font=font_ab, fill=255)
             draw.text((ax + 1, cur_y + 1), winner_abbr, font=font_ab, fill=255)
             sx = round(col_cx - (bs[0] + bs[2]) / 2) + 1
-            draw.text((sx, cur_y + 13), score_str, font=font_sm, fill=255)
+            draw.text((sx,     cur_y + 13), score_str, font=font_sm, fill=255)
+            draw.text((sx + 1, cur_y + 13), score_str, font=font_sm, fill=255)
 
         # Block divider (skip after last series)
         if idx < n - 1:

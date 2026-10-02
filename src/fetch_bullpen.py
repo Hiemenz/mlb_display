@@ -89,8 +89,27 @@ def _relief_lines(box_side):
     return lines
 
 
+def _roster_pitchers(team_id):
+    """Short names of all pitchers on the active roster for *team_id*."""
+    try:
+        data = _get(f'/teams/{team_id}/roster?rosterType=active')
+        names = set()
+        for p in data.get('roster', []):
+            if (p.get('position') or {}).get('type') == 'Pitcher':
+                full = (p.get('person') or {}).get('fullName', '')
+                if full:
+                    names.add(_short_name(full))
+        return names
+    except Exception:
+        return set()
+
+
 def _team_bullpen(team_id, today, days, box_cache):
-    """Reliever workload for one team over the ``days`` days before ``today``."""
+    """Reliever workload for one team over the ``days`` days before ``today``.
+
+    Pitchers on the active roster who threw no pitches during the window are
+    included at the bottom with yesterday=0, total=0 (rested).
+    """
     yesterday = today - timedelta(days=1)
     usage = {}
     for date_str, game in _schedule(team_id, today - timedelta(days=days), yesterday):
@@ -108,6 +127,9 @@ def _team_bullpen(team_id, today, days, box_cache):
                 row['total'] += pitches
                 if date_str == yesterday.isoformat():
                     row['yesterday'] += pitches
+    for name in _roster_pitchers(team_id):
+        if name not in usage:
+            usage[name] = {'name': name, 'yesterday': 0, 'total': 0}
     return sorted(usage.values(), key=lambda r: (-r['total'], r['name']))
 
 
