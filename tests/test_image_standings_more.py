@@ -1921,6 +1921,31 @@ class TestDrawPlayoffSeedingsSidebar:
             result = draw_playoff_seedings_sidebar(img, sbl, {}, side='right')
         assert result is img  # must not crash; draws 2 result slots + 1 empty
 
+    def test_complete_series_winner_ghost_no_crash(self):
+        sbl = {
+            'AL': [_ps('DS', '1', '2', 'T1', 'T2', away_wins=3, home_wins=1,
+                        complete=True, winner_abbr='T1')],
+            'NL': [],
+        }
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings._logo_ghost', return_value=None):
+            result = draw_playoff_seedings_sidebar(img, sbl, {}, side='left')
+        assert result is img
+
+    def test_complete_series_ghost_drawn_when_logo_available(self):
+        ghost = Image.new('1', (20, 20), 255)
+        sbl = {
+            'AL': [_ps('DS', '1', '2', 'T1', 'T2', away_wins=3, home_wins=1,
+                        complete=True, winner_abbr='T1')],
+            'NL': [],
+        }
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings._logo_ghost', return_value=ghost):
+            result = draw_playoff_seedings_sidebar(img, sbl, {}, side='left')
+        assert result is img
+
 
 @needs_pil
 class TestDrawPlayoffSeedingsFullscreen:
@@ -1987,4 +2012,29 @@ class TestDrawPlayoffSeedingsFullscreen:
         with patch('image_standings._logo_small', return_value=None):
             result = draw_playoff_seedings_fullscreen(
                 canvas, {'AL': [series], 'NL': []}, {}, side='left')
+        assert result is canvas
+
+    def test_complete_series_winner_ghost_no_crash(self):
+        sbl = {
+            'AL': [_ps('DS', '1', '2', 'T1', 'T2', away_wins=3, home_wins=1,
+                        complete=True, winner_abbr='T1')],
+            'NL': [],
+        }
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings._logo_ghost', return_value=None):
+            result = draw_playoff_seedings_fullscreen(canvas, sbl, {}, side='left')
+        assert result is canvas
+
+    def test_complete_series_ghost_drawn_when_logo_available(self):
+        ghost = Image.new('1', (100, 100), 255)
+        sbl = {
+            'AL': [_ps('DS', '1', '2', 'T1', 'T2', away_wins=3, home_wins=1,
+                        complete=True, winner_abbr='T2')],
+            'NL': [],
+        }
+        canvas = self._canvas()
+        with patch('image_standings._logo_small', return_value=None), \
+             patch('image_standings._logo_ghost', return_value=ghost):
+            result = draw_playoff_seedings_fullscreen(canvas, sbl, {}, side='left')
         assert result is canvas
