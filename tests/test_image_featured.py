@@ -183,6 +183,33 @@ def test_find_furthest_game_scheduled_without_times_keeps_list_order():
     assert _find_furthest_game(games)['game_pk'] == 1
 
 
+def test_find_furthest_game_idle_prefers_primary_next_game():
+    """Nothing live: the primary team's upcoming game beats another team's final."""
+    from image_featured import _find_furthest_game
+    games = [_g(1, 119, 137, 'Final'),
+             _g(2, 147, 111, 'Scheduled', '2026-10-03T22:30:00Z'),
+             _g(3, 133, 144, 'Scheduled', '2026-10-03T20:00:00Z')]
+    assert _find_furthest_game(games, TEAM_DATA, 'NYY')['game_pk'] == 2
+
+
+def test_find_furthest_game_idle_primary_final_when_no_upcoming():
+    from image_featured import _find_furthest_game
+    games = [_g(1, 119, 137, 'Final'), _g(2, 147, 111, 'Final')]
+    assert _find_furthest_game(games, TEAM_DATA, 'NYY')['game_pk'] == 2
+
+
+def test_find_furthest_game_live_other_team_beats_primary():
+    from image_featured import _find_furthest_game
+    games = [_g(1, 147, 111, 'Scheduled'), _g(2, 119, 144, 'In Progress')]
+    assert _find_furthest_game(games, TEAM_DATA, 'NYY')['game_pk'] == 2
+
+
+def test_find_furthest_game_primary_not_playing_uses_generic_fallback():
+    from image_featured import _find_furthest_game
+    games = [_g(1, 119, 137, 'Final'), _g(2, 133, 144, 'Scheduled')]
+    assert _find_furthest_game(games, TEAM_DATA, 'NYY')['game_pk'] == 1
+
+
 def test_find_furthest_game_empty_returns_none():
     from image_featured import _find_furthest_game
     assert _find_furthest_game([]) is None
