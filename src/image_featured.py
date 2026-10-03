@@ -21,6 +21,22 @@ from image_standings import (
 from image_box import draw_box, _abbr_play, _draw_backwards_k
 
 
+def _find_furthest_game(game_state_data):
+    """Return the furthest-along game — used during postseason when multiple games
+    are on the slate so the display shows the most advanced action, not just the
+    featured team."""
+    _live = {'In Progress', 'Player challenge', 'Manager challenge'}
+    _final = {'Final', 'Game Over', 'Final: Tied'}
+    live_games = [g for g in game_state_data if g.get('detailed_state') in _live]
+    if live_games:
+        return max(live_games, key=lambda g: g.get('current_inning') or 0)
+    finished = [g for g in game_state_data if g.get('detailed_state', '') in _final
+                or g.get('detailed_state', '').startswith('Completed Early')]
+    if finished:
+        return max(finished, key=lambda g: g.get('current_inning') or 0)
+    return game_state_data[0] if game_state_data else None
+
+
 def _find_featured_game(game_state_data, team_data, primary_abbr):
     """Return the best game to display for primary_abbr in fullscreen mode.
 

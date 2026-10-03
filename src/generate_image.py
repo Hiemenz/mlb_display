@@ -39,6 +39,7 @@ from image_grid import (
 # Re-export featured/fullscreen functions for backward compatibility
 from image_featured import (
     _find_featured_game,
+    _find_furthest_game,
     draw_live_fullscreen_game,
     draw_featured_game_fullscreen,
 )
@@ -437,7 +438,15 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
         # In fullscreen mode the display shows only one game, so skip re-render
         # if that specific game's data hasn't changed, even if other games did.
-        if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
+        # During postseason with multiple games the displayed game may change
+        # (we pick the furthest-along), so don't skip on featured-only equality.
+        _fs_env = os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes')
+        _ps_multi = (
+            _fs_env
+            and len(game_state_data) > 1
+            and any(g.get('game_type') in {'W', 'D', 'L', 'F'} for g in game_state_data)
+        )
+        if _fs_env and not _ps_multi:
             primary = config.get('primary', '')
             featured_game = _find_featured_game(game_state_data, team_data, primary)
             if featured_game:
@@ -458,8 +467,18 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     # --- Featured team full-screen mode ---
     if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
+        _PLAYOFF_TYPES = {'W', 'D', 'L', 'F'}
+        _postseason_multi = (
+            len(game_state_data) > 1
+            and any(g.get('game_type') in _PLAYOFF_TYPES for g in game_state_data)
+        )
         primary = config.get('primary', '')
-        featured_game = _find_featured_game(game_state_data, team_data, primary)
+        if _postseason_multi:
+            # Multiple postseason games on the slate — show whichever is
+            # furthest along rather than locking to the featured team.
+            featured_game = _find_furthest_game(game_state_data)
+        else:
+            featured_game = _find_featured_game(game_state_data, team_data, primary)
         if featured_game:
             Himage = draw_featured_game_fullscreen(featured_game, team_data, config)
         else:

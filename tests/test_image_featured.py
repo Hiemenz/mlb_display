@@ -202,6 +202,35 @@ def test_find_featured_game_empty_list_returns_none():
     assert _find_featured_game([], TEAM_DATA, 'NYY') is None
 
 
+# _find_furthest_game tests
+def _gi(pk, away, home, state, inning=1):
+    return {'game_pk': pk, 'away_team_id': away, 'home_team_id': home,
+            'detailed_state': state, 'current_inning': inning}
+
+
+def test_find_furthest_game_picks_highest_inning_live():
+    from image_featured import _find_furthest_game
+    games = [_gi(1, 147, 111, 'In Progress', 3), _gi(2, 119, 135, 'In Progress', 7)]
+    assert _find_furthest_game(games)['game_pk'] == 2
+
+
+def test_find_furthest_game_falls_back_to_final_when_no_live():
+    from image_featured import _find_furthest_game
+    games = [_gi(1, 147, 111, 'Final', 9), _gi(2, 119, 135, 'Final', 12)]
+    assert _find_furthest_game(games)['game_pk'] == 2
+
+
+def test_find_furthest_game_falls_back_to_first_when_scheduled():
+    from image_featured import _find_furthest_game
+    games = [_g(1, 147, 111, 'Scheduled'), _g(2, 119, 135, 'Pre-Game')]
+    assert _find_furthest_game(games)['game_pk'] == 1
+
+
+def test_find_furthest_game_empty_returns_none():
+    from image_featured import _find_furthest_game
+    assert _find_furthest_game([]) is None
+
+
 def test_find_featured_game_challenge_state_falls_back_to_last_primary_game():
     """A primary-team game under review isn't 'In Progress' by exact match,
     isn't Scheduled/Final either, so it falls through to the final fallback
