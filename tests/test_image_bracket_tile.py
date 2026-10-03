@@ -159,6 +159,60 @@ class TestDrawMatchup:
                              _s('WC', ('NYY', 147), ('BOS', 111), 2, 0, True, 'NYY'))
 
 
+class TestPlaceholders:
+    """Undecided slots (API seed-placeholder ids) draw no logos and no divider."""
+
+    def test_is_real_team(self):
+        assert bt._is_real_team('147')
+        assert not bt._is_real_team('5521')
+        assert not bt._is_real_team('')
+
+    def test_placeholder_matchup_draws_nothing(self):
+        from PIL import ImageDraw
+        tile = _canvas()
+        bt._draw_matchup(tile, ImageDraw.Draw(tile), 2, bt._slot_center_y(0, 1),
+                         _s('CS', ('AL Low', 5521), ('AL High', 5513)))
+        assert tile.convert('L').getextrema() == (255, 255)
+
+    def test_one_real_team_draws_only_that_logo(self):
+        from PIL import ImageDraw
+        tile = _canvas()
+        with patch('image_assets._logo_small', return_value=Image.new('1', (20, 20), 0)) as m:
+            bt._draw_matchup(tile, ImageDraw.Draw(tile), 3, bt._slot_center_y(0, 1),
+                             _s('WS', ('NYY', 147), ('High', 2710)))
+        assert m.call_count == 1
+
+    def test_live_style_bracket_renders_without_circles(self):
+        data = _ds_bracket()
+        data['series'] += [
+            _s('CS', ('AL Low', 5521), ('AL High', 5513)),
+            _s('CS', ('NL Low', 5525), ('NL High', 5517)),
+            _s('WS', ('Low', 2711), ('High', 2710)),
+        ]
+        canvas = _canvas()
+        assert bt.draw_bracket_tile(canvas, 0, 0, data) is canvas
+
+
+class TestWsDivider:
+    def test_no_divider_between_ws_teams(self):
+        from PIL import ImageDraw
+        tile = _canvas()
+        series = _s('WS', ('NYY', 147), ('SD', 135))
+        with patch('image_assets._logo_small', return_value=None), \
+             patch.object(bt, '_paste_logo'):
+            bt._draw_matchup(tile, ImageDraw.Draw(tile), bt._WS_BAND,
+                             bt._slot_center_y(0, 1), series)
+        assert tile.convert('L').getextrema() == (255, 255)
+
+    def test_divider_kept_for_other_rounds(self):
+        from PIL import ImageDraw
+        tile = _canvas()
+        with patch.object(bt, '_paste_logo'):
+            bt._draw_matchup(tile, ImageDraw.Draw(tile), 1,
+                             bt._slot_center_y(0, 1), _s('DS', ('NYY', 147), ('TB', 139)))
+        assert tile.convert('L').getextrema() == (0, 255)
+
+
 class TestDrawCsChampion:
     def _tile_and_draw(self):
         tile = Image.new('1', (bt.TILE_W, bt.TILE_H), 255)

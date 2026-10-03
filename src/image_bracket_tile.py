@@ -20,6 +20,7 @@ _BANDS = (
     ('AL', 'WC'), ('AL', 'DS'), ('AL', 'CS'), (None, 'WS'),
     ('NL', 'CS'), ('NL', 'DS'), ('NL', 'WC'),
 )
+_WS_BAND = 3
 _ROUND_LABELS = {'WC': 'WC', 'DS': 'DS', 'CS': 'CS', 'WS': 'WS'}
 
 
@@ -53,18 +54,30 @@ def _logo_cys(slot_cy):
             slot_cy + _TEAM_H // 2 + _LOGO_SZ // 2)
 
 
+def _is_real_team(tid):
+    # The MLB API gives undecided slots ("AL Low", "High") ids in the 2700/5500 range;
+    # real clubs are all below 1000.
+    return str(tid).isdigit() and int(tid) < 1000
+
+
+def _has_real_team(series):
+    return bool(series) and (_is_real_team(series.get('away_id', ''))
+                             or _is_real_team(series.get('home_id', '')))
+
+
 def _draw_matchup(tile, draw, band, slot_cy, series):
-    """Draw two logos + thin divider for one matchup, centred at slot_cy."""
+    """Draw two logos + thin divider for one matchup, centred at slot_cy.
+
+    Undecided slots (no series, or seed placeholders like "AL Low") draw nothing.
+    """
     cx   = _band_cx(band)
     cy0, cy1 = _logo_cys(slot_cy)
 
-    # Thin divider between the two teams
-    draw.line([(cx - _BAND_W // 2 + 2, slot_cy), (cx + _BAND_W // 2 - 2, slot_cy)], fill=0)
-
-    if series is None:
-        _paste_logo(tile, 'TBD', '', cx, cy0)
-        _paste_logo(tile, 'TBD', '', cx, cy1)
+    if not _has_real_team(series):
         return
+
+    if band != _WS_BAND:
+        draw.line([(cx - _BAND_W // 2 + 2, slot_cy), (cx + _BAND_W // 2 - 2, slot_cy)], fill=0)
 
     away_abbr = (series.get('away_abbr') or '?')[:3]
     home_abbr = (series.get('home_abbr') or '?')[:3]
@@ -75,15 +88,16 @@ def _draw_matchup(tile, draw, band, slot_cy, series):
     away_ghost = complete and bool(winner) and winner != away_abbr
     home_ghost = complete and bool(winner) and winner != home_abbr
 
-    _paste_logo(tile, away_abbr, away_id, cx, cy0, ghost=away_ghost)
-    _paste_logo(tile, home_abbr, home_id, cx, cy1, ghost=home_ghost)
+    if _is_real_team(away_id):
+        _paste_logo(tile, away_abbr, away_id, cx, cy0, ghost=away_ghost)
+    if _is_real_team(home_id):
+        _paste_logo(tile, home_abbr, home_id, cx, cy1, ghost=home_ghost)
 
 
 def _draw_cs_champion(tile, draw, band, slot_cy, series):
     """CS band: single winner logo (connector endpoint) when complete, else compact matchup."""
     cx = _band_cx(band)
     if series is None:
-        _paste_logo(tile, 'TBD', '', cx, slot_cy, size=_CS_LOGO_SZ)
         return
     complete = series.get('complete', False)
     winner   = series.get('winner_abbr') or ''
@@ -177,13 +191,10 @@ def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mo
         x_ds = _band_cx(ds_b) + ( _CONN_INSET if right else -_CONN_INSET)
         x_cs = _band_cx(cs_b) + (-_CONN_INSET if right else  _CONN_INSET)
         gx   = (x_ds + x_cs) // 2
-        mid_y = (y0 + y1) // 2
         draw.line([(x_ds, y0),  (gx, y0)],  fill=0)
         draw.line([(x_ds, y1),  (gx, y1)],  fill=0)
         draw.line([(gx,   y0),  (gx, y1)],  fill=0)
-        draw.line([(gx, mid_y), (x_cs, mid_y)], fill=0)
-        if mid_y != ycs:
-            draw.line([(x_cs, mid_y), (x_cs, ycs)], fill=0)
+        draw.line([(gx, ycs), (x_cs, ycs)], fill=0)
 
     # CS → WS: each CS winner logo connects to the specific WS team logo
     # (AL CS → WS away/top, NL CS → WS home/bottom) so the lines arrive at
@@ -191,13 +202,16 @@ def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mo
     ws_cy = placed.get((3, 0))
     if ws_cy is not None:
         ws_away_y, ws_home_y = _logo_cys(ws_cy)
+        # With no CS logo drawn, the line runs straight through the empty band.
         if (2, 0) in placed:
+            inset = _CONN_INSET if _has_real_team(slots['AL']['CS'][0]) else -_CONN_INSET
             _draw_connector(draw,
-                            _band_cx(2) + _CONN_INSET, placed[(2, 0)],
+                            _band_cx(2) + inset, placed[(2, 0)],
                             _band_cx(3) - _CONN_INSET, ws_away_y)
         if (4, 0) in placed:
+            inset = _CONN_INSET if _has_real_team(slots['NL']['CS'][0]) else -_CONN_INSET
             _draw_connector(draw,
-                            _band_cx(4) - _CONN_INSET, placed[(4, 0)],
+                            _band_cx(4) - inset, placed[(4, 0)],
                             _band_cx(3) + _CONN_INSET, ws_home_y)
 
     # WS winner: when the World Series is complete, draw the champion's logo
@@ -210,7 +224,7 @@ def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mo
         ws_cx   = _band_cx(3)
         _cy0, _cy1 = _logo_cys(ws_cy or _slot_center_y(0, 1))
         champ_sz  = 50
-        champ_y   = _cy1 + champ_sz // 2 + 8
+        champ_y   = _cy1 + champ_sz // 2 + 38
         if champ_y + champ_sz // 2 + 4 <= TILE_H:
             box_pad = 4
             draw.rectangle([
