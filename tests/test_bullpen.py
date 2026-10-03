@@ -73,12 +73,12 @@ def _fixture():
     """ATL faces NYM today; ATL played 9/28 (pk 1) and 9/26 (pk 2), NYM played 9/28 (pk 1)."""
     schedules = {
         (144, '2026-09-29'): {'dates': [{'date': '2026-09-29', 'games': [_game(9, 121, 144, 'Preview')]}]},
-        (144, '2026-09-19'): {'dates': [
+        (144, '2026-09-26'): {'dates': [
             {'date': '2026-09-26', 'games': [_game(2, 144, 121)]},
             {'date': '2026-09-27', 'games': [_game(3, 144, 121, 'Postponed')]},
             {'date': '2026-09-28', 'games': [_game(1, 144, 121)]},
         ]},
-        (121, '2026-09-19'): {'dates': [{'date': '2026-09-28', 'games': [_game(1, 144, 121)]}]},
+        (121, '2026-09-26'): {'dates': [{'date': '2026-09-28', 'games': [_game(1, 144, 121)]}]},
     }
     boxes = {
         1: _box(_side(144, [(1, 'Spencer Strider', 90), (2, 'Raisel Iglesias', 10), (3, 'A.J. Minter', 25)]),
@@ -138,14 +138,23 @@ class TestFetchBullpen:
             data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
         assert data['team_order'] == ['144']
 
-    def test_window_anchors_to_last_game_after_off_days(self, isolated):
+    def test_window_is_calendar_days_not_last_game(self, isolated):
+        """A game inside the window but not yesterday counts toward the total only."""
         schedules, boxes = _fixture()
-        schedules[(144, '2026-09-19')] = {'dates': [
+        schedules[(144, '2026-09-26')] = {'dates': [
             {'date': '2026-09-26', 'games': [_game(2, 144, 121)]}]}
         with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
             data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
         assert data['teams']['144']['pitchers'] == [
-            {'name': 'R. Iglesias', 'yesterday': 12, 'total': 12}]
+            {'name': 'R. Iglesias', 'yesterday': 0, 'total': 12}]
+
+    def test_no_games_in_window_means_nobody_has_workload(self, isolated):
+        """A team that last played before the window (a week off) is fully rested."""
+        schedules, boxes = _fixture()
+        schedules[(144, '2026-09-26')] = {'dates': []}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        assert data['teams']['144']['pitchers'] == []
 
     def test_unknown_team_returns_empty(self, isolated):
         assert fetch_bullpen.fetch_bullpen('ZZZ', today=TODAY) == {}
