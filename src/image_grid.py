@@ -952,13 +952,11 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     )
 
     # 2×2 playoff bracket tile (300×300px) — claims the bottom-right 2×2 block
-    # before per-series tiles consume the free slots.
-    _PLAYOFF_GAME_TYPES_BK = {'W', 'D', 'L', 'F'}
-    _has_playoff_games = any(
-        g.get('game_type') in _PLAYOFF_GAME_TYPES_BK
-        for g in (game_state_data or [])
-    )
-    if (config.get('show_series_panel', False) and _has_playoff_games
+    # before per-series tiles consume the free slots. Shown throughout the
+    # postseason (whenever bracket data exists) including off days, not only
+    # on days with playoff games on the slate.
+    _bt_data = load_json_file('playoff_bracket.json')
+    if (config.get('show_series_panel', False) and (_bt_data or {}).get('series')
             and len(_free_slots) >= 4):
         _bt_sidebar  = config.get('show_standings_sidebar', False)
         _bt_max_c    = 2 if _bt_sidebar else 3
@@ -967,16 +965,14 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         )
         if _bt_pos is not None:
             _bt_col, _bt_row = _bt_pos
-            _bt_data = load_json_file('playoff_bracket.json')
-            if (_bt_data or {}).get('series'):
-                from image_bracket_tile import draw_bracket_tile as _draw_bt
-                _bt_sx = _bt_col * 150 + x_start
-                _bt_sy = _bt_row * 150 + y_start
-                Himage = _draw_bt(
-                    Himage, _bt_sx, _bt_sy, _bt_data,
-                    standings_data=load_json_file('standings.json'),
-                    dark_mode=config.get('dark_mode', False),
-                )
+            from image_bracket_tile import draw_bracket_tile as _draw_bt
+            _bt_sx = _bt_col * 150 + x_start
+            _bt_sy = _bt_row * 150 + y_start
+            Himage = _draw_bt(
+                Himage, _bt_sx, _bt_sy, _bt_data,
+                standings_data=load_json_file('standings.json'),
+                dark_mode=config.get('dark_mode', False),
+            )
 
     # Playoff series tiles — current round + next round only, and next-round
     # tiles are suppressed until both teams in the matchup are determined

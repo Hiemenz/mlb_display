@@ -1,8 +1,4 @@
-"""Compact playoff bracket tile (300×300px) for a 2×2 grid slot.
-
-Logos-only tree: each matchup is two team logos separated by a thin divider,
-connected by L-shaped bracket lines.  No text, no boxes — just the tree.
-"""
+"""Compact playoff bracket tile (300×300px) for a 2×2 grid slot."""
 from image_assets import Image, ImageDraw, ImageOps
 
 TILE_W = 300
@@ -10,10 +6,15 @@ TILE_H = 300
 
 _N_BANDS  = 7
 _BAND_W   = TILE_W // _N_BANDS   # 42 px per band
-_LOGO_SZ  = 20                   # team logo diameter
-_PAD      = 2                    # padding around each logo
-_TEAM_H   = _LOGO_SZ + 2 * _PAD # height per team slot  (24 px)
-_LABEL_H  = 10                   # round-label strip at top
+_LOGO_SZ  = 20
+_PAD      = 2
+_TEAM_H   = _LOGO_SZ + 2 * _PAD  # 24 px
+_LABEL_H  = 10
+_CS_LOGO_SZ = _LOGO_SZ + 6       # 26 px — CS winner logo, slightly larger
+
+# Connector lines start/end at the logo edge so adjacent bands still produce
+# an L-shape rather than a degenerate vertical-only line.
+_CONN_INSET = _LOGO_SZ // 2  # 10 px from band centre (logo radius)
 
 _BANDS = (
     ('AL', 'WC'), ('AL', 'DS'), ('AL', 'CS'), (None, 'WS'),
@@ -32,16 +33,17 @@ def _slot_center_y(index, count):
     return body_top + int(body_h * (2 * index + 1) / (2 * count))
 
 
-def _paste_logo(tile, abbr, tid, cx, cy, ghost=False):
+def _paste_logo(tile, abbr, tid, cx, cy, ghost=False, size=None):
     from image_assets import _logo_small, _logo_ghost
-    logo = (_logo_ghost(abbr, tid, size=_LOGO_SZ, lightness=140)
-            if ghost else _logo_small(abbr, tid, size=_LOGO_SZ))
+    sz = size or _LOGO_SZ
+    logo = (_logo_ghost(abbr, tid, size=sz, lightness=140)
+            if ghost else _logo_small(abbr, tid, size=sz))
     if logo is not None:
         lw, lh = logo.size
         tile.paste(logo, (cx - lw // 2, cy - lh // 2))
     else:
         draw = ImageDraw.Draw(tile)
-        hw = _LOGO_SZ // 2 - 2
+        hw = sz // 2 - 2
         draw.ellipse([cx - hw, cy - hw, cx + hw, cy + hw], outline=0)
 
 
@@ -49,15 +51,6 @@ def _logo_cys(slot_cy):
     """Away and home logo centre-y for a matchup at slot_cy."""
     return (slot_cy - _TEAM_H // 2 - _LOGO_SZ // 2,
             slot_cy + _TEAM_H // 2 + _LOGO_SZ // 2)
-
-
-def _winner_exit_cy(series, slot_cy):
-    """Y of the winner's logo (connector attachment).  Falls back to slot_cy."""
-    if not series or not series.get('complete') or not series.get('winner_abbr'):
-        return slot_cy
-    away_abbr = (series.get('away_abbr') or '')[:3]
-    cy0, cy1  = _logo_cys(slot_cy)
-    return cy0 if series['winner_abbr'] == away_abbr else cy1
 
 
 def _draw_matchup(tile, draw, band, slot_cy, series):
@@ -84,6 +77,23 @@ def _draw_matchup(tile, draw, band, slot_cy, series):
 
     _paste_logo(tile, away_abbr, away_id, cx, cy0, ghost=away_ghost)
     _paste_logo(tile, home_abbr, home_id, cx, cy1, ghost=home_ghost)
+
+
+def _draw_cs_champion(tile, draw, band, slot_cy, series):
+    """CS band: single winner logo (connector endpoint) when complete, else compact matchup."""
+    cx = _band_cx(band)
+    if series is None:
+        _paste_logo(tile, 'TBD', '', cx, slot_cy, size=_CS_LOGO_SZ)
+        return
+    complete = series.get('complete', False)
+    winner   = series.get('winner_abbr') or ''
+    if complete and winner:
+        away_abbr = (series.get('away_abbr') or '?')[:3]
+        tid = str(series.get(
+            'away_id' if winner == away_abbr else 'home_id', ''))
+        _paste_logo(tile, winner, tid, cx, slot_cy, size=_CS_LOGO_SZ)
+    else:
+        _draw_matchup(tile, draw, band, slot_cy, series)
 
 
 def _draw_connector(draw, x_from, y_from, x_to, y_to):
@@ -131,19 +141,17 @@ def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mo
             cy = _slot_center_y(i, count)
             if rnd == 'WC':
                 cy += -_WC_SPREAD if i == 0 else _WC_SPREAD
-            _draw_matchup(tile, draw, band, cy, series)
-            # For WC, connect from the winner's logo; other rounds use slot centre
-            exit_cy = _winner_exit_cy(series, cy) if rnd == 'WC' else cy
-            placed[(band, i)] = exit_cy
+            if rnd == 'CS':
+                # CS shows a single logo: the winner (or matchup if still in progress)
+                _draw_cs_champion(tile, draw, band, cy, series)
+            else:
+                _draw_matchup(tile, draw, band, cy, series)
+            placed[(band, i)] = cy
 
-    # Bracket connectors — AL left-to-right, NL right-to-left
+    # WC → DS: 1-to-1 L-shaped connectors
     for src_b, dst_b, pairs in (
         (0, 1, ((0, 0), (1, 1))),
-        (1, 2, ((0, 0), (1, 0))),
-        (2, 3, ((0, 0),)),
         (6, 5, ((0, 0), (1, 1))),
-        (5, 4, ((0, 0), (1, 0))),
-        (4, 3, ((0, 0),)),
     ):
         right = src_b < dst_b
         for si, di in pairs:
@@ -154,9 +162,62 @@ def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mo
             scx = _band_cx(src_b)
             dcx = _band_cx(dst_b)
             if right:
-                _draw_connector(draw, scx + _BAND_W // 2, scy, dcx - _BAND_W // 2, dcy)
+                _draw_connector(draw, scx + _CONN_INSET, scy, dcx - _CONN_INSET, dcy)
             else:
-                _draw_connector(draw, scx - _BAND_W // 2, scy, dcx + _BAND_W // 2, dcy)
+                _draw_connector(draw, scx - _CONN_INSET, scy, dcx + _CONN_INSET, dcy)
+
+    # DS → CS gather connector: two DS exits meet at a vertical spine then a
+    # single line continues to the CS winner logo.
+    for ds_b, cs_b, right in ((1, 2, True), (5, 4, False)):
+        if not all(k in placed for k in ((ds_b, 0), (ds_b, 1), (cs_b, 0))):
+            continue
+        y0   = placed[(ds_b, 0)]
+        y1   = placed[(ds_b, 1)]
+        ycs  = placed[(cs_b, 0)]
+        x_ds = _band_cx(ds_b) + ( _CONN_INSET if right else -_CONN_INSET)
+        x_cs = _band_cx(cs_b) + (-_CONN_INSET if right else  _CONN_INSET)
+        gx   = (x_ds + x_cs) // 2
+        mid_y = (y0 + y1) // 2
+        draw.line([(x_ds, y0),  (gx, y0)],  fill=0)
+        draw.line([(x_ds, y1),  (gx, y1)],  fill=0)
+        draw.line([(gx,   y0),  (gx, y1)],  fill=0)
+        draw.line([(gx, mid_y), (x_cs, mid_y)], fill=0)
+        if mid_y != ycs:
+            draw.line([(x_cs, mid_y), (x_cs, ycs)], fill=0)
+
+    # CS → WS: each CS winner logo connects to the specific WS team logo
+    # (AL CS → WS away/top, NL CS → WS home/bottom) so the lines arrive at
+    # the correct logo rather than the midpoint of the WS box.
+    ws_cy = placed.get((3, 0))
+    if ws_cy is not None:
+        ws_away_y, ws_home_y = _logo_cys(ws_cy)
+        if (2, 0) in placed:
+            _draw_connector(draw,
+                            _band_cx(2) + _CONN_INSET, placed[(2, 0)],
+                            _band_cx(3) - _CONN_INSET, ws_away_y)
+        if (4, 0) in placed:
+            _draw_connector(draw,
+                            _band_cx(4) - _CONN_INSET, placed[(4, 0)],
+                            _band_cx(3) + _CONN_INSET, ws_home_y)
+
+    # WS winner: when the World Series is complete, draw the champion's logo
+    # below the WS matchup in a prominent border box.
+    ws_series = slots.get('WS')
+    if ws_series and ws_series.get('complete') and ws_series.get('winner_abbr'):
+        w_abbr = ws_series['winner_abbr']
+        w_id   = str(ws_series.get(
+            'away_id' if w_abbr == (ws_series.get('away_abbr') or '')[:3] else 'home_id', ''))
+        ws_cx   = _band_cx(3)
+        _cy0, _cy1 = _logo_cys(ws_cy or _slot_center_y(0, 1))
+        champ_sz  = 50
+        champ_y   = _cy1 + champ_sz // 2 + 8
+        if champ_y + champ_sz // 2 + 4 <= TILE_H:
+            box_pad = 4
+            draw.rectangle([
+                ws_cx - champ_sz // 2 - box_pad, champ_y - champ_sz // 2 - box_pad,
+                ws_cx + champ_sz // 2 + box_pad, champ_y + champ_sz // 2 + box_pad,
+            ], outline=0)
+            _paste_logo(tile, w_abbr, w_id, ws_cx, champ_y, size=champ_sz)
 
     if dark_mode:
         tile = ImageOps.invert(tile.convert('L')).convert('1')

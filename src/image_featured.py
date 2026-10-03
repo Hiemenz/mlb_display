@@ -21,6 +21,22 @@ from image_standings import (
 from image_box import draw_box, _abbr_play, _draw_backwards_k
 
 
+def _find_furthest_game(game_state_data):
+    """Return the furthest-along game — used during postseason when multiple games
+    are on the slate so the display shows the most advanced action, not just the
+    featured team."""
+    _live = {'In Progress', 'Player challenge', 'Manager challenge'}
+    _final = {'Final', 'Game Over', 'Final: Tied'}
+    live_games = [g for g in game_state_data if g.get('detailed_state') in _live]
+    if live_games:
+        return max(live_games, key=lambda g: g.get('current_inning') or 0)
+    finished = [g for g in game_state_data if g.get('detailed_state', '') in _final
+                or g.get('detailed_state', '').startswith('Completed Early')]
+    if finished:
+        return max(finished, key=lambda g: g.get('current_inning') or 0)
+    return game_state_data[0] if game_state_data else None
+
+
 def _find_featured_game(game_state_data, team_data, primary_abbr):
     """Return the best game to display for primary_abbr in fullscreen mode.
 
@@ -858,22 +874,16 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
             wildcard_data = derive_wildcard_from_standings(standings_data)
             canvas = draw_wildcard_header(canvas, wildcard_data)
     if not _is_live and standings_data and 'standings' in standings_data:
-        if config.get('show_standings_sidebar', False):
-            if _bracket and league_mode != 'aaa':
-                _series = derive_playoff_series_by_league(_bracket, standings_data)
-                canvas = draw_playoff_seedings_fullscreen(
-                    canvas, _series, team_data, side='left',
-                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
-                canvas = draw_playoff_seedings_fullscreen(
-                    canvas, _series, team_data, side='right',
-                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
-            else:
-                canvas = draw_standings_sidebar_fullscreen(
-                    canvas, standings_data, team_data, side='left', league_mode=league_mode,
-                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
-                canvas = draw_standings_sidebar_fullscreen(
-                    canvas, standings_data, team_data, side='right', league_mode=league_mode,
-                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
+        # During the postseason, skip the standings/seedings sidebar entirely — the
+        # bracket header above already gives context, and the space is left open so
+        # the game content has room to breathe.
+        if config.get('show_standings_sidebar', False) and not _bracket:
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='left', league_mode=league_mode,
+                x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='right', league_mode=league_mode,
+                x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
     # Game-state-specific header label centered in the top strip.
     # 4 states: Scheduled, Finished, Postponed/Cancelled, other (fallback).

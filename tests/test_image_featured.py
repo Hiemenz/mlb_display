@@ -202,6 +202,35 @@ def test_find_featured_game_empty_list_returns_none():
     assert _find_featured_game([], TEAM_DATA, 'NYY') is None
 
 
+# _find_furthest_game tests
+def _gi(pk, away, home, state, inning=1):
+    return {'game_pk': pk, 'away_team_id': away, 'home_team_id': home,
+            'detailed_state': state, 'current_inning': inning}
+
+
+def test_find_furthest_game_picks_highest_inning_live():
+    from image_featured import _find_furthest_game
+    games = [_gi(1, 147, 111, 'In Progress', 3), _gi(2, 119, 135, 'In Progress', 7)]
+    assert _find_furthest_game(games)['game_pk'] == 2
+
+
+def test_find_furthest_game_falls_back_to_final_when_no_live():
+    from image_featured import _find_furthest_game
+    games = [_gi(1, 147, 111, 'Final', 9), _gi(2, 119, 135, 'Final', 12)]
+    assert _find_furthest_game(games)['game_pk'] == 2
+
+
+def test_find_furthest_game_falls_back_to_first_when_scheduled():
+    from image_featured import _find_furthest_game
+    games = [_g(1, 147, 111, 'Scheduled'), _g(2, 119, 135, 'Pre-Game')]
+    assert _find_furthest_game(games)['game_pk'] == 1
+
+
+def test_find_furthest_game_empty_returns_none():
+    from image_featured import _find_furthest_game
+    assert _find_furthest_game([]) is None
+
+
 def test_find_featured_game_challenge_state_falls_back_to_last_primary_game():
     """A primary-team game under review isn't 'In Progress' by exact match,
     isn't Scheduled/Final either, so it falls through to the final fallback
@@ -955,8 +984,8 @@ def test_featured_fullscreen_playoff_bracket_header_branch():
 
 @needs_pil
 def test_featured_fullscreen_playoff_bracket_sidebar_branch():
-    """show_playoff_bracket=True + show_standings_sidebar=True exercises the
-    playoff seedings sidebar path (lines 832-836 of image_featured.py)."""
+    """During postseason, the seedings sidebar is suppressed so the display is
+    uncluttered — verify draw_playoff_seedings_fullscreen is NOT called."""
     from image_featured import draw_featured_game_fullscreen
     from datetime import datetime
     bracket_cfg = dict(CONFIG, show_playoff_bracket=True, show_standings_sidebar=True,
@@ -974,7 +1003,7 @@ def test_featured_fullscreen_playoff_bracket_sidebar_branch():
          patch('image_featured.draw_playoff_seedings_fullscreen',
                side_effect=lambda canvas, *a, **k: canvas) as mock_sb:
         img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
-    assert mock_sb.call_count == 2
+    assert mock_sb.call_count == 0, "Seedings sidebar must be suppressed during postseason"
     assert isinstance(img, Image.Image)
 
 

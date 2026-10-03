@@ -645,9 +645,15 @@ def morning_rotation(config, now=None):
     else:
         views = ['yesterday', 'today']
 
-    if (config.get('morning_alternate_bracket', True)
-            and is_postseason_window(now)
-            and (load_json_file('playoff_bracket.json') or {}).get('series')):
+    _bracket_series = (load_json_file('playoff_bracket.json') or {}).get('series')
+    _is_postseason = is_postseason_window(now) and bool(_bracket_series)
+
+    # Quadrant chart (team offense vs pitching scatter) is a regular-season view;
+    # drop it from the morning rotation once playoff bracket data exists.
+    if _is_postseason:
+        views = [v for v in views if v != 'quadrant']
+
+    if config.get('morning_alternate_bracket', True) and _is_postseason:
         views.append('bracket')
 
     return tuple(views)
@@ -1274,9 +1280,21 @@ Examples:
     if (not args.date
             and _get_display_mode(view_config) in ('scoreboard', 'linescore', 'fields')
             and not load_json_file('games.json').get('games')):
-        print("No games to display — showing idle screen")
-        _show_idle_screen(config, auto_open=args.local and system_platform == 'Darwin')
-        return
+        if _date_ctx.showing_previous_day:
+            # Yesterday had no games (e.g. postseason off day) — re-fetch today
+            # rather than showing an empty or idle screen.
+            print("Yesterday had no games — switching morning view to today")
+            date_str = _local_now(config).date().strftime('%Y-%m-%d')
+            fetch_scoreboard_for_date(date_str, sport_id, config)
+            if not load_json_file('games.json').get('games'):
+                print("No games to display — showing idle screen")
+                _show_idle_screen(config, auto_open=args.local and system_platform == 'Darwin')
+                return
+            # Fall through and render today's games
+        else:
+            print("No games to display — showing idle screen")
+            _show_idle_screen(config, auto_open=args.local and system_platform == 'Darwin')
+            return
 
     # 9. Render and push to the panel.
     output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
