@@ -409,7 +409,7 @@ def test_featured_fullscreen_dispatches_to_draw_featured_game_fullscreen(monkeyp
 
 @needs_pil
 def test_featured_fullscreen_falls_back_to_grid_when_no_games(monkeypatch):
-    """With the env var set but an empty game list, _find_featured_game
+    """With the env var set but an empty game list, _find_furthest_game
     returns None, so orchestrate must fall back to the normal grid path."""
     import generate_image
 

@@ -1,7 +1,7 @@
 """Smoke tests for src/image_featured.py — the featured-team fullscreen views.
 
 Covers:
-  1. _find_featured_game: priority/fallback selection logic
+  1. _find_furthest_game: team-agnostic selection logic
   2. draw_live_fullscreen_game: full 800x480 live-game layout, many field combos
   3. draw_featured_game_fullscreen: live-delegation, non-live cell scaling,
      wildcard header / standings sidebar plumbing, date label
@@ -148,58 +148,15 @@ def _final_game(**overrides):
 
 
 # ---------------------------------------------------------------------------
-# 1. _find_featured_game
+# 1. _find_furthest_game (team-agnostic game selection)
 # ---------------------------------------------------------------------------
 
-def _g(pk, away, home, state):
+def _g(pk, away, home, state, game_date=None):
     """G."""
-    return {'game_pk': pk, 'away_team_id': away, 'home_team_id': home, 'detailed_state': state}
-
-
-def test_find_featured_game_scheduled_priority():
-    """Find featured game scheduled priority."""
-    from image_featured import _find_featured_game
-    games = [_g(1, 119, 137, 'Final'), _g(2, 147, 111, 'Scheduled')]
-    result = _find_featured_game(games, TEAM_DATA, 'NYY')
-    assert result['game_pk'] == 2
-
-
-def test_find_featured_game_in_progress_priority_over_final():
-    """Find featured game in progress priority over final."""
-    from image_featured import _find_featured_game
-    games = [_g(1, 147, 111, 'Final'), _g(2, 147, 111, 'In Progress')]
-    result = _find_featured_game(games, TEAM_DATA, 'NYY')
-    assert result['game_pk'] == 2
-
-
-def test_find_featured_game_final_returns_last_matching():
-    """Find featured game final returns last matching."""
-    from image_featured import _find_featured_game
-    games = [_g(1, 147, 111, 'Final'), _g(2, 147, 111, 'Completed Early: Rain')]
-    result = _find_featured_game(games, TEAM_DATA, 'NYY')
-    assert result['game_pk'] == 2
-
-
-def test_find_featured_game_primary_not_playing_falls_back_to_live():
-    """Find featured game primary not playing falls back to live."""
-    from image_featured import _find_featured_game
-    games = [_g(1, 119, 137, 'Final'), _g(2, 133, 144, 'In Progress')]
-    result = _find_featured_game(games, TEAM_DATA, 'NYY')
-    assert result['game_pk'] == 2
-
-
-def test_find_featured_game_primary_not_playing_no_live_falls_back_to_first():
-    """Find featured game primary not playing no live falls back to first."""
-    from image_featured import _find_featured_game
-    games = [_g(1, 119, 137, 'Final'), _g(2, 133, 144, 'Final')]
-    result = _find_featured_game(games, TEAM_DATA, 'NYY')
-    assert result['game_pk'] == 1
-
-
-def test_find_featured_game_empty_list_returns_none():
-    """Find featured game empty list returns none."""
-    from image_featured import _find_featured_game
-    assert _find_featured_game([], TEAM_DATA, 'NYY') is None
+    g = {'game_pk': pk, 'away_team_id': away, 'home_team_id': home, 'detailed_state': state}
+    if game_date:
+        g['game_date'] = game_date
+    return g
 
 
 # _find_furthest_game tests
@@ -220,7 +177,7 @@ def test_find_furthest_game_falls_back_to_final_when_no_live():
     assert _find_furthest_game(games)['game_pk'] == 2
 
 
-def test_find_furthest_game_falls_back_to_first_when_scheduled():
+def test_find_furthest_game_scheduled_without_times_keeps_list_order():
     from image_featured import _find_furthest_game
     games = [_g(1, 147, 111, 'Scheduled'), _g(2, 119, 135, 'Pre-Game')]
     assert _find_furthest_game(games)['game_pk'] == 1
@@ -231,14 +188,27 @@ def test_find_furthest_game_empty_returns_none():
     assert _find_furthest_game([]) is None
 
 
-def test_find_featured_game_challenge_state_falls_back_to_last_primary_game():
-    """A primary-team game under review isn't 'In Progress' by exact match,
-    isn't Scheduled/Final either, so it falls through to the final fallback
-    (last primary game) rather than being skipped."""
-    from image_featured import _find_featured_game
-    games = [_g(1, 147, 111, 'Player challenge')]
-    result = _find_featured_game(games, TEAM_DATA, 'NYY')
-    assert result['game_pk'] == 1
+def test_find_furthest_game_ignores_primary_team():
+    """The primary team's finished game doesn't beat another team's live game."""
+    from image_featured import _find_furthest_game
+    games = [_g(1, 147, 111, 'Final'), _g(2, 119, 144, 'In Progress')]
+    assert _find_furthest_game(games)['game_pk'] == 2
+
+
+def test_find_furthest_game_challenge_state_counts_as_live():
+    from image_featured import _find_furthest_game
+    games = [_g(1, 147, 111, 'Final'), _g(2, 119, 144, 'Player challenge')]
+    assert _find_furthest_game(games)['game_pk'] == 2
+
+
+def test_find_furthest_game_scheduled_picks_earliest_start():
+    from image_featured import _find_furthest_game
+    games = [
+        _g(1, 147, 111, 'Scheduled', '2026-10-03T22:30:00Z'),
+        _g(2, 119, 144, 'Scheduled', '2026-10-03T20:00:00Z'),
+        _g(3, 135, 158, 'Scheduled', '2026-10-04T00:30:00Z'),
+    ]
+    assert _find_furthest_game(games)['game_pk'] == 2
 
 
 # ---------------------------------------------------------------------------

@@ -189,7 +189,7 @@ want the charts. It is written to be cron-safe if you ever do schedule it (it re
 
 ### Fullscreen Featured Game
 
-Single-game focus mode for your primary team. Enable by setting `FEATURED_TEAM_FULLSCREEN=true` in the environment.
+Single-game focus mode. Shows the live game farthest along (any team), else the latest final, else the next game to start. Enable by setting `FEATURED_TEAM_FULLSCREEN=true` in the environment.
 
 - **Live:** custom 800×480 layout with large inning header, R/H/E columns, base-runner diagram, outs, and the same between-innings next-batters panel as the tile view.
 - **Pre-game / Final:** the normal scoreboard tile scaled up 3× and centered, with wildcard strip and standings sidebars drawn around it exactly as they appear in the grid.
@@ -406,7 +406,7 @@ poetry run python main.py                # Raspberry Pi
 poetry run python main.py --date 2026-04-19
 poetry run python main.py --sport-id 8   # World Baseball Classic
 
-# Fullscreen featured game (primary team, single-game focus)
+# Fullscreen single-game focus (whichever game is live)
 FEATURED_TEAM_FULLSCREEN=true poetry run python main.py
 
 # Override display mode for one run without editing config.yaml

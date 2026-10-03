@@ -22,9 +22,12 @@ from image_box import draw_box, _abbr_play, _draw_backwards_k
 
 
 def _find_furthest_game(game_state_data):
-    """Return the furthest-along game — used during postseason when multiple games
-    are on the slate so the display shows the most advanced action, not just the
-    featured team."""
+    """Return the game to show in fullscreen mode, regardless of team.
+
+    Priority: the live game farthest along → the most recent finished game →
+    the next game to start. During the postseason games are staggered, so this
+    normally follows the single game that is on.
+    """
     _live = {'In Progress', 'Player challenge', 'Manager challenge'}
     _final = {'Final', 'Game Over', 'Final: Tied'}
     live_games = [g for g in game_state_data if g.get('detailed_state') in _live]
@@ -34,44 +37,9 @@ def _find_furthest_game(game_state_data):
                 or g.get('detailed_state', '').startswith('Completed Early')]
     if finished:
         return max(finished, key=lambda g: g.get('current_inning') or 0)
-    return game_state_data[0] if game_state_data else None
-
-
-def _find_featured_game(game_state_data, team_data, primary_abbr):
-    """Return the best game to display for primary_abbr in fullscreen mode.
-
-    Priority: first Scheduled/Pre-Game/Warmup → first In Progress → last Final.
-    Falls back to any live game in progress, then the first game, when the primary
-    team has no game today.
-    """
-    abbr_map = team_data.get('team_abbreviation', {})
-    primary_games = []
-    for game in game_state_data:
-        away = abbr_map.get(str(game.get('away_team_id', '')), '')
-        home = abbr_map.get(str(game.get('home_team_id', '')), '')
-        if primary_abbr in (away, home):
-            primary_games.append(game)
-
-    if not primary_games:
-        _live_states = {'In Progress', 'Player challenge', 'Manager challenge'}
-        for g in game_state_data:
-            if g.get('detailed_state') in _live_states:
-                return g
-        return game_state_data[0] if game_state_data else None
-
-    _scheduled = {'Scheduled', 'Pre-Game', 'Warmup', 'Delayed Start'}
-    _final     = {'Final', 'Game Over', 'Final: Tied'}
-
-    for g in primary_games:
-        if g.get('detailed_state') in _scheduled:
-            return g
-    for g in primary_games:
-        if g.get('detailed_state') == 'In Progress':
-            return g
-    for g in reversed(primary_games):
-        if g.get('detailed_state', '').startswith('Completed Early') or g.get('detailed_state') in _final:
-            return g
-    return primary_games[-1]
+    # Nothing live or finished: the next game to start (list order breaks ties).
+    return min(game_state_data, key=lambda g: g.get('game_date') or '',
+               default=None)
 
 
 def _draw_between_innings(draw, game_data, away_abbr, home_abbr, cur_inn,
