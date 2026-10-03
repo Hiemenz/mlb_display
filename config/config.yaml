@@ -36,7 +36,7 @@ auto_derby_mode: true
 # recent transactions, the quadrant chart, and "this day in history". The first block
 # shows the next day that has games (first-pitch times, probable pitchers, and a
 # countdown) so an off day is never blank. Set to false to skip that block.
-idle_schedule_rotation: true
+idle_schedule_rotation: false
 
 primary: NYY
 primary_backup: BOS
