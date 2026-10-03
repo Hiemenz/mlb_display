@@ -955,8 +955,8 @@ def test_featured_fullscreen_playoff_bracket_header_branch():
 
 @needs_pil
 def test_featured_fullscreen_playoff_bracket_sidebar_branch():
-    """show_playoff_bracket=True + show_standings_sidebar=True exercises the
-    playoff seedings sidebar path (lines 832-836 of image_featured.py)."""
+    """During postseason, the seedings sidebar is suppressed so the display is
+    uncluttered — verify draw_playoff_seedings_fullscreen is NOT called."""
     from image_featured import draw_featured_game_fullscreen
     from datetime import datetime
     bracket_cfg = dict(CONFIG, show_playoff_bracket=True, show_standings_sidebar=True,
@@ -974,7 +974,7 @@ def test_featured_fullscreen_playoff_bracket_sidebar_branch():
          patch('image_featured.draw_playoff_seedings_fullscreen',
                side_effect=lambda canvas, *a, **k: canvas) as mock_sb:
         img = draw_featured_game_fullscreen(_scheduled_game(), TEAM_DATA, bracket_cfg)
-    assert mock_sb.call_count == 2
+    assert mock_sb.call_count == 0, "Seedings sidebar must be suppressed during postseason"
     assert isinstance(img, Image.Image)
 
 

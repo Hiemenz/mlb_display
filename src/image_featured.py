@@ -858,22 +858,16 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
             wildcard_data = derive_wildcard_from_standings(standings_data)
             canvas = draw_wildcard_header(canvas, wildcard_data)
     if not _is_live and standings_data and 'standings' in standings_data:
-        if config.get('show_standings_sidebar', False):
-            if _bracket and league_mode != 'aaa':
-                _series = derive_playoff_series_by_league(_bracket, standings_data)
-                canvas = draw_playoff_seedings_fullscreen(
-                    canvas, _series, team_data, side='left',
-                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
-                canvas = draw_playoff_seedings_fullscreen(
-                    canvas, _series, team_data, side='right',
-                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
-            else:
-                canvas = draw_standings_sidebar_fullscreen(
-                    canvas, standings_data, team_data, side='left', league_mode=league_mode,
-                    x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
-                canvas = draw_standings_sidebar_fullscreen(
-                    canvas, standings_data, team_data, side='right', league_mode=league_mode,
-                    x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
+        # During the postseason, skip the standings/seedings sidebar entirely — the
+        # bracket header above already gives context, and the space is left open so
+        # the game content has room to breathe.
+        if config.get('show_standings_sidebar', False) and not _bracket:
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='left', league_mode=league_mode,
+                x_anchor=0, sidebar_w=_left_sb_w, logo_sz=_sb_logo_sz)
+            canvas = draw_standings_sidebar_fullscreen(
+                canvas, standings_data, team_data, side='right', league_mode=league_mode,
+                x_anchor=_right_sb_x, sidebar_w=_right_sb_w, logo_sz=_sb_logo_sz)
 
     # Game-state-specific header label centered in the top strip.
     # 4 states: Scheduled, Finished, Postponed/Cancelled, other (fallback).

@@ -159,6 +159,56 @@ class TestDrawMatchup:
                              _s('WC', ('NYY', 147), ('BOS', 111), 2, 0, True, 'NYY'))
 
 
+class TestDrawCsChampion:
+    def _tile_and_draw(self):
+        tile = Image.new('1', (bt.TILE_W, bt.TILE_H), 255)
+        from PIL import ImageDraw
+        return tile, ImageDraw.Draw(tile)
+
+    def test_none_series_draws_tbd(self):
+        tile, draw = self._tile_and_draw()
+        bt._draw_cs_champion(tile, draw, 2, bt._slot_center_y(0, 1), None)
+
+    def test_complete_away_winner(self):
+        tile, draw = self._tile_and_draw()
+        s = _s('CS', ('NYY', 147), ('CLE', 114), 4, 2, complete=True, winner='NYY')
+        bt._draw_cs_champion(tile, draw, 2, bt._slot_center_y(0, 1), s)
+
+    def test_complete_home_winner(self):
+        tile, draw = self._tile_and_draw()
+        s = _s('CS', ('NYY', 147), ('CLE', 114), 2, 4, complete=True, winner='CLE')
+        bt._draw_cs_champion(tile, draw, 2, bt._slot_center_y(0, 1), s)
+
+    def test_active_series_falls_back_to_matchup(self):
+        tile, draw = self._tile_and_draw()
+        s = _s('CS', ('NYY', 147), ('CLE', 114), 1, 0)
+        bt._draw_cs_champion(tile, draw, 2, bt._slot_center_y(0, 1), s)
+
+
+class TestWsWinner:
+    """WS complete → big winner logo rendered below the WS matchup."""
+
+    def test_ws_winner_rendered(self):
+        data = {
+            'series': [
+                _s('WC', ('NYY', 147), ('BOS', 111), 2, 0, True, 'NYY'),
+                _s('WC', ('HOU', 117), ('CWS', 145), 0, 2, True, 'CWS'),
+                _s('WC', ('ATL', 144), ('PHI', 143), 2, 0, True, 'ATL'),
+                _s('WC', ('SD',  135), ('CHC', 112), 2, 0, True, 'SD'),
+                _s('DS', ('NYY', 147), ('TB',  139), 3, 1, True, 'NYY'),
+                _s('DS', ('CWS', 145), ('CLE', 114), 1, 3, True, 'CLE'),
+                _s('DS', ('ATL', 144), ('LAD', 119), 3, 2, True, 'ATL'),
+                _s('DS', ('SD',  135), ('MIL', 158), 3, 0, True, 'SD'),
+                _s('CS', ('NYY', 147), ('CLE', 114), 4, 2, True, 'NYY'),
+                _s('CS', ('ATL', 144), ('SD',  135), 2, 4, True, 'SD'),
+                _s('WS', ('NYY', 147), ('SD',  135), 4, 1, True, 'NYY'),
+            ]
+        }
+        canvas = Image.new('1', (bt.TILE_W, bt.TILE_H), 255)
+        result = bt.draw_bracket_tile(canvas, 0, 0, data)
+        assert result is canvas
+
+
 class TestDrawConnector:
     def _draw(self):
         tile = Image.new('1', (300, 300), 255)
