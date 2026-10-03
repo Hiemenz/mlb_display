@@ -1899,7 +1899,7 @@ class DrawOptions:
     win_prob_center_line: bool = True
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False, win_prob_center_line=True):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False, win_prob_center_line=True, suppress_lineup=False):
     """Render a single game score box onto Himage at (start_x, start_y)."""
     s = scale
     _is_walkoff = bool(game_data.get('walk_off'))
@@ -1919,6 +1919,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         game_data.get('detailed_state') in ('Scheduled', 'Pre-Game', 'Warmup')
         and _game_within_minutes_check(game_data, 60)
         and bool(game_data.get('away_lineup') or game_data.get('home_lineup'))
+        and not suppress_lineup   # expanded tiles show the lineup in their right panel
     )
 
     _cfg = load_yaml_file('config.yaml')
@@ -3315,6 +3316,7 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
         # owns the rest of this gap), and a rule ending mid-tile reads as a
         # stray line rather than a bar.
         win_prob_center_line=False,
+        suppress_lineup=True,
     )
 
     # Extend top, header-separator, and bottom borders across the right panel (no center divider)
@@ -3944,6 +3946,7 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
         hide_last_play=True,
         skip_header_invert=True,
         win_prob_center_line=False,   # same as the wide tile — see draw_wide_box
+        suppress_lineup=True,
     )
 
     draw = ImageDraw.Draw(Himage)

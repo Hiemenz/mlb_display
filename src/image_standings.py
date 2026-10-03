@@ -1363,6 +1363,40 @@ def derive_playoff_active_round(bracket_data, today=None):
     return None
 
 
+def is_series_superseded(series, bracket_data, today=None):
+    """True when a finished series' winner has already started its next-round series."""
+    from datetime import date as _date
+    _t = today or _date.today()
+    today_str = _t if isinstance(_t, str) else _t.isoformat()
+
+    winner = series.get('winner_abbr')
+    ro = _ROUND_ORDER.get(series.get('round', ''), -1)
+    if not (series.get('complete') and winner) or ro < 0:
+        return False
+    for s in bracket_data.get('series', []):
+        if _ROUND_ORDER.get(s.get('round', ''), -1) <= ro:
+            continue
+        if winner not in (s.get('away_abbr'), s.get('home_abbr')):
+            continue
+        first_date = s.get('first_game_date', '')
+        if (s.get('away_wins', 0) + s.get('home_wins', 0) > 0
+                or bool(first_date and first_date <= today_str)):
+            return True
+    return False
+
+
+def is_team_series_over(abbr, bracket_data):
+    """True when the team's latest bracket series is complete (eliminated or between rounds)."""
+    latest = None
+    for s in (bracket_data or {}).get('series', []):
+        if abbr not in (s.get('away_abbr'), s.get('home_abbr')):
+            continue
+        if latest is None or (_ROUND_ORDER.get(s.get('round', ''), -1)
+                              > _ROUND_ORDER.get(latest.get('round', ''), -1)):
+            latest = s
+    return bool(latest and latest.get('complete'))
+
+
 def derive_playoff_series_by_league(bracket_data, standings_data):
     """Return current-round series grouped by league.
 
@@ -1501,11 +1535,15 @@ def draw_playoff_round_header(Himage, bracket_data):
     label = _ROUND_LABEL.get(rnd, rnd)
     draw  = ImageDraw.Draw(Himage)
     font  = _get_font(11)
-    tw    = int(font.getlength(label))
+    tracking = 2  # extra px between letters so the faux-bold pass doesn't merge them
+    widths = [int(font.getlength(ch)) for ch in label]
+    tw    = sum(widths) + tracking * (len(label) - 1)
     tx    = (800 - tw) // 2
     ty    = (_WC_STRIP_H - 11) // 2
-    draw.text((tx, ty), label, font=font, fill=0)
-    draw.text((tx + 1, ty), label, font=font, fill=0)
+    for ch, cw in zip(label, widths):
+        draw.text((tx, ty), ch, font=font, fill=0)
+        draw.text((tx + 1, ty), ch, font=font, fill=0)
+        tx += cw + tracking
     return Himage
 
 

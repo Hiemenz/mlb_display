@@ -73,12 +73,12 @@ def _fixture():
     """ATL faces NYM today; ATL played 9/28 (pk 1) and 9/26 (pk 2), NYM played 9/28 (pk 1)."""
     schedules = {
         (144, '2026-09-29'): {'dates': [{'date': '2026-09-29', 'games': [_game(9, 121, 144, 'Preview')]}]},
-        (144, '2026-09-26'): {'dates': [
+        (144, '2026-09-19'): {'dates': [
             {'date': '2026-09-26', 'games': [_game(2, 144, 121)]},
             {'date': '2026-09-27', 'games': [_game(3, 144, 121, 'Postponed')]},
             {'date': '2026-09-28', 'games': [_game(1, 144, 121)]},
         ]},
-        (121, '2026-09-26'): {'dates': [{'date': '2026-09-28', 'games': [_game(1, 144, 121)]}]},
+        (121, '2026-09-19'): {'dates': [{'date': '2026-09-28', 'games': [_game(1, 144, 121)]}]},
     }
     boxes = {
         1: _box(_side(144, [(1, 'Spencer Strider', 90), (2, 'Raisel Iglesias', 10), (3, 'A.J. Minter', 25)]),
@@ -137,6 +137,15 @@ class TestFetchBullpen:
         with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
             data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
         assert data['team_order'] == ['144']
+
+    def test_window_anchors_to_last_game_after_off_days(self, isolated):
+        schedules, boxes = _fixture()
+        schedules[(144, '2026-09-19')] = {'dates': [
+            {'date': '2026-09-26', 'games': [_game(2, 144, 121)]}]}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        assert data['teams']['144']['pitchers'] == [
+            {'name': 'R. Iglesias', 'yesterday': 12, 'total': 12}]
 
     def test_unknown_team_returns_empty(self, isolated):
         assert fetch_bullpen.fetch_bullpen('ZZZ', today=TODAY) == {}
@@ -393,6 +402,42 @@ class TestGridPlacement:
 
     def test_team_missing_from_teams_stops(self):
         data = dict(BULLPEN, team_order=['147', '999', '111'])
+        assert [c[2] for c in _render(3, data=data)] == ['NYY']
+
+    def test_live_bullpen_claims_slot_before_series_tile(self):
+        live = dict(_final(0), status='In Progress', detailed_state='In Progress',
+                    game_type='D', current_inning=3, inningState='Top', num_of_outs=1)
+        games = [live] + [_final(i) for i in range(1, 12)]
+        series = [{'round': 'DS', 'away_abbr': 'NYY', 'home_abbr': 'TB', 'away_id': '147',
+                   'home_id': '139', 'away_wins': 0, 'home_wins': 0, 'complete': False,
+                   'game_results': []}]
+        data = dict(BULLPEN, series=series)
+        series_calls = []
+        import image_box
+        from image_grid import draw_out_of_town_score_board
+        calls = []
+        real = image_bullpen.draw_bullpen_cell
+
+        def spy(img, x, y, entry, days=3):
+            calls.append(entry['abbr'])
+            return real(img, x, y, entry, days=days)
+
+        cfg = dict(BASE_CONFIG, show_series_panel=True)
+        with patch('image_grid.load_yaml_file', return_value=cfg), \
+             patch('image_box.load_yaml_file', return_value=cfg), \
+             patch('image_grid.load_json_file', return_value=data), \
+             patch('image_series.draw_series_cell',
+                   lambda *a, **k: series_calls.append(a) or a[0]), \
+             patch('image_bullpen.draw_bullpen_cell', spy):
+            draw_out_of_town_score_board(Image.new('1', (800, 480), 255), games, TEAM_DATA)
+        assert calls == ['NYY']
+        assert series_calls == []
+
+    def test_eliminated_team_skipped(self):
+        bracket = {'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                               'complete': True, 'winner_abbr': 'NYY'},
+                              {'round': 'DS', 'away_abbr': 'NYY', 'home_abbr': 'TB'}]}
+        data = dict(BULLPEN, **bracket)
         assert [c[2] for c in _render(3, data=data)] == ['NYY']
 
 

@@ -3,7 +3,7 @@
 Writes data/bullpen.json:
 {
   "date": "2026-09-29",           # the day the data was built for
-  "days": 3,                      # look-back window, ending yesterday
+  "days": 3,                      # look-back window, ending at the last game played
   "primary": "ATL",
   "fetched_at": <unix ts>,
   "team_order": ["144", "121"],   # primary first, then today's opponent
@@ -15,7 +15,8 @@ Writes data/bullpen.json:
 }
 
 Only relievers count (the first pitcher in a box score is the starter), and
-today's game is excluded: the tile answers "who is tired going into today".
+today's game is excluded, and the window ends at the team's last finished game (not
+calendar yesterday): the tile answers "who is tired going into today".
 Pitchers are sorted by total pitches over the window, heaviest first.
 
 Standalone:
@@ -37,6 +38,7 @@ _BASE = 'https://statsapi.mlb.com/api/v1'
 _TIMEOUT = 15
 _CACHE_TTL_HOURS = 6
 DEFAULT_DAYS = 3
+_LOOKBACK_DAYS = 10
 
 
 def _abbr_to_team_id(abbr):
@@ -105,15 +107,24 @@ def _roster_pitchers(team_id):
 
 
 def _team_bullpen(team_id, today, days, box_cache):
-    """Reliever workload for one team over the ``days`` days before ``today``.
+    """Reliever workload for one team over the ``days`` game days ending at its last game.
+
+    The window is anchored to the team's most recent finished game (found within
+    ``_LOOKBACK_DAYS``) rather than to today, so off days don't leave the tile
+    showing a stale window. That game's pitches count as ``yesterday`` (the solid
+    bar); earlier games in the window add to ``total``.
 
     Pitchers on the active roster who threw no pitches during the window are
     included at the bottom with yesterday=0, total=0 (rested).
     """
     yesterday = today - timedelta(days=1)
+    finals = [(d, g) for d, g in _schedule(team_id, today - timedelta(days=_LOOKBACK_DAYS), yesterday)
+              if (g.get('status', {}).get('detailedState', '')).startswith(('Final', 'Completed Early'))]
+    anchor = max((d for d, _ in finals), default=yesterday.isoformat())
+    window_start = (date.fromisoformat(anchor) - timedelta(days=days - 1)).isoformat()
     usage = {}
-    for date_str, game in _schedule(team_id, today - timedelta(days=days), yesterday):
-        if not (game.get('status', {}).get('detailedState', '')).startswith(('Final', 'Completed Early')):
+    for date_str, game in finals:
+        if date_str < window_start:
             continue
         pk = game.get('gamePk')
         if pk not in box_cache:
@@ -125,7 +136,7 @@ def _team_bullpen(team_id, today, days, box_cache):
             for name, pitches in _relief_lines(box_side):
                 row = usage.setdefault(name, {'name': name, 'yesterday': 0, 'total': 0})
                 row['total'] += pitches
-                if date_str == yesterday.isoformat():
+                if date_str == anchor:
                     row['yesterday'] += pitches
     for name in _roster_pitchers(team_id):
         if name not in usage:
