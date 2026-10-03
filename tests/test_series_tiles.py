@@ -295,5 +295,37 @@ class TestSeriesGridPlacement:
         ]}
         assert len(_render_grid(3, bracket=bracket)) == 1
 
+    def test_finished_wc_dropped_once_ds_is_active(self):
+        bracket = {'series': [
+            dict(_NO_GAMES, round='WC', away_abbr='BOS', home_abbr='NYY',
+                 away_id='111', home_id='147', away_wins=0, home_wins=2, complete=True,
+                 winner_abbr='NYY'),
+            dict(_NO_GAMES, round='DS', away_abbr='NYY', home_abbr='TB',
+                 away_id='147', home_id='139', away_wins=1, home_wins=0),
+        ]}
+        calls = _render_grid(3, bracket=bracket)
+        assert [c[2:] for c in calls] == [('NYY', 'TB')]
+
+    def test_wc_still_shown_while_wc_is_active(self):
+        bracket = {'series': [
+            dict(_NO_GAMES, round='WC', away_abbr='BOS', home_abbr='NYY',
+                 away_id='111', home_id='147', away_wins=1, home_wins=0),
+        ]}
+        assert len(_render_grid(3, bracket=bracket)) == 1
+
+    def test_series_dropped_when_its_winner_starts_next_round(self):
+        """AL DS tile goes once the ALCS starts, even though an NL DS is still running."""
+        bracket = {'series': [
+            dict(_NO_GAMES, round='DS', away_abbr='NYY', home_abbr='TB',
+                 away_id='147', home_id='139', away_wins=3, home_wins=1,
+                 complete=True, winner_abbr='NYY'),
+            dict(_NO_GAMES, round='DS', away_abbr='ATL', home_abbr='LAD',
+                 away_id='144', home_id='119', away_wins=1, home_wins=1),
+            dict(_NO_GAMES, round='CS', away_abbr='NYY', home_abbr='CLE',
+                 away_id='147', home_id='114', away_wins=1, home_wins=0),
+        ]}
+        calls = _render_grid(3, bracket=bracket)
+        assert [c[2:] for c in calls] == [('ATL', 'LAD'), ('NYY', 'CLE')]
+
     def test_missing_bracket_data_shows_nothing(self):
         assert _render_grid(3, bracket={}) == []

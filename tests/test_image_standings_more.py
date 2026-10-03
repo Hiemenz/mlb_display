@@ -2047,3 +2047,60 @@ class TestDrawPlayoffSeedingsFullscreen:
             result = draw_playoff_seedings_fullscreen(
                 canvas, {'AL': [series], 'NL': []}, {}, side='left')
         assert result is canvas
+
+
+class TestIsSeriesSuperseded:
+    def _b(self, cs_wins=0, cs_date=''):
+        return {'series': [
+            {'round': 'DS', 'away_abbr': 'NYY', 'home_abbr': 'TB', 'complete': True,
+             'winner_abbr': 'NYY'},
+            {'round': 'CS', 'away_abbr': 'NYY', 'home_abbr': 'CLE', 'away_wins': cs_wins,
+             'home_wins': 0, 'first_game_date': cs_date},
+        ]}
+
+    def test_superseded_when_next_round_has_games(self):
+        from image_standings import is_series_superseded
+        b = self._b(cs_wins=1)
+        assert is_series_superseded(b['series'][0], b, today='2026-10-10')
+
+    def test_superseded_when_next_round_date_reached(self):
+        from image_standings import is_series_superseded
+        b = self._b(cs_date='2026-10-11')
+        assert is_series_superseded(b['series'][0], b, today='2026-10-11')
+
+    def test_not_superseded_before_next_round_starts(self):
+        from image_standings import is_series_superseded
+        b = self._b(cs_date='2026-10-12')
+        assert not is_series_superseded(b['series'][0], b, today='2026-10-11')
+
+    def test_incomplete_series_never_superseded(self):
+        from image_standings import is_series_superseded
+        b = self._b(cs_wins=1)
+        b['series'][0]['complete'] = False
+        assert not is_series_superseded(b['series'][0], b, today='2026-10-10')
+
+    def test_unrelated_next_round_series_ignored(self):
+        from image_standings import is_series_superseded
+        b = self._b(cs_wins=1)
+        b['series'][1]['away_abbr'] = 'BOS'
+        assert not is_series_superseded(b['series'][0], b, today='2026-10-10')
+
+
+class TestIsTeamSeriesOver:
+    def test_loser_of_complete_series_is_over(self):
+        from image_standings import is_team_series_over
+        b = {'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                         'complete': True, 'winner_abbr': 'NYY'}]}
+        assert is_team_series_over('BOS', b)
+
+    def test_team_in_later_active_round_is_not_over(self):
+        from image_standings import is_team_series_over
+        b = {'series': [
+            {'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS', 'complete': True},
+            {'round': 'DS', 'away_abbr': 'NYY', 'home_abbr': 'TB'}]}
+        assert not is_team_series_over('NYY', b)
+
+    def test_unknown_team_or_no_bracket_is_not_over(self):
+        from image_standings import is_team_series_over
+        assert not is_team_series_over('NYY', None)
+        assert not is_team_series_over('NYY', {'series': []})

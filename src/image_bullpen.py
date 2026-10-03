@@ -1,7 +1,7 @@
 """Draw a bullpen-workload panel cell (135x130) for an empty grid slot.
 
 One tile per team, from data/bullpen.json: each reliever who pitched in the last
-few days gets a bar. The solid part is yesterday's pitches, the hatched part is
+few days gets a bar. The solid part is the last game's pitches, the hatched part is
 the rest of the window, and the number is the window total.
 """
 import panel_cell
@@ -16,7 +16,7 @@ _FOOTER_H = 14
 
 
 def _draw_bar(draw, x, y, w, yesterday, total):
-    """Outlined bar scaled to ``_BAR_FULL_PITCHES``; solid for yesterday, hatched for the earlier days."""
+    """Outlined bar scaled to ``_BAR_FULL_PITCHES``; solid for the last game, hatched for the earlier days."""
     draw.rectangle([x, y, x + w - 1, y + _BAR_H - 1], outline=0)
     inner = w - 2
     total_w = min(inner, round(inner * total / _BAR_FULL_PITCHES))
@@ -28,12 +28,12 @@ def _draw_bar(draw, x, y, w, yesterday, total):
 
 
 def _draw_footer(draw, sx, sy, days, font):
-    """Legend along the bottom edge: solid = yesterday, hatched = the rest of the window."""
+    """Legend along the bottom edge: solid = last game, hatched = the rest of the window."""
     fy = sy + panel_cell.CELL_H - _FOOTER_H
     sw = 8
     x = sx + panel_cell.PAD + 2
     draw.rectangle([x, fy + 3, x + sw - 1, fy + 3 + sw - 1], fill=0)
-    label = 'Yesterday'
+    label = 'Last game'
     draw.text((x + sw + 2, fy + 1), label, font=font, fill=0)
     x += sw + 2 + int(font.getlength(label)) + 8
     _draw_bar(draw, x, fy + 3, sw + 4, 0, _BAR_FULL_PITCHES)

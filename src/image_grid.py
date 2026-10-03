@@ -974,12 +974,14 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 dark_mode=config.get('dark_mode', False),
             )
 
-    # Playoff series tiles — current round + next round only, and next-round
-    # tiles are suppressed until both teams in the matchup are determined
-    # (no placeholder abbreviations like "AL Low" or "ATL/PHI").
+    # Playoff series tiles — active round + next round only (finished earlier
+    # rounds are dropped, and a finished series goes as soon as its winner's
+    # next-round series starts), and next-round tiles are suppressed until both teams
+    # in the matchup are determined (no placeholder abbreviations like "AL Low"
+    # or "ATL/PHI").
     if config.get('show_series_panel', False) and _free_slots:
         _sr_data = load_json_file('playoff_bracket.json')
-        from image_standings import derive_playoff_active_round
+        from image_standings import derive_playoff_active_round, is_series_superseded
         from image_series import draw_series_cell
         _ROUND_ORD = {'WC': 0, 'DS': 1, 'CS': 2, 'WS': 3}
         _active_rnd = derive_playoff_active_round(_sr_data or {})
@@ -988,7 +990,8 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             return '/' not in abbr and ' ' not in abbr
         _sr_series = [
             s for s in (_sr_data or {}).get('series', [])
-            if _ROUND_ORD.get(s.get('round', ''), 9) <= _active_ro + 1
+            if _active_ro <= _ROUND_ORD.get(s.get('round', ''), 9) <= _active_ro + 1
+            and not is_series_superseded(s, _sr_data)
             and (_ROUND_ORD.get(s.get('round', ''), 9) <= _active_ro
                  or (_team_known(s.get('away_abbr', '')) and _team_known(s.get('home_abbr', ''))))
         ]
@@ -1010,9 +1013,13 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         _bp_data = load_json_file('bullpen.json')
         _bp_teams = (_bp_data or {}).get('teams', {})
         from image_bullpen import draw_bullpen_cell
+        from image_standings import is_team_series_over
+        _bp_bracket = load_json_file('playoff_bracket.json')
         for _bp_tid in (_bp_data or {}).get('team_order', []):
             if not _free_slots or _bp_tid not in _bp_teams:
                 break
+            if is_team_series_over(_bp_teams[_bp_tid].get('abbr', ''), _bp_bracket):
+                continue
             _bp_col, _bp_row = _free_slots.pop(0)
             draw_bullpen_cell(
                 Himage, _bp_col * 150 + x_start, _bp_row * 150 + y_start,
