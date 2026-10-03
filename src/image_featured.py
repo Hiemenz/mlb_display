@@ -21,20 +21,39 @@ from image_standings import (
 from image_box import draw_box, _abbr_play, _draw_backwards_k
 
 
-def _find_furthest_game(game_state_data):
-    """Return the game to show in fullscreen mode, regardless of team.
+def _find_furthest_game(game_state_data, team_data=None, primary_abbr=''):
+    """Return the game to show in fullscreen mode.
 
-    Priority: the live game farthest along → the most recent finished game →
-    the next game to start. During the postseason games are staggered, so this
-    normally follows the single game that is on.
+    Priority: the live game farthest along, whichever team is playing (during
+    the postseason games are staggered, so this follows the one that is on) →
+    when nothing is live, the primary team's game (its next game to start, else
+    its latest final) → the most recent finished game → the next game to start.
     """
     _live = {'In Progress', 'Player challenge', 'Manager challenge'}
     _final = {'Final', 'Game Over', 'Final: Tied'}
+
+    def _is_final(g):
+        st = g.get('detailed_state', '')
+        return st in _final or st.startswith('Completed Early')
+
     live_games = [g for g in game_state_data if g.get('detailed_state') in _live]
     if live_games:
         return max(live_games, key=lambda g: g.get('current_inning') or 0)
-    finished = [g for g in game_state_data if g.get('detailed_state', '') in _final
-                or g.get('detailed_state', '').startswith('Completed Early')]
+
+    if primary_abbr and team_data:
+        abbr_map = team_data.get('team_abbreviation', {})
+        primary_games = [
+            g for g in game_state_data
+            if primary_abbr in (abbr_map.get(str(g.get('away_team_id', '')), ''),
+                                abbr_map.get(str(g.get('home_team_id', '')), ''))
+        ]
+        upcoming = [g for g in primary_games if not _is_final(g)]
+        if upcoming:
+            return min(upcoming, key=lambda g: g.get('game_date') or '')
+        if primary_games:
+            return primary_games[-1]
+
+    finished = [g for g in game_state_data if _is_final(g)]
     if finished:
         return max(finished, key=lambda g: g.get('current_inning') or 0)
     # Nothing live or finished: the next game to start (list order breaks ties).
