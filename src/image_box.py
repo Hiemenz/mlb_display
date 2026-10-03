@@ -3388,6 +3388,28 @@ def _hit_coord_to_feet(cx, cy):
             _HC_SCALE * (_HC_Y_CENTER - cy))
 
 
+_PARK_MARGIN_FT = 4   # how far inside the fence a non-HR ball is kept
+
+
+def _ball_landing_ft(hx_ft, hy_ft, is_hr, wall_dist_ft):
+    """Where to plot a batted ball (field feet) given the fence distance at its angle.
+
+    A confirmed HR must clear the fence visually: if the API coordinates land
+    short of the wall in that direction, push it just past it. Every other ball
+    stays in the park: a double off the wall or a deep fly the API places beyond
+    the fence is pulled back to just inside it.
+    """
+    d_ball = _math.hypot(hx_ft, hy_ft)
+    if is_hr:
+        d_final = max(d_ball, wall_dist_ft + 8)
+    else:
+        d_final = min(d_ball, max(wall_dist_ft - _PARK_MARGIN_FT, 0))
+    if d_final == d_ball:
+        return hx_ft, hy_ft
+    ang = _math.atan2(hx_ft, hy_ft)
+    return d_final * _math.sin(ang), d_final * _math.cos(ang)
+
+
 # Generic outfield wall used when venue is unknown (symmetric 330-400-330 park).
 _FIELD_FALLBACK_POLY = [
     (-233.3,  233.3),
@@ -3730,20 +3752,20 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
                 return d0 + (d1 - d0) * frac
         return _math.hypot(*wall_poly[-1])
 
+    def _landing_ft(hx_ft, hy_ft, is_hr):
+        return _ball_landing_ft(
+            hx_ft, hy_ft, is_hr, _wall_dist_at_angle(_math.atan2(hx_ft, hy_ft)))
+
     # Between innings: show full-game spray chart (all batted balls as dots).
     _between_innings = game_data.get('inningState') in ('Middle', 'End')
     _all_game_hits   = game_data.get('all_game_hits') or []
     if _between_innings and _all_game_hits:
         for h in _all_game_hits:
             hx_ft, hy_ft = _hit_coord_to_feet(h['x'], h['y'])
-            if _lf_foul(hx_ft, hy_ft) or _rf_foul(hx_ft, hy_ft):
-                continue
             is_hr  = h.get('is_hr',  False)
             is_hit = h.get('is_hit', not h.get('is_out', False))
+            hx_ft, hy_ft = _landing_ft(hx_ft, hy_ft, is_hr)
             if is_hr:
-                _ang = _math.atan2(hx_ft, hy_ft)
-                _d_final = max(_math.hypot(hx_ft, hy_ft), _wall_dist_at_angle(_ang) + 8)
-                hx_ft, hy_ft = _d_final * _math.sin(_ang), _d_final * _math.cos(_ang)
                 pt = _fpt(hx_ft, hy_ft)
                 px, py = int(pt[0]), int(pt[1])
                 px = max(_cx0 + 1, min(_cx1 - 1, px))
@@ -3801,24 +3823,15 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
 
     for idx, h in enumerate(recent_hits):
         hx_ft, hy_ft = _hit_coord_to_feet(h['x'], h['y'])
-        if _lf_foul(hx_ft, hy_ft) or _rf_foul(hx_ft, hy_ft):
-            continue
         is_hr  = h.get('is_hr',  False)
         is_out = h.get('is_out', False)
         abbr   = h.get('abbr', 'HR' if is_hr else ('F' if is_out else '1B'))
         if is_hr:
             abbr = 'HR'
 
-        # Landing spot: real hit coordinates for every ball. A confirmed HR must
-        # clear the fence visually — if the API coordinates land short of the wall
-        # in that direction (coordinate imprecision), push it out to just past
-        # the fence rather than forcing every HR to the cell edge.
-        if is_hr:
-            _ang = _math.atan2(hx_ft, hy_ft)
-            _d_ball = _math.hypot(hx_ft, hy_ft)
-            _d_wall = _wall_dist_at_angle(_ang)
-            _d_final = max(_d_ball, _d_wall + 8)
-            hx_ft, hy_ft = _d_final * _math.sin(_ang), _d_final * _math.cos(_ang)
+        # Landing spot: real hit coordinates for every ball (fair or caught
+        # foul), kept inside the fence unless it is a home run.
+        hx_ft, hy_ft = _landing_ft(hx_ft, hy_ft, is_hr)
         land_pt = _fpt(hx_ft, hy_ft)
 
         if idx == most_recent_idx and h.get('launch_angle') is not None:
