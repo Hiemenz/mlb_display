@@ -974,6 +974,32 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 dark_mode=config.get('dark_mode', False),
             )
 
+    # Bullpen workload — one tile each for primary team then today's opponent.
+    # While a game is live these claim slots before the series tiles, so the
+    # series tiles drop off first when space runs short; otherwise they are
+    # pushed below the deadline panel.
+    def _draw_bullpen():
+        if not ((config.get('show_bullpen_panel', False) or _any_playoff_live) and _free_slots):
+            return
+        _bp_data = load_json_file('bullpen.json')
+        _bp_teams = (_bp_data or {}).get('teams', {})
+        from image_bullpen import draw_bullpen_cell
+        from image_standings import is_team_series_over
+        _bp_bracket = load_json_file('playoff_bracket.json')
+        for _bp_tid in (_bp_data or {}).get('team_order', []):
+            if not _free_slots or _bp_tid not in _bp_teams:
+                break
+            if is_team_series_over(_bp_teams[_bp_tid].get('abbr', ''), _bp_bracket):
+                continue
+            _bp_col, _bp_row = _free_slots.pop(0)
+            draw_bullpen_cell(
+                Himage, _bp_col * 150 + x_start, _bp_row * 150 + y_start,
+                _bp_teams[_bp_tid], days=_bp_data.get('days', 3),
+            )
+
+    if _primary_game_live or _any_playoff_live:
+        _draw_bullpen()
+
     # Playoff series tiles — active round + next round only (finished earlier
     # rounds are dropped, and a finished series goes as soon as its winner's
     # next-round series starts), and next-round tiles are suppressed until both teams
@@ -1003,31 +1029,6 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
                 Himage, _sr_col * 150 + x_start, _sr_row * 150 + y_start, _sr,
                 use_logos=use_logos,
             )
-
-    # Bullpen workload — one tile each for primary team then today's opponent.
-    # Shown at the top of the queue when the primary team's game is live so it
-    # always gets a slot; pushed below the deadline panel otherwise.
-    def _draw_bullpen():
-        if not ((config.get('show_bullpen_panel', False) or _any_playoff_live) and _free_slots):
-            return
-        _bp_data = load_json_file('bullpen.json')
-        _bp_teams = (_bp_data or {}).get('teams', {})
-        from image_bullpen import draw_bullpen_cell
-        from image_standings import is_team_series_over
-        _bp_bracket = load_json_file('playoff_bracket.json')
-        for _bp_tid in (_bp_data or {}).get('team_order', []):
-            if not _free_slots or _bp_tid not in _bp_teams:
-                break
-            if is_team_series_over(_bp_teams[_bp_tid].get('abbr', ''), _bp_bracket):
-                continue
-            _bp_col, _bp_row = _free_slots.pop(0)
-            draw_bullpen_cell(
-                Himage, _bp_col * 150 + x_start, _bp_row * 150 + y_start,
-                _bp_teams[_bp_tid], days=_bp_data.get('days', 3),
-            )
-
-    if _primary_game_live or _any_playoff_live:
-        _draw_bullpen()
 
     # Free-slot panels, in priority order (first match claims the slot).
     # Trade deadline countdown is first — it's the most time-sensitive panel.

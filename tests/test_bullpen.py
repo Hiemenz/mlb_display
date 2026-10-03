@@ -404,6 +404,35 @@ class TestGridPlacement:
         data = dict(BULLPEN, team_order=['147', '999', '111'])
         assert [c[2] for c in _render(3, data=data)] == ['NYY']
 
+    def test_live_bullpen_claims_slot_before_series_tile(self):
+        live = dict(_final(0), status='In Progress', detailed_state='In Progress',
+                    game_type='D', current_inning=3, inningState='Top', num_of_outs=1)
+        games = [live] + [_final(i) for i in range(1, 12)]
+        series = [{'round': 'DS', 'away_abbr': 'NYY', 'home_abbr': 'TB', 'away_id': '147',
+                   'home_id': '139', 'away_wins': 0, 'home_wins': 0, 'complete': False,
+                   'game_results': []}]
+        data = dict(BULLPEN, series=series)
+        series_calls = []
+        import image_box
+        from image_grid import draw_out_of_town_score_board
+        calls = []
+        real = image_bullpen.draw_bullpen_cell
+
+        def spy(img, x, y, entry, days=3):
+            calls.append(entry['abbr'])
+            return real(img, x, y, entry, days=days)
+
+        cfg = dict(BASE_CONFIG, show_series_panel=True)
+        with patch('image_grid.load_yaml_file', return_value=cfg), \
+             patch('image_box.load_yaml_file', return_value=cfg), \
+             patch('image_grid.load_json_file', return_value=data), \
+             patch('image_series.draw_series_cell',
+                   lambda *a, **k: series_calls.append(a) or a[0]), \
+             patch('image_bullpen.draw_bullpen_cell', spy):
+            draw_out_of_town_score_board(Image.new('1', (800, 480), 255), games, TEAM_DATA)
+        assert calls == ['NYY']
+        assert series_calls == []
+
     def test_eliminated_team_skipped(self):
         bracket = {'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
                                'complete': True, 'winner_abbr': 'NYY'},
