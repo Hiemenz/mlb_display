@@ -1121,3 +1121,78 @@ def test_grid_shows_win_trend_panel(white_image, team_data):
          patch('image_grid.load_json_file', side_effect=lambda f: wt_data if f == 'win_trend.json' else {}):
         result = draw_out_of_town_score_board(white_image, games, team_data)
     assert isinstance(result, Image.Image)
+
+
+# ---------------------------------------------------------------------------
+# Featured pre-game lineup gets the wide tile
+# ---------------------------------------------------------------------------
+
+def _pregame(minutes_ahead=30, lineups=True, **overrides):
+    from datetime import datetime, timedelta, timezone
+    start = datetime.now(timezone.utc) + timedelta(minutes=minutes_ahead)
+    g = _base_game(
+        game_pk=2001, away_team_id=147, home_team_id=111, detailed_state='Scheduled',
+        game_date=start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        away_lineup=[{'name': 'A B', 'pos': 'CF'}] if lineups else [],
+        home_lineup=[{'name': 'C D', 'pos': 'SS'}] if lineups else [],
+    )
+    g.update(overrides)
+    return g
+
+
+_FEATURED_CFG = {'wide_cell_featured': True, 'primary': 'NYY'}
+
+
+def test_pregame_lineup_window_gets_wide_tile(team_data):
+    from image_grid import _find_tile_types
+    games = [_base_game(game_pk=1), _pregame()]
+    assert _find_tile_types(games, _FEATURED_CFG, team_data) == {1: 'wide'}
+
+
+@pytest.mark.parametrize('game, cfg', [
+    (_pregame(minutes_ahead=120), _FEATURED_CFG),
+    (_pregame(lineups=False), _FEATURED_CFG),
+    (_pregame(detailed_state='Final'), _FEATURED_CFG),
+    (_pregame(), {'wide_cell_featured': False, 'primary': 'NYY'}),
+    (_pregame(), {'wide_cell_featured': True, 'primary': 'LAD'}),
+    (_pregame(), {'wide_cell_featured': True, 'primary': ''}),
+])
+def test_pregame_not_widened_outside_window(team_data, game, cfg):
+    from image_grid import _find_tile_types
+    assert _find_tile_types([game], cfg, team_data) == {}
+
+
+def test_pregame_wide_needs_spare_slot(team_data):
+    from image_grid import _find_tile_types
+    games = [_base_game(game_pk=i) for i in range(14)] + [_pregame()]
+    # 15 games and nothing live: featured config opts in to the extra tile
+    assert _find_tile_types(games, _FEATURED_CFG, team_data) == {14: 'wide'}
+
+
+def test_pregame_yields_to_live_game_when_no_spare_slot(team_data):
+    from image_grid import _find_tile_types
+    live = _live_game(game_pk=100, away_team_id=119, home_team_id=137)
+    games = [live] + [_base_game(game_pk=i) for i in range(12)] + [_pregame()]
+    # 14 games = 1 spare unit, taken by the live game's wide tile
+    assert _find_tile_types(games, _FEATURED_CFG, team_data) == {0: 'wide'}
+
+
+def test_featured_pregame_not_hidden_by_hide_non_live(team_data):
+    from image_grid import compute_grid_layout
+    cfg = dict(_FEATURED_CFG, hide_non_live_games=True)
+    live = _live_game(game_pk=300, away_team_id=119, home_team_id=137)
+    games = [live] + [_base_game(game_pk=i) for i in range(13)] + [_pregame()]
+    placed, _slots = compute_grid_layout(games, team_data, cfg)
+    assert any(g.get('game_pk') == 2001 for g in placed)
+
+
+@needs_pil
+def test_pregame_wide_tile_renders(white_image, team_data):
+    from image_grid import compute_grid_layout, draw_out_of_town_score_board
+    games = [_base_game(game_pk=1), _pregame()]
+    cfg = dict(_FEATURED_CFG)
+    with patch('image_grid.load_yaml_file', return_value=cfg), \
+         patch('image_box.load_yaml_file', return_value=cfg):
+        _placed, slots = compute_grid_layout(games, team_data, cfg)
+        assert [s[0] for s in slots].count('wide') == 1
+        assert draw_out_of_town_score_board(white_image, games, team_data) is not None

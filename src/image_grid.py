@@ -98,6 +98,29 @@ def _featured_live_index(games, indices, config, team_data):
     return None
 
 
+_LINEUP_STATES = ('Scheduled', 'Pre-Game', 'Warmup')
+_LINEUP_LEAD_MINUTES = 60
+
+
+def _is_featured_pregame(g, config, team_data):
+    """True for the featured (primary) team's game inside the pre-game lineup
+    window: not yet started, within an hour of first pitch, lineups posted.
+    Needs wide_cell_featured, same as the live featured tile."""
+    if not config.get('wide_cell_featured', False) or not config.get('primary'):
+        return False
+    if g.get('detailed_state') not in _LINEUP_STATES:
+        return False
+    if not (g.get('away_lineup') or g.get('home_lineup')):
+        return False
+    abbr_map = team_data.get('team_abbreviation', {})
+    teams = (abbr_map.get(str(g.get('away_team_id', '')), ''),
+             abbr_map.get(str(g.get('home_team_id', '')), ''))
+    if config['primary'] not in teams:
+        return False
+    from image_lineup import game_within_minutes
+    return game_within_minutes(g, minutes=_LINEUP_LEAD_MINUTES)
+
+
 def _lay_out_row_major(tokens, start_slot):
     """Place (slot_type, game) tokens row-major from ``start_slot`` (5 units
     per row: 3 for 'triple', 2 for 'wide', 1 for 'normal'), never leaving a
@@ -284,8 +307,8 @@ def _find_wide_games(game_list, config, team_data):
     return set()
 
 
-def _find_tile_types(game_list, config, team_data):
-    """Return {index: 'triple'|'wide'} for games that should get an expanded tile.
+def _live_tile_types(game_list, config, team_data):
+    """Return {index: 'triple'|'wide'} for live games that should get an expanded tile.
 
     Up to _MAX_TRIPLE_TILES live games try triple (3-cell) first — the
     featured live game (if any) ranked highest, then whichever games are
@@ -336,6 +359,23 @@ def _find_tile_types(game_list, config, team_data):
     # genuinely has nowhere left to go.
     for idx in sorted_live[_MAX_TRIPLE_TILES:2 * _MAX_TRIPLE_TILES]:
         tile_map[idx] = 'wide'
+    return tile_map
+
+
+def _find_tile_types(game_list, config, team_data):
+    """Expanded-tile map for live games, plus a wide tile for the featured
+    team's pre-game lineup when a spare slot unit is left over (live games
+    keep priority over the pre-game tile)."""
+    tile_map = _live_tile_types(game_list, config, team_data)
+    pregame = next((i for i, g in enumerate(game_list)
+                    if i not in tile_map and _is_featured_pregame(g, config, team_data)), None)
+    if pregame is None:
+        return tile_map
+    if len(game_list) < 15:
+        used = sum(2 if t == 'triple' else 1 for t in tile_map.values())
+        if 15 - len(game_list) - used < 1:
+            return tile_map
+    tile_map[pregame] = 'wide'
     return tile_map
 
 
@@ -700,7 +740,8 @@ def compute_grid_layout(game_state_data, team_data, config):
             _current_budget = max(0, 15 - len(game_list))
             _to_free = max(0, _needed - _current_budget)
             if _to_free:
-                _hideable = [g for g in game_list if g is not _pinned_game and g.get('detailed_state') in _NON_LIVE_HIDE_STATES]
+                _hideable = [g for g in game_list if g is not _pinned_game and g.get('detailed_state') in _NON_LIVE_HIDE_STATES
+                              and not _is_featured_pregame(g, config, team_data)]
                 _hideable.sort(key=_overflow_priority, reverse=True)
                 _hide_ids = {id(g) for g in _hideable[:_to_free]}
                 if _hide_ids:
