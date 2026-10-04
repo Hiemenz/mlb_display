@@ -827,6 +827,46 @@ class TestFetchScoreboardLiveExtras:
         assert 'v' in result['half_inning_plays']  # heading into bottom half
 
     @patch('game_detail_fetch.fetch_live_feed')
+    def test_half_inning_plays_arrow_added_at_third_out(self, mock_fetch):
+        """The next half's arrow is logged as soon as the third out is recorded."""
+        single = _play(event='Single', batter_id=1, is_top=True, inning=3)
+        out3 = _play(event='Groundout', batter_id=2, is_top=True, inning=3)
+        out3['count'] = {'outs': 3}
+        mock_fetch.return_value = _live_feed(liveData={'plays': {'allPlays': [single, out3]}})
+        plays = fetch_scoreboard_live_extras(123)['half_inning_plays']
+        assert plays[-1] == 'v'           # top ended -> heading into the bottom
+        assert plays.count('v') == 1
+
+    @patch('game_detail_fetch.fetch_live_feed')
+    def test_half_inning_plays_no_duplicate_arrow_when_next_half_starts(self, mock_fetch):
+        """The next half's first play must not add a second arrow."""
+        out3 = _play(event='Groundout', batter_id=2, is_top=True, inning=3)
+        out3['count'] = {'outs': 3}
+        first_bottom = _play(event='Single', batter_id=3, is_top=False, inning=3)
+        mock_fetch.return_value = _live_feed(liveData={'plays': {'allPlays': [out3, first_bottom]}})
+        plays = fetch_scoreboard_live_extras(123)['half_inning_plays']
+        assert plays.count('v') == 1
+        assert plays.index('v') < plays.index('1B')
+
+    @patch('game_detail_fetch.fetch_live_feed')
+    def test_half_inning_plays_up_arrow_after_bottom_ends(self, mock_fetch):
+        out3 = _play(event='Groundout', batter_id=2, is_top=False, inning=3)
+        out3['count'] = {'outs': 3}
+        next_top = _play(event='Walk', batter_id=3, is_top=True, inning=4)
+        mock_fetch.return_value = _live_feed(liveData={'plays': {'allPlays': [out3, next_top]}})
+        plays = fetch_scoreboard_live_extras(123)['half_inning_plays']
+        assert plays.count('^') == 1
+        assert plays.index('^') < len(plays) - 1   # before the next half's first play
+
+    @patch('game_detail_fetch.fetch_live_feed')
+    def test_half_inning_plays_no_arrow_before_third_out(self, mock_fetch):
+        out2 = _play(event='Groundout', batter_id=2, is_top=True, inning=3)
+        out2['count'] = {'outs': 2}
+        mock_fetch.return_value = _live_feed(liveData={'plays': {'allPlays': [out2]}})
+        plays = fetch_scoreboard_live_extras(123)['half_inning_plays']
+        assert 'v' not in plays and '^' not in plays
+
+    @patch('game_detail_fetch.fetch_live_feed')
     def test_half_inning_plays_action_code_stolen_base(self, mock_fetch):
         """Half inning plays action code stolen base."""
         play_with_action = _play(event='Single', batter_id=1, is_complete=True, play_events=[

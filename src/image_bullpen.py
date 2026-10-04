@@ -28,12 +28,12 @@ def _draw_bar(draw, x, y, w, yesterday, total):
 
 
 def _draw_footer(draw, sx, sy, days, font):
-    """Legend along the bottom edge: solid = last game, hatched = the rest of the window."""
+    """Legend along the bottom edge: solid = yesterday, hatched = the rest of the window."""
     fy = sy + panel_cell.CELL_H - _FOOTER_H
     sw = 8
     x = sx + panel_cell.PAD + 2
     draw.rectangle([x, fy + 3, x + sw - 1, fy + 3 + sw - 1], fill=0)
-    label = 'Last game'
+    label = 'Yesterday'
     draw.text((x + sw + 2, fy + 1), label, font=font, fill=0)
     x += sw + 2 + int(font.getlength(label)) + 8
     _draw_bar(draw, x, fy + 3, sw + 4, 0, _BAR_FULL_PITCHES)

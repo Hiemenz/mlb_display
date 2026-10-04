@@ -700,7 +700,7 @@ def _prioritize_live_over_final(full_game_list, placed_list, positions):
     return placed_list
 
 
-def compute_grid_layout(game_state_data, team_data, config):
+def _compute_grid_layout_base(game_state_data, team_data, config):
     """Return (ordered_game_list, slots) for the 5×3 scoreboard grid.
 
     ``slots`` is a list parallel to the returned game_list, each entry a
@@ -802,6 +802,79 @@ def compute_grid_layout(game_state_data, team_data, config):
         _slots = [('normal', _gi % 5, _gi // 5) for _gi in range(len(game_list))]
 
     return game_list, _slots
+
+
+# Bottom-right 2×2 block (cols 3-4, rows 1-2) that the playoff bracket tile
+# owns, leaving cols 0-2 of rows 1-2 free for 3-wide live tiles.
+_BRACKET_CORNER = frozenset({(3, 1), (4, 1), (3, 2), (4, 2)})
+
+
+def _bracket_tile_enabled(config):
+    """True when the 2×2 playoff bracket tile will be drawn this render."""
+    return bool(config.get('show_series_panel', False)
+                and (load_json_file('playoff_bracket.json') or {}).get('series'))
+
+
+def _slot_cells(slot_type, col, row):
+    width = {'triple': 3, 'wide': 2}.get(slot_type, 1)
+    return [(col + i, row) for i in range(width)]
+
+
+def _repack_around_bracket_corner(game_list, slots):
+    """Re-place games so none sits in the bracket's bottom-right 2×2 corner.
+
+    Returns ``(game_list, slots)`` unchanged when nothing overlaps the corner.
+    Otherwise triples are placed first, then wides, then normals — each
+    first-fit in row-major order over the 11 cells outside the corner (row 0
+    has 5, rows 1-2 have 3 each) — so two or three triples each get a full
+    3-wide row. A tile with no room is demoted (triple → wide → normal).
+    Returns ``None`` if any game would not fit, so the caller can keep the
+    original layout instead of dropping a game for the bracket.
+    """
+    if not any(c in _BRACKET_CORNER
+               for t, col, row in slots for c in _slot_cells(t, col, row)):
+        return game_list, slots
+
+    free = [(c, r) for r in range(3) for c in range(5)
+            if (c, r) not in _BRACKET_CORNER]
+    entries = sorted(range(len(game_list)), key=lambda i: (slots[i][2], slots[i][1]))
+    rank = {'triple': 0, 'wide': 1, 'normal': 2}
+    # Pinned game (index 0) first, then bigger tiles before smaller ones.
+    entries.sort(key=lambda i: (i != 0, rank[slots[i][0]]))
+
+    placed = []
+    for i in entries:
+        want = slots[i][0]
+        for slot_type in ('triple', 'wide', 'normal')[rank[want]:]:
+            n = {'triple': 3, 'wide': 2, 'normal': 1}[slot_type]
+            spot = next(((c, r) for c, r in free
+                         if all((c + k, r) in free for k in range(n))), None)
+            if spot is not None:
+                for k in range(n):
+                    free.remove((spot[0] + k, spot[1]))
+                placed.append((i, slot_type, spot[0], spot[1]))
+                break
+        else:
+            return None
+
+    placed.sort(key=lambda p: (p[0] != 0, p[3], p[2]))
+    return ([game_list[i] for i, _t, _c, _r in placed],
+            [(t, c, r) for _i, t, c, r in placed])
+
+
+def compute_grid_layout(game_state_data, team_data, config):
+    """Return (ordered_game_list, slots) for the 5×3 scoreboard grid.
+
+    See _compute_grid_layout_base. When the playoff bracket tile will be
+    drawn, the bottom-right 2×2 corner is kept clear for it (and games are
+    re-packed around it) as long as that doesn't cost any game its place.
+    """
+    game_list, slots = _compute_grid_layout_base(game_state_data, team_data, config)
+    if _bracket_tile_enabled(config):
+        repacked = _repack_around_bracket_corner(game_list, slots)
+        if repacked is not None:
+            return repacked
+    return game_list, slots
 
 
 def _free_grid_slots(slots):
@@ -992,17 +1065,15 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         for g in (game_state_data or [])
     )
 
-    # 2×2 playoff bracket tile (300×300px) — claims the bottom-right 2×2 block
+    # 2×2 playoff bracket tile (290×300px) — claims the bottom-right 2×2 block
     # before per-series tiles consume the free slots. Shown throughout the
     # postseason (whenever bracket data exists) including off days, not only
     # on days with playoff games on the slate.
     _bt_data = load_json_file('playoff_bracket.json')
     if (config.get('show_series_panel', False) and (_bt_data or {}).get('series')
             and len(_free_slots) >= 4):
-        _bt_sidebar  = config.get('show_standings_sidebar', False)
-        _bt_max_c    = 2 if _bt_sidebar else 3
         _bt_pos      = _find_2x2_block(
-            _free_slots, prefer_bottom_right=True, max_col=_bt_max_c
+            _free_slots, prefer_bottom_right=True, max_col=3
         )
         if _bt_pos is not None:
             _bt_col, _bt_row = _bt_pos
