@@ -441,11 +441,12 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         # the same game would have been picked from the previous data too.
         _fs_env = os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes')
         if _fs_env:
-            featured_game = _find_furthest_game(game_state_data)
+            featured_game = _find_furthest_game(game_state_data, team_data, config.get('primary', ''))
             if featured_game:
                 featured_pk = str(featured_game.get('game_pk', ''))
                 old_featured = old_by_pk.get(featured_pk)
-                _old_pick = _find_furthest_game(list(old_by_pk.values()))
+                _old_pick = _find_furthest_game(list(old_by_pk.values()), team_data,
+                                                config.get('primary', ''))
                 if (old_featured is not None and featured_game == old_featured
                         and _old_pick is not None
                         and str(_old_pick.get('game_pk', '')) == featured_pk):
@@ -463,7 +464,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     # --- Full-screen single-game mode ---
     if os.environ.get('FEATURED_TEAM_FULLSCREEN', '').lower() in ('true', '1', 'yes'):
-        featured_game = _find_furthest_game(game_state_data)
+        featured_game = _find_furthest_game(game_state_data, team_data, config.get('primary', ''))
         if featured_game:
             Himage = draw_featured_game_fullscreen(featured_game, team_data, config)
         else:

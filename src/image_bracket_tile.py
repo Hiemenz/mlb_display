@@ -1,11 +1,11 @@
-"""Compact playoff bracket tile (300×300px) for a 2×2 grid slot."""
+"""Compact playoff bracket tile (290×300px) for a 2×2 grid slot."""
 from image_assets import Image, ImageDraw, ImageOps
 
-TILE_W = 300
+TILE_W = 290   # 10px under the 300px slot so it clears the right sidebar from cols 3-4
 TILE_H = 300
 
 _N_BANDS  = 7
-_BAND_W   = TILE_W // _N_BANDS   # 42 px per band
+_BAND_W   = TILE_W // _N_BANDS   # 41 px per band
 _LOGO_SZ  = 20
 _PAD      = 2
 _TEAM_H   = _LOGO_SZ + 2 * _PAD  # 24 px
@@ -119,7 +119,7 @@ def _draw_connector(draw, x_from, y_from, x_to, y_to):
 
 
 def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mode=False):
-    """Render a 300×300 logo-tree bracket tile at (sx, sy) into Himage."""
+    """Render a 290×300 logo-tree bracket tile at (sx, sy) into Himage."""
     if not (bracket_data or {}).get('series'):
         return Himage
 

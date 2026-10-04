@@ -1762,3 +1762,25 @@ def test_grid_final_with_flags_and_series(white_image, team_data):
     finally:
         image_box.set_historical_mode(False)
     assert isinstance(result, Image.Image)
+
+
+class TestLastHalfEvents:
+    """The half-inning summary shown during the break (play-log fallback)."""
+
+    def test_events_after_the_previous_marker(self):
+        from image_box import _last_half_events
+        assert _last_half_events(['2B', 'v', 'K', '6-3', 'F9']) == ['K', '6-3', 'F9']
+
+    def test_trailing_arrow_from_third_out_is_ignored(self):
+        """The next half's arrow is logged at the third out; it must not empty the summary."""
+        from image_box import _last_half_events
+        assert _last_half_events(['2B', 'v', 'K', '6-3', 'F9', '^']) == ['K', '6-3', 'F9']
+
+    def test_no_markers_returns_all_events(self):
+        from image_box import _last_half_events
+        assert _last_half_events(['K', '1B']) == ['K', '1B']
+
+    def test_empty_or_none(self):
+        from image_box import _last_half_events
+        assert _last_half_events(None) == []
+        assert _last_half_events([]) == []

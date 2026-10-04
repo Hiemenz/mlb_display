@@ -900,3 +900,100 @@ class TestPrioritizeLiveOverFinal:
         )
         ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
         assert ordered[0]['game_pk'] == 999
+
+
+# ---------------------------------------------------------------------------
+# Bracket corner reservation
+# ---------------------------------------------------------------------------
+
+from image_grid import _BRACKET_CORNER, _repack_around_bracket_corner, _slot_cells
+
+
+def _cells(slots):
+    return {c for t, col, row in slots for c in _slot_cells(t, col, row)}
+
+
+class TestBracketCorner:
+    def test_no_overlap_returns_input_unchanged(self):
+        games = [_game(i) for i in range(3)]
+        slots = [('normal', i, 0) for i in range(3)]
+        assert _repack_around_bracket_corner(games, slots) == (games, slots)
+
+    def test_games_in_corner_are_moved_out(self):
+        games = [_game(i) for i in range(8)]
+        slots = [('normal', i % 5, i // 5) for i in range(8)]  # row 1 cols 3-4 occupied
+        out = _repack_around_bracket_corner(games, slots)
+        assert out is not None
+        assert len(out[0]) == 8
+        assert not (_cells(out[1]) & _BRACKET_CORNER)
+        assert len(_cells(out[1])) == 8  # no overlaps
+
+    def test_two_triples_each_keep_a_full_three_wide_row(self):
+        games = [_game(i, state='In Progress') for i in range(2)] + [_game(i) for i in range(2, 6)]
+        slots = [('triple', 0, 0), ('normal', 3, 0), ('normal', 4, 0),
+                 ('triple', 0, 1), ('normal', 3, 1), ('normal', 4, 1)]
+        out = _repack_around_bracket_corner(games, slots)
+        assert out is not None
+        triples = [s for s in out[1] if s[0] == 'triple']
+        assert len(triples) == 2
+        assert {s[1] for s in triples} == {0}
+        assert not (_cells(out[1]) & _BRACKET_CORNER)
+
+    def test_pinned_game_stays_first(self):
+        games = [_game(0), _game(1, state='In Progress')]
+        slots = [('normal', 3, 1), ('triple', 0, 0)]
+        out = _repack_around_bracket_corner(games, slots)
+        assert out[0][0]['game_pk'] == 0
+
+    def test_triple_demoted_when_no_three_wide_run_left(self):
+        games = [_game(i, state='In Progress') for i in range(4)]
+        slots = [('triple', 0, 0), ('triple', 0, 1), ('triple', 0, 2), ('wide', 3, 1)]
+        out = _repack_around_bracket_corner(games, slots)
+        assert out is not None
+        # 3 triples fill cols 0-2 of every row; the wide moves to row 0's free pair
+        assert sorted(s[0] for s in out[1]) == ['triple', 'triple', 'triple', 'wide']
+        assert not (_cells(out[1]) & _BRACKET_CORNER)
+
+    def test_returns_none_when_a_game_would_not_fit(self):
+        games = [_game(i) for i in range(15)]
+        slots = [('normal', i % 5, i // 5) for i in range(15)]
+        assert _repack_around_bracket_corner(games, slots) is None
+
+    def _patch_bracket(self, monkeypatch, present=True):
+        import image_grid
+        real = image_grid.load_json_file
+        monkeypatch.setattr(
+            image_grid, 'load_json_file',
+            lambda name, *a, **k: ({'series': [{'round': 'DS'}]} if present else {})
+            if name == 'playoff_bracket.json' else real(name, *a, **k))
+
+    def test_compute_layout_clears_corner_when_bracket_enabled(self, monkeypatch):
+        self._patch_bracket(monkeypatch)
+        cfg = dict(BASE_CONFIG, show_series_panel=True)
+        games = [_game(i) for i in range(9)]
+        _ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(slots) == 9
+        assert not (_cells(slots) & _BRACKET_CORNER)
+
+    def test_compute_layout_two_live_games_both_get_triples(self, monkeypatch):
+        self._patch_bracket(monkeypatch)
+        cfg = dict(BASE_CONFIG, show_series_panel=True)
+        games = [_game(0, state='In Progress', inning=5), _game(1, state='In Progress', inning=3)] \
+            + [_game(i) for i in range(2, 6)]
+        _ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert sum(1 for s in slots if s[0] == 'triple') == 2
+        assert not (_cells(slots) & _BRACKET_CORNER)
+
+    def test_compute_layout_untouched_without_bracket_data(self, monkeypatch):
+        self._patch_bracket(monkeypatch, present=False)
+        cfg = dict(BASE_CONFIG, show_series_panel=True)
+        games = [_game(i) for i in range(9)]
+        _ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert (3, 1) in _cells(slots)
+
+    def test_compute_layout_falls_back_when_corner_would_cost_a_game(self, monkeypatch):
+        self._patch_bracket(monkeypatch)
+        cfg = dict(BASE_CONFIG, show_series_panel=True)
+        games = [_game(i) for i in range(14)]
+        ordered, slots = compute_grid_layout(games, TEAM_DATA, cfg)
+        assert len(ordered) == 14

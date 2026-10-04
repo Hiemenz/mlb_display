@@ -189,7 +189,7 @@ want the charts. It is written to be cron-safe if you ever do schedule it (it re
 
 ### Fullscreen Featured Game
 
-Single-game focus mode. Shows the live game farthest along (any team), else the latest final, else the next game to start. Enable by setting `FEATURED_TEAM_FULLSCREEN=true` in the environment.
+Single-game focus mode. Shows the live game farthest along (any team); when nothing is live, your primary team's next game (or its latest final); otherwise the latest final, else the next game to start. Enable by setting `FEATURED_TEAM_FULLSCREEN=true` in the environment.
 
 - **Live:** custom 800×480 layout with large inning header, R/H/E columns, base-runner diagram, outs, and the same between-innings next-batters panel as the tile view.
 - **Pre-game / Final:** the normal scoreboard tile scaled up 3× and centered, with wildcard strip and standings sidebars drawn around it exactly as they appear in the grid.

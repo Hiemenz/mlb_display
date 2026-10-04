@@ -364,6 +364,8 @@ def _build_game_plays_log(plays):
 
     Returns half_inning_plays: list of scorecard tokens and half-inning direction
     markers ('^' for top, 'v' for bottom), trimmed to the 7 most recent events.
+    The marker for the next half is added as soon as the third out is recorded,
+    so the list can end with a marker.
     """
     _SUBST_EVENT_TYPES = {
         'pitching_substitution', 'defensive_substitution', 'offensive_substitution',
@@ -429,6 +431,14 @@ def _build_game_plays_log(plays):
                         game_plays.append('^' if _this_half[1] else 'v')
                     game_plays.append(_note)
                     _last_play_half = _this_half
+                    # The third out ends the half-inning: put the next half's
+                    # arrow in the log right away instead of waiting for the
+                    # first play of the next half. _last_play_half is advanced
+                    # to that half so its first play doesn't add a second arrow.
+                    if (_ap.get('count') or {}).get('outs') == 3:
+                        game_plays.append('v' if _this_half[1] else '^')
+                        _last_play_half = (_this_half[0] + (0 if _this_half[1] else 1),
+                                           not _this_half[1])
 
     # Keep the last 7 *events* (plus the half-inning markers that fall between them).
     _kept: list = []
