@@ -1252,3 +1252,19 @@ def test_normal_header_still_shows_seven_events(monkeypatch, white_image, team_d
     drawn = _drawn(monkeypatch, game, white_image, team_data)
     assert 'No-Hitter' not in [t for _x, t in drawn]
     assert len([t for _x, t in drawn if t in set(_SEVEN)]) > 3
+
+@needs_pil
+@pytest.mark.parametrize('flag', ['no_hitter', 'perfect_game'])
+def test_triple_no_hitter_header_inverts_only_two_cells(white_image, team_data, flag):
+    """The inverted no-hitter header covers cells 1+2, not the field-diagram cell."""
+    from image_box import draw_triple_box
+    game = _live_game(current_inning=7, inningState='Top', **{flag: True})
+    img = draw_triple_box(white_image, 0, 0, game, team_data)
+    px = img.convert('L').load()
+
+    def black_fraction(x0, x1):
+        cells = [(x, y) for x in range(x0, x1) for y in range(2, 18)]
+        return sum(1 for x, y in cells if px[x, y] < 128) / len(cells)
+
+    assert black_fraction(0, 280) > 0.5       # cells 1+2: inverted
+    assert black_fraction(295, 430) < 0.2     # cell 3 (field diagram): untouched

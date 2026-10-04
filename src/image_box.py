@@ -4128,7 +4128,9 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
        (_triple_is_final or _triple_active_no_no) and \
        not (score_changed or _run_scored):
-        _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
+        # Cells 1+2 only (up to fp_x), like the run-scored inversion above —
+        # cell 3 is the field diagram and has no header row of its own.
+        _invert_region(Himage, start_x, start_y, fp_x, start_y + HEADER_H)
         _cell_hdr_inverted = True
 
     return Himage
