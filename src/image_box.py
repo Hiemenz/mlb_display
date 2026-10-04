@@ -1378,6 +1378,21 @@ _LayoutFlags = namedtuple('_LayoutFlags', [
 ])
 
 
+def _last_half_events(half_inning_plays):
+    """Events of the half-inning that just ended, from the '^'/'v' play log.
+
+    The log gets the next half's arrow as soon as the third out is recorded, so
+    it can end with a marker; drop that to find the events after the previous
+    marker.
+    """
+    hip = list(half_inning_plays or [])
+    while hip and hip[-1] in ('^', 'v'):
+        hip.pop()
+    breaks = [i for i, tok in enumerate(hip) if tok in ('^', 'v')]
+    start = breaks[-1] + 1 if breaks else 0
+    return [tok for tok in hip[start:] if tok not in ('^', 'v')]
+
+
 def _compute_layout_flags(game_data):
     """Derive the layout decisions that select the linescore grid over the
     normal score layout, as a _LayoutFlags tuple."""
@@ -2303,10 +2318,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
             # fallback for when that per-half data isn't available.
             _half_events = game_data.get('half_inning_summary')
             if not _half_events:
-                _hip = game_data.get('half_inning_plays') or []
-                _hip_breaks = [_i for _i, _tok in enumerate(_hip) if _tok in ('^', 'v')]
-                _hip_start = _hip_breaks[-1] + 1 if _hip_breaks else 0
-                _half_events = [_tok for _tok in _hip[_hip_start:] if _tok not in ('^', 'v')]
+                _half_events = _last_half_events(game_data.get('half_inning_plays'))
             _half_summary = ' | '.join(_half_events) if _half_events else play_display
             _draw_play_right(_half_summary)
         elif _between_innings:
