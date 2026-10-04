@@ -2678,6 +2678,18 @@ def _draw_wide_pregame_lineups(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, g
     _render_col(home_lineup, mid_x, home_label)
 
 
+def _no_hitter_alert_active(game_data):
+    """True while a no-hitter / perfect game alert is live (6th inning or later).
+
+    Matches the condition that inverts the wide/triple header for the alert, and
+    that makes the left cell draw its 'No-Hitter' / 'Perfect Game' label."""
+    return bool(
+        game_data.get('detailed_state') == 'In Progress'
+        and (game_data.get('current_inning') or 0) >= 6
+        and (game_data.get('no_hitter') or game_data.get('perfect_game'))
+    )
+
+
 def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_data, team_data, use_logos=False, scale=1, show_play_description=False):
     """Right panel of 2-cell wide tile.
 
@@ -2731,21 +2743,28 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         else f"{_inn_label} {game_data.get('current_inning') or 1}".strip()
     _inn_w = int(font14.getlength(_inn_text)) + 2 * s   # +2 for the inning's bold strike
 
-    # The last-7-plays ticker is always shown, live or between innings.
+    # The last-7-plays ticker is always shown, live or between innings. While a
+    # no-hitter / perfect game alert is active the left cell labels it
+    # ('No-Hitter' / 'Perfect Game', right-aligned in its header), so the ticker
+    # drops to the last 3 events and stays in the right cell clear of that label.
+    _nh_alert = _no_hitter_alert_active(game_data)
+    _max_events = 3 if _nh_alert else 7
     half_inning_plays = game_data.get('half_inning_plays') or []
-    # Keep the last 7 *events* plus intervening half-inning markers ('^'/'v').
-    # A plain [-7:] would count markers as entries and show fewer than 7 events.
+    # Keep the last N *events* plus intervening half-inning markers ('^'/'v').
+    # A plain [-N:] would count markers as entries and show fewer than N events.
     _recent_plays = []
     _rp_events = 0
     for _tok in reversed(half_inning_plays):
         _recent_plays.append(_tok)
         if _tok not in ('^', 'v'):
             _rp_events += 1
-            if _rp_events >= 7:
+            if _rp_events >= _max_events:
                 break
     _recent_plays.reverse()
     # Right-anchor against the count; left bound clears the inning label.
     _hdr_left = _tile_left + 2 * s + _inn_w + 6 * s
+    if _nh_alert:
+        _hdr_left = max(_hdr_left, rp_x + 2 * s)
     _hdr_right = rp_x + rp_w - _cnt_w - (7 * s if _cnt_w else 3 * s)
     _hdr_max_w = _hdr_right - _hdr_left - 1 * s   # -1 for the bold double-strike
 
@@ -4109,7 +4128,9 @@ def draw_triple_box(Himage, start_x, start_y, game_data, team_data,
     if (game_data.get('no_hitter') or game_data.get('perfect_game')) and \
        (_triple_is_final or _triple_active_no_no) and \
        not (score_changed or _run_scored):
-        _invert_region(Himage, start_x, start_y, start_x + TOTAL_W, start_y + HEADER_H)
+        # Cells 1+2 only (up to fp_x), like the run-scored inversion above —
+        # cell 3 is the field diagram and has no header row of its own.
+        _invert_region(Himage, start_x, start_y, fp_x, start_y + HEADER_H)
         _cell_hdr_inverted = True
 
     return Himage
