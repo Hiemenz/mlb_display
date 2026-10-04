@@ -1087,6 +1087,8 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             )
 
     # Bullpen workload — one tile each for primary team then today's opponent.
+    # While a postseason game is live it is instead one tile for every team in
+    # a live postseason game (primary's game first), whatever the config says.
     # While a game is live these claim slots before the series tiles, so the
     # series tiles drop off first when space runs short; otherwise they are
     # pushed below the deadline panel.
@@ -1097,11 +1099,21 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         _bp_teams = (_bp_data or {}).get('teams', {})
         from image_bullpen import draw_bullpen_cell
         from image_standings import is_team_series_over
+        from fetch_bullpen import live_playoff_team_ids
         _bp_bracket = load_json_file('playoff_bracket.json')
-        for _bp_tid in (_bp_data or {}).get('team_order', []):
-            if not _free_slots or _bp_tid not in _bp_teams:
+        if _any_playoff_live:
+            _bp_order = live_playoff_team_ids(game_state_data, _primary_abbr_live)
+        else:
+            _bp_order = (_bp_data or {}).get('team_order', [])
+        for _bp_tid in _bp_order:
+            if not _free_slots:
                 break
-            if is_team_series_over(_bp_teams[_bp_tid].get('abbr', ''), _bp_bracket):
+            if _bp_tid not in _bp_teams:
+                if _any_playoff_live:
+                    continue  # data not fetched yet for this team; try the next
+                break
+            if (not _any_playoff_live
+                    and is_team_series_over(_bp_teams[_bp_tid].get('abbr', ''), _bp_bracket)):
                 continue
             _bp_col, _bp_row = _free_slots.pop(0)
             draw_bullpen_cell(

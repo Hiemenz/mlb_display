@@ -6,7 +6,7 @@ Writes data/bullpen.json:
   "days": 3,                      # look-back window: the last N calendar days before today
   "primary": "ATL",
   "fetched_at": <unix ts>,
-  "team_order": ["144", "121"],   # primary first, then today's opponent
+  "team_order": ["144", "121"],   # primary, today's opponent, then any extra teams
   "teams": {
     "144": {"team_id": 144, "abbr": "ATL",
             "pitchers": [{"name": "Dodd", "yesterday": 12, "total": 25}, ...]},
@@ -39,6 +39,27 @@ _BASE = 'https://statsapi.mlb.com/api/v1'
 _TIMEOUT = 15
 _CACHE_TTL_HOURS = 6
 DEFAULT_DAYS = 3
+_LIVE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
+_PLAYOFF_GAME_TYPES = ('W', 'D', 'L', 'F')
+
+
+def live_playoff_team_ids(games, primary_abbr=''):
+    """Team ids (str) of every team in a live postseason game, in game order.
+
+    ``games`` is the games.json list. The primary team's game, if live, comes
+    first so its tiles win the free slots when space is short.
+    """
+    live = [g for g in games or []
+            if g.get('detailed_state') in _LIVE_STATES
+            and g.get('game_type') in _PLAYOFF_GAME_TYPES]
+    live.sort(key=lambda g: primary_abbr not in (g.get('away_team'), g.get('home_team')))
+    ids = []
+    for g in live:
+        for key in ('away_team_id', 'home_team_id'):
+            tid = g.get(key)
+            if tid and str(tid) not in ids:
+                ids.append(str(tid))
+    return ids
 
 
 def _abbr_to_team_id(abbr):
@@ -140,8 +161,12 @@ def _team_bullpen(team_id, today, days, box_cache):
     return sorted(usage.values(), key=lambda r: (-r['total'], r['name']))
 
 
-def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None):
+def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None,
+                  extra_team_ids=()):
     """Build and cache bullpen workload for the primary team and its opponent today.
+
+    ``extra_team_ids`` adds further teams (e.g. everyone in a live postseason
+    game); a cache that lacks any of them is rebuilt.
 
     Returns the data dict, the still-usable cache if the network fails, or {}.
     """
@@ -151,6 +176,7 @@ def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None):
             and cached.get('date') == today.isoformat()
             and cached.get('primary') == primary_abbr
             and cached.get('days') == days
+            and all(str(t) in cached.get('teams', {}) for t in extra_team_ids)
             and (time.time() - cached.get('fetched_at', 0)) / 3600 < _CACHE_TTL_HOURS):
         return cached
 
@@ -165,6 +191,9 @@ def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None):
         opponent_id = _opponent_today(primary_id, today)
         if opponent_id:
             team_ids.append(opponent_id)
+        for tid in extra_team_ids:
+            if int(tid) not in team_ids:
+                team_ids.append(int(tid))
         box_cache = {}
         teams = {
             str(tid): {

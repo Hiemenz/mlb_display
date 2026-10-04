@@ -22,7 +22,7 @@ from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
 from fetch_streaks import fetch_streaks
-from fetch_bullpen import fetch_bullpen
+from fetch_bullpen import fetch_bullpen, live_playoff_team_ids
 from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from fetch_team_quadrant import fetch_team_quadrant
@@ -930,14 +930,20 @@ def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=
 def _refresh_bullpen(config, league_mode, force=False, context=''):
     """Refetch relief-pitcher workload for the primary team and its opponent.
 
-    fetch_bullpen keeps its own once-a-day / 6-hour cache, so this is safe to
-    call every cycle. MLB-only.
+    While a postseason game is live, every team in a live postseason game is
+    included (and the fetch runs even with the panel off), since the grid
+    auto-shows their tiles. fetch_bullpen keeps its own once-a-day / 6-hour
+    cache, so this is safe to call every cycle. MLB-only.
     """
-    if not (config.get('show_bullpen_panel', False) and league_mode != 'aaa'):
+    if league_mode == 'aaa':
+        return
+    primary = config.get('primary', '')
+    live_ids = live_playoff_team_ids((load_json_file('games.json') or {}).get('games'), primary)
+    if not (config.get('show_bullpen_panel', False) or live_ids):
         return
     try:
-        fetch_bullpen(config.get('primary', ''),
-                      days=config.get('bullpen_lookback_days', 3), force=force)
+        fetch_bullpen(primary, days=config.get('bullpen_lookback_days', 3), force=force,
+                      extra_team_ids=live_ids)
     except Exception as e:
         print(f"Warning: bullpen fetch{context} failed: {e}")
 

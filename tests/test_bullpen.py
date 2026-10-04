@@ -18,7 +18,7 @@ except ImportError:
 needs_pil = pytest.mark.skipif(not PIL_AVAILABLE, reason='PIL not installed')
 
 TODAY = date(2026, 9, 29)
-TEAMS = {'team_abbreviation': {'144': 'ATL', '121': 'NYM'}}
+TEAMS = {'team_abbreviation': {'144': 'ATL', '121': 'NYM', '147': 'NYY'}}
 
 
 def _game(pk, away, home, state='Final'):
@@ -181,6 +181,31 @@ class TestFetchBullpen:
             data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
         assert data['primary'] == 'ATL' and data['teams']
 
+    def test_extra_teams_added_after_primary_and_opponent(self, isolated):
+        schedules, boxes = _fixture()
+        schedules[(147, '2026-09-26')] = {'dates': []}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY, extra_team_ids=['121', '147'])
+        assert data['team_order'] == ['144', '121', '147']
+        assert data['teams']['147']['abbr'] == 'NYY'
+
+    def test_cache_missing_an_extra_team_refetches(self, isolated):
+        schedules, boxes = _fixture()
+        isolated['bullpen'] = {'date': TODAY.isoformat(), 'primary': 'ATL', 'days': 3,
+                               'fetched_at': time.time(), 'teams': {'144': {}}}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY, extra_team_ids=[121])
+        assert set(data['teams']) == {'144', '121'}
+
+    def test_cache_holding_every_extra_team_skips_network(self, isolated):
+        cached = {'date': TODAY.isoformat(), 'primary': 'ATL', 'days': 3,
+                  'fetched_at': time.time(), 'teams': {'144': {}, '121': {}}}
+        isolated['bullpen'] = cached
+        with patch('fetch_bullpen.requests.get') as get:
+            assert fetch_bullpen.fetch_bullpen(
+                'ATL', today=TODAY, extra_team_ids=['121']) is cached
+        get.assert_not_called()
+
     def test_force_refetches_despite_fresh_cache(self, isolated):
         schedules, boxes = _fixture()
         isolated['bullpen'] = {'date': TODAY.isoformat(), 'primary': 'ATL', 'days': 3,
@@ -197,6 +222,31 @@ class TestFetchBullpen:
     def test_defaults_to_real_today(self, isolated):
         with patch('fetch_bullpen.requests.get', side_effect=RuntimeError('boom')):
             assert fetch_bullpen.fetch_bullpen('ATL') == {}
+
+
+class TestLivePlayoffTeamIds:
+    @staticmethod
+    def _g(away, home, state='In Progress', gtype='D'):
+        return {'away_team': away, 'home_team': home, 'away_team_id': hash(away) % 1000,
+                'home_team_id': str(hash(home) % 1000), 'detailed_state': state,
+                'game_type': gtype}
+
+    def test_only_live_postseason_games_count(self):
+        games = [self._g('AAA', 'BBB'), self._g('CCC', 'DDD', state='Final'),
+                 self._g('EEE', 'FFF', gtype='R'), self._g('GGG', 'HHH', state='Scheduled')]
+        assert fetch_bullpen.live_playoff_team_ids(games) == [
+            str(games[0]['away_team_id']), games[0]['home_team_id']]
+
+    def test_primary_game_first_and_ids_deduped(self):
+        a, b = self._g('AAA', 'BBB'), self._g('CCC', 'DDD')
+        b['home_team_id'] = a['away_team_id']  # same team twice -> listed once
+        ids = fetch_bullpen.live_playoff_team_ids([a, b], primary_abbr='DDD')
+        assert ids == [str(b['away_team_id']), str(b['home_team_id']),
+                       a['home_team_id']]
+
+    def test_none_or_empty_means_no_teams(self):
+        assert fetch_bullpen.live_playoff_team_ids(None) == []
+        assert fetch_bullpen.live_playoff_team_ids([]) == []
 
 
 class TestHelpers:
@@ -442,6 +492,58 @@ class TestGridPlacement:
         assert calls == ['NYY']
         assert series_calls == []
 
+    def _render_games(self, games, config=BASE_CONFIG, data=BULLPEN):
+        from image_grid import draw_out_of_town_score_board
+        calls = []
+        real = image_bullpen.draw_bullpen_cell
+
+        def spy(img, x, y, entry, days=3):
+            calls.append(entry['abbr'])
+            return real(img, x, y, entry, days=days)
+
+        with patch('image_grid.load_yaml_file', return_value=config), \
+             patch('image_box.load_yaml_file', return_value=config), \
+             patch('image_grid.load_json_file', return_value=data), \
+             patch('image_bullpen.draw_bullpen_cell', spy):
+            draw_out_of_town_score_board(Image.new('1', (800, 480), 255), games, TEAM_DATA)
+        return calls
+
+    @staticmethod
+    def _live(idx, away, home, away_id, home_id, gtype='D'):
+        return dict(_final(idx), away_team=away, home_team=home, away_team_id=away_id,
+                    home_team_id=home_id, status='In Progress', detailed_state='In Progress',
+                    game_type=gtype, current_inning=3, inningState='Top', num_of_outs=1)
+
+    def test_live_playoff_shows_both_teams_even_when_panel_off(self):
+        cfg = dict(BASE_CONFIG, show_bullpen_panel=False)
+        games = [self._live(0, 'NYY', 'BOS', '147', '111')] + [_final(i) for i in range(1, 8)]
+        assert self._render_games(games, config=cfg) == ['NYY', 'BOS']
+
+    def test_live_playoff_between_other_teams_shows_their_tiles_not_primary(self):
+        """Primary isn't playing: tiles are for the live game's teams, in bullpen.json."""
+        data = dict(BULLPEN, team_order=['147'], teams=dict(
+            BULLPEN['teams'], **{'1': {'abbr': 'AAA', 'pitchers': PITCHERS[:1]},
+                                 '2': {'abbr': 'BBB', 'pitchers': PITCHERS[:1]}}))
+        games = [self._live(0, 'AAA', 'BBB', '1', '2')] + [_final(i) for i in range(1, 8)]
+        assert self._render_games(games, data=data) == ['AAA', 'BBB']
+
+    def test_two_live_playoff_games_primary_game_first(self):
+        data = dict(BULLPEN, teams=dict(
+            BULLPEN['teams'], **{'1': {'abbr': 'AAA', 'pitchers': PITCHERS[:1]},
+                                 '2': {'abbr': 'BBB', 'pitchers': PITCHERS[:1]}}))
+        games = [self._live(0, 'AAA', 'BBB', '1', '2'),
+                 self._live(1, 'NYY', 'BOS', '147', '111')] + [_final(i) for i in range(2, 6)]
+        assert self._render_games(games, data=data) == ['NYY', 'BOS', 'AAA', 'BBB']
+
+    def test_live_team_without_data_is_skipped(self):
+        games = [self._live(0, 'AAA', 'BOS', '1', '111')] + [_final(i) for i in range(1, 8)]
+        assert self._render_games(games) == ['BOS']
+
+    def test_live_regular_season_game_does_not_trigger_with_panel_off(self):
+        cfg = dict(BASE_CONFIG, show_bullpen_panel=False)
+        games = [self._live(0, 'NYY', 'BOS', '147', '111', gtype='R')]
+        assert self._render_games(games, config=cfg) == []
+
     def test_eliminated_team_skipped(self):
         bracket = {'series': [{'round': 'WC', 'away_abbr': 'NYY', 'home_abbr': 'BOS',
                                'complete': True, 'winner_abbr': 'NYY'},
@@ -451,6 +553,14 @@ class TestGridPlacement:
 
 
 class TestMainRefresh:
+    @pytest.fixture(autouse=True)
+    def _games(self, monkeypatch):
+        """games.json stub; tests set .games to change what's on the slate."""
+        box = MagicMock(games=[])
+        monkeypatch.setattr(main_mod, 'load_json_file',
+                            lambda name: {'games': box.games})
+        return box
+
     def test_disabled_does_not_fetch(self, monkeypatch):
         fetch = MagicMock()
         monkeypatch.setattr(main_mod, 'fetch_bullpen', fetch)
@@ -469,7 +579,23 @@ class TestMainRefresh:
         main_mod._refresh_bullpen(
             {'show_bullpen_panel': True, 'primary': 'ATL', 'bullpen_lookback_days': 4},
             'mlb', force=True)
-        fetch.assert_called_once_with('ATL', days=4, force=True)
+        fetch.assert_called_once_with('ATL', days=4, force=True, extra_team_ids=[])
+
+    def test_live_playoff_fetches_both_teams_even_with_panel_off(self, monkeypatch, _games):
+        fetch = MagicMock()
+        monkeypatch.setattr(main_mod, 'fetch_bullpen', fetch)
+        _games.games = [{'away_team': 'AAA', 'home_team': 'BBB', 'away_team_id': 1,
+                         'home_team_id': 2, 'detailed_state': 'In Progress', 'game_type': 'D'}]
+        main_mod._refresh_bullpen({'show_bullpen_panel': False, 'primary': 'ATL'}, 'mlb')
+        fetch.assert_called_once_with('ATL', days=3, force=False, extra_team_ids=['1', '2'])
+
+    def test_live_playoff_does_not_fetch_in_aaa(self, monkeypatch, _games):
+        fetch = MagicMock()
+        monkeypatch.setattr(main_mod, 'fetch_bullpen', fetch)
+        _games.games = [{'away_team_id': 1, 'home_team_id': 2,
+                         'detailed_state': 'In Progress', 'game_type': 'D'}]
+        main_mod._refresh_bullpen({'primary': 'ATL'}, 'aaa')
+        fetch.assert_not_called()
 
     def test_fetch_failure_is_swallowed(self, monkeypatch, capsys):
         monkeypatch.setattr(main_mod, 'fetch_bullpen', MagicMock(side_effect=RuntimeError('x')))
