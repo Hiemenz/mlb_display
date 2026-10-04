@@ -421,7 +421,10 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
             new_scores[pk] = {'away_runs': away_runs, 'home_runs': home_runs}
             if pk in old_scores:
                 old_entry = old_scores[pk]
-                if away_runs != old_entry.get('away_runs') or home_runs != old_entry.get('home_runs'):
+                # A pre-game record has no runs (None); the first live render
+                # reports 0-0. That isn't a score change, so treat None as 0.
+                if ((away_runs or 0) != (old_entry.get('away_runs') or 0)
+                        or (home_runs or 0) != (old_entry.get('home_runs') or 0)):
                     changed_game_ids.add(pk)
                     print(f'Score change detected for game {pk}: {old_entry} -> {new_scores[pk]}')
         save_off_results(new_scores, 'score_alerts')

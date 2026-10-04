@@ -310,6 +310,51 @@ def test_score_change_detected_and_persisted():
     mock_save.assert_any_call({'3001': {'away_runs': 2, 'home_runs': 0}}, 'score_alerts')
 
 
+def _changed_ids_for(old_runs, new_runs, old_state, new_state):
+    """Run orchestrate with one game going old -> new and return the
+    changed_game_ids handed to the grid renderer."""
+    import generate_image
+    import image_box
+
+    def game(state, runs):
+        return _base_game(game_pk=3002, detailed_state=state, away_runs=runs[0], home_runs=runs[1],
+                          current_inning=1, inningState='Top', game_end_time_utc=None,
+                          ab_pitches=[], half_inning_plays=[], home_pitcher_ks=[], away_pitcher_ks=[])
+
+    old_scores = {'3002': {'away_runs': old_runs[0], 'home_runs': old_runs[1]}}
+    stub = Image.new('1', (800, 480), 255)
+    with patch('generate_image.load_json_file', side_effect=_fake_loader({
+            'old_scoreboard_state.json': [game(old_state, old_runs)],
+            'score_alerts.json': old_scores,
+        })), \
+         patch('generate_image.save_off_results', MagicMock()), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub) as grid, \
+         patch('image_grid.load_yaml_file', return_value=FIXED_CONFIG), \
+         patch('image_box.load_yaml_file', return_value=FIXED_CONFIG):
+        image_box.set_historical_mode(True)
+        try:
+            generate_image.orchestrate_score_board(
+                [game(new_state, new_runs)], TEAM_DATA, date_str='2026-06-20',
+                bypass_cache=False, config=FIXED_CONFIG)
+        finally:
+            image_box.set_historical_mode(False)
+    return grid.call_args.kwargs.get('changed_game_ids')
+
+
+@needs_pil
+def test_game_start_zero_zero_is_not_a_score_change():
+    """Pre-game (no runs, None) -> first live render (0-0) must not flag a
+    score change, or the header inverts black with no run scored."""
+    ids = _changed_ids_for((None, None), (0, 0), 'Scheduled', 'In Progress')
+    assert '3002' not in (ids or set())
+
+
+@needs_pil
+def test_first_run_after_pregame_is_still_a_score_change():
+    ids = _changed_ids_for((None, None), (1, 0), 'Scheduled', 'In Progress')
+    assert '3002' in ids
+
+
 @needs_pil
 def test_linescore_window_expiry_forces_rerender_even_if_nothing_else_changed():
     """A Final game whose stored old_linescore_window_state.json says True
