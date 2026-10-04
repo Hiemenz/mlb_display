@@ -112,14 +112,30 @@ def _relief_lines(box_side):
     return lines
 
 
+def _is_starter(person):
+    """True when at least half of a pitcher's season appearances were starts.
+
+    A pitcher with no season stats (a call-up) counts as a reliever.
+    """
+    for grp in person.get('stats') or []:
+        for split in grp.get('splits') or []:
+            stat = split.get('stat') or {}
+            started, pitched = stat.get('gamesStarted') or 0, stat.get('gamesPitched') or 0
+            if started and started * 2 >= pitched:
+                return True
+    return False
+
+
 def _roster_pitchers(team_id):
-    """Short names of all pitchers on the active roster for *team_id*."""
+    """Short names of the non-starting pitchers on the active roster for *team_id*."""
     try:
-        data = _get(f'/teams/{team_id}/roster?rosterType=active')
+        data = _get(f'/teams/{team_id}/roster?rosterType=active'
+                    '&hydrate=person(stats(group=[pitching],type=[season]))')
         names = set()
         for p in data.get('roster', []):
-            if (p.get('position') or {}).get('type') == 'Pitcher':
-                full = (p.get('person') or {}).get('fullName', '')
+            person = p.get('person') or {}
+            if (p.get('position') or {}).get('type') == 'Pitcher' and not _is_starter(person):
+                full = person.get('fullName', '')
                 if full:
                     names.add(_short_name(full))
         return names
@@ -134,7 +150,7 @@ def _team_bullpen(team_id, today, days, box_cache):
     the window add to ``total`` only. The window is anchored to today, not to
     the team's last game, so a team that hasn't played within it has no workload.
 
-    Pitchers on the active roster who threw no pitches during the window are
+    Non-starting pitchers on the active roster who threw no pitches during the window are
     included at the bottom with yesterday=0, total=0 (rested).
     """
     yesterday = (today - timedelta(days=1)).isoformat()

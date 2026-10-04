@@ -275,6 +275,22 @@ class TestHelpers:
             result = fetch_bullpen._roster_pitchers(144)
         assert result == {'J. Smith'}
 
+    def test_roster_pitchers_excludes_starters(self):
+        def arm(name, started, pitched):
+            return {'person': {'fullName': name, 'stats': [
+                        {'splits': [{'stat': {'gamesStarted': started, 'gamesPitched': pitched}}]}]},
+                    'position': {'type': 'Pitcher'}}
+        fake = MagicMock()
+        fake.json.return_value = {'roster': [
+            arm('Max Fried', 20, 20), arm('Will Warren', 29, 32), arm('Paul Blackburn', 2, 62),
+            arm('David Bednar', 0, 64),
+            {'person': {'fullName': 'New Guy'}, 'position': {'type': 'Pitcher'}},
+            {'person': {'fullName': 'No Splits', 'stats': [{}]}, 'position': {'type': 'Pitcher'}},
+        ]}
+        with patch('fetch_bullpen.requests.get', return_value=fake):
+            result = fetch_bullpen._roster_pitchers(144)
+        assert result == {'P. Blackburn', 'D. Bednar', 'N. Guy', 'N. Splits'}
+
     def test_roster_pitchers_skips_missing_name(self):
         fake = MagicMock()
         fake.json.return_value = {'roster': [
@@ -367,11 +383,28 @@ class TestDrawBullpenCell:
         many = self._ink({'abbr': 'ATL', 'pitchers': PITCHERS})
         assert list(many.getdata()).count(0) > list(few.getdata()).count(0)
 
-    def test_rows_capped(self):
-        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(20)]
+    def test_up_to_max_rows_stays_single_column_and_is_capped(self):
+        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(image_bullpen.MAX_ROWS)]
+        assert list(self._ink({'abbr': 'ATL', 'pitchers': many}).getdata()) != \
+            list(self._ink({'abbr': 'ATL', 'pitchers': many + [many[0]]}).getdata())
+
+    def test_more_than_max_rows_goes_compact_and_caps_at_two_columns(self):
+        n = 2 * image_bullpen.COMPACT_ROWS
+        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(n + 5)]
         capped = self._ink({'abbr': 'ATL', 'pitchers': many})
-        exact = self._ink({'abbr': 'ATL', 'pitchers': many[:image_bullpen.MAX_ROWS]})
+        exact = self._ink({'abbr': 'ATL', 'pitchers': many[:n]})
         assert list(capped.getdata()) == list(exact.getdata())
+        assert capped.crop((146, 0, 200, 200)).getextrema() == (255, 255)
+
+    def test_compact_marks_yesterday_with_inverted_number(self):
+        base = [{'name': f'P. Arm{i}', 'yesterday': 0, 'total': 10} for i in range(7)]
+        tired = [dict(base[0], yesterday=10)] + base[1:]
+        assert list(self._ink({'abbr': 'ATL', 'pitchers': base}).getdata()) != \
+            list(self._ink({'abbr': 'ATL', 'pitchers': tired}).getdata())
+
+    def test_compact_single_token_name_and_rested_dash(self):
+        rows = [{'name': 'Ohtani', 'yesterday': 0, 'total': 0}] * 7
+        assert self._ink({'abbr': 'ATL', 'pitchers': rows}).getbbox() is not None
 
     def test_empty_bullpen_shows_message(self):
         img = self._ink({'abbr': 'ATL', 'pitchers': []})
