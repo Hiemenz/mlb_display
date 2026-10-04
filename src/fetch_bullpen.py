@@ -6,10 +6,10 @@ Writes data/bullpen.json:
   "days": 3,                      # look-back window: the last N calendar days before today
   "primary": "ATL",
   "fetched_at": <unix ts>,
-  "team_order": ["144", "121"],   # primary first, then today's opponent
+  "team_order": ["144", "121"],   # primary, today's opponent, then any extra teams
   "teams": {
     "144": {"team_id": 144, "abbr": "ATL",
-            "pitchers": [{"name": "Dodd", "yesterday": 12, "total": 25}, ...]},
+            "pitchers": [{"name": "Dodd", "yesterday": 12, "day2": 5, "total": 25}, ...]},
     ...
   }
 }
@@ -39,6 +39,27 @@ _BASE = 'https://statsapi.mlb.com/api/v1'
 _TIMEOUT = 15
 _CACHE_TTL_HOURS = 6
 DEFAULT_DAYS = 3
+_LIVE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
+_PLAYOFF_GAME_TYPES = ('W', 'D', 'L', 'F')
+
+
+def live_playoff_team_ids(games, primary_abbr=''):
+    """Team ids (str) of every team in a live postseason game, in game order.
+
+    ``games`` is the games.json list. The primary team's game, if live, comes
+    first so its tiles win the free slots when space is short.
+    """
+    live = [g for g in games or []
+            if g.get('detailed_state') in _LIVE_STATES
+            and g.get('game_type') in _PLAYOFF_GAME_TYPES]
+    live.sort(key=lambda g: primary_abbr not in (g.get('away_team'), g.get('home_team')))
+    ids = []
+    for g in live:
+        for key in ('away_team_id', 'home_team_id'):
+            tid = g.get(key)
+            if tid and str(tid) not in ids:
+                ids.append(str(tid))
+    return ids
 
 
 def _abbr_to_team_id(abbr):
@@ -91,14 +112,30 @@ def _relief_lines(box_side):
     return lines
 
 
+def _is_starter(person):
+    """True when at least half of a pitcher's season appearances were starts.
+
+    A pitcher with no season stats (a call-up) counts as a reliever.
+    """
+    for grp in person.get('stats') or []:
+        for split in grp.get('splits') or []:
+            stat = split.get('stat') or {}
+            started, pitched = stat.get('gamesStarted') or 0, stat.get('gamesPitched') or 0
+            if started and started * 2 >= pitched:
+                return True
+    return False
+
+
 def _roster_pitchers(team_id):
-    """Short names of all pitchers on the active roster for *team_id*."""
+    """Short names of the non-starting pitchers on the active roster for *team_id*."""
     try:
-        data = _get(f'/teams/{team_id}/roster?rosterType=active')
+        data = _get(f'/teams/{team_id}/roster?rosterType=active'
+                    '&hydrate=person(stats(group=[pitching],type=[season]))')
         names = set()
         for p in data.get('roster', []):
-            if (p.get('position') or {}).get('type') == 'Pitcher':
-                full = (p.get('person') or {}).get('fullName', '')
+            person = p.get('person') or {}
+            if (p.get('position') or {}).get('type') == 'Pitcher' and not _is_starter(person):
+                full = person.get('fullName', '')
                 if full:
                     names.add(_short_name(full))
         return names
@@ -109,14 +146,15 @@ def _roster_pitchers(team_id):
 def _team_bullpen(team_id, today, days, box_cache):
     """Reliever workload for one team over the ``days`` calendar days before today.
 
-    Games on yesterday count as ``yesterday`` (the solid bar); earlier days in
-    the window add to ``total`` only. The window is anchored to today, not to
+    Games on yesterday count as ``yesterday`` and games two days ago as ``day2``
+    (the first two bar shades); every day in the window adds to ``total``. The window is anchored to today, not to
     the team's last game, so a team that hasn't played within it has no workload.
 
-    Pitchers on the active roster who threw no pitches during the window are
-    included at the bottom with yesterday=0, total=0 (rested).
+    Non-starting pitchers on the active roster who threw no pitches during the window are
+    included at the bottom with yesterday=0, day2=0, total=0 (rested).
     """
     yesterday = (today - timedelta(days=1)).isoformat()
+    two_days_ago = (today - timedelta(days=2)).isoformat()
     window_start = today - timedelta(days=days)
     finals = [(d, g) for d, g in _schedule(team_id, window_start, today - timedelta(days=1))
               if (g.get('status', {}).get('detailedState', '')).startswith(('Final', 'Completed Early'))]
@@ -130,18 +168,24 @@ def _team_bullpen(team_id, today, days, box_cache):
             if (box_side.get('team') or {}).get('id') != team_id:
                 continue
             for name, pitches in _relief_lines(box_side):
-                row = usage.setdefault(name, {'name': name, 'yesterday': 0, 'total': 0})
+                row = usage.setdefault(name, {'name': name, 'yesterday': 0, 'day2': 0, 'total': 0})
                 row['total'] += pitches
                 if date_str == yesterday:
                     row['yesterday'] += pitches
+                elif date_str == two_days_ago:
+                    row['day2'] += pitches
     for name in _roster_pitchers(team_id):
         if name not in usage:
-            usage[name] = {'name': name, 'yesterday': 0, 'total': 0}
+            usage[name] = {'name': name, 'yesterday': 0, 'day2': 0, 'total': 0}
     return sorted(usage.values(), key=lambda r: (-r['total'], r['name']))
 
 
-def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None):
+def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None,
+                  extra_team_ids=()):
     """Build and cache bullpen workload for the primary team and its opponent today.
+
+    ``extra_team_ids`` adds further teams (e.g. everyone in a live postseason
+    game); a cache that lacks any of them is rebuilt.
 
     Returns the data dict, the still-usable cache if the network fails, or {}.
     """
@@ -151,6 +195,7 @@ def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None):
             and cached.get('date') == today.isoformat()
             and cached.get('primary') == primary_abbr
             and cached.get('days') == days
+            and all(str(t) in cached.get('teams', {}) for t in extra_team_ids)
             and (time.time() - cached.get('fetched_at', 0)) / 3600 < _CACHE_TTL_HOURS):
         return cached
 
@@ -165,6 +210,9 @@ def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None):
         opponent_id = _opponent_today(primary_id, today)
         if opponent_id:
             team_ids.append(opponent_id)
+        for tid in extra_team_ids:
+            if int(tid) not in team_ids:
+                team_ids.append(int(tid))
         box_cache = {}
         teams = {
             str(tid): {
