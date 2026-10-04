@@ -2,7 +2,7 @@
 MLB Display Slack bot — extends the generic SlackBot from hiemenz_utils.
 
 Adds a team dropdown and mode buttons to the standard error-feed panel.
-Writes pending changes to data/discord_state.json (same as the Discord bot).
+Writes changes directly to config/config.yaml (line-based patch, preserves comments).
 
 @mention the bot in any Slack channel to open the control panel.
 
@@ -10,10 +10,10 @@ Run: python3 src/slack_bot.py
 See scripts/slack_bot.service for the Pi systemd unit.
 """
 
-import json
 import os
+import re
+import socket
 import sys
-from datetime import datetime
 from pathlib import Path
 
 _SRC = Path(__file__).parent
@@ -76,13 +76,25 @@ MLB_TEAMS = [
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _data_path(filename: str) -> Path:
-    return _ROOT / "data" / filename
+_CONFIG = _ROOT / "config" / "config.yaml"
+
+
+def _set_yaml_scalar(key: str, value: str) -> None:
+    """Patch a single top-level key: value line in config.yaml, preserving comments."""
+    lines = _CONFIG.read_text().splitlines(keepends=True)
+    pattern = re.compile(rf'^{re.escape(key)}:\s')
+    for i, line in enumerate(lines):
+        if pattern.match(line):
+            lines[i] = f'{key}: {value}\n'
+            break
+    else:
+        lines.append(f'{key}: {value}\n')
+    _CONFIG.write_text("".join(lines))
 
 
 def _current_settings() -> tuple[str, str]:
     try:
-        config = load_yaml_file(str(_ROOT / "config" / "config.yaml"))
+        config = load_yaml_file(str(_CONFIG))
     except Exception:
         config = {}
     mode = config.get("display_mode") or (
@@ -90,28 +102,6 @@ def _current_settings() -> tuple[str, str]:
     )
     team = config.get("primary", "—")
     return mode, team
-
-
-def _pending_label() -> str:
-    try:
-        ds = json.loads(_data_path("discord_state.json").read_text())
-        if not ds.get("applied", True):
-            parts = []
-            if ds.get("pending_mode"):
-                parts.append(f"mode→{ds['pending_mode']}")
-            if ds.get("pending_team"):
-                parts.append(f"team→{ds['pending_team']}")
-            by = ds.get("requested_by", "?")
-            return f"⏳ Pending ({by}): {', '.join(parts)}" if parts else ""
-    except (FileNotFoundError, Exception):
-        pass
-    return ""
-
-
-def _save_state(state: dict) -> None:
-    path = _data_path("discord_state.json")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2))
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +116,8 @@ def display_controls() -> list:
     mode, team = _current_settings()
     pending = _pending_label()
 
-    status = f"*Mode:* `{mode}`   *Team:* `{team}`"
+    host = socket.gethostname()
+    status = f"*Host:* `{host}`   *Mode:* `{mode}`   *Team:* `{team}`"
     if pending:
         status += f"\n{pending}"
 
@@ -179,14 +170,7 @@ def display_controls() -> list:
 def handle_team(ack, body, client):
     ack()
     selected = body["actions"][0]["selected_option"]["value"]
-    user = body["user"]["username"]
-    _save_state({
-        "pending_mode": None,
-        "pending_team": selected,
-        "requested_by": user,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "applied": False,
-    })
+    _set_yaml_scalar("primary", selected)
     bot.update_message(
         client,
         body["channel"]["id"],
@@ -200,14 +184,7 @@ for _m in VALID_MODES:
         @bot.action(f"mode_{m}")
         def handler(ack, body, client, _m=m):
             ack()
-            user = body["user"]["username"]
-            _save_state({
-                "pending_mode": _m,
-                "pending_team": None,
-                "requested_by": user,
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "applied": False,
-            })
+            _set_yaml_scalar("display_mode", _m)
             bot.update_message(
                 client,
                 body["channel"]["id"],
