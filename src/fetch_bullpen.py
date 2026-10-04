@@ -9,7 +9,7 @@ Writes data/bullpen.json:
   "team_order": ["144", "121"],   # primary, today's opponent, then any extra teams
   "teams": {
     "144": {"team_id": 144, "abbr": "ATL",
-            "pitchers": [{"name": "Dodd", "yesterday": 12, "total": 25}, ...]},
+            "pitchers": [{"name": "Dodd", "yesterday": 12, "day2": 5, "total": 25}, ...]},
     ...
   }
 }
@@ -146,14 +146,15 @@ def _roster_pitchers(team_id):
 def _team_bullpen(team_id, today, days, box_cache):
     """Reliever workload for one team over the ``days`` calendar days before today.
 
-    Games on yesterday count as ``yesterday`` (the solid bar); earlier days in
-    the window add to ``total`` only. The window is anchored to today, not to
+    Games on yesterday count as ``yesterday`` and games two days ago as ``day2``
+    (the first two bar shades); every day in the window adds to ``total``. The window is anchored to today, not to
     the team's last game, so a team that hasn't played within it has no workload.
 
     Non-starting pitchers on the active roster who threw no pitches during the window are
-    included at the bottom with yesterday=0, total=0 (rested).
+    included at the bottom with yesterday=0, day2=0, total=0 (rested).
     """
     yesterday = (today - timedelta(days=1)).isoformat()
+    two_days_ago = (today - timedelta(days=2)).isoformat()
     window_start = today - timedelta(days=days)
     finals = [(d, g) for d, g in _schedule(team_id, window_start, today - timedelta(days=1))
               if (g.get('status', {}).get('detailedState', '')).startswith(('Final', 'Completed Early'))]
@@ -167,13 +168,15 @@ def _team_bullpen(team_id, today, days, box_cache):
             if (box_side.get('team') or {}).get('id') != team_id:
                 continue
             for name, pitches in _relief_lines(box_side):
-                row = usage.setdefault(name, {'name': name, 'yesterday': 0, 'total': 0})
+                row = usage.setdefault(name, {'name': name, 'yesterday': 0, 'day2': 0, 'total': 0})
                 row['total'] += pitches
                 if date_str == yesterday:
                     row['yesterday'] += pitches
+                elif date_str == two_days_ago:
+                    row['day2'] += pitches
     for name in _roster_pitchers(team_id):
         if name not in usage:
-            usage[name] = {'name': name, 'yesterday': 0, 'total': 0}
+            usage[name] = {'name': name, 'yesterday': 0, 'day2': 0, 'total': 0}
     return sorted(usage.values(), key=lambda r: (-r['total'], r['name']))
 
 

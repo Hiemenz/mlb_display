@@ -110,12 +110,12 @@ class TestFetchBullpen:
         assert data['team_order'] == ['144', '121']
         atl = data['teams']['144']['pitchers']
         assert atl == [
-            {'name': 'A. Minter', 'yesterday': 25, 'total': 25},
-            {'name': 'R. Iglesias', 'yesterday': 10, 'total': 22},
+            {'name': 'A. Minter', 'yesterday': 25, 'day2': 0, 'total': 25},
+            {'name': 'R. Iglesias', 'yesterday': 10, 'day2': 0, 'total': 22},
         ]
         assert 'Z. Pitches' not in {p['name'] for p in atl}
         assert data['teams']['121']['pitchers'] == [
-            {'name': 'E. Diaz', 'yesterday': 14, 'total': 14}]
+            {'name': 'E. Diaz', 'yesterday': 14, 'day2': 0, 'total': 14}]
         assert isolated['bullpen'] is data
 
     def test_starters_and_unfinished_games_excluded(self, isolated):
@@ -147,7 +147,21 @@ class TestFetchBullpen:
         with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
             data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
         assert data['teams']['144']['pitchers'] == [
-            {'name': 'R. Iglesias', 'yesterday': 0, 'total': 12}]
+            {'name': 'R. Iglesias', 'yesterday': 0, 'day2': 0, 'total': 12}]
+
+    def test_two_days_ago_is_its_own_bucket(self, isolated):
+        schedules, boxes = _fixture()
+        schedules[(144, '2026-09-26')] = {'dates': [
+            {'date': '2026-09-27', 'games': [_game(5, 144, 121)]},
+            {'date': '2026-09-28', 'games': [_game(1, 144, 121)]}]}
+        boxes[5] = _box(_side(144, [(1, 'Max Fried', 95), (2, 'Raisel Iglesias', 12)]),
+                        _side(121, [(4, 'Kodai Senga', 70)]))
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        by_name = {p['name']: p for p in data['teams']['144']['pitchers']}
+        assert by_name['R. Iglesias'] == {'name': 'R. Iglesias', 'yesterday': 10,
+                                          'day2': 12, 'total': 22}
+        assert by_name['A. Minter']['day2'] == 0
 
     def test_no_games_in_window_means_nobody_has_workload(self, isolated):
         """A team that last played before the window (a week off) is fully rested."""
@@ -404,6 +418,38 @@ class TestDrawBullpenCell:
         low = (10, 10 + 110, 145, 10 + panel_cell.CELL_H - 2)
         assert self._ink({'abbr': 'ATL', 'pitchers': few}).crop(low).getextrema() == (255, 255)
         assert self._ink({'abbr': 'ATL', 'pitchers': full}).crop(low).getextrema() == (0, 255)
+
+    def _bar(self, **kw):
+        from PIL import ImageDraw
+        img = Image.new('1', (80, 20), 255)
+        image_bullpen._draw_bar(ImageDraw.Draw(img), 5, 5, 70, h=8, **kw)
+        return img
+
+    def test_each_day_gets_its_own_shade(self):
+        """Solid, dense hatch and sparse hatch are different ink at equal pitch counts."""
+        def ink(**kw):
+            return list(self._bar(**kw).getdata()).count(0)
+        solid = ink(yesterday=15, total=15)
+        dense = ink(yesterday=0, day2=15, total=15)
+        sparse = ink(yesterday=0, total=15)
+        assert solid > dense > sparse
+
+    def test_shades_stack_in_order_left_to_right(self):
+        # bar at x=5 w=70 -> inner starts x=6, 68px for 50 pitches: 10 pitches = 14px
+        img = self._bar(yesterday=10, day2=10, total=30)
+        row = [img.getpixel((x, 8)) for x in range(6, 6 + 41)]
+        assert row[0:14] == [0] * 14                       # solid: yesterday
+        assert row[14:27] == [0, 255] * 6 + [0]            # dense hatch, every 2px
+        assert row[27:41] == [0, 255, 255, 255] * 3 + [0, 255]  # sparse hatch, every 4px
+
+    def test_key_has_one_swatch_per_day_in_the_window(self):
+        def key_ink(days):
+            img = Image.new('1', (200, 200), 255)
+            image_bullpen.draw_bullpen_cell(img, 10, 10, {'abbr': 'ATL', 'pitchers': []},
+                                            days=days)
+            return list(img.crop((10 + 70, 11, 10 + 135, 10 + 19)).getdata()).count(0)
+        assert key_ink(1) < key_ink(2) < key_ink(3)
+        assert key_ink(3) != key_ink(10)   # last label follows the window length
 
     def test_key_is_in_the_header_not_a_footer(self):
         img = self._ink({'abbr': 'ATL', 'pitchers': PITCHERS[:1]})

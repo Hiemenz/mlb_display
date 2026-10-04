@@ -100,7 +100,7 @@ When the slate has fewer than 15 games, the spare grid cells are filled with inf
 - **News headlines** (`show_news_panel`) — recent MLB news, optionally scoped to the primary team (`news_team_only`).
 - **Magic / elimination numbers** (`show_magic_numbers`) — the primary team's division standings. The leader's row always shows its magic number (`M12`); trailing teams show games back until their elimination number drops below 20, at which point that row switches to the elimination number (`E7`) instead. A miniature version of the same M12/E7 badge (`sidebar_magic_badges`) can also be shown next to each team's logo in the standings sidebar.
 - **Hot Hitters / Hot Arms** (`show_streaks_panel` / `show_scoreless_panel`) — 14-day rolling batting average and ERA leaders.
-- **Bullpen usage** (`show_bullpen_panel`) — two tiles, one for the primary team and one for today's opponent, showing each reliever's pitches yesterday and over the last `bullpen_lookback_days` (default 3) days.
+- **Bullpen usage** (`show_bullpen_panel`) — two tiles, one for the primary team and one for today's opponent, listing every non-starting pitcher on the active roster. Each bar is shaded by how long ago the pitches were thrown (solid = yesterday, dense hatch = two days ago, sparse hatch = older, up to `bullpen_lookback_days`, default 3); the number is the window total. During a live postseason game the tiles are for every team playing, whatever the setting.
 - **Season leaders panel** (`show_leaders_panel`) — cycles through HR / AVG / ERA / Saves / Hits / RBI / SB, rotating category every `leaders_rotation_minutes` (default 5) and refreshed once a day.
 
 ---
