@@ -1050,3 +1050,50 @@ class TestFieldsGrid:
         img = Image.new('1', (800, 480), 1)
         result = draw_fields_grid(img, games, _MINIMAL_TEAM_DATA)
         assert isinstance(result, Image.Image)
+
+
+# ---------------------------------------------------------------------------
+# Batted-ball placement: stay in the park, show caught fouls
+# ---------------------------------------------------------------------------
+
+class TestBattedBallPlacement:
+    def test_double_past_fence_pulled_inside(self):
+        """A non-HR the API places beyond the wall is drawn just inside it."""
+        import math
+        from image_box import _ball_landing_ft, _PARK_MARGIN_FT
+        x, y = _ball_landing_ft(150.0, 359.0, False, 357.0)   # real TB 2B, ~389 ft
+        assert math.hypot(x, y) == pytest.approx(357.0 - _PARK_MARGIN_FT)
+        # same direction as the original ball
+        assert math.atan2(x, y) == pytest.approx(math.atan2(150.0, 359.0))
+
+    def test_ball_inside_fence_untouched(self):
+        from image_box import _ball_landing_ft
+        assert _ball_landing_ft(119.0, 274.0, False, 357.0) == (119.0, 274.0)
+
+    def test_home_run_still_pushed_past_fence(self):
+        import math
+        from image_box import _ball_landing_ft
+        x, y = _ball_landing_ft(100.0, 300.0, True, 400.0)     # ~316 ft, short of the wall
+        assert math.hypot(x, y) == pytest.approx(408.0)
+        # a deep HR is left where the API put it
+        assert _ball_landing_ft(0.0, 450.0, True, 400.0) == (0.0, 450.0)
+
+    @needs_pil
+    def test_caught_foul_ball_is_plotted(self):
+        """A fly out in foul territory (F9 down the RF line) must be drawn."""
+        import image_box
+        # Real Tropicana Field F9: ~(206, 182) ft, 49° — right of the 45° foul line.
+        foul = {'x': 125.0 + 206 / image_box._HC_SCALE,
+                'y': 199.0 - 182 / image_box._HC_SCALE,
+                'is_hr': False, 'is_out': True, 'abbr': 'F9'}
+
+        def render(hits):
+            img = Image.new('1', (150, 130), 1)
+            draw = ImageDraw.Draw(img)
+            image_box._draw_field_cell(
+                draw, img, 0, 0, 150, 130,
+                {'venue': 'Tropicana Field', 'recent_hits': hits}, scale=1)
+            return img
+
+        diff = sum(1 for a, b in zip(render([]).getdata(), render([foul]).getdata()) if a != b)
+        assert diff > 0, "caught foul ball produced no marker"
