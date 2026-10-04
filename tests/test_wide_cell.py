@@ -1196,3 +1196,59 @@ def test_pregame_wide_tile_renders(white_image, team_data):
         _placed, slots = compute_grid_layout(games, team_data, cfg)
         assert [s[0] for s in slots].count('wide') == 1
         assert draw_out_of_town_score_board(white_image, games, team_data) is not None
+
+
+# ---------------------------------------------------------------------------
+# No-hitter alert in the spanning header
+# ---------------------------------------------------------------------------
+
+def _drawn(monkeypatch, game, white_image, team_data, box='wide'):
+    """Run a wide/triple draw; return [(x, text)] for every _draw_bold_text call."""
+    import image_box
+    seen = []
+    real = image_box._draw_bold_text
+
+    def spy(draw, xy, text, font, s=1, *a, **k):
+        seen.append((xy[0], text))
+        return real(draw, xy, text, font, s, *a, **k)
+    monkeypatch.setattr(image_box, '_draw_bold_text', spy)
+    fn = image_box.draw_wide_box if box == 'wide' else image_box.draw_triple_box
+    fn(white_image, 0, 0, game, team_data)
+    return seen
+
+
+_SEVEN = ['K', '6-3', 'F9', '1B', 'L4', 'K', '4-3']
+_RIGHT_CELL_X = 135   # left cell is 135px wide at scale 1
+
+
+def test_no_hitter_alert_active_only_in_live_game_from_sixth():
+    from image_box import _no_hitter_alert_active
+    base = dict(detailed_state='In Progress', current_inning=7)
+    assert _no_hitter_alert_active(dict(base, no_hitter=True))
+    assert _no_hitter_alert_active(dict(base, perfect_game=True))
+    assert not _no_hitter_alert_active(dict(base, no_hitter=True, current_inning=5))
+    assert not _no_hitter_alert_active(dict(base, no_hitter=False))
+    assert not _no_hitter_alert_active(dict(base, no_hitter=True, detailed_state='Final'))
+
+
+@needs_pil
+@pytest.mark.parametrize('box', ['wide', 'triple'])
+def test_no_hitter_alert_shows_three_events_clear_of_the_label(
+        monkeypatch, white_image, team_data, box):
+    game = _live_game(no_hitter=True, current_inning=7, inningState='Top',
+                      half_inning_plays=list(_SEVEN))
+    drawn = _drawn(monkeypatch, game, white_image, team_data, box)
+    texts = [t for _x, t in drawn]
+    assert texts.count('No-Hitter') == 1            # the left cell's label, drawn once
+    events = [(x, t) for x, t in drawn if t in set(_SEVEN)]
+    assert [t for _x, t in events] == ['L4', 'K', '4-3']   # only the 3 newest, in order
+    assert min(x for x, _t in events) >= _RIGHT_CELL_X     # not over the label
+
+
+@needs_pil
+def test_normal_header_still_shows_seven_events(monkeypatch, white_image, team_data):
+    game = _live_game(no_hitter=False, current_inning=7, inningState='Top',
+                      half_inning_plays=list(_SEVEN))
+    drawn = _drawn(monkeypatch, game, white_image, team_data)
+    assert 'No-Hitter' not in [t for _x, t in drawn]
+    assert len([t for _x, t in drawn if t in set(_SEVEN)]) > 3
