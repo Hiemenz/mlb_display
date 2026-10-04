@@ -7,6 +7,7 @@ import pytest
 
 import fetch_bullpen
 import image_bullpen
+import panel_cell
 import main as main_mod
 
 try:
@@ -383,28 +384,33 @@ class TestDrawBullpenCell:
         many = self._ink({'abbr': 'ATL', 'pitchers': PITCHERS})
         assert list(many.getdata()).count(0) > list(few.getdata()).count(0)
 
-    def test_up_to_max_rows_stays_single_column_and_is_capped(self):
-        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(image_bullpen.MAX_ROWS)]
-        assert list(self._ink({'abbr': 'ATL', 'pitchers': many}).getdata()) != \
-            list(self._ink({'abbr': 'ATL', 'pitchers': many + [many[0]]}).getdata())
-
-    def test_more_than_max_rows_goes_compact_and_caps_at_two_columns(self):
-        n = 2 * image_bullpen.COMPACT_ROWS
-        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(n + 5)]
+    def test_rows_capped(self):
+        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(20)]
         capped = self._ink({'abbr': 'ATL', 'pitchers': many})
-        exact = self._ink({'abbr': 'ATL', 'pitchers': many[:n]})
+        exact = self._ink({'abbr': 'ATL', 'pitchers': many[:image_bullpen.MAX_ROWS]})
         assert list(capped.getdata()) == list(exact.getdata())
-        assert capped.crop((146, 0, 200, 200)).getextrema() == (255, 255)
 
-    def test_compact_marks_yesterday_with_inverted_number(self):
-        base = [{'name': f'P. Arm{i}', 'yesterday': 0, 'total': 10} for i in range(7)]
-        tired = [dict(base[0], yesterday=10)] + base[1:]
-        assert list(self._ink({'abbr': 'ATL', 'pitchers': base}).getdata()) != \
-            list(self._ink({'abbr': 'ATL', 'pitchers': tired}).getdata())
+    def test_max_rows_fit_above_bottom_rule(self):
+        """A full tile keeps every row's ink clear of the cell's bottom rule."""
+        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(image_bullpen.MAX_ROWS)]
+        img = self._ink({'abbr': 'ATL', 'pitchers': many})
+        rule_y = 10 + panel_cell.CELL_H - 1
+        assert img.crop((10, rule_y - 4, 145, rule_y)).getextrema() == (255, 255)
 
-    def test_compact_single_token_name_and_rested_dash(self):
-        rows = [{'name': 'Ohtani', 'yesterday': 0, 'total': 0}] * 7
-        assert self._ink({'abbr': 'ATL', 'pitchers': rows}).getbbox() is not None
+    def test_more_pitchers_means_tighter_rows(self):
+        """3 pitchers spread out well above the bottom; a full tile packs rows down to it."""
+        few = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(3)]
+        full = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(image_bullpen.MAX_ROWS)]
+        low = (10, 10 + 110, 145, 10 + panel_cell.CELL_H - 2)
+        assert self._ink({'abbr': 'ATL', 'pitchers': few}).crop(low).getextrema() == (255, 255)
+        assert self._ink({'abbr': 'ATL', 'pitchers': full}).crop(low).getextrema() == (0, 255)
+
+    def test_key_is_in_the_header_not_a_footer(self):
+        img = self._ink({'abbr': 'ATL', 'pitchers': PITCHERS[:1]})
+        key = img.crop((90, 10 + 1, 145, 10 + panel_cell.HEADER_H))
+        assert key.getextrema() == (0, 255)
+        footer = img.crop((10, 10 + panel_cell.CELL_H - 14, 144, 10 + panel_cell.CELL_H - 2))
+        assert footer.getextrema() == (255, 255)
 
     def test_empty_bullpen_shows_message(self):
         img = self._ink({'abbr': 'ATL', 'pitchers': []})
