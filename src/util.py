@@ -6,6 +6,12 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DATA_DIR = os.path.join(_REPO_ROOT, 'data')
 _CONFIG_DIR = os.path.join(_REPO_ROOT, 'config')
 
+# statsapi ``detailedState`` values for a game in play (a replay challenge
+# pauses the game but doesn't end it), and the ``gameType`` codes of the
+# postseason rounds: Wild Card, Division Series, LCS, World Series.
+LIVE_STATES = frozenset({'In Progress', 'Player challenge', 'Manager challenge'})
+POSTSEASON_GAME_TYPES = frozenset({'F', 'D', 'L', 'W'})
+
 
 def in_hour_window(start_hour, end_hour, hour):
     """True when ``hour`` falls inside the [start, end) window of a 24h clock.

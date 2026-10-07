@@ -103,6 +103,9 @@ def draw_bullpen_cell(Himage, sx, sy, team_entry, days=3):
     body_h = panel_cell.CELL_H - panel_cell.HEADER_H - 4
     row_h = max(_MIN_ROW_H, min(_MAX_ROW_H, body_h // (len(pitchers) + bool(hidden))))
     bar_h = min(_BAR_H, row_h - 3)
+    # Bars sit on the text baseline: the bottom of a digit, measured from the
+    # y a row's text is drawn at.
+    baseline = font.getbbox('0')[3]
     bar_x = sx + panel_cell.PAD + _NAME_W + 4
     bar_w = panel_cell.CELL_W - (bar_x - sx) - panel_cell.PAD - _NUM_W - 2
 
@@ -111,7 +114,7 @@ def draw_bullpen_cell(Himage, sx, sy, team_entry, days=3):
         name = panel_cell.truncate(font, p.get('name', ''), _NAME_W)
         draw.text((sx + panel_cell.PAD, ry), name, font=font, fill=0)
         ptotal = p.get('total', 0)
-        _draw_bar(draw, bar_x, ry + 10 - bar_h, bar_w, p.get('yesterday', 0), ptotal, bar_h,
+        _draw_bar(draw, bar_x, ry + baseline - bar_h, bar_w, p.get('yesterday', 0), ptotal, bar_h,
                   p.get('day2', 0))
         lbl = '–' if ptotal == 0 else str(ptotal)
         draw.text((sx + panel_cell.CELL_W - panel_cell.PAD - int(font.getlength(lbl)), ry),

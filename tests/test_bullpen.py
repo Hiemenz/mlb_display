@@ -229,6 +229,44 @@ class TestFetchBullpen:
             data = fetch_bullpen.fetch_bullpen('ATL', force=True, today=TODAY)
         assert data['teams']
 
+    def test_one_team_failing_keeps_the_others_and_retries(self, isolated):
+        schedules, boxes = _fixture()
+        del schedules[(121, '2026-09-26')]  # NYM's window lookup fails
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        assert data['team_order'] == ['144', '121']
+        assert set(data['teams']) == {'144'}
+        assert data['fetched_at'] == 0          # saved stale: the next call retries
+        assert isolated['bullpen'] == data
+
+    def test_failed_team_keeps_todays_cached_entry(self, isolated):
+        schedules, boxes = _fixture()
+        del schedules[(121, '2026-09-26')]
+        old_nym = {'team_id': 121, 'abbr': 'NYM', 'pitchers': [{'name': 'Old', 'total': 9}]}
+        isolated['bullpen'] = {'date': TODAY.isoformat(), 'primary': 'ATL', 'days': 3,
+                               'fetched_at': 0, 'teams': {'121': old_nym}}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        assert data['teams']['121'] == old_nym
+        assert data['teams']['144']['pitchers']   # freshly fetched
+
+    def test_failed_team_ignores_an_older_days_cached_entry(self, isolated):
+        schedules, boxes = _fixture()
+        del schedules[(121, '2026-09-26')]
+        isolated['bullpen'] = {'date': '2026-09-28', 'primary': 'ATL', 'days': 3,
+                               'fetched_at': 0, 'teams': {'121': {'abbr': 'NYM'}}}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            data = fetch_bullpen.fetch_bullpen('ATL', today=TODAY)
+        assert set(data['teams']) == {'144'}
+
+    def test_every_team_failing_returns_cached(self, isolated):
+        schedules, boxes = _fixture()
+        del schedules[(121, '2026-09-26')]
+        del schedules[(144, '2026-09-26')]
+        isolated['bullpen'] = {'stale': True}
+        with patch('fetch_bullpen.requests.get', _router(schedules, boxes)):
+            assert fetch_bullpen.fetch_bullpen('ATL', today=TODAY) == {'stale': True}
+
     def test_api_error_returns_cached(self, isolated):
         isolated['bullpen'] = {'stale': True}
         with patch('fetch_bullpen.requests.get', side_effect=RuntimeError('boom')):
@@ -310,6 +348,47 @@ class TestHelpers:
         with patch('fetch_bullpen.requests.get', return_value=fake):
             result = fetch_bullpen._roster_pitchers(144)
         assert result == {'P. Blackburn', 'D. Bednar', 'N. Guy', 'N. Splits'}
+
+    def test_depth_chart_role_beats_season_stats(self):
+        """A starter the depth chart moved to the bullpen is listed; one it calls SP
+        isn't; a pitcher it doesn't list falls back to season stats."""
+        def arm(pid, name, started, pitched):
+            return {'person': {'id': pid, 'fullName': name, 'stats': [
+                        {'splits': [{'stat': {'gamesStarted': started, 'gamesPitched': pitched}}]}]},
+                    'position': {'type': 'Pitcher'}}
+        active = {'roster': [arm(1, 'Moved Starter', 30, 30), arm(2, 'Spot Starter', 5, 40),
+                             arm(3, 'Unlisted Starter', 25, 25), arm(4, 'Unlisted Reliever', 0, 50)]}
+        depth = {'roster': [
+            {'person': {'id': 1}, 'position': {'type': 'Pitcher', 'abbreviation': 'P'}},
+            {'person': {'id': 2}, 'position': {'type': 'Pitcher', 'abbreviation': 'SP'}},
+            {'person': {'id': 9}, 'position': {'type': 'Infielder', 'abbreviation': '1B'}},
+            {'person': {}, 'position': {'type': 'Pitcher', 'abbreviation': 'SP'}},
+        ]}
+
+        def fake_get(url, timeout=None):
+            resp = MagicMock()
+            resp.json.return_value = depth if 'depthChart' in url else active
+            return resp
+        with patch('fetch_bullpen.requests.get', fake_get):
+            result = fetch_bullpen._roster_pitchers(144)
+        assert result == {'M. Starter', 'U. Reliever'}
+
+    def test_depth_chart_error_falls_back_to_season_stats(self):
+        active = {'roster': [
+            {'person': {'id': 1, 'fullName': 'Big Starter', 'stats': [
+                {'splits': [{'stat': {'gamesStarted': 30, 'gamesPitched': 30}}]}]},
+             'position': {'type': 'Pitcher'}},
+            {'person': {'id': 2, 'fullName': 'Long Man'}, 'position': {'type': 'Pitcher'}},
+        ]}
+
+        def fake_get(url, timeout=None):
+            if 'depthChart' in url:
+                raise RuntimeError('boom')
+            resp = MagicMock()
+            resp.json.return_value = active
+            return resp
+        with patch('fetch_bullpen.requests.get', fake_get):
+            assert fetch_bullpen._roster_pitchers(144) == {'L. Man'}
 
     def test_roster_pitchers_skips_missing_name(self):
         fake = MagicMock()
@@ -561,9 +640,10 @@ class TestGridPlacement:
     def test_missing_data_draws_nothing(self):
         assert _render(3, data={}) == []
 
-    def test_team_missing_from_teams_stops(self):
+    def test_team_missing_from_teams_is_skipped(self):
+        """A team whose fetch failed doesn't hide the teams after it."""
         data = dict(BULLPEN, team_order=['147', '999', '111'])
-        assert [c[2] for c in _render(3, data=data)] == ['NYY']
+        assert [c[2] for c in _render(3, data=data)] == ['NYY', 'BOS']
 
     def test_live_bullpen_claims_slot_before_series_tile(self):
         live = dict(_final(0), status='In Progress', detailed_state='In Progress',
