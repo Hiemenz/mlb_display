@@ -1,5 +1,6 @@
 import os
 import json
+import tempfile
 import yaml
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,11 +65,43 @@ def load_yaml_file(file_name, file_path=None):
 
 
 def save_off_results(data, output, file_path=None):
-    """Save off results."""
+    """Save off results.
+
+    Written to a temp file and renamed into place, so a power cut mid-write
+    leaves the previous JSON intact instead of a truncated file.
+    """
     base = file_path if file_path is not None else _DATA_DIR
     os.makedirs(base, exist_ok=True)
-    with open(os.path.join(base, output + '.json'), 'w') as f:
-        json.dump(data, f, indent=4)
+    fd, tmp = tempfile.mkstemp(dir=base, prefix=output + '.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(data, f, indent=4)
+        os.replace(tmp, os.path.join(base, output + '.json'))
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def prune_stale(entries, timestamp_of, max_age_seconds, now=None):
+    """Drop entries of the dict ``entries`` older than ``max_age_seconds``, in place.
+
+    ``timestamp_of(value)`` returns the entry's unix timestamp. An entry whose
+    timestamp can't be read is dropped too, since it can never be shown fresh.
+    Returns the number of entries removed.
+    """
+    import time
+    cutoff = (time.time() if now is None else now) - max_age_seconds
+    stale = []
+    for key, value in entries.items():
+        try:
+            if float(timestamp_of(value)) < cutoff:
+                stale.append(key)
+        except (TypeError, ValueError, KeyError, AttributeError):
+            stale.append(key)
+    for key in stale:
+        del entries[key]
+    return len(stale)
 
 
 def merge_team_abbreviations():
