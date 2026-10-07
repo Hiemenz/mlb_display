@@ -240,10 +240,15 @@ class TestFetchBullpen:
 
 
 class TestLivePlayoffTeamIds:
-    @staticmethod
-    def _g(away, home, state='In Progress', gtype='D'):
-        return {'away_team': away, 'home_team': home, 'away_team_id': hash(away) % 1000,
-                'home_team_id': str(hash(home) % 1000), 'detailed_state': state,
+    # Fixed ids: hash() is salted per process, so ids built from it can collide
+    # (or be 0, which reads as "no id") and make these tests flaky.
+    _IDS = {abbr: 100 + i for i, abbr in enumerate(
+        ('AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG', 'HHH'))}
+
+    @classmethod
+    def _g(cls, away, home, state='In Progress', gtype='D'):
+        return {'away_team': away, 'home_team': home, 'away_team_id': cls._IDS[away],
+                'home_team_id': str(cls._IDS[home]), 'detailed_state': state,
                 'game_type': gtype}
 
     def test_only_live_postseason_games_count(self):
@@ -398,11 +403,23 @@ class TestDrawBullpenCell:
         many = self._ink({'abbr': 'ATL', 'pitchers': PITCHERS})
         assert list(many.getdata()).count(0) > list(few.getdata()).count(0)
 
-    def test_rows_capped(self):
+    def test_exactly_max_rows_has_no_overflow_line(self):
+        many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(image_bullpen.MAX_ROWS)]
+        with patch.object(image_bullpen.ImageDraw.ImageDraw, 'text', autospec=True) as text:
+            self._ink({'abbr': 'ATL', 'pitchers': many})
+        assert not any('more' in str(c.args[2]) for c in text.call_args_list)
+
+    def test_overflow_replaces_last_row_with_count(self):
         many = [dict(PITCHERS[0], name=f'P. Arm{i}') for i in range(20)]
-        capped = self._ink({'abbr': 'ATL', 'pitchers': many})
-        exact = self._ink({'abbr': 'ATL', 'pitchers': many[:image_bullpen.MAX_ROWS]})
-        assert list(capped.getdata()) == list(exact.getdata())
+        with patch.object(image_bullpen.ImageDraw.ImageDraw, 'text', autospec=True) as text:
+            self._ink({'abbr': 'ATL', 'pitchers': many})
+        drawn = [c.args[2] for c in text.call_args_list]
+        shown = image_bullpen.MAX_ROWS - 1
+        assert f'+{20 - shown} more' in drawn
+        assert f'P. Arm{shown - 1}' in drawn and f'P. Arm{shown}' not in drawn
+
+    def test_zero_day_window_does_not_crash(self):
+        assert self._ink({'abbr': 'ATL', 'pitchers': PITCHERS}, days=0).getbbox() is not None
 
     def test_max_rows_fit_above_bottom_rule(self):
         """A full tile keeps every row's ink clear of the cell's bottom rule."""

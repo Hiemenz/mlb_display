@@ -53,6 +53,7 @@ def _draw_header(draw, sx, sy, abbr, days, key_font):
     """Frame plus a left title and, right-aligned, the key: one shade per day back
     (1 solid, 2 dense hatch, then sparse hatch labelled with the window, e.g. '3d')."""
     panel_cell.draw_chrome(draw, sx, sy, '')
+    days = max(days, 1)
     labels = ['1', '2', str(days)][:min(days, 3)]
     labels[-1] += 'd'
     sw = 7
@@ -86,7 +87,11 @@ def draw_bullpen_cell(Himage, sx, sy, team_entry, days=3):
     """
     draw = ImageDraw.Draw(Himage)
     team_entry = team_entry or {}
-    pitchers = team_entry.get('pitchers', [])[:MAX_ROWS]
+    pitchers = team_entry.get('pitchers', [])
+    # Past MAX_ROWS the last row says how many (least-used) pitchers are cut.
+    hidden = len(pitchers) - (MAX_ROWS - 1) if len(pitchers) > MAX_ROWS else 0
+    if hidden:
+        pitchers = pitchers[:MAX_ROWS - 1]
     font = _get_font(10)
 
     _draw_header(draw, sx, sy, team_entry.get('abbr', ''), days, font)
@@ -96,7 +101,7 @@ def draw_bullpen_cell(Himage, sx, sy, team_entry, days=3):
         return Himage
 
     body_h = panel_cell.CELL_H - panel_cell.HEADER_H - 4
-    row_h = max(_MIN_ROW_H, min(_MAX_ROW_H, body_h // len(pitchers)))
+    row_h = max(_MIN_ROW_H, min(_MAX_ROW_H, body_h // (len(pitchers) + bool(hidden))))
     bar_h = min(_BAR_H, row_h - 3)
     bar_x = sx + panel_cell.PAD + _NAME_W + 4
     bar_w = panel_cell.CELL_W - (bar_x - sx) - panel_cell.PAD - _NUM_W - 2
@@ -111,5 +116,9 @@ def draw_bullpen_cell(Himage, sx, sy, team_entry, days=3):
         lbl = '–' if ptotal == 0 else str(ptotal)
         draw.text((sx + panel_cell.CELL_W - panel_cell.PAD - int(font.getlength(lbl)), ry),
                   lbl, font=font, fill=0)
+
+    if hidden:
+        ry = sy + panel_cell.HEADER_H + 2 + len(pitchers) * row_h
+        draw.text((sx + panel_cell.PAD, ry), f'+{hidden} more', font=font, fill=0)
 
     return Himage
