@@ -15,7 +15,7 @@ import pytz
 # Allow running as a standalone script from any directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from util import load_json_file, save_off_results
+from util import LIVE_STATES, load_json_file, save_off_results
 from config_loader import load_config, add_config_arg
 
 SPORT_NAMES = {
@@ -688,7 +688,7 @@ def parse_games(data, sport_id=None, config=None):
             team_abbreviations.get(str(away_team_id), ''),
             team_abbreviations.get(str(home_team_id), ''),
         ))
-        if _is_featured and game_dict.get('detailed_state') in ('In Progress', 'Player challenge', 'Manager challenge') and live_calls_made < max_live_calls:
+        if _is_featured and game_dict.get('detailed_state') in LIVE_STATES and live_calls_made < max_live_calls:
             away_wp, home_wp, last_play, last_play_inning, last_play_is_top, last_play_rbi, last_play_desc = fetch_win_probability(game_id)
             live_calls_made += 1
             game_dict['last_play'] = last_play

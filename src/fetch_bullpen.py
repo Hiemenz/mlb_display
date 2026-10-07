@@ -33,14 +33,12 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from util import load_json_file, save_off_results
+from util import LIVE_STATES, POSTSEASON_GAME_TYPES, load_json_file, save_off_results
 
 _BASE = 'https://statsapi.mlb.com/api/v1'
 _TIMEOUT = 15
 _CACHE_TTL_HOURS = 6
 DEFAULT_DAYS = 3
-_LIVE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
-_PLAYOFF_GAME_TYPES = ('W', 'D', 'L', 'F')
 
 
 def live_playoff_team_ids(games, primary_abbr=''):
@@ -50,8 +48,8 @@ def live_playoff_team_ids(games, primary_abbr=''):
     first so its tiles win the free slots when space is short.
     """
     live = [g for g in games or []
-            if g.get('detailed_state') in _LIVE_STATES
-            and g.get('game_type') in _PLAYOFF_GAME_TYPES]
+            if g.get('detailed_state') in LIVE_STATES
+            and g.get('game_type') in POSTSEASON_GAME_TYPES]
     live.sort(key=lambda g: primary_abbr not in (g.get('away_team'), g.get('home_team')))
     ids = []
     for g in live:
@@ -115,7 +113,8 @@ def _relief_lines(box_side):
 def _is_starter(person):
     """True when at least half of a pitcher's season appearances were starts.
 
-    A pitcher with no season stats (a call-up) counts as a reliever.
+    The fallback for pitchers the depth chart doesn't list. A pitcher with no
+    season stats (a call-up) counts as a reliever.
     """
     for grp in person.get('stats') or []:
         for split in grp.get('splits') or []:
@@ -126,15 +125,45 @@ def _is_starter(person):
     return False
 
 
+def _depth_chart_pitchers(team_id):
+    """Person ids of the pitchers on *team_id*'s depth chart, as (listed, starters).
+
+    The depth chart follows role changes that season stats miss, such as a
+    starter moved to the bullpen for the postseason. Two empty sets when it
+    can't be fetched.
+    """
+    try:
+        data = _get(f'/teams/{team_id}/roster?rosterType=depthChart')
+    except Exception:
+        return set(), set()
+    listed, starters = set(), set()
+    for p in data.get('roster', []):
+        pid = (p.get('person') or {}).get('id')
+        pos = p.get('position') or {}
+        if pid is None or pos.get('type') != 'Pitcher':
+            continue
+        listed.add(pid)
+        if pos.get('abbreviation') == 'SP':
+            starters.add(pid)
+    return listed, starters
+
+
 def _roster_pitchers(team_id):
-    """Short names of the non-starting pitchers on the active roster for *team_id*."""
+    """Short names of the non-starting pitchers on the active roster for *team_id*.
+
+    The depth chart decides who is a starter; pitchers it doesn't list fall
+    back to their season stats (``_is_starter``).
+    """
+    listed, starters = _depth_chart_pitchers(team_id)
     try:
         data = _get(f'/teams/{team_id}/roster?rosterType=active'
                     '&hydrate=person(stats(group=[pitching],type=[season]))')
         names = set()
         for p in data.get('roster', []):
             person = p.get('person') or {}
-            if (p.get('position') or {}).get('type') == 'Pitcher' and not _is_starter(person):
+            pid = person.get('id')
+            starter = pid in starters if pid in listed else _is_starter(person)
+            if (p.get('position') or {}).get('type') == 'Pitcher' and not starter:
                 full = person.get('fullName', '')
                 if full:
                     names.add(_short_name(full))
@@ -147,11 +176,12 @@ def _team_bullpen(team_id, today, days, box_cache):
     """Reliever workload for one team over the ``days`` calendar days before today.
 
     Games on yesterday count as ``yesterday`` and games two days ago as ``day2``
-    (the first two bar shades); every day in the window adds to ``total``. The window is anchored to today, not to
-    the team's last game, so a team that hasn't played within it has no workload.
+    (the first two bar shades); every day in the window adds to ``total``. The
+    window is anchored to today, not to the team's last game, so a team that
+    hasn't played within it has no workload.
 
-    Non-starting pitchers on the active roster who threw no pitches during the window are
-    included at the bottom with yesterday=0, day2=0, total=0 (rested).
+    Non-starting pitchers on the active roster who threw no pitches during the
+    window are included at the bottom with yesterday=0, day2=0, total=0 (rested).
     """
     yesterday = (today - timedelta(days=1)).isoformat()
     two_days_ago = (today - timedelta(days=2)).isoformat()
@@ -187,6 +217,9 @@ def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None,
     ``extra_team_ids`` adds further teams (e.g. everyone in a live postseason
     game); a cache that lacks any of them is rebuilt.
 
+    A team whose fetch fails keeps today's cached entry (or is left out), and
+    the result is saved as stale so the next call retries it.
+
     Returns the data dict, the still-usable cache if the network fails, or {}.
     """
     today = today or date.today()
@@ -213,24 +246,35 @@ def fetch_bullpen(primary_abbr, days=DEFAULT_DAYS, force=False, today=None,
         for tid in extra_team_ids:
             if int(tid) not in team_ids:
                 team_ids.append(int(tid))
-        box_cache = {}
-        teams = {
-            str(tid): {
-                'team_id': tid,
-                'abbr': abbr_map.get(str(tid), ''),
-                'pitchers': _team_bullpen(tid, today, days, box_cache),
-            }
-            for tid in team_ids
-        }
     except Exception as exc:
         print(f"fetch_bullpen: API error: {exc}")
+        return cached
+
+    # Same-day, same-window cached entries stand in for a team that fails.
+    same_window = cached.get('date') == today.isoformat() and cached.get('days') == days
+    fallback = cached.get('teams', {}) if same_window else {}
+    box_cache = {}
+    teams = {}
+    failed = False
+    for tid in team_ids:
+        try:
+            pitchers = _team_bullpen(tid, today, days, box_cache)
+        except Exception as exc:
+            print(f"fetch_bullpen: API error for team {tid}: {exc}")
+            failed = True
+            if str(tid) in fallback:
+                teams[str(tid)] = fallback[str(tid)]
+            continue
+        teams[str(tid)] = {'team_id': tid, 'abbr': abbr_map.get(str(tid), ''),
+                           'pitchers': pitchers}
+    if not teams:
         return cached
 
     data = {
         'date': today.isoformat(),
         'days': days,
         'primary': primary_abbr,
-        'fetched_at': time.time(),
+        'fetched_at': 0 if failed else time.time(),
         'team_order': [str(t) for t in team_ids],
         'teams': teams,
     }

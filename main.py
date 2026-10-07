@@ -28,7 +28,7 @@ from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from fetch_team_quadrant import fetch_team_quadrant
 from render_scoreboard import render, _get_display_mode
 from display import send_to_display
-from util import load_json_file, in_hour_window
+from util import POSTSEASON_GAME_TYPES, load_json_file, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
 from image_idle import draw_idle_screen, draw_history_screen
@@ -1188,11 +1188,10 @@ Examples:
 
     # 6. Fetch
     # Capture playoff finals *before* the fetch so we can detect completions below.
-    _PLAYOFF_GAME_TYPES = {'W', 'D', 'L', 'F'}
     _FINAL_STATES = {'Final', 'Game Over', 'Final: Tied', 'Completed Early'}
     _pre_fetch_playoff_finals = {
         g.get('game_pk') for g in load_json_file('games.json').get('games', [])
-        if g.get('game_type') in _PLAYOFF_GAME_TYPES
+        if g.get('game_type') in POSTSEASON_GAME_TYPES
         and g.get('detailed_state') in _FINAL_STATES
     }
     fetch_scoreboard_for_date(date_str, sport_id, config)
@@ -1246,7 +1245,7 @@ Examples:
         config, sched, track_transition=not _no_throttle and not args.date)
     # Force bracket/sidebar refresh immediately when a playoff game just finished.
     _playoff_just_finished = any(
-        g.get('game_type') in _PLAYOFF_GAME_TYPES
+        g.get('game_type') in POSTSEASON_GAME_TYPES
         and g.get('detailed_state') in _FINAL_STATES
         and g.get('game_pk') not in _pre_fetch_playoff_finals
         for g in load_json_file('games.json').get('games', [])
