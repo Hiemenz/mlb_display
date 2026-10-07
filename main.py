@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
+from fetch_series_stats import fetch_series_leaders
 from fetch_streaks import fetch_streaks
 from fetch_bullpen import fetch_bullpen, live_playoff_team_ids
 from fetch_news import fetch_news
@@ -907,6 +908,21 @@ def _refresh_leaders(config, sched, league_mode, sport_id, force=False, context=
         print(f"Warning: leaders fetch{context} failed: {e}")
 
 
+def _refresh_series_leaders(config, league_mode, force=False, context=''):
+    """Re-sum the primary team's series stats for the series-leaders tiles.
+
+    fetch_series_leaders keeps its own TTL (5 minutes while live, otherwise
+    only when the game's state changes), so this is safe to call every cycle.
+    """
+    if not (config.get('show_series_panel', False) and league_mode != 'aaa'):
+        return
+    try:
+        fetch_series_leaders((load_json_file('games.json') or {}).get('games'),
+                             config.get('primary', ''), force=force)
+    except Exception as e:
+        print(f"Warning: series leaders fetch{context} failed: {e}")
+
+
 def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=''):
     """Refetch Hot Hitters / Hot Arms data for the streaks and scoreless panels.
 
@@ -1267,6 +1283,7 @@ Examples:
     _refresh_news(config, force=_force_data_refresh)
     _refresh_leaders(config, sched, league_mode, sport_id, force=_force_data_refresh)
     _refresh_streaks(config, sched, league_mode, sport_id, force=_force_data_refresh)
+    _refresh_series_leaders(config, league_mode, force=_force_data_refresh)
     _refresh_bullpen(config, league_mode, force=_force_data_refresh)
 
     # A morning rotation block showing the quadrant overrides the display mode

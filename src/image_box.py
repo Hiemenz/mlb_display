@@ -18,10 +18,11 @@ from image_utils import (
     _format_player_name, _last_name, _pitcher_line, _clean_venue_name,
     _is_game_effectively_over,
 )
-from util import load_json_file, load_yaml_file, save_off_results
+from util import load_json_file, load_yaml_file, prune_stale, save_off_results
 from stadium_polygons import get_polygon as _field_get_polygon
 from stadium_polygons import get_infield_polygon as _field_get_infield_polygon
 
+_FINAL_TIME_KEEP_SECONDS = 14 * 86400   # nothing older than this is still on a scoreboard
 _final_time_cache: dict = {}       # game_pk (str) -> unix timestamp, in-memory layer
 _historical_mode = False     # True for --date replays: skip linescore window
 
@@ -170,6 +171,7 @@ def _get_or_set_final_time(game_pk):
     ts = _time.time()
     _final_time_cache[pk] = ts
     stored[pk] = ts
+    prune_stale(stored, float, _FINAL_TIME_KEEP_SECONDS)
     save_off_results(stored, 'game_final_times')
     return ts
 

@@ -199,6 +199,11 @@ hide_non_live_games: false
 show_leaders_panel: true
 leaders_rotation_minutes: 5
 
+# Series leaders tiles: the primary team's current series, summed across its
+# games — top HR / hits / RBI / AVG hitters and K / IP pitchers of both teams.
+# Shares the free slots (and the rotation above) with the season leaders panel.
+show_series_panel: true
+
 # Transactions ticker: show recent MLB transactions (IL moves, call-ups, signings)
 # in an empty grid cell when fewer than 15 games are on the slate. Claims the
 # first free slot, ahead of the leaders panel. Refreshed periodically from the

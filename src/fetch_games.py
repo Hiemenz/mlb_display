@@ -15,7 +15,7 @@ import pytz
 # Allow running as a standalone script from any directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from util import LIVE_STATES, load_json_file, save_off_results
+from util import LIVE_STATES, load_json_file, prune_stale, save_off_results
 from config_loader import load_config, add_config_arg
 
 SPORT_NAMES = {
@@ -271,6 +271,13 @@ def _get_odds_cached(api_key):
 
 
 _PITCHER_CACHE_TTL_MINUTES = 30
+_PITCHER_CACHE_KEEP_SECONDS = 86400
+_END_CACHE_KEEP_SECONDS = 14 * 86400
+
+
+def _iso_utc_timestamp(iso):
+    """Unix timestamp of an ISO-8601 string such as '2026-07-22T20:18:31.183Z'."""
+    return datetime.fromisoformat(iso.replace('Z', '+00:00')).timestamp()
 
 
 def _pitcher_cache_key(pitcher_ids):
@@ -284,7 +291,14 @@ def _load_pitcher_cache():
 
 
 def _save_pitcher_cache(cache):
-    """Save pitcher cache."""
+    """Save pitcher cache, dropping entries past the TTL window.
+
+    Keys are the day's pitcher-id combinations, which differ every day, so
+    without pruning the file only ever grows.
+    """
+    for bucket in cache.values():
+        prune_stale(bucket, lambda e: datetime.fromisoformat(e['fetched_at']).timestamp(),
+                    _PITCHER_CACHE_KEEP_SECONDS)
     save_off_results(cache, 'pitcher_cache')
 
 
@@ -836,6 +850,7 @@ def parse_games(data, sport_id=None, config=None):
             except Exception:
                 pass
     if _end_cache_dirty:
+        prune_stale(_end_cache, _iso_utc_timestamp, _END_CACHE_KEEP_SECONDS)
         save_off_results(_end_cache, 'game_end_time_cache')
 
     # Attach betting moneylines to pre-game games (key from ODDS_API_KEY env var)
