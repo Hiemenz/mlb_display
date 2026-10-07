@@ -3,7 +3,7 @@ import json
 import time as _time_mod
 from datetime import datetime, timezone
 import pytz
-from util import load_json_file, load_yaml_file, save_off_results, in_hour_window
+from util import LIVE_STATES, load_json_file, load_yaml_file, save_off_results, in_hour_window
 from collections import OrderedDict
 
 # NOTE: several names imported below are unused here but re-exported for
@@ -228,7 +228,7 @@ def _compute_fullscreen_regions(bypass_cache, featured_game, old_by_pk,
     if bypass_cache or not featured_game:
         return _fs_regions
     _ds = featured_game.get('detailed_state', '')
-    if _ds not in ('In Progress', 'Player challenge', 'Manager challenge'):
+    if _ds not in LIVE_STATES:
         return _fs_regions
     _feat_pk = str(featured_game.get('game_pk', ''))
     _old_feat = old_by_pk.get(_feat_pk)

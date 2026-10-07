@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from util import load_json_file, load_yaml_file
+from util import LIVE_STATES, load_json_file, load_yaml_file
 from image_assets import (
     _get_font, _logo_small, _logo_ghost, _paste_logo,
     Image, ImageDraw, ImageOps,
@@ -29,7 +29,7 @@ def _find_furthest_game(game_state_data, team_data=None, primary_abbr=''):
     when nothing is live, the primary team's game (its next game to start, else
     its latest final) → the most recent finished game → the next game to start.
     """
-    _live = {'In Progress', 'Player challenge', 'Manager challenge'}
+    _live = LIVE_STATES
     _final = {'Final', 'Game Over', 'Final: Tied'}
 
     def _is_final(g):
@@ -760,7 +760,7 @@ def draw_featured_game_fullscreen(game_data, team_data, config=None):
         config = load_yaml_file('config.yaml')
 
     _ds = game_data.get('detailed_state', '')
-    _is_live = _ds in ('In Progress', 'Player challenge', 'Manager challenge')
+    _is_live = _ds in LIVE_STATES
 
     # Live game: custom full-screen layout (no sidebars, R/H/E + bases)
     if _is_live:

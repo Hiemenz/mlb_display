@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from util import load_json_file, save_off_results
+from util import POSTSEASON_GAME_TYPES, load_json_file, save_off_results
 
 
 _MLB_SEASON_START_MONTH = 4   # April
@@ -214,7 +214,6 @@ def fetch_idle_games(today_str, sport_id=1, max_games=5):
     return None, []
 
 
-_POSTSEASON_TYPES = ('F', 'D', 'L', 'W')
 _NEXT_GAMES_TTL_SECONDS = 3600
 _NEXT_GAMES_LOOKAHEAD_DAYS = 30
 
@@ -241,7 +240,7 @@ def _parse_next_game(game):
 
     game_type = game.get('gameType')
     series = None
-    if game_type in _POSTSEASON_TYPES:
+    if game_type in POSTSEASON_GAME_TYPES:
         status = game.get('seriesStatus') or {}
         series = {
             'desc': status.get('shortDescription') or game.get('seriesDescription'),
