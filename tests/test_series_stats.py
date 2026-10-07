@@ -158,3 +158,152 @@ class TestSeriesStats:
 def test_fetch_boxscore_summarizes_response():
     with patch('fetch_series_stats.requests.get', return_value=_Resp(BOX)):
         assert '10' in fss._fetch_boxscore(1)['1']['batters']
+
+
+# ---------------------------------------------------------------------------
+# Series leaders: build, fetch gating, tile, grid and main wiring
+# ---------------------------------------------------------------------------
+import time
+from unittest.mock import MagicMock
+from PIL import Image
+
+import image_series_stats as iss
+import main as main_mod
+
+
+def _stats():
+    return {'games': 1, 'teams': fss._add_up([fss._summarize_boxscore(BOX)])}
+
+
+class TestBuildSeriesLeaders:
+    def test_categories_ranked_across_teams(self):
+        stats = {'games': 1, 'teams': {
+            '1': {'batters': [{'name': 'A', 'atBats': 4, 'hits': 2, 'homeRuns': 1, 'rbi': 3, 'avg': 0.5},
+                              {'name': 'Pinch', 'atBats': 1, 'hits': 1, 'homeRuns': 0, 'rbi': 0, 'avg': 1.0}],
+                  'pitchers': [{'name': 'P', 'outs': 17, 'ip': '5.2', 'strikeOuts': 7}]},
+            '2': {'batters': [{'name': 'B', 'atBats': 3, 'hits': 2, 'homeRuns': 1, 'rbi': 1, 'avg': 0.667},
+                              {'name': 'Z', 'atBats': 3, 'hits': 0, 'homeRuns': 0, 'rbi': 0, 'avg': 0.0}],
+                  'pitchers': [{'name': 'Q', 'outs': 0, 'ip': '0.0', 'strikeOuts': 0}]}}}
+        out = fss.build_series_leaders(stats)
+        assert [e['name'] for e in out['homeRuns']] == ['A', 'B']        # tie on HR broken by RBI
+        assert [e['rank'] for e in out['homeRuns']] == [1, 1]            # equal HR share a rank
+        assert out['battingAverage'][0]['name'] == 'B'                   # pinch hitter lacks 2 AB
+        assert [e['name'] for e in out['battingAverage']] == ['B', 'A']
+        assert out['inningsPitched'][0]['value'] == '5.2'
+        assert 'Z' not in str(out) and 'Q' not in str(out)               # zero lines dropped
+
+    def test_equal_values_share_rank(self):
+        stats = {'games': 1, 'teams': {'1': {'batters': [
+            {'name': 'A', 'atBats': 3, 'hits': 1, 'homeRuns': 0, 'rbi': 0, 'avg': .3},
+            {'name': 'B', 'atBats': 3, 'hits': 1, 'homeRuns': 0, 'rbi': 0, 'avg': .3}], 'pitchers': []}}}
+        assert [e['rank'] for e in fss.build_series_leaders(stats)['hits']] == [1, 1]
+
+
+GAMES = [{'game_pk': 1, 'away_team_id': 147, 'home_team_id': 111, 'detailed_state': 'Final'},
+         {'game_pk': 2, 'away_team_id': 147, 'home_team_id': 111, 'detailed_state': 'In Progress'},
+         {'game_pk': 3, 'away_team_id': 119, 'home_team_id': 137, 'detailed_state': 'Final'}]
+ABBRS = {'team_abbreviation': {'147': 'NYY', '111': 'BOS', '119': 'LAD', '137': 'SF'}}
+
+
+def _loader(cached):
+    """load_json_file stand-in: standings.json -> ABBRS, anything else -> cached."""
+    return lambda name, *a, **k: ABBRS if name == 'standings.json' else cached
+
+
+class TestFetchSeriesLeaders:
+    def test_primary_game_selection(self):
+        assert fss._primary_game(GAMES, 147)['game_pk'] == 2
+        assert fss._primary_game(GAMES[:1] + GAMES[2:], 119)['game_pk'] == 3
+        sched = [{'game_pk': 9, 'away_team_id': 1, 'home_team_id': 2, 'detailed_state': 'Scheduled'}]
+        assert fss._primary_game(sched, 1)['game_pk'] == 9
+        assert fss._primary_game(GAMES, None) is None
+
+    def test_team_ids(self):
+        with patch('fetch_series_stats.load_json_file', side_effect=_loader({})):
+            assert fss._team_ids('NYY')[0] == 147
+            assert fss._team_ids('XXX')[0] is None
+
+    def test_no_primary_game_returns_empty(self):
+        with patch('fetch_series_stats.load_json_file', side_effect=_loader({})):
+            assert fss.fetch_series_leaders(GAMES, 'XXX') == {}
+
+    def test_fresh_cache_skips_fetch(self):
+        cached = {'key': '2:In Progress', 'fetched_at': time.time(), 'leaders': {}}
+        with patch('fetch_series_stats.load_json_file', side_effect=_loader(cached)), \
+             patch('fetch_series_stats.series_stats') as ss:
+            assert fss.fetch_series_leaders(GAMES, 'NYY') == cached
+        ss.assert_not_called()
+
+    def test_live_cache_expires_after_five_minutes_but_idle_does_not(self):
+        old = {'key': '2:In Progress', 'fetched_at': time.time() - 400, 'leaders': {}}
+        with patch('fetch_series_stats.load_json_file', side_effect=_loader(old)), \
+             patch('fetch_series_stats.series_stats', return_value=_stats()) as ss, \
+             patch('fetch_series_stats.save_off_results') as sv:
+            out = fss.fetch_series_leaders(GAMES, 'NYY')
+        ss.assert_called_once()
+        assert out['matchup'] == 'NYY @ BOS' and 'homeRuns' in out['leaders']
+        sv.assert_called_once()
+        final = [GAMES[0]]
+        idle = {'key': '1:Final', 'fetched_at': time.time() - 400, 'leaders': {}}
+        with patch('fetch_series_stats.load_json_file', side_effect=_loader(idle)), \
+             patch('fetch_series_stats.series_stats') as ss:
+            fss.fetch_series_leaders(final, 'NYY')
+        ss.assert_not_called()
+
+    def test_failure_keeps_previous_file(self):
+        cached = {'key': 'old', 'fetched_at': 0, 'leaders': {'hits': []}}
+        with patch('fetch_series_stats.load_json_file', side_effect=_loader(cached)), \
+             patch('fetch_series_stats.series_stats', return_value=None), \
+             patch('fetch_series_stats.save_off_results') as sv:
+            assert fss.fetch_series_leaders(GAMES, 'NYY') == cached
+        sv.assert_not_called()
+
+
+DATA = {'leaders': {'homeRuns': [{'rank': 1, 'value': '2', 'name': 'A Hitter', 'team_id': '1'}],
+                    'battingAverage': [{'rank': 1, 'value': '0.500', 'name': 'B', 'team_id': '2'}]}}
+
+
+class TestSeriesTile:
+    def test_available_categories_in_display_order(self):
+        assert iss.available_categories(DATA) == ['homeRuns', 'battingAverage']
+        assert iss.available_categories(None) == []
+
+    def test_average_format(self):
+        assert iss._format('battingAverage', '0.500') == '.500'
+        assert iss._format('battingAverage', '1.000') == '1.000'
+        assert iss._format('homeRuns', '2') == '2'
+
+    def test_draws_and_marks_pixels(self):
+        img = Image.new('1', (800, 480), 255)
+        iss.draw_series_stats_cell(img, 32, 30, DATA, {'team_abbreviation': {'1': 'NYY'}}, 'homeRuns')
+        assert img.getbbox() is not None
+        assert img.crop((32, 30, 167, 160)).getextrema() == (0, 255)
+
+    def test_empty_category_says_no_data(self):
+        img = Image.new('1', (800, 480), 255)
+        iss.draw_series_stats_cell(img, 32, 30, DATA, {}, 'strikeOuts')
+        assert img.crop((32, 30, 167, 160)).getextrema() == (0, 255)
+
+
+def test_main_refresh_gated_on_config_and_league():
+    with patch.object(main_mod, 'fetch_series_leaders') as f:
+        main_mod._refresh_series_leaders({'show_series_panel': False}, 'mlb')
+        main_mod._refresh_series_leaders({'show_series_panel': True}, 'aaa')
+        f.assert_not_called()
+        with patch.object(main_mod, 'load_json_file', return_value={'games': GAMES}):
+            main_mod._refresh_series_leaders({'show_series_panel': True, 'primary': 'NYY'}, 'mlb', force=True)
+        f.assert_called_once_with(GAMES, 'NYY', force=True)
+
+
+def test_main_refresh_swallows_errors(capsys):
+    with patch.object(main_mod, 'fetch_series_leaders', side_effect=RuntimeError('boom')), \
+         patch.object(main_mod, 'load_json_file', return_value={}):
+        main_mod._refresh_series_leaders({'show_series_panel': True}, 'mlb')
+    assert 'boom' in capsys.readouterr().out
+
+
+def test_short_name():
+    assert fss._short_name('Munetaka Murakami') == 'M. Murakami'
+    assert fss._short_name('Fernando Tatis Jr.') == 'F. Tatis Jr.'
+    assert fss._short_name('Ohtani') == 'Ohtani'
+    assert fss._short_name('') == ''

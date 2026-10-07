@@ -102,6 +102,7 @@ When the slate has fewer than 15 games, the spare grid cells are filled with inf
 - **Hot Hitters / Hot Arms** (`show_streaks_panel` / `show_scoreless_panel`) — 14-day rolling batting average and ERA leaders.
 - **Bullpen usage** (`show_bullpen_panel`) — two tiles, one for the primary team and one for today's opponent, listing every non-starting pitcher on the active roster. Each bar is shaded by how long ago the pitches were thrown (solid = yesterday, dense hatch = two days ago, sparse hatch = older, up to `bullpen_lookback_days`, default 3); the number is the window total. During a live postseason game the tiles are for every team playing, whatever the setting.
 - **Season leaders panel** (`show_leaders_panel`) — cycles through HR / AVG / ERA / Saves / Hits / RBI / SB, rotating category every `leaders_rotation_minutes` (default 5) and refreshed once a day.
+- **Series leaders** (`show_series_panel`) — the same rotating tiles for the primary team's current series: top HR / hits / RBI / AVG hitters and K / IP pitchers of both teams, summed across the series' games. Shares the free slots and rotation with the season leaders; re-summed every 5 minutes while the game is live.
 
 ---
 

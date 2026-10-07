@@ -6,6 +6,7 @@ from image_assets import _get_font, ImageDraw
 from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box, draw_triple_box, draw_fields_box
 from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
+from image_series_stats import draw_series_stats_cell, available_categories as available_series_categories
 from image_transactions import draw_transactions_cell
 from image_news import draw_news_cell
 from image_magic import draw_magic_cell
@@ -1222,25 +1223,36 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     if not (_primary_game_live or _any_playoff_live):
         _draw_bullpen()
 
-    if config.get('show_leaders_panel', False) and _free_slots:
+    _show_leaders = config.get('show_leaders_panel', False)
+    _show_series = config.get('show_series_panel', False)
+    if (_show_leaders or _show_series) and _free_slots:
         _leaders_data = load_json_file('leaders.json').get('leaders', {})
+        _series_data = load_json_file('series_leaders.json') if _show_series else {}
         _rotation_min = config.get('leaders_rotation_minutes', 5)
-        # One tile per category when there's room for all of them; with
-        # fewer free slots than categories, the subset shown slides over
-        # time (via rotating_categories) so every category still appears.
-        _n = min(len(_free_slots), len(_LEADER_CATEGORIES))
-        _cats = (
-            list(_LEADER_CATEGORIES) if _n == len(_LEADER_CATEGORIES)
-            else rotating_categories(_n, _rotation_min)
+        # Season-leader and series-leader tiles share the free slots. One tile
+        # per category when there's room for all of them; with fewer free slots
+        # than tiles, the subset shown slides over time (via
+        # rotating_categories) so every tile still appears.
+        _tiles = (
+            [('season', c) for c in _LEADER_CATEGORIES] if _show_leaders else []
+        ) + [('series', c) for c in available_series_categories(_series_data)]
+        _n = min(len(_free_slots), len(_tiles))
+        _picked = (
+            _tiles if _n == len(_tiles)
+            else rotating_categories(_n, _rotation_min, categories=_tiles)
         )
-        for (_col, _row), _cat in zip(_free_slots, _cats):
+        for (_col, _row), (_kind, _cat) in zip(_free_slots, _picked):
             _lx = _col * 150 + x_start
             _ly = _row * 150 + y_start
-            Himage = draw_leaders_cell(
-                Himage, _lx, _ly, _leaders_data, team_data,
-                category=_cat,
-                use_logos=use_logos,
-            )
+            if _kind == 'series':
+                Himage = draw_series_stats_cell(
+                    Himage, _lx, _ly, _series_data, team_data, _cat, use_logos=use_logos)
+            else:
+                Himage = draw_leaders_cell(
+                    Himage, _lx, _ly, _leaders_data, team_data,
+                    category=_cat,
+                    use_logos=use_logos,
+                )
 
     # Season win-trend tile — favorite team's cumulative W/L as a sparkline.
     if config.get('show_win_trend_panel', False) and _free_slots:

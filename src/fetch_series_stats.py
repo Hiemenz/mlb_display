@@ -7,17 +7,23 @@ and fetched once; the in-progress game, if any, is fetched fresh each call and
 never cached. Cache entries are dropped ``_KEEP_DAYS`` after the game was played.
 
     series_stats(game_data) -> {'games': n, 'teams': {team_id: {'batters': [...], 'pitchers': [...]}}}
+    fetch_series_leaders(games, primary_abbr) -> data/series_leaders.json, read by image_series_stats
 """
+import time
 from datetime import date, datetime, timedelta
 
 import requests
 
-from util import load_json_file, save_off_results
+from util import LIVE_STATES, load_json_file, save_off_results
 
 _API = 'https://statsapi.mlb.com/api/v1'
 _CACHE_FILE = 'series_stats_cache'
 _KEEP_DAYS = 7
 _FINAL_STATES = ('Final', 'Game Over', 'Final: Tied')
+_LEADERS_FILE = 'series_leaders'
+_LEADERS_TOP_N = 5
+_LIVE_TTL_SECONDS = 300          # a live game's numbers move; re-sum every 5 minutes
+_IDLE_TTL_SECONDS = 6 * 3600     # otherwise only a new game state changes anything
 _BAT_FIELDS = ('atBats', 'runs', 'hits', 'homeRuns', 'rbi', 'baseOnBalls', 'strikeOuts')
 _PITCH_FIELDS = ('earnedRuns', 'hits', 'baseOnBalls', 'strikeOuts', 'wins', 'losses', 'saves')
 
@@ -137,3 +143,91 @@ def series_stats(game_data):
         print(f'series_stats: {e}')
         return None
     return {'games': len(per_game), 'teams': _add_up(per_game)}
+
+
+def _ranked(entries):
+    """Best-first top N, ties on the primary value sharing a rank; entries are (sort_key, entry)."""
+    ordered = sorted(entries, key=lambda e: e[0], reverse=True)[:_LEADERS_TOP_N]
+    out, prev = [], None
+    for i, (key, entry) in enumerate(ordered):
+        rank = out[-1]['rank'] if prev is not None and key[0] == prev else i + 1
+        out.append({**entry, 'rank': rank})
+        prev = key[0]
+    return out
+
+
+def _short_name(full):
+    """'Munetaka Murakami' -> 'M. Murakami'; a suffix stays with the surname ('Fernando Tatis Jr.')."""
+    first, _, last = full.partition(' ')
+    return f'{first[0]}. {last}' if first and last else full
+
+
+def build_series_leaders(stats):
+    """Top performers across both teams per category, in image_leaders' entry shape.
+
+    Hitters: homeRuns, hits, runsBattedIn, battingAverage (needs 2 AB per game
+    played, so a pinch hitter's 1-for-1 doesn't top the list). Pitchers:
+    strikeOuts, inningsPitched. Zero-valued lines are left out.
+    """
+    games = stats['games']
+    cats = {c: [] for c in ('homeRuns', 'hits', 'runsBattedIn', 'battingAverage',
+                            'strikeOuts', 'inningsPitched')}
+    for tid, team in stats['teams'].items():
+        for b in team['batters']:
+            who = {'name': _short_name(b['name']), 'team_id': tid}
+            for cat, key, second in (('homeRuns', 'homeRuns', 'rbi'), ('hits', 'hits', 'homeRuns'),
+                                     ('runsBattedIn', 'rbi', 'homeRuns')):
+                if b[key]:
+                    cats[cat].append(((b[key], b[second]), {**who, 'value': str(b[key])}))
+            if b['atBats'] >= 2 * games and b['hits']:
+                cats['battingAverage'].append(
+                    ((round(b['avg'], 3), b['hits']), {**who, 'value': f"{b['avg']:.3f}"}))
+        for p in team['pitchers']:
+            who = {'name': _short_name(p['name']), 'team_id': tid}
+            if p['strikeOuts']:
+                cats['strikeOuts'].append(((p['strikeOuts'], p['outs']), {**who, 'value': str(p['strikeOuts'])}))
+            if p['outs']:
+                cats['inningsPitched'].append(((p['outs'], p['strikeOuts']), {**who, 'value': p['ip']}))
+    return {cat: _ranked(entries) for cat, entries in cats.items() if entries}
+
+
+def _team_ids(primary_abbr):
+    """(primary team id, id -> abbreviation map) from standings.json; id is None if unknown."""
+    abbrs = load_json_file('standings.json').get('team_abbreviation', {})
+    ids = [int(k) for k, v in abbrs.items() if v == primary_abbr]
+    return (ids[0] if ids else None), abbrs
+
+
+def _primary_game(games, primary_id):
+    """The primary team's most advanced game today (a doubleheader's later game wins), or None."""
+    mine = [g for g in games or []
+            if primary_id in (g.get('away_team_id'), g.get('home_team_id'))]
+    played = [g for g in mine if g.get('detailed_state') in _FINAL_STATES or g.get('detailed_state') in LIVE_STATES]
+    return (played or mine or [None])[-1]
+
+
+def fetch_series_leaders(games, primary_abbr, force=False):
+    """Refresh data/series_leaders.json for the primary team's series; returns the dict.
+
+    Re-sums every 5 minutes while the game is live, otherwise only when the
+    game or its state changes (or after 6 hours). With no primary game, or on
+    a fetch failure, the previous file is left alone.
+    """
+    primary_id, abbrs = _team_ids(primary_abbr)
+    game = _primary_game(games, primary_id)
+    if not game:
+        return {}
+    cached = load_json_file(f'{_LEADERS_FILE}.json') or {}
+    key = f"{game.get('game_pk')}:{game.get('detailed_state')}"
+    age = time.time() - cached.get('fetched_at', 0)
+    live = game.get('detailed_state') in LIVE_STATES
+    if not force and cached.get('key') == key and age < (_LIVE_TTL_SECONDS if live else _IDLE_TTL_SECONDS):
+        return cached
+    stats = series_stats(game)
+    if stats is None:
+        return cached
+    result = {'key': key, 'fetched_at': time.time(), 'games': stats['games'],
+              'matchup': f"{abbrs.get(str(game['away_team_id']), '?')} @ {abbrs.get(str(game['home_team_id']), '?')}",
+              'leaders': build_series_leaders(stats)}
+    save_off_results(result, _LEADERS_FILE)
+    return result
