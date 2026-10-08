@@ -2710,6 +2710,10 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
     font7  = _get_font(max(7 * s, 7))
 
     state = game_data.get('detailed_state', '')
+    # A game under replay review is still live: keep drawing the zone, bases,
+    # outs and count rather than blanking the panel.
+    if state in ('Player challenge', 'Manager challenge'):
+        state = 'In Progress'
     _between_innings = game_data.get('inningState') in ('Middle', 'End')
     _rp_flags = _compute_layout_flags(game_data)
     _mid_inning_pc = _rp_flags.mid_inning_pc
