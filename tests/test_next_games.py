@@ -365,7 +365,7 @@ class TestRenderNextGames:
 
 
 def _run_idle(tmp_path, minute, config=None, *, next_games='NEXT', tx=None,
-              quadrant=None, history=(None, [])):
+              quadrant=None, history=(None, []), bracket=None, date=(2026, 9, 28)):
     """Run _show_idle_screen at a given minute; returns which views were drawn."""
     from PIL import Image
     calls = []
@@ -379,9 +379,10 @@ def _run_idle(tmp_path, minute, config=None, *, next_games='NEXT', tx=None,
     def _load(name):
         return {'transactions.json': {'transactions': tx or [], 'fetched_at': 9e12},
                 'team_quadrant.json': quadrant,
+                'playoff_bracket.json': {'series': bracket} if bracket else None,
                 'teams.json': {'team_abbreviation': {}}}.get(name)
 
-    fake_now = datetime(2026, 9, 28, 12, minute)
+    fake_now = datetime(*date, 12, minute)
     with patch('main.datetime') as dt, \
          patch('main._REPO_ROOT', str(tmp_path)), \
          patch('main.load_json_file', side_effect=_load), \
@@ -441,4 +442,41 @@ class TestIdleRotation:
 
     def test_empty_transactions_respect_the_schedule_toggle(self, tmp_path):
         calls = _run_idle(tmp_path, 20, _config(idle_schedule_rotation=False), tx=[])
+        assert calls == ['transactions']
+
+
+class TestPostseasonIdle:
+    SERIES = [{'id': 'ALDS1'}]
+    OCT = (2026, 10, 9)
+
+    def test_transactions_slot_shows_next_games(self, tmp_path):
+        calls = _run_idle(tmp_path, 20, tx=[{'player_name': 'A'}], bracket=self.SERIES, date=self.OCT)
+        assert calls == ['next']
+
+    def test_quadrant_slot_shows_next_games(self, tmp_path):
+        calls = _run_idle(tmp_path, 35, quadrant={'x': 1}, bracket=self.SERIES, date=self.OCT)
+        assert calls == ['next']
+
+    def test_history_keeps_its_slot(self, tmp_path):
+        calls = _run_idle(tmp_path, 50, history=(2019, [{'g': 1}]), bracket=self.SERIES, date=self.OCT)
+        assert calls == ['history']
+
+    def test_ignores_the_schedule_toggle(self, tmp_path):
+        calls = _run_idle(tmp_path, 20, _config(idle_schedule_rotation=False),
+                          tx=[{'player_name': 'A'}], bracket=self.SERIES, date=self.OCT)
+        assert calls == ['next']
+
+    def test_no_schedule_still_falls_back_to_transactions(self, tmp_path):
+        calls = _run_idle(tmp_path, 20, next_games=None, tx=[{'player_name': 'A'}],
+                          bracket=self.SERIES, date=self.OCT)
+        assert calls == ['transactions']
+
+    def test_regular_season_late_september_unchanged(self, tmp_path):
+        calls = _run_idle(tmp_path, 20, tx=[{'player_name': 'A'}], bracket=None,
+                          date=(2026, 9, 28))
+        assert calls == ['transactions']
+
+    def test_bracket_outside_window_is_ignored(self, tmp_path):
+        calls = _run_idle(tmp_path, 20, tx=[{'player_name': 'A'}], bracket=self.SERIES,
+                          date=(2026, 7, 4))
         assert calls == ['transactions']

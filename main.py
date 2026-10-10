@@ -518,6 +518,12 @@ def _render_next_games(config, idle_config):
         return None
 
 
+def _is_postseason_idle():
+    """True on an off day while a postseason bracket is live (see morning_rotation)."""
+    bracket = (load_json_file('playoff_bracket.json') or {}).get('series')
+    return bool(bracket) and is_postseason_window(datetime.now())
+
+
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen.
 
@@ -525,7 +531,8 @@ def _show_idle_screen(config, auto_open=False):
     the output is deterministic for any given cron tick): next day's games,
     recent transactions, the team quadrant chart and this-day-in-history. A
     view with nothing to draw falls back to the next-games preview, then to
-    transactions, so the panel is never blank.
+    transactions, so the panel is never blank. During the postseason the
+    transactions and quadrant slots show the next-games preview instead.
     """
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
@@ -537,7 +544,14 @@ def _show_idle_screen(config, auto_open=False):
     _block = datetime.now().minute // 15
     image = None
 
-    if _block == 0 and config.get('idle_schedule_rotation', True):
+    # In the postseason, transactions and the season-shape quadrant chart are
+    # not relevant: the useful thing on an off day is when games resume, so
+    # those slots show the next-games preview instead (history keeps its slot).
+    _postseason_idle = _is_postseason_idle()
+    if _postseason_idle and _block in (1, 2):
+        _block = 0
+
+    if _block == 0 and (_postseason_idle or config.get('idle_schedule_rotation', True)):
         image = _render_next_games(config, idle_config)
 
     if image is None and _block == 3 and config.get('idle_history_rotation', True):
