@@ -675,7 +675,9 @@ def morning_rotation(config, now=None):
     if _is_postseason:
         views = [v for v in views if v != 'quadrant']
 
-    if config.get('morning_alternate_bracket', True) and _is_postseason:
+    # The grid already carries the bracket (round header + series tiles), so the
+    # full-screen bracket view is opt-in rather than another swap in the cycle.
+    if config.get('morning_alternate_bracket', False) and _is_postseason:
         views.append('bracket')
 
     return tuple(views)

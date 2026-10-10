@@ -37,21 +37,25 @@ def _resp(status=200, games=4):
 
 
 class TestPickReplayDate:
-    def test_returns_first_date_with_enough_games(self):
-        with patch('fetch_idle._random_past_date', return_value='2024-07-04'), \
-             patch('fetch_idle.requests.get', return_value=_resp()):
-            assert fetch_idle.pick_replay_date('2026-12-01') == '2024-07-04'
+    def _pick(self, dates, responses, **kw):
+        with patch('fetch_idle._random_past_date', side_effect=dates), \
+             patch('fetch_idle.requests.get', side_effect=responses):
+            return fetch_idle.pick_replay_date('2026-12-01', **kw)
 
-    def test_skips_empty_bad_status_and_errors(self):
-        with patch('fetch_idle._random_past_date', side_effect=['a', 'b', 'c', 'd']), \
-             patch('fetch_idle.requests.get',
-                   side_effect=[_resp(games=0), _resp(status=503), OSError('x'), _resp()]):
-            assert fetch_idle.pick_replay_date('2026-12-01') == 'd'
+    def test_full_slate_wins_immediately(self):
+        assert self._pick(['2024-07-04'], [_resp(games=15)]) == '2024-07-04'
+
+    def test_prefers_the_busiest_partial_slate(self):
+        assert self._pick(['a', 'b', 'c'], [_resp(games=5), _resp(games=8), _resp(games=6)],
+                          tries=3) == 'b'
+
+    def test_skips_empty_bad_status_errors_and_tiny_slates(self):
+        assert self._pick(['a', 'b', 'c', 'd', 'e'],
+                          [_resp(games=0), _resp(status=503), OSError('x'), _resp(games=2),
+                           _resp(games=12)], tries=5) == 'e'
 
     def test_gives_up(self):
-        with patch('fetch_idle._random_past_date', return_value='x'), \
-             patch('fetch_idle.requests.get', return_value=_resp(games=0)):
-            assert fetch_idle.pick_replay_date('2026-12-01', tries=3) is None
+        assert self._pick(['x'] * 3, [_resp(games=0)] * 3, tries=3) is None
 
 
 class TestMaybeStartReplay:
@@ -73,7 +77,7 @@ class TestMaybeStartReplay:
              patch('offseason_replay.subprocess.Popen', return_value=MagicMock(pid=42)) as popen:
             assert orp.maybe_start_replay({'offseason_replay_step_minutes': 2}, '2026-12-01')
         cmd = popen.call_args[0][0]
-        assert cmd[-7:] == ['--date', '2024-07-04', '--step', '2', '--delay', '30', '--align-starts']
+        assert cmd[-6:] == ['--date', '2024-07-04', '--step', '2', '--delay', '30']
         assert '"pid": 42' in lock.read_text()
 
     def _lock(self, day, count):

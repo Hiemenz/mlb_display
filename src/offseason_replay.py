@@ -74,8 +74,7 @@ def maybe_start_replay(config, today_str):
     cmd = [sys.executable, os.path.join(_REPO_ROOT, 'src', 'replay.py'),
            '--date', date_str,
            '--step', str(config.get('offseason_replay_step_minutes', _DEFAULT_STEP_MINUTES)),
-           '--delay', str(config.get('offseason_replay_delay_seconds', _DEFAULT_DELAY_SECONDS)),
-           '--align-starts']
+           '--delay', str(config.get('offseason_replay_delay_seconds', _DEFAULT_DELAY_SECONDS))]
     try:
         proc = subprocess.Popen(cmd, cwd=_REPO_ROOT, start_new_session=True,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

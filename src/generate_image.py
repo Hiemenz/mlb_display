@@ -588,14 +588,18 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     if config.get('show_standings_sidebar', False):
         if standings_data and 'standings' in standings_data:
+            _series = {}
             if _bracket and league_mode != 'aaa':
                 _series = derive_playoff_series_by_league(_bracket, standings_data)
-                Himage = draw_playoff_seedings_sidebar(Himage, _series, team_data, side='left')
-                Himage = draw_playoff_seedings_sidebar(Himage, _series, team_data, side='right')
-            else:
-                _magic_badges = config.get('sidebar_magic_badges', False)
-                Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='left', league_mode=league_mode, show_magic_badges=_magic_badges)
-                Himage = draw_standings_sidebar(Himage, standings_data, team_data, side='right', league_mode=league_mode, show_magic_badges=_magic_badges)
+            _magic_badges = config.get('sidebar_magic_badges', False)
+            for _side, _lg in (('left', 'AL'), ('right', 'NL')):
+                if _series.get(_lg):
+                    Himage = draw_playoff_seedings_sidebar(Himage, _series, team_data, side=_side)
+                else:
+                    # No series for this side (between rounds, a league that is
+                    # out, or no bracket): keep the standings sidebar rather
+                    # than leaving the column blank.
+                    Himage = draw_standings_sidebar(Himage, standings_data, team_data, side=_side, league_mode=league_mode, show_magic_badges=_magic_badges)
 
     if config.get('show_debug_overlay', False):
         Himage = _draw_debug_overlay(Himage, config)

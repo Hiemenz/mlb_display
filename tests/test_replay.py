@@ -413,28 +413,55 @@ def test_replay_day_font_fallback_on_truetype_error(
     assert mock_orc.call_count >= 1
 
 
-def test_align_starts_plays_staggered_games_at_once():
-    """With align_starts both games are In Progress in the same frame even
-    though their real first pitches are hours apart."""
-    seen = []
+def test_replay_is_capped_to_one_full_grid():
+    games = [{'game_pk': 2000 + i, 'away_team_id': 147, 'home_team_id': 111,
+              'detailed_state': 'Final'} for i in range(17)]
+    fetched = []
 
-    def _tl(pk):
-        return _make_tl(first_pitch_hour=17 if pk == '1001' else 22,
-                        last_play_hour=20 if pk == '1001' else 23)
-
-    def _fake_state(game, tl, t):
-        seen.append((game['game_pk'], t))
-        return dict(game)
+    def _fetch(pk):
+        fetched.append(pk)
+        return _make_tl()
 
     with patch('replay.fetch_scoreboard_for_date'), \
-         patch('replay.load_json_file', side_effect=lambda n: {'games': _BASE_GAMES} if n == 'games.json' else _TEAM_DATA), \
-         patch('replay._fetch_game_timeline', side_effect=lambda pk: _tl(str(pk))), \
-         patch('replay._game_state_at_time', side_effect=_fake_state), \
-         patch('replay.orchestrate_score_board', return_value=(MagicMock(), [])), \
-         patch('replay.ImageDraw'), patch('replay.send_to_display'), patch('replay.time.sleep'):
+         patch('replay.load_json_file', side_effect=lambda n: {'games': games} if n == 'games.json' else _TEAM_DATA), \
+         patch('replay._fetch_game_timeline', side_effect=_fetch), \
+         patch('replay.orchestrate_score_board', return_value=None), \
+         patch('replay.time.sleep'):
         replay_day('2026-08-01', step_minutes=60, real_delay=0, config={},
-                   local_mode=False, align_starts=True)
+                   local_mode=False)
 
-    first_frame = seen[:2]
-    # Frame 0 maps both games to their own first pitch.
-    assert dict(first_frame) == {1001: _dt(17), 1002: _dt(22)}
+    assert fetched == [2000 + i for i in range(15)]
+
+
+def test_replay_frames_get_the_live_game_wide_and_triple_tiles():
+    """Replay frames go through the normal grid layout, so a live game still
+    expands to a wide/triple tile exactly as it would in real life."""
+    from image_grid import compute_grid_layout
+
+    games = [{'game_pk': 3000 + i, 'away_team_id': 147, 'home_team_id': 111,
+              'detailed_state': 'Final', 'current_inning': 1, 'inningState': 'Top',
+              'num_of_outs': 0, 'game_datetime': '2025-10-01T00:00:00Z',
+              'double_header': 'N'} for i in range(12)]
+    cfg = {'favorite_team_first': False, 'wide_cell_always': False,
+           'wide_cell_featured': False, 'primary': ''}
+    layouts = []
+
+    def _state(game, tl, t):
+        live = dict(game)
+        live['detailed_state'] = 'In Progress' if game['game_pk'] in (3000, 3001) else 'Scheduled'
+        return live
+
+    def _orchestrate(frame_games, team_data, date_str, bypass_cache, config):
+        layouts.append(compute_grid_layout(frame_games, _TEAM_DATA, config)[1])
+        return None
+
+    with patch('replay.fetch_scoreboard_for_date'), \
+         patch('replay.load_json_file', side_effect=lambda n: {'games': games} if n == 'games.json' else _TEAM_DATA), \
+         patch('replay._fetch_game_timeline', return_value=_make_tl()), \
+         patch('replay._game_state_at_time', side_effect=_state), \
+         patch('replay.orchestrate_score_board', side_effect=_orchestrate), \
+         patch('replay.time.sleep'):
+        replay_day('2026-08-01', step_minutes=120, real_delay=0, config=cfg, local_mode=False)
+
+    assert layouts
+    assert any(s[0] in ('wide', 'triple') for s in layouts[0])

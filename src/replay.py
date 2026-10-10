@@ -35,18 +35,14 @@ _FONT_PATH = os.path.join(_REPO_ROOT, 'pic', 'Font.ttc')
 
 _DEFAULT_STEP_MINUTES = 1    # advance 1 baseball minute per display refresh
 _DEFAULT_DELAY_SECONDS = 20  # wait 20 real seconds between refreshes
+_MAX_REPLAY_GAMES = 15       # the scoreboard grid holds 15 games at once
 
 
-def replay_day(date_str, step_minutes, real_delay, config, local_mode, align_starts=False):
+def replay_day(date_str, step_minutes, real_delay, config, local_mode):
     """Replay all games from date_str, advancing step_minutes of baseball time per refresh.
 
     Pushes a fresh scoreboard to the display every real_delay seconds.
     Dead periods (before first pitch, between games) are skipped instantly.
-
-    With align_starts every game is shifted to begin at the same moment, so the
-    whole slate plays out at once instead of the staggered real start times
-    leaving only one or two games live at a time. The badge then shows elapsed
-    game time rather than a wall-clock time.
     """
     set_historical_mode(True)
 
@@ -63,10 +59,12 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode, align_sta
     if not base_games:
         print("No games found — nothing to replay.")
         return
+    if len(base_games) > _MAX_REPLAY_GAMES:
+        print(f"{len(base_games)} games — replaying the first {_MAX_REPLAY_GAMES}.")
+        base_games = base_games[:_MAX_REPLAY_GAMES]
 
     print(f"Fetching play-by-play for {len(base_games)} game(s)...")
     game_timelines = {}
-    anchors = {}
     all_first_pitches = []
     all_last_plays = []
 
@@ -83,7 +81,6 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode, align_sta
                       or tl.get('scheduled_start_utc'))
             if anchor:
                 all_first_pitches.append(anchor)
-                anchors[str(game_pk)] = anchor
             if tl.get('last_play_utc'):
                 all_last_plays.append(tl['last_play_utc'])
             print("ok")
@@ -97,18 +94,6 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode, align_sta
     start_utc = min(all_first_pitches)
     end_utc = (max(all_last_plays) + timedelta(minutes=5)) if all_last_plays \
               else start_utc + timedelta(hours=5)
-    if align_starts:
-        # Every game runs from its own first pitch; the replay lasts as long as
-        # the longest game.
-        spans = [tl['last_play_utc'] - anchors[pk] for pk, tl in game_timelines.items()
-                 if tl.get('last_play_utc') and pk in anchors]
-        end_utc = start_utc + (max(spans) if spans else timedelta(hours=4)) + timedelta(minutes=5)
-
-    def _game_time(pk_str):
-        """The real-world moment of pk_str's game that current_utc maps to."""
-        if align_starts and pk_str in anchors:
-            return anchors[pk_str] + (current_utc - start_utc)
-        return current_utc
 
     start_local = start_utc.astimezone(local_tz)
     end_local = end_utc.astimezone(local_tz)
@@ -130,14 +115,9 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode, align_sta
 
     while current_utc <= end_utc:
         step += 1
-        if align_starts:
-            _mins = int((current_utc - start_utc).total_seconds() // 60)
-            time_label = f'+{_mins // 60}:{_mins % 60:02d}'
-        else:
-            time_label = current_utc.astimezone(local_tz).strftime('%H:%M')
+        time_label = current_utc.astimezone(local_tz).strftime('%H:%M')
 
-        if not any(_any_game_active({pk: tl}, _game_time(pk))
-                   for pk, tl in game_timelines.items()):
+        if not _any_game_active(game_timelines, current_utc):
             current_utc += timedelta(minutes=step_minutes)
             continue
 
@@ -146,7 +126,7 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode, align_sta
             pk_str = str(game.get('game_pk', ''))
             tl = game_timelines.get(pk_str)
             frame_games.append(
-                _game_state_at_time(game, tl, _game_time(pk_str)) if tl else dict(game)
+                _game_state_at_time(game, tl, current_utc) if tl else dict(game)
             )
 
         try:
@@ -223,9 +203,6 @@ def main():
                         help=f'Real seconds between display updates. '
                              f'Falls back to replay_delay_seconds in config.yaml '
                              f'(default: {_DEFAULT_DELAY_SECONDS}).')
-    parser.add_argument('--align-starts', action='store_true',
-                        help='Start every game at the same moment so the whole '
-                             'slate plays at once.')
     parser.add_argument('--local', action='store_true',
                         help='Dev mode: skip display push; auto-open output on macOS.')
     add_config_arg(parser)
@@ -251,7 +228,6 @@ def main():
         real_delay=real_delay,
         config=config,
         local_mode=args.local,
-        align_starts=args.align_starts,
     )
 
 
