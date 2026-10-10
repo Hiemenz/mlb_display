@@ -254,9 +254,10 @@ def draw_history_screen(games, year, team_data, config):
     """
     from image_box import draw_box, set_historical_mode
 
+    # Draw in light mode (draw_box only knows black-on-white), then invert for
+    # dark mode at the end, like the other screens.
     dark_mode = config.get('dark_mode', False)
-    bg = 0 if dark_mode else 255
-    fg = 255 if dark_mode else 0
+    bg, fg = 255, 0
 
     Himage = Image.new('1', (800, 480), bg)
     draw   = ImageDraw.Draw(Himage)
@@ -276,7 +277,7 @@ def draw_history_screen(games, year, team_data, config):
 
     if not games:
         draw.text((6, HDR_H + 20), 'No historical games found for this date', font=_get_font(14), fill=fg)
-        return Himage
+        return _invert_if_dark(Himage, dark_mode)
 
     # ── Game grid (5 col × up to 3 rows, 150 px slots, matching main board) ──
     set_historical_mode(True)
@@ -304,7 +305,14 @@ def draw_history_screen(games, year, team_data, config):
     finally:
         set_historical_mode(False)
 
-    return Himage
+    return _invert_if_dark(Himage, dark_mode)
+
+
+def _invert_if_dark(image, dark_mode):
+    """Flip a light-mode render to dark mode."""
+    if dark_mode:
+        return ImageOps.invert(image.convert('L')).convert('1')
+    return image
 
 
 # ---------------------------------------------------------------------------
