@@ -534,6 +534,13 @@ def _show_idle_screen(config, auto_open=False):
     transactions, so the panel is never blank. During the postseason the
     transactions and quadrant slots show the next-games preview instead.
     """
+    # After the World Series there is nothing to show: replay a random past day.
+    from offseason_replay import is_offseason, maybe_start_replay
+    _now = _local_now(config)
+    _series = (load_json_file('playoff_bracket.json') or {}).get('series')
+    if is_offseason(_now, _series) and maybe_start_replay(config, _now.strftime('%Y-%m-%d')):
+        return
+
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
 

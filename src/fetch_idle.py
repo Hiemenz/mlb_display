@@ -31,6 +31,28 @@ def _random_past_date(today_str):
     return fallback.strftime('%Y-%m-%d')
 
 
+def pick_replay_date(today_str, sport_id=1, tries=8, min_games=4):
+    """A random past regular-season date that actually had games, or None.
+
+    Candidates come from _random_past_date; each is checked against the
+    schedule so a replay is never started on an empty day.
+    """
+    for _ in range(tries):
+        candidate = _random_past_date(today_str)
+        try:
+            resp = requests.get(
+                f'https://statsapi.mlb.com/api/v1/schedule?startDate={candidate}'
+                f'&endDate={candidate}&sportId={sport_id}&gameType=R', timeout=10)
+            if resp.status_code != 200:
+                continue
+            dates = resp.json().get('dates', [])
+            if dates and len(dates[0].get('games', [])) >= min_games:
+                return candidate
+        except Exception as e:
+            print(f"pick_replay_date {candidate}: {e}")
+    return None
+
+
 def _parse_idle_game(game):
     """Convert a raw schedule API game entry into a minimal draw_box-compatible dict."""
     teams = game.get('teams', {})
