@@ -410,3 +410,12 @@ def test_load_mascot_image_download_succeeds_but_open_fails():
             sys.modules.pop('download_mascots', None)
     # Should not crash; returns None or a fallback
     assert result is None or hasattr(result, 'mode')
+
+
+def test_draw_history_screen_dark_mode_is_the_inverse_of_light_mode():
+    from PIL import ImageChops, ImageOps
+    from image_idle import draw_history_screen
+    light = draw_history_screen([_HISTORY_GAME], 2024, _HISTORY_TEAM_DATA, {})
+    dark = draw_history_screen([_HISTORY_GAME], 2024, _HISTORY_TEAM_DATA, {'dark_mode': True})
+    inverted = ImageOps.invert(light.convert('L')).convert('1')
+    assert ImageChops.difference(dark.convert('L'), inverted.convert('L')).getbbox() is None
