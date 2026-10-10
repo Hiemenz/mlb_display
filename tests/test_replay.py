@@ -411,3 +411,30 @@ def test_replay_day_font_fallback_on_truetype_error(
 
     mock_load_default.assert_called_once()
     assert mock_orc.call_count >= 1
+
+
+def test_align_starts_plays_staggered_games_at_once():
+    """With align_starts both games are In Progress in the same frame even
+    though their real first pitches are hours apart."""
+    seen = []
+
+    def _tl(pk):
+        return _make_tl(first_pitch_hour=17 if pk == '1001' else 22,
+                        last_play_hour=20 if pk == '1001' else 23)
+
+    def _fake_state(game, tl, t):
+        seen.append((game['game_pk'], t))
+        return dict(game)
+
+    with patch('replay.fetch_scoreboard_for_date'), \
+         patch('replay.load_json_file', side_effect=lambda n: {'games': _BASE_GAMES} if n == 'games.json' else _TEAM_DATA), \
+         patch('replay._fetch_game_timeline', side_effect=lambda pk: _tl(str(pk))), \
+         patch('replay._game_state_at_time', side_effect=_fake_state), \
+         patch('replay.orchestrate_score_board', return_value=(MagicMock(), [])), \
+         patch('replay.ImageDraw'), patch('replay.send_to_display'), patch('replay.time.sleep'):
+        replay_day('2026-08-01', step_minutes=60, real_delay=0, config={},
+                   local_mode=False, align_starts=True)
+
+    first_frame = seen[:2]
+    # Frame 0 maps both games to their own first pitch.
+    assert dict(first_frame) == {1001: _dt(17), 1002: _dt(22)}

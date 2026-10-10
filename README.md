@@ -117,7 +117,7 @@ When there are no games at all for the day (e.g. the All-Star break, a postseaso
 
 A block that has nothing to show falls back to the next one, and an empty transactions list falls back to the next-games screen.
 
-During the **postseason** the Recent Moves and Quadrant slots show the next-games screen instead (and `idle_schedule_rotation` is ignored). After the **World Series** (Dec–Feb, or once the WS is complete in the bracket data) the idle screen is replaced by a **replay of a random past game day**: `src/offseason_replay.py` launches `src/replay.py` as a detached process on a random past regular-season date, and starts another once it finishes. Tune with `offseason_replay_step_minutes` (default 5) and `offseason_replay_delay_seconds` (default 30); disable with `offseason_replay: false`.
+During the **postseason** the Recent Moves and Quadrant slots show the next-games screen instead (and `idle_schedule_rotation` is ignored). After the **World Series** (Dec–Feb, or once the WS is complete in the bracket data) the idle screen is replaced by a **replay of a random past game day**: `src/offseason_replay.py` launches `src/replay.py` as a detached process on a random past regular-season date, and starts another once it finishes. All games of the day start together. Toggle with `offseason_replay: true/false` in `config/config.yaml` (also in the config server); `offseason_replays_per_day` (default 2) caps how many run each day, and `offseason_replay_step_minutes` (5) / `offseason_replay_delay_seconds` (30) set the pace.
 
 ---
 

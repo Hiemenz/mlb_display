@@ -73,6 +73,8 @@ FIELD_SPECS = [
      'label': 'Replay Step (min)', 'help': 'Baseball minutes advanced per display refresh (default 1).'},
     {'key': 'replay_delay_seconds', 'source': 'yaml', 'type': 'text',
      'label': 'Replay Delay (sec)', 'help': 'Real seconds between display updates (default 20).'},
+    {'key': 'offseason_replay', 'source': 'yaml', 'type': 'bool', 'label': 'Off-Season Replay',
+     'help': 'After the World Series, replay a random past game day on the idle screen.'},
     {'key': 'use_team_logos', 'source': 'yaml', 'type': 'bool', 'label': 'Team Logos'},
     {'key': 'show_standings_sidebar', 'source': 'yaml', 'type': 'bool', 'label': 'Standings Sidebar'},
     {'key': 'show_wildcard_standings', 'source': 'yaml', 'type': 'bool', 'label': 'Wildcard Standings Strip'},

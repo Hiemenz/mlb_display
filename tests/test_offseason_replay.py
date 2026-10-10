@@ -73,8 +73,39 @@ class TestMaybeStartReplay:
              patch('offseason_replay.subprocess.Popen', return_value=MagicMock(pid=42)) as popen:
             assert orp.maybe_start_replay({'offseason_replay_step_minutes': 2}, '2026-12-01')
         cmd = popen.call_args[0][0]
-        assert cmd[-6:] == ['--date', '2024-07-04', '--step', '2', '--delay', '30']
+        assert cmd[-7:] == ['--date', '2024-07-04', '--step', '2', '--delay', '30', '--align-starts']
         assert '"pid": 42' in lock.read_text()
+
+    def _lock(self, day, count):
+        return {'pid': 1, 'date': 'd', 'day': day, 'count': count}
+
+    def test_daily_quota_stops_new_replays(self):
+        with patch('offseason_replay.load_json_file', return_value=self._lock('2026-12-01', 2)), \
+             patch('offseason_replay._replay_running', return_value=False), \
+             patch('offseason_replay.subprocess.Popen') as popen:
+            assert not orp.maybe_start_replay({}, '2026-12-01')
+            assert not orp.maybe_start_replay({'offseason_replays_per_day': 1}, '2026-12-01')
+        popen.assert_not_called()
+
+    def test_second_replay_of_the_day_counts_up(self, tmp_path):
+        lock = tmp_path / 'offseason_replay.json'
+        with patch('offseason_replay.load_json_file', return_value=self._lock('2026-12-01', 1)), \
+             patch('offseason_replay._replay_running', return_value=False), \
+             patch('offseason_replay._LOCK_PATH', str(lock)), \
+             patch('offseason_replay.pick_replay_date', return_value='2024-07-04'), \
+             patch('offseason_replay.subprocess.Popen', return_value=MagicMock(pid=9)):
+            assert orp.maybe_start_replay({}, '2026-12-01')
+        assert '"count": 2' in lock.read_text()
+
+    def test_quota_resets_on_a_new_day(self, tmp_path):
+        lock = tmp_path / 'offseason_replay.json'
+        with patch('offseason_replay.load_json_file', return_value=self._lock('2026-11-30', 2)), \
+             patch('offseason_replay._replay_running', return_value=False), \
+             patch('offseason_replay._LOCK_PATH', str(lock)), \
+             patch('offseason_replay.pick_replay_date', return_value='2024-07-04'), \
+             patch('offseason_replay.subprocess.Popen', return_value=MagicMock(pid=9)):
+            assert orp.maybe_start_replay({}, '2026-12-01')
+        assert '"count": 1' in lock.read_text()
 
     def test_no_usable_date(self):
         with patch('offseason_replay.load_json_file', return_value=None), \
