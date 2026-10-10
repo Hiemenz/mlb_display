@@ -31,12 +31,15 @@ def _random_past_date(today_str):
     return fallback.strftime('%Y-%m-%d')
 
 
-def pick_replay_date(today_str, sport_id=1, tries=8, min_games=4):
+def pick_replay_date(today_str, sport_id=1, tries=8, min_games=4, full_slate=10):
     """A random past regular-season date that actually had games, or None.
 
-    Candidates come from _random_past_date; each is checked against the
-    schedule so a replay is never started on an empty day.
+    Candidates come from _random_past_date and are checked against the
+    schedule. The first date with at least full_slate games wins (the grid
+    holds 15, so a replay of a busy day fills the board); otherwise the
+    busiest date with at least min_games is used.
     """
+    best, best_count = None, 0
     for _ in range(tries):
         candidate = _random_past_date(today_str)
         try:
@@ -46,11 +49,15 @@ def pick_replay_date(today_str, sport_id=1, tries=8, min_games=4):
             if resp.status_code != 200:
                 continue
             dates = resp.json().get('dates', [])
-            if dates and len(dates[0].get('games', [])) >= min_games:
-                return candidate
+            count = len(dates[0].get('games', [])) if dates else 0
         except Exception as e:
             print(f"pick_replay_date {candidate}: {e}")
-    return None
+            continue
+        if count >= full_slate:
+            return candidate
+        if count >= min_games and count > best_count:
+            best, best_count = candidate, count
+    return best
 
 
 def _parse_idle_game(game):

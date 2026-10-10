@@ -304,6 +304,17 @@ replay_date: ""
 replay_step_minutes: 1
 replay_delay_seconds: 20
 
+# Off-season replay: after the World Series (Dec-Feb, or once the WS is complete) the
+# idle screen replays a random past date: up to 15 games on the grid at once,
+# each running at its real (staggered) start time.
+# offseason_replay: true/false turns it on or off (off = the regular idle screen).
+# offseason_replays_per_day: how many replays to start each day (then idle screen).
+# offseason_replay_step_minutes / offseason_replay_delay_seconds: pacing.
+offseason_replay: true
+offseason_replays_per_day: 2
+offseason_replay_step_minutes: 5
+offseason_replay_delay_seconds: 30
+
 # Auto-generate a timelapse video after all games for the day go Final.
 # Output is saved to output/scoreboard_YYYY-MM-DD.gif + .mp4.
 # A sentinel file (data/video_generated_YYYY-MM-DD.done) prevents re-running.

@@ -37,21 +37,25 @@ def _resp(status=200, games=4):
 
 
 class TestPickReplayDate:
-    def test_returns_first_date_with_enough_games(self):
-        with patch('fetch_idle._random_past_date', return_value='2024-07-04'), \
-             patch('fetch_idle.requests.get', return_value=_resp()):
-            assert fetch_idle.pick_replay_date('2026-12-01') == '2024-07-04'
+    def _pick(self, dates, responses, **kw):
+        with patch('fetch_idle._random_past_date', side_effect=dates), \
+             patch('fetch_idle.requests.get', side_effect=responses):
+            return fetch_idle.pick_replay_date('2026-12-01', **kw)
 
-    def test_skips_empty_bad_status_and_errors(self):
-        with patch('fetch_idle._random_past_date', side_effect=['a', 'b', 'c', 'd']), \
-             patch('fetch_idle.requests.get',
-                   side_effect=[_resp(games=0), _resp(status=503), OSError('x'), _resp()]):
-            assert fetch_idle.pick_replay_date('2026-12-01') == 'd'
+    def test_full_slate_wins_immediately(self):
+        assert self._pick(['2024-07-04'], [_resp(games=15)]) == '2024-07-04'
+
+    def test_prefers_the_busiest_partial_slate(self):
+        assert self._pick(['a', 'b', 'c'], [_resp(games=5), _resp(games=8), _resp(games=6)],
+                          tries=3) == 'b'
+
+    def test_skips_empty_bad_status_errors_and_tiny_slates(self):
+        assert self._pick(['a', 'b', 'c', 'd', 'e'],
+                          [_resp(games=0), _resp(status=503), OSError('x'), _resp(games=2),
+                           _resp(games=12)], tries=5) == 'e'
 
     def test_gives_up(self):
-        with patch('fetch_idle._random_past_date', return_value='x'), \
-             patch('fetch_idle.requests.get', return_value=_resp(games=0)):
-            assert fetch_idle.pick_replay_date('2026-12-01', tries=3) is None
+        assert self._pick(['x'] * 3, [_resp(games=0)] * 3, tries=3) is None
 
 
 class TestMaybeStartReplay:
@@ -75,6 +79,37 @@ class TestMaybeStartReplay:
         cmd = popen.call_args[0][0]
         assert cmd[-6:] == ['--date', '2024-07-04', '--step', '2', '--delay', '30']
         assert '"pid": 42' in lock.read_text()
+
+    def _lock(self, day, count):
+        return {'pid': 1, 'date': 'd', 'day': day, 'count': count}
+
+    def test_daily_quota_stops_new_replays(self):
+        with patch('offseason_replay.load_json_file', return_value=self._lock('2026-12-01', 2)), \
+             patch('offseason_replay._replay_running', return_value=False), \
+             patch('offseason_replay.subprocess.Popen') as popen:
+            assert not orp.maybe_start_replay({}, '2026-12-01')
+            assert not orp.maybe_start_replay({'offseason_replays_per_day': 1}, '2026-12-01')
+        popen.assert_not_called()
+
+    def test_second_replay_of_the_day_counts_up(self, tmp_path):
+        lock = tmp_path / 'offseason_replay.json'
+        with patch('offseason_replay.load_json_file', return_value=self._lock('2026-12-01', 1)), \
+             patch('offseason_replay._replay_running', return_value=False), \
+             patch('offseason_replay._LOCK_PATH', str(lock)), \
+             patch('offseason_replay.pick_replay_date', return_value='2024-07-04'), \
+             patch('offseason_replay.subprocess.Popen', return_value=MagicMock(pid=9)):
+            assert orp.maybe_start_replay({}, '2026-12-01')
+        assert '"count": 2' in lock.read_text()
+
+    def test_quota_resets_on_a_new_day(self, tmp_path):
+        lock = tmp_path / 'offseason_replay.json'
+        with patch('offseason_replay.load_json_file', return_value=self._lock('2026-11-30', 2)), \
+             patch('offseason_replay._replay_running', return_value=False), \
+             patch('offseason_replay._LOCK_PATH', str(lock)), \
+             patch('offseason_replay.pick_replay_date', return_value='2024-07-04'), \
+             patch('offseason_replay.subprocess.Popen', return_value=MagicMock(pid=9)):
+            assert orp.maybe_start_replay({}, '2026-12-01')
+        assert '"count": 1' in lock.read_text()
 
     def test_no_usable_date(self):
         with patch('offseason_replay.load_json_file', return_value=None), \

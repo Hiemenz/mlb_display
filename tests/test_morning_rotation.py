@@ -60,6 +60,22 @@ def test_rotation_falls_back_to_the_original_two_way_cycle():
         'yesterday', 'today')
 
 
+def _postseason_rotation(config):
+    _oct = _CT.localize(datetime(2026, 10, 9, 8, 0))
+    with patch('main.load_json_file', return_value={'series': [{'round': 'DS'}]}):
+        return main.morning_rotation(config, now=_oct)
+
+
+def test_postseason_rotation_has_no_fullscreen_bracket_by_default():
+    """The grid already shows the bracket, so it is not another swap; the quadrant is dropped."""
+    assert _postseason_rotation(_config()) == ('today', 'yesterday')
+
+
+def test_postseason_bracket_view_is_opt_in():
+    assert _postseason_rotation(_config(morning_alternate_bracket=True)) == (
+        'today', 'yesterday', 'bracket')
+
+
 # ---------------------------------------------------------------------------
 # Cycling
 # ---------------------------------------------------------------------------

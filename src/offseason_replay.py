@@ -19,6 +19,7 @@ _LOCK_PATH = os.path.join(_REPO_ROOT, 'data', 'offseason_replay.json')
 
 _DEFAULT_STEP_MINUTES = 5     # a whole game day in ~an hour at the default delay
 _DEFAULT_DELAY_SECONDS = 30
+_DEFAULT_REPLAYS_PER_DAY = 2  # then the regular idle screen takes over until tomorrow
 
 
 def is_offseason(now, bracket_series=None):
@@ -50,7 +51,8 @@ def maybe_start_replay(config, today_str):
     """Ensure a replay of a random past day is running; True when one is.
 
     False means nothing could be started (disabled, or no usable date), so the
-    caller should fall back to its normal idle screen.
+    caller should fall back to its normal idle screen (including once the
+    day's replay quota is used up).
     """
     if not config.get('offseason_replay', True):
         return False
@@ -59,6 +61,10 @@ def maybe_start_replay(config, today_str):
     if _replay_running(lock.get('pid')):
         print(f"Off-season: replay of {lock.get('date')} still running")
         return True
+
+    started_today = lock.get('count', 0) if lock.get('day') == today_str else 0
+    if started_today >= config.get('offseason_replays_per_day', _DEFAULT_REPLAYS_PER_DAY):
+        return False
 
     date_str = pick_replay_date(today_str)
     if not date_str:
@@ -75,7 +81,8 @@ def maybe_start_replay(config, today_str):
                                 stderr=subprocess.DEVNULL)
         os.makedirs(os.path.dirname(_LOCK_PATH), exist_ok=True)
         with open(_LOCK_PATH, 'w') as f:
-            json.dump({'pid': proc.pid, 'date': date_str}, f)
+            json.dump({'pid': proc.pid, 'date': date_str,
+                       'day': today_str, 'count': started_today + 1}, f)
     except OSError as e:
         print(f"Off-season: could not start replay ({e})")
         return False
