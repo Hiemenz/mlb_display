@@ -65,6 +65,9 @@ def _scheduled_games(away_id, home_id):
         games = load_json_file('games.json').get('games', [])
     except Exception:
         return []
+    # games.json carries team ids and full names but no abbreviation; without the
+    # lookup the row falls back to the numeric id and no logo can be found.
+    abbr_map = (load_json_file('teams.json') or {}).get('team_abbreviation', {})
     out = []
     for g in games:
         if g.get('detailed_state') not in ('Scheduled', 'Pre-Game', 'Warmup'):
@@ -84,8 +87,8 @@ def _scheduled_games(away_id, home_id):
             'time':       time_str,
             'away_id':    a_id,
             'home_id':    h_id,
-            'away_abbr':  g.get('away_team', a_id),
-            'home_abbr':  g.get('home_team', h_id),
+            'away_abbr':  abbr_map.get(a_id) or g.get('away_team') or a_id,
+            'home_abbr':  abbr_map.get(h_id) or g.get('home_team') or h_id,
             'sort_key':   raw,
         })
     out.sort(key=lambda x: x['sort_key'])
