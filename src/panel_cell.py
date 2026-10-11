@@ -109,7 +109,7 @@ def paste_row_logo(Himage, abbr, team_id, logo_col_x, ry, logo_size, row_h):
 
 
 def draw_ranked_rows(Himage, draw, sx, sy, entries, font_row, value_of,
-                     abbr_map=None, use_logos=False, name_gap=2):
+                     abbr_map=None, use_logos=False, name_gap=2, min_rows=1):
     """Draw the rank / logo / name / right-aligned-value row layout.
 
     Shared by the leaders, hot-hitters and hot-arms panels, which differ only in
@@ -118,9 +118,13 @@ def draw_ranked_rows(Himage, draw, sx, sy, entries, font_row, value_of,
     Each entry is a dict with 'rank', 'name', 'team_id' and optionally 'abbr'.
     Ranks fall back to positional index, so a feed that omits them still renders
     1..n rather than a column of 'None'.
+
+    ``min_rows`` sizes the rows as if at least that many were drawn, so a panel
+    that can legitimately have one or two entries doesn't stretch them to fill
+    the cell.
     """
     abbr_map = abbr_map or {}
-    row_h, row_pad, logo_size = row_metrics(len(entries))
+    row_h, row_pad, logo_size = row_metrics(max(len(entries), min_rows))
 
     ranks = [str(e.get('rank', i + 1)) for i, e in enumerate(entries)]
     logo_col_x = sx + PAD + rank_column_width(font_row, ranks) + 2

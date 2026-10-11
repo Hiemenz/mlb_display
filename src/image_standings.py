@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw
 from image_assets import _get_font, _logo_small
 import time as _time
 
-from util import load_json_file, save_off_results
+from util import LIVE_STATES, load_json_file, save_off_results
 from image_utils import (
     division_rank, magic_or_elim_value, MAGIC_BASE, ELIM_THRESHOLD,
 )
@@ -360,7 +360,6 @@ def draw_playoff_bracket_header(Himage, bracket_data):
 # already imports from this module, so importing back would be circular.
 _TICKER_FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
 _TICKER_POSTPONED_STATES = {'Postponed', 'Cancelled', 'Cancelled: Rain'}
-_TICKER_LIVE_STATES = {'In Progress', 'Player challenge', 'Manager challenge'}
 
 _TICKER_MAX_ENTRIES = 12  # entries shown per render before rotation kicks in
 _TICKER_SCORE_FONT_SIZE = 16   # bigger than the surrounding 9pt status text
@@ -382,7 +381,7 @@ def _ticker_status(game):
         return f'F/{_inn}' if _inn > 9 else 'F'
     if state in _TICKER_POSTPONED_STATES:
         return 'Postponed'
-    if state in _TICKER_LIVE_STATES:
+    if state in LIVE_STATES:
         _inn_state = game.get('inningState') or ''
         _inn_label = {'Top': 'Top', 'Bottom': 'Bot', 'Middle': 'Mid', 'End': 'End'}.get(
             _inn_state, _inn_state[:3].capitalize() if _inn_state else '')
@@ -398,7 +397,7 @@ def _ticker_score(game):
     """'5-3' scoreline for a Final or live game with runs recorded, '' for a
     Scheduled/Postponed game (nothing to score yet)."""
     state = game.get('detailed_state', '')
-    if state not in _TICKER_FINAL_STATES and state not in _TICKER_LIVE_STATES:
+    if state not in _TICKER_FINAL_STATES and state not in LIVE_STATES:
         return ''
     away = game.get('away_runs')
     home = game.get('home_runs')
@@ -494,7 +493,7 @@ def draw_overflow_ticker(Himage, dropped_games, team_data, rotation_minutes=2):
         not_started = (
             state not in _TICKER_FINAL_STATES
             and state not in _TICKER_POSTPONED_STATES
-            and state not in _TICKER_LIVE_STATES
+            and state not in LIVE_STATES
         )
         if not_started:
             # Nothing to score yet — a single row is enough: away logo, a

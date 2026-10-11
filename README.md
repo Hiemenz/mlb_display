@@ -100,8 +100,9 @@ When the slate has fewer than 15 games, the spare grid cells are filled with inf
 - **News headlines** (`show_news_panel`) — recent MLB news, optionally scoped to the primary team (`news_team_only`).
 - **Magic / elimination numbers** (`show_magic_numbers`) — the primary team's division standings. The leader's row always shows its magic number (`M12`); trailing teams show games back until their elimination number drops below 20, at which point that row switches to the elimination number (`E7`) instead. A miniature version of the same M12/E7 badge (`sidebar_magic_badges`) can also be shown next to each team's logo in the standings sidebar.
 - **Hot Hitters / Hot Arms** (`show_streaks_panel` / `show_scoreless_panel`) — 14-day rolling batting average and ERA leaders.
-- **Bullpen usage** (`show_bullpen_panel`) — two tiles, one for the primary team and one for today's opponent, showing each reliever's pitches yesterday and over the last `bullpen_lookback_days` (default 3) days.
+- **Bullpen usage** (`show_bullpen_panel`) — two tiles, one for the primary team and one for today's opponent, listing every non-starting pitcher on the active roster. Each bar is shaded by how long ago the pitches were thrown (solid = yesterday, dense hatch = two days ago, sparse hatch = older, up to `bullpen_lookback_days`, default 3); the number is the window total. During a live postseason game the tiles are for every team playing, whatever the setting.
 - **Season leaders panel** (`show_leaders_panel`) — cycles through HR / AVG / ERA / Saves / Hits / RBI / SB, rotating category every `leaders_rotation_minutes` (default 5) and refreshed once a day.
+- **Series leaders** (`show_series_panel`) — the same rotating tiles for the primary team's current series: top HR / hits / RBI / AVG hitters and K / IP pitchers of both teams, summed across the series' games. Shares the free slots and rotation with the season leaders; re-summed every 5 minutes while the game is live.
 
 ---
 
@@ -115,6 +116,8 @@ When there are no games at all for the day (e.g. the All-Star break, a postseaso
 4. **This day in history** — disable with `idle_history_rotation: false`.
 
 A block that has nothing to show falls back to the next one, and an empty transactions list falls back to the next-games screen.
+
+During the **postseason** the Recent Moves and Quadrant slots show the next-games screen instead (and `idle_schedule_rotation` is ignored). After the **World Series** (Dec–Feb, or once the WS is complete in the bracket data) the idle screen is replaced by a **replay of a random past game day**: `src/offseason_replay.py` launches `src/replay.py` as a detached process on a random past regular-season date, and starts another once it finishes. The whole slate (up to the grid's 15 games) is shown at once, each game running on its real, staggered start time; busy days are preferred. Toggle with `offseason_replay: true/false` in `config/config.yaml` (also in the config server); `offseason_replays_per_day` (default 2) caps how many run each day, and `offseason_replay_step_minutes` (5) / `offseason_replay_delay_seconds` (30) set the pace.
 
 ---
 

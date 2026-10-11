@@ -35,6 +35,7 @@ _FONT_PATH = os.path.join(_REPO_ROOT, 'pic', 'Font.ttc')
 
 _DEFAULT_STEP_MINUTES = 1    # advance 1 baseball minute per display refresh
 _DEFAULT_DELAY_SECONDS = 20  # wait 20 real seconds between refreshes
+_MAX_REPLAY_GAMES = 15       # the scoreboard grid holds 15 games at once
 
 
 def replay_day(date_str, step_minutes, real_delay, config, local_mode):
@@ -58,6 +59,9 @@ def replay_day(date_str, step_minutes, real_delay, config, local_mode):
     if not base_games:
         print("No games found — nothing to replay.")
         return
+    if len(base_games) > _MAX_REPLAY_GAMES:
+        print(f"{len(base_games)} games — replaying the first {_MAX_REPLAY_GAMES}.")
+        base_games = base_games[:_MAX_REPLAY_GAMES]
 
     print(f"Fetching play-by-play for {len(base_games)} game(s)...")
     game_timelines = {}

@@ -17,6 +17,7 @@ otherwise fetches the real MLB schedule over the network).
 """
 import os
 import copy
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -732,6 +733,35 @@ def test_grid_path_wildcard_sidebar_and_dark_mode():
     mock_hdr.assert_called_once()
     assert mock_sb.call_count == 2
     assert result is not None
+
+
+@needs_pil
+def test_playoff_sidebar_falls_back_to_standings_for_a_side_with_no_series():
+    """A live bracket must not blank a sidebar: a side with no current-round
+    series keeps the standings sidebar."""
+    import generate_image
+
+    stub_img = Image.new('1', (800, 480), 255)
+    cfg = dict(FIXED_CONFIG, show_standings_sidebar=True, show_playoff_bracket=True)
+    games = [{'game_pk': 1, 'away_team_id': 119, 'home_team_id': 137, 'detailed_state': 'Scheduled'}]
+    standings_data = {'standings': {'1': [{'team_id': 119, 'streak': 'W2'}]}}
+    bracket = {'season': datetime.now().year, 'series': [{'round': 'DS', 'game_results': []}]}
+
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({'standings.json': standings_data,
+                                         'playoff_bracket.json': bracket})), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img), \
+         patch('generate_image.draw_playoff_round_header', side_effect=lambda img, b: img), \
+         patch('generate_image.derive_playoff_series_by_league',
+               return_value={'AL': [{'round': 'DS'}], 'NL': []}), \
+         patch('generate_image.draw_playoff_seedings_sidebar', side_effect=lambda img, *a, **k: img) as mock_po, \
+         patch('generate_image.draw_standings_sidebar', side_effect=lambda img, *a, **k: img) as mock_sb:
+        generate_image.orchestrate_score_board(
+            games, TEAM_DATA, date_str='2026-10-09', bypass_cache=True, config=cfg)
+
+    assert mock_po.call_count == 1 and mock_po.call_args.kwargs['side'] == 'left'
+    assert mock_sb.call_count == 1 and mock_sb.call_args.kwargs['side'] == 'right'
 
 
 @needs_pil

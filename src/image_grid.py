@@ -1,11 +1,12 @@
 import os
 from collections import deque
 
-from util import load_json_file, load_yaml_file
+from util import LIVE_STATES, load_json_file, load_yaml_file
 from image_assets import _get_font, ImageDraw
 from image_standings import _WC_STRIP_H
 from image_box import draw_box, draw_wide_box, draw_triple_box, draw_fields_box
 from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
+from image_series_stats import draw_series_stats_cell, available_categories as available_series_categories
 from image_transactions import draw_transactions_cell
 from image_news import draw_news_cell
 from image_magic import draw_magic_cell
@@ -14,10 +15,6 @@ from image_scoreless import draw_scoreless_cell
 from image_lineup import draw_lineup_cell
 from image_deadline import draw_deadline_cell
 
-
-# Live game states that qualify for a wide (2-cell) tile. Challenge/review states
-# are still an active game, so they must keep the wide slot they already had.
-_LIVE_WIDE_STATES = ('In Progress', 'Player challenge', 'Manager challenge')
 
 _FINAL_STATES = {'Final', 'Game Over', 'Final: Tied'}
 
@@ -58,7 +55,7 @@ def _overflow_priority(g):
     """Sort key used when there are more games than grid slots: live games
     first, Final games last, everything else in between."""
     state = g.get('detailed_state')
-    if state in _LIVE_WIDE_STATES:
+    if state in LIVE_STATES:
         return 0
     if state in _FINAL_STATES:
         return 2
@@ -201,7 +198,7 @@ def _cluster_live_games(game_list, config, team_data):
 
     pinned = 1 if (config.get('favorite_team_first', False) and game_list) else 0
     rest = game_list[pinned:]
-    live_idxs = [i for i, g in enumerate(rest) if g.get('detailed_state') in _LIVE_WIDE_STATES]
+    live_idxs = [i for i, g in enumerate(rest) if g.get('detailed_state') in LIVE_STATES]
     if not (2 <= len(live_idxs) <= 5):
         return game_list, None
 
@@ -279,7 +276,7 @@ def _find_wide_games(game_list, config, team_data):
     it is treated as in-progress so it keeps its wide tile instead of collapsing
     to a single cell and handing the slot to another game mid-review.
     """
-    in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
+    in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in LIVE_STATES]
 
     # Featured-team preference: index of the primary team's live game, if enabled.
     featured_idx = _featured_live_index(game_list, in_progress, config, team_data)
@@ -318,7 +315,7 @@ def _live_tile_types(game_list, config, team_data):
     budget as wide, then normal. The dict is empty when no in-progress games
     exist.
     """
-    in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in _LIVE_WIDE_STATES]
+    in_progress = [i for i, g in enumerate(game_list) if g.get('detailed_state') in LIVE_STATES]
     if not in_progress:
         return {}
 
@@ -654,12 +651,12 @@ def _move_non_live_to_fillers(game_list, positions):
         i for i in range(len(positions) - 1, 0, -1)
         if positions[i][0] == 'normal'
         and positions[i][2] not in wide_rows
-        and game_list[i].get('detailed_state') not in _LIVE_WIDE_STATES
+        and game_list[i].get('detailed_state') not in LIVE_STATES
     ]
     cand_iter = iter(non_wide_non_live)
 
     for fi in filler_idxs:
-        if game_list[fi].get('detailed_state') in _LIVE_WIDE_STATES:
+        if game_list[fi].get('detailed_state') in LIVE_STATES:
             try:
                 ti = next(cand_iter)
                 game_list[fi], game_list[ti] = game_list[ti], game_list[fi]
@@ -733,7 +730,7 @@ def _compute_grid_layout_base(game_state_data, team_data, config):
     # expand into. The pinned favorite-team game (index 0) is exempt so it
     # stays visible regardless of its state.
     if _hide_non_live_games_enabled(config):
-        _live_count_for_hide = sum(1 for g in game_list if g.get('detailed_state') in _LIVE_WIDE_STATES)
+        _live_count_for_hide = sum(1 for g in game_list if g.get('detailed_state') in LIVE_STATES)
         if _live_count_for_hide:
             _pinned_game = game_list[0] if (config.get('favorite_team_first', False) and game_list) else None
             _needed = _extra_slots_needed_for_live(_live_count_for_hide)
@@ -773,7 +770,7 @@ def _compute_grid_layout_base(game_state_data, team_data, config):
     # If live games exist and postponed/cancelled games are occupying slots that
     # prevent expansion (triple needs 2 free slots, wide needs 1), evict the
     # postponed games — they display no useful score — to make room.
-    _live_exists = any(g.get('detailed_state') in _LIVE_WIDE_STATES for g in game_list)
+    _live_exists = any(g.get('detailed_state') in LIVE_STATES for g in game_list)
     if _live_exists:
         _ppd_evictable = [g for g in reversed(game_list)
                           if g.get('detailed_state', '') in _RAINOUT_STATES]
@@ -1053,17 +1050,14 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     # to boost bullpen tiles to the top of the free-slot queue.
     _primary_abbr_live = config.get('primary', '')
     _primary_game_live = any(
-        g.get('detailed_state') in _LIVE_WIDE_STATES
+        g.get('detailed_state') in LIVE_STATES
         and (_primary_abbr_live in (g.get('away_team', ''), g.get('home_team', '')))
         for g in (game_state_data or [])
     )
     # Boost and auto-enable bullpen tiles for any live playoff game regardless of config.
-    _PLAYOFF_GAME_TYPES_G = {'W', 'D', 'L', 'F'}
-    _any_playoff_live = any(
-        g.get('detailed_state') in _LIVE_WIDE_STATES
-        and g.get('game_type') in _PLAYOFF_GAME_TYPES_G
-        for g in (game_state_data or [])
-    )
+    from fetch_bullpen import live_playoff_team_ids
+    _live_playoff_ids = live_playoff_team_ids(game_state_data, _primary_abbr_live)
+    _any_playoff_live = bool(_live_playoff_ids)
 
     # 2×2 playoff bracket tile (290×300px) — claims the bottom-right 2×2 block
     # before per-series tiles consume the free slots. Shown throughout the
@@ -1087,6 +1081,8 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
             )
 
     # Bullpen workload — one tile each for primary team then today's opponent.
+    # While a postseason game is live it is instead one tile for every team in
+    # a live postseason game (primary's game first), whatever the config says.
     # While a game is live these claim slots before the series tiles, so the
     # series tiles drop off first when space runs short; otherwise they are
     # pushed below the deadline panel.
@@ -1098,10 +1094,14 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         from image_bullpen import draw_bullpen_cell
         from image_standings import is_team_series_over
         _bp_bracket = load_json_file('playoff_bracket.json')
-        for _bp_tid in (_bp_data or {}).get('team_order', []):
-            if not _free_slots or _bp_tid not in _bp_teams:
+        _bp_order = _live_playoff_ids or (_bp_data or {}).get('team_order', [])
+        for _bp_tid in _bp_order:
+            if not _free_slots:
                 break
-            if is_team_series_over(_bp_teams[_bp_tid].get('abbr', ''), _bp_bracket):
+            if _bp_tid not in _bp_teams:
+                continue  # no data for this team (not fetched yet, or its fetch failed)
+            if (not _any_playoff_live
+                    and is_team_series_over(_bp_teams[_bp_tid].get('abbr', ''), _bp_bracket)):
                 continue
             _bp_col, _bp_row = _free_slots.pop(0)
             draw_bullpen_cell(
@@ -1223,25 +1223,36 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     if not (_primary_game_live or _any_playoff_live):
         _draw_bullpen()
 
-    if config.get('show_leaders_panel', False) and _free_slots:
+    _show_leaders = config.get('show_leaders_panel', False)
+    _show_series = config.get('show_series_panel', False)
+    if (_show_leaders or _show_series) and _free_slots:
         _leaders_data = load_json_file('leaders.json').get('leaders', {})
+        _series_data = load_json_file('series_leaders.json') if _show_series else {}
         _rotation_min = config.get('leaders_rotation_minutes', 5)
-        # One tile per category when there's room for all of them; with
-        # fewer free slots than categories, the subset shown slides over
-        # time (via rotating_categories) so every category still appears.
-        _n = min(len(_free_slots), len(_LEADER_CATEGORIES))
-        _cats = (
-            list(_LEADER_CATEGORIES) if _n == len(_LEADER_CATEGORIES)
-            else rotating_categories(_n, _rotation_min)
+        # Season-leader and series-leader tiles share the free slots. One tile
+        # per category when there's room for all of them; with fewer free slots
+        # than tiles, the subset shown slides over time (via
+        # rotating_categories) so every tile still appears.
+        _tiles = (
+            [('season', c) for c in _LEADER_CATEGORIES] if _show_leaders else []
+        ) + [('series', c) for c in available_series_categories(_series_data)]
+        _n = min(len(_free_slots), len(_tiles))
+        _picked = (
+            _tiles if _n == len(_tiles)
+            else rotating_categories(_n, _rotation_min, categories=_tiles)
         )
-        for (_col, _row), _cat in zip(_free_slots, _cats):
+        for (_col, _row), (_kind, _cat) in zip(_free_slots, _picked):
             _lx = _col * 150 + x_start
             _ly = _row * 150 + y_start
-            Himage = draw_leaders_cell(
-                Himage, _lx, _ly, _leaders_data, team_data,
-                category=_cat,
-                use_logos=use_logos,
-            )
+            if _kind == 'series':
+                Himage = draw_series_stats_cell(
+                    Himage, _lx, _ly, _series_data, team_data, _cat, use_logos=use_logos)
+            else:
+                Himage = draw_leaders_cell(
+                    Himage, _lx, _ly, _leaders_data, team_data,
+                    category=_cat,
+                    use_logos=use_logos,
+                )
 
     # Season win-trend tile — favorite team's cumulative W/L as a sparkline.
     if config.get('show_win_trend_panel', False) and _free_slots:

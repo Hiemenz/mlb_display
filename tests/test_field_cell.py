@@ -1097,3 +1097,24 @@ class TestBattedBallPlacement:
 
         diff = sum(1 for a, b in zip(render([]).getdata(), render([foul]).getdata()) if a != b)
         assert diff > 0, "caught foul ball produced no marker"
+
+
+@needs_pil
+@pytest.mark.parametrize('tile', ['draw_wide_box', 'draw_triple_box'])
+@pytest.mark.parametrize('state', ['Player challenge', 'Manager challenge'])
+def test_review_keeps_zone_bases_outs_panel(tile, state):
+    """A game under replay review keeps its zone/bases/outs/count panel, identical
+    to the In Progress render, instead of the right panel going blank."""
+    import image_box
+    from PIL import ImageChops
+
+    def render(detailed_state):
+        img = Image.new('1', (800, 480), 255)
+        game = _base_game(detailed_state=detailed_state, current_inning=5,
+                          inningState='Bottom', num_of_outs=2, balls=1, strikes=2,
+                          runner_on_first=True, runner_on_third=True,
+                          away_runs=2, home_runs=3)
+        getattr(image_box, tile)(img, 0, 30, game, _MINIMAL_TEAM_DATA)
+        return img.convert('L')
+
+    assert ImageChops.difference(render('In Progress'), render(state)).getbbox() is None

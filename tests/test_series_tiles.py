@@ -223,6 +223,19 @@ class TestDrawSeriesCell:
             # Entry should appear but with empty time
             assert result[0]['time'] == ''
 
+    def test_upcoming_abbr_resolved_from_teams_json(self):
+        """games.json has no abbreviations; they must come from teams.json."""
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        games = {'games': [{'detailed_state': 'Scheduled',
+                            'away_team_id': 145, 'home_team_id': 114,
+                            'game_date': '2026-10-11T00:00:00Z'}]}
+        teams = {'team_abbreviation': {'145': 'CWS', '114': 'CLE'}}
+        files = {'games.json': games, 'teams.json': teams}
+        with patch('image_series.load_json_file', side_effect=files.__getitem__):
+            result = _scheduled_games('145', '114')
+        assert (result[0]['away_abbr'], result[0]['home_abbr']) == ('CWS', 'CLE')
+
 
 TEAM_DATA = {'team_abbreviation': {'147': 'NYY'}}
 BASE_CONFIG = {

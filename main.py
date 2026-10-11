@@ -21,14 +21,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from config_loader import load_config, add_config_arg
 from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations, find_next_game_date, fetch_tomorrow_games, SPORT_NAMES
 from fetch_leaders import fetch_leaders
+from fetch_series_stats import fetch_series_leaders
 from fetch_streaks import fetch_streaks
-from fetch_bullpen import fetch_bullpen
+from fetch_bullpen import fetch_bullpen, live_playoff_team_ids
 from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from fetch_team_quadrant import fetch_team_quadrant
 from render_scoreboard import render, _get_display_mode
 from display import send_to_display
-from util import load_json_file, in_hour_window
+from util import POSTSEASON_GAME_TYPES, load_json_file, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
 from image_idle import draw_idle_screen, draw_history_screen
@@ -517,6 +518,12 @@ def _render_next_games(config, idle_config):
         return None
 
 
+def _is_postseason_idle():
+    """True on an off day while a postseason bracket is live (see morning_rotation)."""
+    bracket = (load_json_file('playoff_bracket.json') or {}).get('series')
+    return bool(bracket) and is_postseason_window(datetime.now())
+
+
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen.
 
@@ -524,8 +531,16 @@ def _show_idle_screen(config, auto_open=False):
     the output is deterministic for any given cron tick): next day's games,
     recent transactions, the team quadrant chart and this-day-in-history. A
     view with nothing to draw falls back to the next-games preview, then to
-    transactions, so the panel is never blank.
+    transactions, so the panel is never blank. During the postseason the
+    transactions and quadrant slots show the next-games preview instead.
     """
+    # After the World Series there is nothing to show: replay a random past day.
+    from offseason_replay import is_offseason, maybe_start_replay
+    _now = _local_now(config)
+    _series = (load_json_file('playoff_bracket.json') or {}).get('series')
+    if is_offseason(_now, _series) and maybe_start_replay(config, _now.strftime('%Y-%m-%d')):
+        return
+
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
 
@@ -536,7 +551,14 @@ def _show_idle_screen(config, auto_open=False):
     _block = datetime.now().minute // 15
     image = None
 
-    if _block == 0 and config.get('idle_schedule_rotation', True):
+    # In the postseason, transactions and the season-shape quadrant chart are
+    # not relevant: the useful thing on an off day is when games resume, so
+    # those slots show the next-games preview instead (history keeps its slot).
+    _postseason_idle = _is_postseason_idle()
+    if _postseason_idle and _block in (1, 2):
+        _block = 0
+
+    if _block == 0 and (_postseason_idle or config.get('idle_schedule_rotation', True)):
         image = _render_next_games(config, idle_config)
 
     if image is None and _block == 3 and config.get('idle_history_rotation', True):
@@ -653,7 +675,9 @@ def morning_rotation(config, now=None):
     if _is_postseason:
         views = [v for v in views if v != 'quadrant']
 
-    if config.get('morning_alternate_bracket', True) and _is_postseason:
+    # The grid already carries the bracket (round header + series tiles), so the
+    # full-screen bracket view is opt-in rather than another swap in the cycle.
+    if config.get('morning_alternate_bracket', False) and _is_postseason:
         views.append('bracket')
 
     return tuple(views)
@@ -907,6 +931,21 @@ def _refresh_leaders(config, sched, league_mode, sport_id, force=False, context=
         print(f"Warning: leaders fetch{context} failed: {e}")
 
 
+def _refresh_series_leaders(config, league_mode, force=False, context=''):
+    """Re-sum the primary team's series stats for the series-leaders tiles.
+
+    fetch_series_leaders keeps its own TTL (5 minutes while live, otherwise
+    only when the game's state changes), so this is safe to call every cycle.
+    """
+    if not (config.get('show_series_panel', False) and league_mode != 'aaa'):
+        return
+    try:
+        fetch_series_leaders((load_json_file('games.json') or {}).get('games'),
+                             config.get('primary', ''), force=force)
+    except Exception as e:
+        print(f"Warning: series leaders fetch{context} failed: {e}")
+
+
 def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=''):
     """Refetch Hot Hitters / Hot Arms data for the streaks and scoreless panels.
 
@@ -930,14 +969,20 @@ def _refresh_streaks(config, sched, league_mode, sport_id, force=False, context=
 def _refresh_bullpen(config, league_mode, force=False, context=''):
     """Refetch relief-pitcher workload for the primary team and its opponent.
 
-    fetch_bullpen keeps its own once-a-day / 6-hour cache, so this is safe to
-    call every cycle. MLB-only.
+    While a postseason game is live, every team in a live postseason game is
+    included (and the fetch runs even with the panel off), since the grid
+    auto-shows their tiles. fetch_bullpen keeps its own once-a-day / 6-hour
+    cache, so this is safe to call every cycle. MLB-only.
     """
-    if not (config.get('show_bullpen_panel', False) and league_mode != 'aaa'):
+    if league_mode == 'aaa':
+        return
+    primary = config.get('primary', '')
+    live_ids = live_playoff_team_ids((load_json_file('games.json') or {}).get('games'), primary)
+    if not (config.get('show_bullpen_panel', False) or live_ids):
         return
     try:
-        fetch_bullpen(config.get('primary', ''),
-                      days=config.get('bullpen_lookback_days', 3), force=force)
+        fetch_bullpen(primary, days=config.get('bullpen_lookback_days', 3), force=force,
+                      extra_team_ids=live_ids)
     except Exception as e:
         print(f"Warning: bullpen fetch{context} failed: {e}")
 
@@ -1182,11 +1227,10 @@ Examples:
 
     # 6. Fetch
     # Capture playoff finals *before* the fetch so we can detect completions below.
-    _PLAYOFF_GAME_TYPES = {'W', 'D', 'L', 'F'}
     _FINAL_STATES = {'Final', 'Game Over', 'Final: Tied', 'Completed Early'}
     _pre_fetch_playoff_finals = {
         g.get('game_pk') for g in load_json_file('games.json').get('games', [])
-        if g.get('game_type') in _PLAYOFF_GAME_TYPES
+        if g.get('game_type') in POSTSEASON_GAME_TYPES
         and g.get('detailed_state') in _FINAL_STATES
     }
     fetch_scoreboard_for_date(date_str, sport_id, config)
@@ -1240,7 +1284,7 @@ Examples:
         config, sched, track_transition=not _no_throttle and not args.date)
     # Force bracket/sidebar refresh immediately when a playoff game just finished.
     _playoff_just_finished = any(
-        g.get('game_type') in _PLAYOFF_GAME_TYPES
+        g.get('game_type') in POSTSEASON_GAME_TYPES
         and g.get('detailed_state') in _FINAL_STATES
         and g.get('game_pk') not in _pre_fetch_playoff_finals
         for g in load_json_file('games.json').get('games', [])
@@ -1262,6 +1306,7 @@ Examples:
     _refresh_news(config, force=_force_data_refresh)
     _refresh_leaders(config, sched, league_mode, sport_id, force=_force_data_refresh)
     _refresh_streaks(config, sched, league_mode, sport_id, force=_force_data_refresh)
+    _refresh_series_leaders(config, league_mode, force=_force_data_refresh)
     _refresh_bullpen(config, league_mode, force=_force_data_refresh)
 
     # A morning rotation block showing the quadrant overrides the display mode

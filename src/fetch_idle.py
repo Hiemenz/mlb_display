@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from util import load_json_file, save_off_results
+from util import POSTSEASON_GAME_TYPES, load_json_file, save_off_results
 
 
 _MLB_SEASON_START_MONTH = 4   # April
@@ -29,6 +29,35 @@ def _random_past_date(today_str):
     if not (_MLB_SEASON_START_MONTH <= fallback.month <= _MLB_SEASON_END_MONTH):
         fallback = fallback.replace(month=7, day=4)
     return fallback.strftime('%Y-%m-%d')
+
+
+def pick_replay_date(today_str, sport_id=1, tries=8, min_games=4, full_slate=10):
+    """A random past regular-season date that actually had games, or None.
+
+    Candidates come from _random_past_date and are checked against the
+    schedule. The first date with at least full_slate games wins (the grid
+    holds 15, so a replay of a busy day fills the board); otherwise the
+    busiest date with at least min_games is used.
+    """
+    best, best_count = None, 0
+    for _ in range(tries):
+        candidate = _random_past_date(today_str)
+        try:
+            resp = requests.get(
+                f'https://statsapi.mlb.com/api/v1/schedule?startDate={candidate}'
+                f'&endDate={candidate}&sportId={sport_id}&gameType=R', timeout=10)
+            if resp.status_code != 200:
+                continue
+            dates = resp.json().get('dates', [])
+            count = len(dates[0].get('games', [])) if dates else 0
+        except Exception as e:
+            print(f"pick_replay_date {candidate}: {e}")
+            continue
+        if count >= full_slate:
+            return candidate
+        if count >= min_games and count > best_count:
+            best, best_count = candidate, count
+    return best
 
 
 def _parse_idle_game(game):
@@ -214,7 +243,6 @@ def fetch_idle_games(today_str, sport_id=1, max_games=5):
     return None, []
 
 
-_POSTSEASON_TYPES = ('F', 'D', 'L', 'W')
 _NEXT_GAMES_TTL_SECONDS = 3600
 _NEXT_GAMES_LOOKAHEAD_DAYS = 30
 
@@ -241,7 +269,7 @@ def _parse_next_game(game):
 
     game_type = game.get('gameType')
     series = None
-    if game_type in _POSTSEASON_TYPES:
+    if game_type in POSTSEASON_GAME_TYPES:
         status = game.get('seriesStatus') or {}
         series = {
             'desc': status.get('shortDescription') or game.get('seriesDescription'),

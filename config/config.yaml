@@ -199,6 +199,11 @@ hide_non_live_games: false
 show_leaders_panel: true
 leaders_rotation_minutes: 5
 
+# Series leaders tiles: the primary team's current series, summed across its
+# games — top HR / hits / RBI / AVG hitters and K / IP pitchers of both teams.
+# Shares the free slots (and the rotation above) with the season leaders panel.
+show_series_panel: true
+
 # Transactions ticker: show recent MLB transactions (IL moves, call-ups, signings)
 # in an empty grid cell when fewer than 15 games are on the slate. Claims the
 # first free slot, ahead of the leaders panel. Refreshed periodically from the
@@ -298,6 +303,17 @@ weather:
 replay_date: ""
 replay_step_minutes: 1
 replay_delay_seconds: 20
+
+# Off-season replay: after the World Series (Dec-Feb, or once the WS is complete) the
+# idle screen replays a random past date: up to 15 games on the grid at once,
+# each running at its real (staggered) start time.
+# offseason_replay: true/false turns it on or off (off = the regular idle screen).
+# offseason_replays_per_day: how many replays to start each day (then idle screen).
+# offseason_replay_step_minutes / offseason_replay_delay_seconds: pacing.
+offseason_replay: true
+offseason_replays_per_day: 2
+offseason_replay_step_minutes: 5
+offseason_replay_delay_seconds: 30
 
 # Auto-generate a timelapse video after all games for the day go Final.
 # Output is saved to output/scoreboard_YYYY-MM-DD.gif + .mp4.

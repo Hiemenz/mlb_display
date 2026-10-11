@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance
 
 from image_assets import _get_font, _load_logo_gray, _logo_small, _try_download_logo
 from image_utils import TRANSACTION_TYPE_ABBR
+from util import POSTSEASON_GAME_TYPES
 
 _REPO_ROOT  = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 _MASCOT_DIR = os.path.join(_REPO_ROOT, 'pic', 'mascots')
@@ -253,9 +254,10 @@ def draw_history_screen(games, year, team_data, config):
     """
     from image_box import draw_box, set_historical_mode
 
+    # Draw in light mode (draw_box only knows black-on-white), then invert for
+    # dark mode at the end, like the other screens.
     dark_mode = config.get('dark_mode', False)
-    bg = 0 if dark_mode else 255
-    fg = 255 if dark_mode else 0
+    bg, fg = 255, 0
 
     Himage = Image.new('1', (800, 480), bg)
     draw   = ImageDraw.Draw(Himage)
@@ -275,7 +277,7 @@ def draw_history_screen(games, year, team_data, config):
 
     if not games:
         draw.text((6, HDR_H + 20), 'No historical games found for this date', font=_get_font(14), fill=fg)
-        return Himage
+        return _invert_if_dark(Himage, dark_mode)
 
     # ── Game grid (5 col × up to 3 rows, 150 px slots, matching main board) ──
     set_historical_mode(True)
@@ -303,7 +305,14 @@ def draw_history_screen(games, year, team_data, config):
     finally:
         set_historical_mode(False)
 
-    return Himage
+    return _invert_if_dark(Himage, dark_mode)
+
+
+def _invert_if_dark(image, dark_mode):
+    """Flip a light-mode render to dark mode."""
+    if dark_mode:
+        return ImageOps.invert(image.convert('L')).convert('1')
+    return image
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +322,6 @@ def draw_history_screen(games, year, team_data, config):
 _NG_HEADER_H  = 28
 _NG_MAX_GAMES = 16          # 2 columns x 8 rows — MLB never schedules more than 15
 _NG_MAX_ROW_H = 150         # a lone game shouldn't balloon past this
-_NG_POSTSEASON = ('F', 'D', 'L', 'W')
 
 
 def _first_pitch_countdown(start_utc, now):
@@ -352,7 +360,7 @@ def _local_time_label(start_utc, tz):
 def _next_games_title(date_str, games, today):
     """Header title: 'TOMORROW', or the weekday/date when the gap is longer."""
     day = datetime.strptime(date_str, '%Y-%m-%d').date()
-    is_post = any(g.get('game_type') in _NG_POSTSEASON for g in games)
+    is_post = any(g.get('game_type') in POSTSEASON_GAME_TYPES for g in games)
     prefix = 'POSTSEASON - ' if is_post else ''
     stamp = f"{day.strftime('%a %b')} {day.day}".upper()
     if day == today + timedelta(days=1):

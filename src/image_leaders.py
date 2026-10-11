@@ -44,19 +44,21 @@ def _current_category(rotation_minutes=5):
     return _random.Random(block_idx).choice(_CATEGORIES)
 
 
-def rotating_categories(n, rotation_minutes=5):
+def rotating_categories(n, rotation_minutes=5, categories=None):
     """Return ``n`` categories in a random (but time-block-stable) order.
 
     Used when there are fewer free grid slots than categories: instead of
     always showing the same subset, the set of categories on display is
     reshuffled at random each rotation window so every category eventually
-    gets shown.
+    gets shown. ``categories`` defaults to the leaders categories; the grid
+    passes a longer mixed list when other rotating tiles share the slots.
     """
-    n = max(0, min(n, len(_CATEGORIES)))
+    categories = _CATEGORIES if categories is None else categories
+    n = max(0, min(n, len(categories)))
     rotation_minutes = max(rotation_minutes, 1)
     minute_block = datetime.now().hour * 60 + datetime.now().minute
     block_idx = minute_block // rotation_minutes
-    shuffled = _CATEGORIES[:]
+    shuffled = list(categories)
     _random.Random(block_idx).shuffle(shuffled)
     return shuffled[:n]
 
