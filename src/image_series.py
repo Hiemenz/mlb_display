@@ -112,8 +112,10 @@ def _scheduled_games(away_id, home_id, extra=None):
                 dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                 if dt <= now:
                     continue
+                # Bracket games often have no confirmed start time (midnight UTC
+                # placeholder), so show just the date rather than a bogus time.
                 local = dt.astimezone()
-                time_str = local.strftime('%a') + ' ' + local.strftime('%-I%p').lower()
+                time_str = local.strftime('%-m/%-d')
             except Exception:
                 time_str = ''
             out.append({

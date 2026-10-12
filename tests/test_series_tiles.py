@@ -250,6 +250,20 @@ class TestDrawSeriesCell:
         assert result[0]['away_abbr'] == 'PHI'
         assert result[0]['home_abbr'] == 'ATL'
 
+    def test_extra_fallback_shows_date_not_time(self):
+        """Bracket fallback shows M/D date format, not a potentially bogus time."""
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        import re
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        extra = [{'game_start_utc': future, 'away_id': '143', 'home_id': '144',
+                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 99}]
+        with patch('image_series.load_json_file', return_value={'games': []}):
+            result = _scheduled_games('143', '144', extra=extra)
+        time_str = result[0]['time']
+        assert re.match(r'^\d{1,2}/\d{1,2}$', time_str), f"Expected M/D format, got {time_str!r}"
+
     def test_extra_fallback_skips_past_games(self):
         """Bracket games that are in the past are filtered out."""
         from image_series import _scheduled_games
