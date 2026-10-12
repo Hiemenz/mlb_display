@@ -905,6 +905,11 @@ def _refresh_playoff_bracket(config, league_mode, force=False, context=''):
         return
     if not (is_postseason_window() and _should_refresh_playoff_bracket(force=force)):
         return
+    # Once the World Series is complete the bracket is final — never fetch again.
+    _cached = load_json_file('playoff_bracket.json') or {}
+    if any(s.get('round') == 'WS' and s.get('complete')
+           for s in _cached.get('series', [])):
+        return
     try:
         fetch_playoff_bracket()
     except Exception as e:
