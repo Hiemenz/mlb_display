@@ -1326,8 +1326,8 @@ def derive_playoff_active_round(bracket_data, today=None):
     _t = today or _date.today()
     today_str = _t if isinstance(_t, str) else _t.isoformat()
 
-    started_incomplete_ro: int | None = None   # lowest started round still in progress
-    started_complete_ro:   int | None = None   # highest started round that is all done
+    started_incomplete_ro = None   # int | None — lowest started round still in progress
+    started_complete_ro   = None   # int | None — highest started round that is all done
     highest_ro = -1
 
     for s in bracket_data.get('series', []):

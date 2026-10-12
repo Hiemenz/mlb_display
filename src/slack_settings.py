@@ -13,6 +13,7 @@ import re
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 import yaml
@@ -50,8 +51,8 @@ class Setting:
     group: str
     options: tuple = ()
     help: str = ""
-    lo: int | None = None
-    hi: int | None = None
+    lo: Optional[int] = None
+    hi: Optional[int] = None
     blank_ok: bool = False
 
 
