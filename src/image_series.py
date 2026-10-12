@@ -112,10 +112,13 @@ def _scheduled_games(away_id, home_id, extra=None):
                 dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                 if dt <= now:
                     continue
-                # Bracket games often have no confirmed start time (midnight UTC
-                # placeholder), so show just the date rather than a bogus time.
                 local = dt.astimezone()
-                time_str = local.strftime('%-m/%-d')
+                # Midnight UTC is the MLB API's placeholder before the broadcast
+                # schedule is confirmed — show just the date to avoid "2am" labels.
+                if dt.hour == 0 and dt.minute == 0:
+                    time_str = local.strftime('%-m/%-d')
+                else:
+                    time_str = local.strftime('%a') + ' ' + local.strftime('%-I%p').lower()
             except Exception:
                 time_str = ''
             out.append({

@@ -250,19 +250,32 @@ class TestDrawSeriesCell:
         assert result[0]['away_abbr'] == 'PHI'
         assert result[0]['home_abbr'] == 'ATL'
 
-    def test_extra_fallback_shows_date_not_time(self):
-        """Bracket fallback shows M/D date format, not a potentially bogus time."""
+    def test_extra_fallback_midnight_utc_shows_date_only(self):
+        """Midnight UTC (unconfirmed WS placeholder) shows M/D, not a bogus time."""
         from image_series import _scheduled_games
         from unittest.mock import patch
-        from datetime import datetime, timezone, timedelta
         import re
-        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        extra = [{'game_start_utc': future, 'away_id': '143', 'home_id': '144',
+        # Midnight UTC — API placeholder before broadcast schedule is set.
+        extra = [{'game_start_utc': '2026-10-23T00:00:00Z', 'away_id': '143', 'home_id': '144',
                   'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 99}]
         with patch('image_series.load_json_file', return_value={'games': []}):
             result = _scheduled_games('143', '144', extra=extra)
-        time_str = result[0]['time']
-        assert re.match(r'^\d{1,2}/\d{1,2}$', time_str), f"Expected M/D format, got {time_str!r}"
+        assert re.match(r'^\d{1,2}/\d{1,2}$', result[0]['time']), \
+            f"Expected M/D for midnight UTC, got {result[0]['time']!r}"
+
+    def test_extra_fallback_real_time_shows_day_and_time(self):
+        """Bracket game with a confirmed non-midnight time shows day + time (e.g. CS)."""
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        import re
+        # 8:08pm ET = 00:08 UTC next day — real broadcast time.
+        extra = [{'game_start_utc': '2026-10-18T00:08:00Z', 'away_id': '143', 'home_id': '144',
+                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 98}]
+        with patch('image_series.load_json_file', return_value={'games': []}):
+            result = _scheduled_games('143', '144', extra=extra)
+        # Should look like "Sat 8pm" — day abbr + time, not just a date.
+        assert re.match(r'^[A-Z][a-z]{2} \d{1,2}(am|pm)$', result[0]['time']), \
+            f"Expected day+time for confirmed time, got {result[0]['time']!r}"
 
     def test_extra_fallback_skips_past_games(self):
         """Bracket games that are in the past are filtered out."""
