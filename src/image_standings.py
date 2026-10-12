@@ -1532,33 +1532,17 @@ def _draw_header_label(draw, font, label, tx, ty, tracking=2):
 
 
 def draw_playoff_round_header(Himage, bracket_data):
-    """Draw the current playoff round name centred in the 30px top strip.
-
-    For the Championship Series, both league labels are shown side-by-side
-    ("AL CHAMP SERIES    NL CHAMP SERIES") since both run simultaneously.
-    """
+    """Draw the current playoff round name centred in the 30px top strip."""
     rnd = derive_playoff_active_round(bracket_data)
     if not rnd:
         return Himage
+    label    = _ROUND_LABEL.get(rnd, rnd)
     draw     = ImageDraw.Draw(Himage)
     font     = _get_font(11)
     tracking = 2
     ty       = (_WC_STRIP_H - 11) // 2
-
-    if rnd == 'CS':
-        al_label, nl_label = 'AL CHAMP SERIES', 'NL CHAMP SERIES'
-        gap   = 40
-        al_w  = int(font.getlength(al_label)) + tracking * (len(al_label) - 1)
-        nl_w  = int(font.getlength(nl_label)) + tracking * (len(nl_label) - 1)
-        tx    = (800 - al_w - gap - nl_w) // 2
-        tx    = _draw_header_label(draw, font, al_label, tx, ty, tracking)
-        tx   += gap
-        _draw_header_label(draw, font, nl_label, tx, ty, tracking)
-    else:
-        label  = _ROUND_LABEL.get(rnd, rnd)
-        lw     = int(font.getlength(label)) + tracking * (len(label) - 1)
-        _draw_header_label(draw, font, label, (800 - lw) // 2, ty, tracking)
-
+    lw       = int(font.getlength(label)) + tracking * (len(label) - 1)
+    _draw_header_label(draw, font, label, (800 - lw) // 2, ty, tracking)
     return Himage
 
 
