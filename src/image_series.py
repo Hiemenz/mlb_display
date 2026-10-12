@@ -56,10 +56,15 @@ def _bold_text(draw, x, y, text, font, fill):
     draw.text((x + 1, y), text, font=font, fill=fill)
 
 
-def _scheduled_games(away_id, home_id):
+def _scheduled_games(away_id, home_id, extra=None):
     """Return upcoming scheduled games for this series, sorted by date.
 
     Each entry: {time, away_id, home_id, away_abbr, home_abbr}.
+
+    ``extra`` is an optional list of {game_start_utc, away_id, home_id,
+    away_abbr, home_abbr} dicts from playoff_bracket.json.  When games.json
+    has no upcoming game for this series (e.g. an off-day between CS/WS games)
+    these are used as a fallback, filtered to future start times.
     """
     try:
         games = load_json_file('games.json').get('games', [])
@@ -92,6 +97,35 @@ def _scheduled_games(away_id, home_id):
             'sort_key':   raw,
         })
     out.sort(key=lambda x: x['sort_key'])
+
+    if not out and extra:
+        # Fallback: use bracket-level scheduled game data (covers off-days).
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        for g in extra:
+            a_id = str(g.get('away_id', ''))
+            h_id = str(g.get('home_id', ''))
+            if {a_id, h_id} != {str(away_id), str(home_id)}:
+                continue
+            raw = g.get('game_start_utc', '')
+            try:
+                dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+                if dt <= now:
+                    continue
+                local = dt.astimezone()
+                time_str = local.strftime('%a') + ' ' + local.strftime('%-I%p').lower()
+            except Exception:
+                time_str = ''
+            out.append({
+                'time':      time_str,
+                'away_id':   a_id,
+                'home_id':   h_id,
+                'away_abbr': g.get('away_abbr') or abbr_map.get(a_id) or a_id,
+                'home_abbr': g.get('home_abbr') or abbr_map.get(h_id) or h_id,
+                'sort_key':  raw,
+            })
+        out.sort(key=lambda x: x['sort_key'])
+
     return out
 
 
@@ -243,7 +277,10 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     n_played      = len(game_results)
 
     # Upcoming scheduled games — filled into slots after the played games.
-    upcoming = [] if winner else _scheduled_games(away_id, home_id)
+    # For CS/WS, also pass bracket-level scheduled games as a fallback so the
+    # next game appears on off-days when games.json has nothing for this series.
+    _bracket_sched = series.get('scheduled_games') if rnd in ('CS', 'WS') else None
+    upcoming = [] if winner else _scheduled_games(away_id, home_id, extra=_bracket_sched)
 
     kw_result = dict(away_abbr=away_abbr, away_id=away_id,
                      home_abbr=home_abbr, home_id=home_id,

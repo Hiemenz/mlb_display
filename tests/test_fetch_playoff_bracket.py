@@ -439,3 +439,56 @@ class TestFetchPlayoffBracket:
         assert s['winner_abbr'] == 'NYY'
         # game_results in order: BOS(G1), NYY(G2), NYY(G3)
         assert [gr['winner_id'] for gr in s['game_results']] == ['111', '147', '147']
+
+    def test_scheduled_game_stored_in_scheduled_games(self):
+        """A Scheduled game is stored in scheduled_games with utc time and abbrs."""
+        game = _game('L', 147, 111, 'NYY', 'BOS', state='Scheduled', game_pk=500)
+        game['gameDate'] = '2026-10-15T22:08:00Z'
+        payload = {'dates': [{'date': '2026-10-15', 'games': [game]}]}
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2026)
+        s = result['series'][0]
+        assert 'scheduled_games' in s
+        assert len(s['scheduled_games']) == 1
+        sg = s['scheduled_games'][0]
+        assert sg['game_start_utc'] == '2026-10-15T22:08:00Z'
+        assert sg['away_abbr'] == 'NYY'
+        assert sg['home_abbr'] == 'BOS'
+        assert sg['game_pk'] == 500
+
+    def test_final_game_not_in_scheduled_games(self):
+        """Final games must not appear in scheduled_games."""
+        payload = {'dates': [{'games': [
+            _game('L', 147, 111, 'NYY', 'BOS', state='Final', away_winner=True, game_pk=1),
+        ]}]}
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2026)
+        s = result['series'][0]
+        assert s.get('scheduled_games', []) == []
+
+    def test_scheduled_game_deduplicates_by_game_pk(self):
+        """Same scheduled game_pk appearing in two date entries is stored once."""
+        game = _game('L', 147, 111, 'NYY', 'BOS', state='Scheduled', game_pk=501)
+        game['gameDate'] = '2026-10-16T22:08:00Z'
+        payload = {'dates': [
+            {'date': '2026-10-15', 'games': [game]},
+            {'date': '2026-10-16', 'games': [game]},
+        ]}
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2026)
+        s = result['series'][0]
+        assert len(s.get('scheduled_games', [])) == 1
+
+    def test_empty_state_game_stored_in_scheduled_games(self):
+        """A game with empty detailedState (far-future) is also stored."""
+        game = _game('W', 147, 111, 'NYY', 'BOS', state='', game_pk=502)
+        game['gameDate'] = '2026-10-20T22:08:00Z'
+        payload = {'dates': [{'date': '2026-10-20', 'games': [game]}]}
+        with patch('standings.requests.get', return_value=_resp(json_data=payload)), \
+             patch('standings.save_off_results'):
+            result = fetch_playoff_bracket(season=2026)
+        s = result['series'][0]
+        assert len(s.get('scheduled_games', [])) == 1

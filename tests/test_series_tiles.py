@@ -236,6 +236,83 @@ class TestDrawSeriesCell:
             result = _scheduled_games('145', '114')
         assert (result[0]['away_abbr'], result[0]['home_abbr']) == ('CWS', 'CLE')
 
+    def test_extra_fallback_used_when_games_json_empty(self):
+        """Bracket scheduled_games appear when games.json has nothing for the series."""
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        extra = [{'game_start_utc': future, 'away_id': '143', 'home_id': '144',
+                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 99}]
+        with patch('image_series.load_json_file', return_value={'games': []}):
+            result = _scheduled_games('143', '144', extra=extra)
+        assert len(result) == 1
+        assert result[0]['away_abbr'] == 'PHI'
+        assert result[0]['home_abbr'] == 'ATL'
+
+    def test_extra_fallback_skips_past_games(self):
+        """Bracket games that are in the past are filtered out."""
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        past = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        extra = [{'game_start_utc': past, 'away_id': '143', 'home_id': '144',
+                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 99}]
+        with patch('image_series.load_json_file', return_value={'games': []}):
+            result = _scheduled_games('143', '144', extra=extra)
+        assert result == []
+
+    def test_extra_fallback_not_used_when_games_json_has_result(self):
+        """When games.json already has an upcoming game, extra is ignored."""
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        extra = [{'game_start_utc': future, 'away_id': '143', 'home_id': '144',
+                  'away_abbr': 'XXX', 'home_abbr': 'YYY', 'game_pk': 99}]
+        today = {'games': [{'detailed_state': 'Scheduled',
+                             'away_team_id': '143', 'home_team_id': '144',
+                             'away_team': 'PHI', 'home_team': 'ATL',
+                             'game_date': future}]}
+        files = {'games.json': today, 'teams.json': {}}
+        with patch('image_series.load_json_file', side_effect=files.__getitem__):
+            result = _scheduled_games('143', '144', extra=extra)
+        assert result[0]['away_abbr'] != 'XXX'
+
+    def test_cs_tile_uses_bracket_scheduled_games_on_off_day(self):
+        """CS series tile shows next game from bracket data when games.json is empty."""
+        from datetime import datetime, timezone, timedelta
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        cs_series = dict(_NO_GAMES, round='CS', league='AL',
+                         away_abbr='PHI', home_abbr='ATL',
+                         away_id='143', home_id='144',
+                         away_wins=1, home_wins=0,
+                         game_results=[
+                             {'winner_id': '143', 'game_pk': 1, 'date': '2026-10-05',
+                              'away_id': '143', 'home_id': '144',
+                              'away_score': 4, 'home_score': 2}
+                         ],
+                         scheduled_games=[
+                             {'game_start_utc': future, 'away_id': '143', 'home_id': '144',
+                              'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 55}
+                         ])
+        img_with  = _draw(cs_series, fake_games={'games': []})
+        img_blank = _draw(dict(cs_series, scheduled_games=[]), fake_games={'games': []})
+        assert list(img_with.getdata()).count(0) > list(img_blank.getdata()).count(0)
+
+    def test_wc_tile_ignores_bracket_scheduled_games(self):
+        """WC series does not use bracket scheduled_games; only games.json."""
+        from datetime import datetime, timezone, timedelta
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        wc_with_sched = dict(_NO_GAMES, round='WC',
+                             scheduled_games=[
+                                 {'game_start_utc': future, 'away_id': '143', 'home_id': '144',
+                                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 77}
+                             ])
+        img_with  = _draw(wc_with_sched, fake_games={'games': []})
+        img_blank = _draw(dict(_NO_GAMES, round='WC'), fake_games={'games': []})
+        assert list(img_with.getdata()).count(0) == list(img_blank.getdata()).count(0)
+
 
 TEAM_DATA = {'team_abbreviation': {'147': 'NYY'}}
 BASE_CONFIG = {
