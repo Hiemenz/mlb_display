@@ -189,6 +189,7 @@ _STREAKS_MAX_AGE_HOURS = 24    # refresh if streaks.json is older than this
 _TRANSACTIONS_MAX_AGE_HOURS = 3  # refresh if transactions.json is older than this
 _NEWS_MAX_AGE_HOURS = 6         # refresh if news.json is older than this
 _PLAYOFF_BRACKET_MAX_AGE_HOURS = 1  # refresh cadence during an active postseason
+_OFFDAY_RECHECK_HOURS = 6       # on a "no games until X" day, re-check the schedule this often
 
 
 def _cache_age_hours(filename):
@@ -298,10 +299,28 @@ def _should_refresh_playoff_bracket(force=False):
                            _PLAYOFF_BRACKET_MAX_AGE_HOURS, force)
 
 
+def _hours_since(iso_ts):
+    """Hours since an ISO timestamp (naive = UTC), or None if missing/unparseable."""
+    if not iso_ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+    except Exception:
+        return None
+
+
 def _should_skip_poll(date_str, config, sched):
     """Return (should_skip, reason_str) based on smart polling state."""
     next_game_date = sched.get('next_game_date')
     if next_game_date and next_game_date > date_str:
+        # Don't trust the cached next-game date forever: a game can be added or
+        # rescheduled onto today, so re-fetch the schedule every few hours.
+        age_h = _hours_since(sched.get('last_game_fetch'))
+        if age_h is None or age_h >= _OFFDAY_RECHECK_HOURS:
+            return False, ""
         return True, f"No games until {next_game_date} — skipping API call"
 
     # If the last fetch was for a different date, always fetch fresh data.
