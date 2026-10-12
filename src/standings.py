@@ -334,6 +334,22 @@ def fetch_playoff_bracket(season=None):
                         'away_id':    away_id,
                         'home_id':    home_id,
                     })
+            elif state in ('Scheduled', ''):
+                # Store upcoming games so series tiles can show the next scheduled
+                # game even on off-days when games.json has nothing for this series.
+                game_date_str = game.get('gameDate', '')
+                if game_date_str and not any(
+                    sg.get('game_pk') == game_pk
+                    for sg in entry.get('scheduled_games', [])
+                ):
+                    entry.setdefault('scheduled_games', []).append({
+                        'game_start_utc': game_date_str,
+                        'away_id':   away_id,
+                        'home_id':   home_id,
+                        'away_abbr': away_obj.get('abbreviation', '???'),
+                        'home_abbr': home_obj.get('abbreviation', '???'),
+                        'game_pk':   game_pk,
+                    })
 
             wins_needed = _WIN_GOAL[gtype]
             if entry['away_wins'] >= wins_needed:
