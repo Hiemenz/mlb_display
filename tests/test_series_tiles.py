@@ -289,22 +289,45 @@ class TestDrawSeriesCell:
             result = _scheduled_games('143', '144', extra=extra)
         assert result == []
 
-    def test_extra_fallback_not_used_when_games_json_has_result(self):
-        """When games.json already has an upcoming game, extra is ignored."""
+    def test_extra_same_date_deduped_when_games_json_has_result(self):
+        """Bracket game on the same date as a games.json entry is skipped (dedup)."""
         from image_series import _scheduled_games
         from unittest.mock import patch
         from datetime import datetime, timezone, timedelta
-        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        extra = [{'game_start_utc': future, 'away_id': '143', 'home_id': '144',
+        today_dt = datetime.now(timezone.utc) + timedelta(days=1)
+        today_iso = today_dt.strftime('%Y-%m-%dT20:08:00Z')
+        same_day_midnight = today_dt.strftime('%Y-%m-%dT00:00:00Z')
+        extra = [{'game_start_utc': same_day_midnight, 'away_id': '143', 'home_id': '144',
                   'away_abbr': 'XXX', 'home_abbr': 'YYY', 'game_pk': 99}]
         today = {'games': [{'detailed_state': 'Scheduled',
                              'away_team_id': '143', 'home_team_id': '144',
                              'away_team': 'PHI', 'home_team': 'ATL',
-                             'game_date': future}]}
+                             'game_date': today_iso}]}
         files = {'games.json': today, 'teams.json': {}}
         with patch('image_series.load_json_file', side_effect=files.__getitem__):
             result = _scheduled_games('143', '144', extra=extra)
-        assert result[0]['away_abbr'] != 'XXX'
+        assert len(result) == 1
+        assert result[0]['away_abbr'] != 'XXX'   # games.json entry, not bracket duplicate
+
+    def test_extra_future_games_merged_when_games_json_has_today(self):
+        """Bracket games for future dates are merged even when games.json has today's game."""
+        from image_series import _scheduled_games
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        today_iso = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT20:08:00Z')
+        future_iso = (datetime.now(timezone.utc) + timedelta(days=3)).strftime('%Y-%m-%dT00:00:00Z')
+        extra = [{'game_start_utc': future_iso, 'away_id': '143', 'home_id': '144',
+                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 88}]
+        today = {'games': [{'detailed_state': 'Scheduled',
+                             'away_team_id': '143', 'home_team_id': '144',
+                             'away_team': 'PHI', 'home_team': 'ATL',
+                             'game_date': today_iso}]}
+        files = {'games.json': today, 'teams.json': {}}
+        with patch('image_series.load_json_file', side_effect=files.__getitem__):
+            result = _scheduled_games('143', '144', extra=extra)
+        assert len(result) == 2
+        assert result[0]['sort_key'] == today_iso   # today first
+        assert result[1]['sort_key'] == future_iso  # bracket game appended
 
     def test_cs_tile_uses_bracket_scheduled_games_on_off_day(self):
         """CS series tile shows next game from bracket data when games.json is empty."""

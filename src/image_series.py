@@ -98,16 +98,22 @@ def _scheduled_games(away_id, home_id, extra=None):
         })
     out.sort(key=lambda x: x['sort_key'])
 
-    if not out and extra:
-        # Fallback: use bracket-level scheduled game data (covers off-days).
+    if extra:
+        # Merge bracket-level scheduled games as future slots.  On a game day
+        # games.json supplies today's entry; bracket games fill the remaining
+        # upcoming slots (10/12, 10/13, 10/14…).  On an off-day games.json has
+        # nothing, so all bracket entries become the upcoming list.
         from datetime import timezone
         now = datetime.now(timezone.utc)
+        covered = {g['sort_key'][:10] for g in out}   # 'YYYY-MM-DD' dates already from games.json
         for g in extra:
             a_id = str(g.get('away_id', ''))
             h_id = str(g.get('home_id', ''))
             if {a_id, h_id} != {str(away_id), str(home_id)}:
                 continue
             raw = g.get('game_start_utc', '')
+            if raw[:10] in covered:
+                continue   # games.json already has this date
             try:
                 dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                 if dt <= now:
