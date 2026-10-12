@@ -394,6 +394,37 @@ poetry run python src/standings.py
 
 **Hardware:** Waveshare 7.5″ V2 e-paper display connected to a Raspberry Pi with SPI enabled.
 
+### Newer Python on an older Raspberry Pi OS (`uv`)
+
+Raspberry Pi OS Bullseye ships Python 3.9. To run on Python 3.11 without touching the system Python,
+use [uv](https://docs.astral.sh/uv/) to install it alongside and point Poetry at it:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.local/bin/env
+uv python install 3.11
+
+cd mlb_display
+poetry env remove --all                     # only if an older-Python env already exists
+poetry env use "$(uv python find 3.11)"
+poetry install
+
+# E-paper drivers: not in the lockfile, and the system copies are built for the system Python
+uv pip install --python .venv/bin/python spidev gpiozero RPi.GPIO
+```
+
+Re-run the last `uv pip install` any time the venv is rebuilt.
+
+On a 32-bit Pi (`uname -m` → `armv7l`) there is no prebuilt numpy wheel, so `poetry install` compiles it
+from source. That takes roughly 20 minutes on a Pi 3 and can exhaust memory, so run it in `tmux` or
+with `nohup` and consider more swap.
+
+For cron, call the venv's interpreter directly (cron's `PATH` is minimal) and guard against overlapping runs:
+
+```cron
+* * * * * /usr/bin/flock -n /tmp/mlb_display.lock bash -c 'cd /home/pi/mlb_display && .venv/bin/python main.py >> logs/display.log 2>&1'
+```
+
 **macOS / dev mode:** e-ink hardware update is skipped automatically; images are saved to `resulting_image.bmp` for local preview.
 
 ---
