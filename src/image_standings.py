@@ -1302,7 +1302,7 @@ def draw_standings_sidebar_fullscreen(canvas, standings_data, team_data, side='l
 # ---------------------------------------------------------------------------
 
 _ROUND_ORDER = {'WC': 0, 'DS': 1, 'CS': 2, 'WS': 3}
-_ROUND_LABEL = {'WC': 'WILD CARD', 'DS': 'DIVISION SERIES', 'CS': 'CHAMP. SERIES', 'WS': 'WORLD SERIES'}
+_ROUND_LABEL = {'WC': 'WILD CARD', 'DS': 'DIVISION SERIES', 'CS': 'CHAMPIONSHIP SERIES', 'WS': 'WORLD SERIES'}
 _AL_DIVS = set(_AL_DIV_ORDER)
 _NL_DIVS = set(_NL_DIV_ORDER)
 

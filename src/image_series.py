@@ -16,7 +16,7 @@ _WIN_GOAL    = {'WC': 2, 'DS': 3, 'CS': 4, 'WS': 4}
 _ROUND_LABEL = {
     'WC': '{l} Wild Card',
     'DS': '{l} Div Series',
-    'CS': '{l} Championship Series',
+    'CS': '{l} Champ Series',
     'WS': 'World Series',
 }
 _DOT_R        = 4
