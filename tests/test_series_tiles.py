@@ -250,32 +250,34 @@ class TestDrawSeriesCell:
         assert result[0]['away_abbr'] == 'PHI'
         assert result[0]['home_abbr'] == 'ATL'
 
-    def test_extra_fallback_midnight_utc_shows_date_only(self):
-        """Midnight UTC (unconfirmed WS placeholder) shows M/D, not a bogus time."""
+    def test_extra_fallback_ws_shows_date_only(self):
+        """WS bracket games always show M/D date (times may be unconfirmed)."""
         from image_series import _scheduled_games
         from unittest.mock import patch
         import re
-        # Midnight UTC — API placeholder before broadcast schedule is set.
         extra = [{'game_start_utc': '2026-10-23T00:00:00Z', 'away_id': '143', 'home_id': '144',
                   'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 99}]
         with patch('image_series.load_json_file', return_value={'games': []}):
-            result = _scheduled_games('143', '144', extra=extra)
+            result = _scheduled_games('143', '144', extra=extra, bracket_show_time=False)
         assert re.match(r'^\d{1,2}/\d{1,2}$', result[0]['time']), \
-            f"Expected M/D for midnight UTC, got {result[0]['time']!r}"
+            f"Expected M/D for WS game, got {result[0]['time']!r}"
 
-    def test_extra_fallback_real_time_shows_day_and_time(self):
-        """Bracket game with a confirmed non-midnight time shows day + time (e.g. CS)."""
+    def test_extra_fallback_cs_shows_time(self):
+        """CS bracket games always show day+time regardless of UTC hour."""
         from image_series import _scheduled_games
         from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
         import re
-        # 8:08pm ET = 00:08 UTC next day — real broadcast time.
-        extra = [{'game_start_utc': '2026-10-18T00:08:00Z', 'away_id': '143', 'home_id': '144',
+        # Midnight UTC for a future game — CS should always show time, not date-only.
+        future_midnight = (datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(days=2)).strftime('%Y-%m-%dT00:00:00Z')
+        extra = [{'game_start_utc': future_midnight, 'away_id': '143', 'home_id': '144',
                   'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 98}]
         with patch('image_series.load_json_file', return_value={'games': []}):
-            result = _scheduled_games('143', '144', extra=extra)
-        # Should look like "Sat 8pm" — day abbr + time, not just a date.
+            result = _scheduled_games('143', '144', extra=extra, bracket_show_time=True)
         assert re.match(r'^[A-Z][a-z]{2} \d{1,2}(am|pm)$', result[0]['time']), \
-            f"Expected day+time for confirmed time, got {result[0]['time']!r}"
+            f"Expected day+time for CS game, got {result[0]['time']!r}"
 
     def test_extra_fallback_skips_past_games(self):
         """Bracket games that are in the past are filtered out."""

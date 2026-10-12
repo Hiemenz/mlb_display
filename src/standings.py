@@ -364,6 +364,38 @@ def fetch_playoff_bracket(season=None):
         key=lambda s: (s.pop('round_order', 9), s.get('away_abbr', '')),
     )
 
+    # Supplement with a targeted 14-day fetch so that recently-confirmed
+    # broadcast times replace any midnight-UTC placeholders in scheduled_games.
+    # The full-year call may cache stale midnight-UTC values; the narrow window
+    # call returns the freshest game times from the API.
+    try:
+        from datetime import date, timedelta as _td
+        _today    = date.today().isoformat()
+        _end_date = (date.today() + _td(days=14)).isoformat()
+        _supp_url = (
+            f'https://statsapi.mlb.com/api/v1/schedule'
+            f'?sportId=1&gameType=F,D,L,W'
+            f'&season={season}'
+            f'&startDate={_today}&endDate={_end_date}'
+            f'&hydrate=team'
+        )
+        _supp = requests.get(_supp_url, timeout=10)
+        if _supp.status_code == 200:
+            _pk_time: dict = {}
+            for _de in _supp.json().get('dates', []):
+                for _g in _de.get('games', []):
+                    _pk = _g.get('gamePk')
+                    _gd = _g.get('gameDate', '')
+                    if _pk and _gd:
+                        _pk_time[_pk] = _gd
+            for _s in series_list:
+                for _sg in _s.get('scheduled_games', []):
+                    _real = _pk_time.get(_sg.get('game_pk'))
+                    if _real:
+                        _sg['game_start_utc'] = _real
+    except Exception:
+        pass
+
     bracket_data = {
         'season':     season,
         'fetched_at': _t.time(),

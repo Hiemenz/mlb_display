@@ -56,7 +56,7 @@ def _bold_text(draw, x, y, text, font, fill):
     draw.text((x + 1, y), text, font=font, fill=fill)
 
 
-def _scheduled_games(away_id, home_id, extra=None):
+def _scheduled_games(away_id, home_id, extra=None, bracket_show_time=True):
     """Return upcoming scheduled games for this series, sorted by date.
 
     Each entry: {time, away_id, home_id, away_abbr, home_abbr}.
@@ -65,6 +65,10 @@ def _scheduled_games(away_id, home_id, extra=None):
     away_abbr, home_abbr} dicts from playoff_bracket.json.  When games.json
     has no upcoming game for this series (e.g. an off-day between CS/WS games)
     these are used as a fallback, filtered to future start times.
+
+    ``bracket_show_time`` controls how bracket fallback times are formatted:
+    True (CS) → always render the time string ("Mon 8pm"); False (WS) →
+    always render just the date ("10/23") since WS times may be unconfirmed.
     """
     try:
         games = load_json_file('games.json').get('games', [])
@@ -119,12 +123,10 @@ def _scheduled_games(away_id, home_id, extra=None):
                 if dt <= now:
                     continue
                 local = dt.astimezone()
-                # Midnight UTC is the MLB API's placeholder before the broadcast
-                # schedule is confirmed — show just the date to avoid "2am" labels.
-                if dt.hour == 0 and dt.minute == 0:
-                    time_str = local.strftime('%-m/%-d')
-                else:
+                if bracket_show_time:
                     time_str = local.strftime('%a') + ' ' + local.strftime('%-I%p').lower()
+                else:
+                    time_str = local.strftime('%-m/%-d')
             except Exception:
                 time_str = ''
             out.append({
@@ -291,7 +293,11 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     # For CS/WS, also pass bracket-level scheduled games as a fallback so the
     # next game appears on off-days when games.json has nothing for this series.
     _bracket_sched = series.get('scheduled_games') if rnd in ('CS', 'WS') else None
-    upcoming = [] if winner else _scheduled_games(away_id, home_id, extra=_bracket_sched)
+    upcoming = [] if winner else _scheduled_games(
+        away_id, home_id,
+        extra=_bracket_sched,
+        bracket_show_time=(rnd == 'CS'),   # CS times are confirmed; WS shows date-only
+    )
 
     kw_result = dict(away_abbr=away_abbr, away_id=away_id,
                      home_abbr=home_abbr, home_id=home_id,
