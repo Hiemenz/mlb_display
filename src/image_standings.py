@@ -1521,28 +1521,44 @@ def derive_playoff_seedings(bracket_data, standings_data):
     return result
 
 
+def _draw_header_label(draw, font, label, tx, ty, tracking=2):
+    """Draw a faux-bold label starting at (tx, ty); return the x after the last char."""
+    for ch in label:
+        cw = int(font.getlength(ch))
+        draw.text((tx,     ty), ch, font=font, fill=0)
+        draw.text((tx + 1, ty), ch, font=font, fill=0)
+        tx += cw + tracking
+    return tx
+
+
 def draw_playoff_round_header(Himage, bracket_data):
     """Draw the current playoff round name centred in the 30px top strip.
 
-    Replaces draw_playoff_bracket_header during the postseason when the
-    sidebar is showing series matchups (the strip name + sidebar logos give
-    the full picture; per-series scores in the strip would be redundant).
+    For the Championship Series, both league labels are shown side-by-side
+    ("AL CHAMP SERIES    NL CHAMP SERIES") since both run simultaneously.
     """
     rnd = derive_playoff_active_round(bracket_data)
     if not rnd:
         return Himage
-    label = _ROUND_LABEL.get(rnd, rnd)
-    draw  = ImageDraw.Draw(Himage)
-    font  = _get_font(11)
-    tracking = 2  # extra px between letters so the faux-bold pass doesn't merge them
-    widths = [int(font.getlength(ch)) for ch in label]
-    tw    = sum(widths) + tracking * (len(label) - 1)
-    tx    = (800 - tw) // 2
-    ty    = (_WC_STRIP_H - 11) // 2
-    for ch, cw in zip(label, widths):
-        draw.text((tx, ty), ch, font=font, fill=0)
-        draw.text((tx + 1, ty), ch, font=font, fill=0)
-        tx += cw + tracking
+    draw     = ImageDraw.Draw(Himage)
+    font     = _get_font(11)
+    tracking = 2
+    ty       = (_WC_STRIP_H - 11) // 2
+
+    if rnd == 'CS':
+        al_label, nl_label = 'AL CHAMP SERIES', 'NL CHAMP SERIES'
+        gap   = 40
+        al_w  = int(font.getlength(al_label)) + tracking * (len(al_label) - 1)
+        nl_w  = int(font.getlength(nl_label)) + tracking * (len(nl_label) - 1)
+        tx    = (800 - al_w - gap - nl_w) // 2
+        tx    = _draw_header_label(draw, font, al_label, tx, ty, tracking)
+        tx   += gap
+        _draw_header_label(draw, font, nl_label, tx, ty, tracking)
+    else:
+        label  = _ROUND_LABEL.get(rnd, rnd)
+        lw     = int(font.getlength(label)) + tracking * (len(label) - 1)
+        _draw_header_label(draw, font, label, (800 - lw) // 2, ty, tracking)
+
     return Himage
 
 
