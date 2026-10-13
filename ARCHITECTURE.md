@@ -293,9 +293,9 @@ here at all.
 ## 8. Testing
 
 ```bash
-poetry run pytest -q --tb=short --cov --cov-report=term-missing
-poetry run ruff check .
-poetry run mypy
+uv run pytest -q --tb=short --cov --cov-report=term-missing
+uv run ruff check .
+uv run mypy
 ```
 
 **Golden-image tests** render known fixtures and compare byte-for-byte against references

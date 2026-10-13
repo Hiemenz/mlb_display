@@ -120,4 +120,4 @@ Entries link to the pull request where the work landed.
 - Division standings sidebar (AL left, NL right).
 - Waveshare 7.5″ V2 e-paper driver integration.
 - Cron-based refresh pipeline: `fetch_games.py` → `render_scoreboard.py` → `display.py`.
-- Poetry-managed Python environment.
+- uv-managed Python environment (migrated from Poetry).

@@ -8,7 +8,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/mlb_display
 EnvironmentFile=/home/pi/mlb_display/.env
-ExecStart=/home/pi/.local/bin/poetry run python3 src/slack_bot.py
+ExecStart=/home/pi/.local/bin/uv run python3 src/slack_bot.py
 Restart=on-failure
 RestartSec=10
 

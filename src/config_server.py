@@ -3,7 +3,7 @@
 Standalone entry point, run separately from the cron-triggered main.py
 pipeline (it doesn't render or fetch anything itself):
 
-    poetry run python src/config_server.py
+    uv run python src/config_server.py
 
 Binds 0.0.0.0:<config_server_port> (default 8080) so it's reachable from any
 phone on the same network. No authentication — trusts the local network.

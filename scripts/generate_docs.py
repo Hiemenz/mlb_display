@@ -3,7 +3,7 @@
 Generate all screenshots used in the README docs/ directory.
 
 Run from the repo root:
-    poetry run python scripts/generate_docs.py
+    uv run python scripts/generate_docs.py
 
 Produces:
     docs/scoreboard_pregame.png     — 5×3 grid, pre-game tiles + standings/wildcard

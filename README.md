@@ -129,7 +129,7 @@ On the Derby's date, when there are no regular games to show, the display auto-s
 
 ### Postseason Bracket (`display_mode: bracket`)
 
-A full-screen tree of the MLB postseason: AL Wild Card, Division Series and Championship Series on the left, NL on the right, converging on the World Series in the centre. Each series box shows seeds, logos, and series wins; a finished series inverts the winner's row and strikes through the loser, and a caption gives the state (`Tied 1-1`, `NYY 2-1`, `FINAL`). Undecided slots (e.g. `ATL/PHI`) are drawn text-only from the API's placeholder teams. Honors `dark_mode`. Data comes from `data/playoff_bracket.json`, which is refreshed automatically while this mode is set. Preview from the command line with `poetry run python src/bracket_view.py --open`.
+A full-screen tree of the MLB postseason: AL Wild Card, Division Series and Championship Series on the left, NL on the right, converging on the World Series in the centre. Each series box shows seeds, logos, and series wins; a finished series inverts the winner's row and strikes through the loser, and a caption gives the state (`Tied 1-1`, `NYY 2-1`, `FINAL`). Undecided slots (e.g. `ATL/PHI`) are drawn text-only from the API's placeholder teams. Honors `dark_mode`. Data comes from `data/playoff_bracket.json`, which is refreshed automatically while this mode is set. Preview from the command line with `uv run python src/bracket_view.py --open`.
 
 ### Team Quadrant (`display_mode: quadrant`)
 
@@ -171,8 +171,8 @@ points from the published figure (COL reads high, SD/SEA low). Ordering is unaff
 A full-colour PNG version of the same chart — shaded quadrants, colour logos — renders via:
 
 ```bash
-poetry run python scripts/team_quadrant_chart.py --grain month --fetch
-poetry run python scripts/team_quadrant_chart.py --grain all --out output/
+uv run python scripts/team_quadrant_chart.py --grain month --fetch
+uv run python scripts/team_quadrant_chart.py --grain all --out output/
 ```
 
 **Weekly refresh.** `scripts/weekly_quadrant.sh` refreshes the data and renders the week + season
@@ -379,17 +379,17 @@ video_frame_delay_ms: 300
 ```bash
 git clone <repo>
 cd mlb_display
-poetry install
+uv sync
 
 # Download team logos (MLB + WBC)
-poetry run python src/download_logos.py
-poetry run python src/download_logos.py --wbc
+uv run python src/download_logos.py
+uv run python src/download_logos.py --wbc
 
 # Download mascot images (for the idle "Recent Moves" screen)
-poetry run python src/download_mascots.py
+uv run python src/download_mascots.py
 
 # Seed standings cache before enabling show_standings_sidebar
-poetry run python src/standings.py
+uv run python src/standings.py
 ```
 
 **Hardware:** Waveshare 7.5″ V2 e-paper display connected to a Raspberry Pi with SPI enabled.
@@ -397,17 +397,14 @@ poetry run python src/standings.py
 ### Newer Python on an older Raspberry Pi OS (`uv`)
 
 Raspberry Pi OS Bullseye ships Python 3.9. To run on Python 3.11 without touching the system Python,
-use [uv](https://docs.astral.sh/uv/) to install it alongside and point Poetry at it:
+use [uv](https://docs.astral.sh/uv/) to install it alongside and build the project venv with it:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.local/bin/env
-uv python install 3.11
 
 cd mlb_display
-poetry env remove --all                     # only if an older-Python env already exists
-poetry env use "$(uv python find 3.11)"
-poetry install
+uv sync --python 3.11                       # downloads Python 3.11 if needed; recreates .venv if it was built with another version
 
 # E-paper drivers: not in the lockfile, and the system copies are built for the system Python
 uv pip install --python .venv/bin/python spidev gpiozero RPi.GPIO
@@ -415,7 +412,7 @@ uv pip install --python .venv/bin/python spidev gpiozero RPi.GPIO
 
 Re-run the last `uv pip install` any time the venv is rebuilt.
 
-On a 32-bit Pi (`uname -m` → `armv7l`) there is no prebuilt numpy wheel, so `poetry install` compiles it
+On a 32-bit Pi (`uname -m` → `armv7l`) there is no prebuilt numpy wheel, so `uv sync` compiles it
 from source. That takes roughly 20 minutes on a Pi 3 and can exhaust memory, so run it in `tmux` or
 with `nohup` and consider more swap.
 
@@ -433,24 +430,24 @@ For cron, call the venv's interpreter directly (cron's `PATH` is minimal) and gu
 
 ```bash
 # Single run (reads display_mode from config)
-poetry run python main.py --local        # macOS / no hardware
-poetry run python main.py                # Raspberry Pi
+uv run python main.py --local        # macOS / no hardware
+uv run python main.py                # Raspberry Pi
 
 # Specific date or sport
-poetry run python main.py --date 2026-04-19
-poetry run python main.py --sport-id 8   # World Baseball Classic
+uv run python main.py --date 2026-04-19
+uv run python main.py --sport-id 8   # World Baseball Classic
 
 # Fullscreen single-game focus (whichever game is live)
-FEATURED_TEAM_FULLSCREEN=true poetry run python main.py
+FEATURED_TEAM_FULLSCREEN=true uv run python main.py
 
 # Override display mode for one run without editing config.yaml
-DISPLAY_MODE=fields poetry run python main.py
+DISPLAY_MODE=fields uv run python main.py
 ```
 
 **Crontab** — run every 14 minutes:
 
 ```cron
-*/14 * * * * cd /home/pi/mlb_display && poetry run python main.py >> logs/display.log 2>&1
+*/14 * * * * cd /home/pi/mlb_display && uv run python main.py >> logs/display.log 2>&1
 ```
 
 On the Home Run Derby's actual date, if there are no games to show, main.py automatically
@@ -469,7 +466,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/mlb_display
-ExecStart=/home/pi/.local/bin/poetry run python main.py
+ExecStart=/home/pi/.local/bin/uv run python main.py
 Restart=always
 RestartSec=60
 
@@ -493,8 +490,8 @@ settings worth changing from a phone. No authentication; it trusts the
 local network.
 
 ```bash
-poetry run python src/config_server.py                # binds 0.0.0.0:8080 (config_server_port)
-poetry run python src/config_server.py --port 9000     # override the port for one run
+uv run python src/config_server.py                # binds 0.0.0.0:8080 (config_server_port)
+uv run python src/config_server.py --port 9000     # override the port for one run
 ```
 
 Open `http://<this-machine's-LAN-IP>:8080/` from any phone/laptop on the
@@ -512,7 +509,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/mlb_display
-ExecStart=/home/pi/.local/bin/poetry run python src/config_server.py
+ExecStart=/home/pi/.local/bin/uv run python src/config_server.py
 Restart=always
 RestartSec=10
 
