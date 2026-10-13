@@ -11,13 +11,13 @@ entry point.
 
 ## Environment
 
-Poetry-managed. Run everything via `poetry run <cmd>` or `poetry shell`.
+uv-managed. Run everything via `uv run <cmd>`.
 
 ```
-poetry install --no-root
-poetry run pytest -q --tb=short --cov --cov-report=term-missing
-poetry run ruff check .
-poetry run mypy
+uv sync
+uv run pytest -q --tb=short --cov --cov-report=term-missing
+uv run ruff check .
+uv run mypy
 ```
 
 ## GitHub / CI setup
@@ -31,7 +31,7 @@ poetry run mypy
 - Conversation resolution required before merge.
 
 ### Workflows
-- **`ci.yml`** — on push to `main` and on every PR. Poetry install → `py_compile` syntax
+- **`ci.yml`** — on push to `main` and on every PR. uv sync → `py_compile` syntax
   check → `ruff check` → `mypy` → `pytest` with coverage (xml + terminal). Posts a sticky
   coverage-table PR comment. On failure, uploads golden-image mismatches as an artifact
   (`tests/golden/_failures/`) so a diff can be promoted to the new reference by hand.

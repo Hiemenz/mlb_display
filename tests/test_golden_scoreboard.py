@@ -19,7 +19,7 @@ differ slightly across OSes. These tests are a no-op on non-Linux so local
 dev machines don't fight stale references. To (re)generate the references,
 run on Linux (e.g. in CI):
 
-    poetry run pytest tests/test_golden_scoreboard.py --update-golden
+    uv run pytest tests/test_golden_scoreboard.py --update-golden
 """
 import os
 import platform

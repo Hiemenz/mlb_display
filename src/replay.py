@@ -5,9 +5,9 @@ display advances --step minutes of actual game time, showing all games
 as they unfolded.
 
 Usage:
-    poetry run python src/replay.py --date 2026-08-01
-    poetry run python src/replay.py --date 2026-08-01 --step 2 --delay 30
-    poetry run python src/replay.py --date 2026-08-01 --local
+    uv run python src/replay.py --date 2026-08-01
+    uv run python src/replay.py --date 2026-08-01 --step 2 --delay 30
+    uv run python src/replay.py --date 2026-08-01 --local
 """
 import argparse
 import os

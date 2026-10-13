@@ -7,7 +7,7 @@ one control per config option. Saving patches config/config.yaml in place
 
 Uses Socket Mode, so it works behind a home router with no port forwarding.
 
-Run: poetry run python src/slack_bot.py
+Run: uv run python src/slack_bot.py
 See scripts/slack_bot.service for the Pi systemd unit.
 """
 import os

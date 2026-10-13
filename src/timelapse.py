@@ -5,8 +5,8 @@ then reconstructs scoreboard state at every minute of the day in memory — no
 per-minute API calls. Used by main.py's `auto_generate_video` feature once
 all of a day's games go Final, and can also be run standalone:
 
-    poetry run python src/timelapse.py --date 2026-04-01
-    poetry run python src/timelapse.py --date 2026-04-01 --start 18:00 --end 23:00
+    uv run python src/timelapse.py --date 2026-04-01
+    uv run python src/timelapse.py --date 2026-04-01 --start 18:00 --end 23:00
 
 Extracted from the old src/scoreboard_generate.py (which duplicated most of
 fetch_games.py/util.py as a pre-refactor monolith) — this module keeps only
