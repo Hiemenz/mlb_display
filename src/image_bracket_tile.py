@@ -10,7 +10,6 @@ _LOGO_SZ  = 20
 _PAD      = 2
 _TEAM_H   = _LOGO_SZ + 2 * _PAD  # 24 px
 _LABEL_H  = 10
-_CS_LOGO_SZ = _LOGO_SZ + 6       # 26 px — CS winner logo, slightly larger
 
 # Connector lines start/end at the logo edge so adjacent bands still produce
 # an L-shape rather than a degenerate vertical-only line.
@@ -34,11 +33,10 @@ def _slot_center_y(index, count):
     return body_top + int(body_h * (2 * index + 1) / (2 * count))
 
 
-def _paste_logo(tile, abbr, tid, cx, cy, ghost=False, size=None):
-    from image_assets import _logo_small, _logo_ghost
+def _paste_logo(tile, abbr, tid, cx, cy, size=None):
+    from image_assets import _logo_small
     sz = size or _LOGO_SZ
-    logo = (_logo_ghost(abbr, tid, size=sz, lightness=140)
-            if ghost else _logo_small(abbr, tid, size=sz))
+    logo = _logo_small(abbr, tid, size=sz)
     if logo is not None:
         lw, lh = logo.size
         tile.paste(logo, (cx - lw // 2, cy - lh // 2))
@@ -83,31 +81,11 @@ def _draw_matchup(tile, draw, band, slot_cy, series):
     home_abbr = (series.get('home_abbr') or '?')[:3]
     away_id   = str(series.get('away_id', ''))
     home_id   = str(series.get('home_id', ''))
-    complete  = series.get('complete', False)
-    winner    = series.get('winner_abbr') or ''
-    away_ghost = complete and bool(winner) and winner != away_abbr
-    home_ghost = complete and bool(winner) and winner != home_abbr
 
     if _is_real_team(away_id):
-        _paste_logo(tile, away_abbr, away_id, cx, cy0, ghost=away_ghost)
+        _paste_logo(tile, away_abbr, away_id, cx, cy0)
     if _is_real_team(home_id):
-        _paste_logo(tile, home_abbr, home_id, cx, cy1, ghost=home_ghost)
-
-
-def _draw_cs_champion(tile, draw, band, slot_cy, series):
-    """CS band: single winner logo (connector endpoint) when complete, else compact matchup."""
-    cx = _band_cx(band)
-    if series is None:
-        return
-    complete = series.get('complete', False)
-    winner   = series.get('winner_abbr') or ''
-    if complete and winner:
-        away_abbr = (series.get('away_abbr') or '?')[:3]
-        tid = str(series.get(
-            'away_id' if winner == away_abbr else 'home_id', ''))
-        _paste_logo(tile, winner, tid, cx, slot_cy, size=_CS_LOGO_SZ)
-    else:
-        _draw_matchup(tile, draw, band, slot_cy, series)
+        _paste_logo(tile, home_abbr, home_id, cx, cy1)
 
 
 def _draw_connector(draw, x_from, y_from, x_to, y_to):
@@ -155,11 +133,7 @@ def draw_bracket_tile(Himage, sx, sy, bracket_data, standings_data=None, dark_mo
             cy = _slot_center_y(i, count)
             if rnd == 'WC':
                 cy += -_WC_SPREAD if i == 0 else _WC_SPREAD
-            if rnd == 'CS':
-                # CS shows a single logo: the winner (or matchup if still in progress)
-                _draw_cs_champion(tile, draw, band, cy, series)
-            else:
-                _draw_matchup(tile, draw, band, cy, series)
+            _draw_matchup(tile, draw, band, cy, series)
             placed[(band, i)] = cy
 
     # WC → DS: 1-to-1 L-shaped connectors

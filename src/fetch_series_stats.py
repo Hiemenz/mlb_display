@@ -6,7 +6,7 @@ changes, so its summary is cached on disk (``data/series_stats_cache.json``)
 and fetched once; the in-progress game, if any, is fetched fresh each call and
 never cached. Cache entries are dropped ``_KEEP_DAYS`` after the game was played.
 
-    series_stats(game_data) -> {'games': n, 'teams': {team_id: {'batters': [...], 'pitchers': [...]}}}
+    series_stats(game_data) -> {'games': n, 'last_played': 'YYYY-MM-DD', 'teams': {team_id: {'batters': [...], 'pitchers': [...]}}}
     fetch_series_leaders(games, primary_abbr) -> data/series_leaders.json, read by image_series_stats
 """
 import time
@@ -122,15 +122,17 @@ def series_stats(game_data):
         number = int(game_data.get('series_game_number') or 1)
         pks = series_game_pks(away, home, game_data['game_date'], number)
         cache = load_json_file(f'{_CACHE_FILE}.json') or {}
-        per_game, dirty = [], False
+        per_game, dirty, last_played = [], False, ''
         for pk, state, played in pks:
             if state in _FINAL_STATES and str(pk) in cache:
                 per_game.append(cache[str(pk)]['teams'])
+                last_played = max(last_played, played)
                 continue
             if state not in _FINAL_STATES and state not in ('In Progress',):
                 continue    # not played yet
             teams = _fetch_boxscore(pk)
             per_game.append(teams)
+            last_played = max(last_played, played)
             if state in _FINAL_STATES:
                 cache[str(pk)] = {'played': played, 'teams': teams}
                 dirty = True
@@ -142,7 +144,7 @@ def series_stats(game_data):
     except (requests.RequestException, ValueError, KeyError, TypeError) as e:
         print(f'series_stats: {e}')
         return None
-    return {'games': len(per_game), 'teams': _add_up(per_game)}
+    return {'games': len(per_game), 'last_played': last_played, 'teams': _add_up(per_game)}
 
 
 def _ranked(entries):
@@ -221,12 +223,13 @@ def fetch_series_leaders(games, primary_abbr, force=False):
     key = f"{game.get('game_pk')}:{game.get('detailed_state')}"
     age = time.time() - cached.get('fetched_at', 0)
     live = game.get('detailed_state') in LIVE_STATES
-    if not force and cached.get('key') == key and age < (_LIVE_TTL_SECONDS if live else _IDLE_TTL_SECONDS):
+    if not force and cached.get('key') == key and 'last_played' in cached and age < (_LIVE_TTL_SECONDS if live else _IDLE_TTL_SECONDS):
         return cached
     stats = series_stats(game)
     if stats is None:
         return cached
     result = {'key': key, 'fetched_at': time.time(), 'games': stats['games'],
+              'last_played': stats['last_played'],
               'matchup': f"{abbrs.get(str(game['away_team_id']), '?')} @ {abbrs.get(str(game['home_team_id']), '?')}",
               'leaders': build_series_leaders(stats)}
     save_off_results(result, _LEADERS_FILE)

@@ -4,9 +4,12 @@ Same look as the season-leaders tiles, but scoped to the primary team's
 current series: the top hitters and pitchers of both teams, summed across the
 series' games (data/series_leaders.json, built by fetch_series_stats).
 """
+from datetime import date, timedelta
+
 import panel_cell
 from image_assets import ImageDraw
 
+_MAX_AGE_DAYS = 2   # a series is "current" while a game was played in the last 2 days
 _MIN_ROWS = 5   # the fetch keeps the top 5; fewer entries must not stretch to fill the cell
 CATEGORIES = ['homeRuns', 'hits', 'runsBattedIn', 'battingAverage', 'strikeOuts', 'inningsPitched']
 _LABELS = {
@@ -26,8 +29,27 @@ def _format(cat, value):
     return value
 
 
-def available_categories(series_data):
-    """The categories that have at least one entry, in display order."""
+def is_current(series_data, today=None):
+    """True for a series that is in progress or finished within the last ``_MAX_AGE_DAYS`` days.
+
+    The data file is only rewritten when the primary team has a game, so on an
+    off day or after elimination it still holds the last series; its newest
+    played game's date says how stale that is.
+    """
+    last = (series_data or {}).get('last_played')
+    if not last:
+        return False
+    try:
+        newest = date.fromisoformat(last)
+    except ValueError:
+        return False
+    return (today or date.today()) - newest <= timedelta(days=_MAX_AGE_DAYS)
+
+
+def available_categories(series_data, today=None):
+    """The categories that have at least one entry, in display order; none for a stale series."""
+    if not is_current(series_data, today):
+        return []
     leaders = (series_data or {}).get('leaders') or {}
     return [c for c in CATEGORIES if leaders.get(c)]
 

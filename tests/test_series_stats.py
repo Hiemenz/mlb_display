@@ -131,6 +131,7 @@ class TestSeriesStats:
              patch('fetch_series_stats.save_off_results', side_effect=lambda d, n: saved.update(d)):
             r = fss.series_stats(self._game())
         assert r['games'] == 2
+        assert r['last_played'] == date.today().isoformat()
         assert fb.call_count == 2          # scheduled game skipped
         assert set(saved) == {'100'}       # live game not cached, stale entry pruned
 
@@ -172,7 +173,7 @@ import main as main_mod
 
 
 def _stats():
-    return {'games': 1, 'teams': fss._add_up([fss._summarize_boxscore(BOX)])}
+    return {'games': 1, 'last_played': '2026-10-15', 'teams': fss._add_up([fss._summarize_boxscore(BOX)])}
 
 
 class TestBuildSeriesLeaders:
@@ -228,14 +229,22 @@ class TestFetchSeriesLeaders:
             assert fss.fetch_series_leaders(GAMES, 'XXX') == {}
 
     def test_fresh_cache_skips_fetch(self):
-        cached = {'key': '2:In Progress', 'fetched_at': time.time(), 'leaders': {}}
+        cached = {'key': '2:In Progress', 'fetched_at': time.time(), 'last_played': '2026-10-15', 'leaders': {}}
         with patch('fetch_series_stats.load_json_file', side_effect=_loader(cached)), \
              patch('fetch_series_stats.series_stats') as ss:
             assert fss.fetch_series_leaders(GAMES, 'NYY') == cached
         ss.assert_not_called()
 
+    def test_cache_without_last_played_is_refetched(self):
+        legacy = {'key': '2:In Progress', 'fetched_at': time.time(), 'leaders': {}}
+        with patch('fetch_series_stats.load_json_file', side_effect=_loader(legacy)), \
+             patch('fetch_series_stats.series_stats', return_value=_stats()) as ss, \
+             patch('fetch_series_stats.save_off_results'):
+            fss.fetch_series_leaders(GAMES, 'NYY')
+        ss.assert_called_once()
+
     def test_live_cache_expires_after_five_minutes_but_idle_does_not(self):
-        old = {'key': '2:In Progress', 'fetched_at': time.time() - 400, 'leaders': {}}
+        old = {'key': '2:In Progress', 'fetched_at': time.time() - 400, 'last_played': '2026-10-15', 'leaders': {}}
         with patch('fetch_series_stats.load_json_file', side_effect=_loader(old)), \
              patch('fetch_series_stats.series_stats', return_value=_stats()) as ss, \
              patch('fetch_series_stats.save_off_results') as sv:
@@ -244,7 +253,7 @@ class TestFetchSeriesLeaders:
         assert out['matchup'] == 'NYY @ BOS' and 'homeRuns' in out['leaders']
         sv.assert_called_once()
         final = [GAMES[0]]
-        idle = {'key': '1:Final', 'fetched_at': time.time() - 400, 'leaders': {}}
+        idle = {'key': '1:Final', 'fetched_at': time.time() - 400, 'last_played': '2026-10-15', 'leaders': {}}
         with patch('fetch_series_stats.load_json_file', side_effect=_loader(idle)), \
              patch('fetch_series_stats.series_stats') as ss:
             fss.fetch_series_leaders(final, 'NYY')
@@ -259,7 +268,7 @@ class TestFetchSeriesLeaders:
         sv.assert_not_called()
 
 
-DATA = {'leaders': {'homeRuns': [{'rank': 1, 'value': '2', 'name': 'A Hitter', 'team_id': '1'}],
+DATA = {'last_played': date.today().isoformat(), 'leaders': {'homeRuns': [{'rank': 1, 'value': '2', 'name': 'A Hitter', 'team_id': '1'}],
                     'battingAverage': [{'rank': 1, 'value': '0.500', 'name': 'B', 'team_id': '2'}]}}
 
 
@@ -267,6 +276,17 @@ class TestSeriesTile:
     def test_available_categories_in_display_order(self):
         assert iss.available_categories(DATA) == ['homeRuns', 'battingAverage']
         assert iss.available_categories(None) == []
+
+    def test_stale_or_undated_series_shows_no_tiles(self):
+        from datetime import date
+        today = date(2026, 10, 16)
+        assert iss.is_current({'last_played': '2026-10-16'}, today)       # played today
+        assert iss.is_current({'last_played': '2026-10-14'}, today)       # just finished
+        assert not iss.is_current({'last_played': '2026-10-13'}, today)   # old series
+        assert not iss.is_current({}, today)
+        assert not iss.is_current({'last_played': 'garbage'}, today)
+        stale = {**DATA, 'last_played': '2026-10-01'}
+        assert iss.available_categories(stale, today) == []
 
     def test_average_format(self):
         assert iss._format('battingAverage', '0.500') == '.500'
