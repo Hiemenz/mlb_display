@@ -1,10 +1,10 @@
 import os
 from collections import deque
 
-from util import LIVE_STATES, load_json_file, load_yaml_file
+from util import LIVE_STATES, POSTSEASON_GAME_TYPES, load_json_file, load_yaml_file
 from image_assets import _get_font, ImageDraw
 from image_standings import _WC_STRIP_H
-from image_box import draw_box, draw_wide_box, draw_triple_box, draw_fields_box
+from image_box import draw_box, draw_wide_box, draw_triple_box, draw_final_triple_box, draw_fields_box
 from image_leaders import draw_leaders_cell, rotating_categories, _CATEGORIES as _LEADER_CATEGORIES
 from image_series_stats import draw_series_stats_cell, available_categories as available_series_categories
 from image_transactions import draw_transactions_cell
@@ -359,11 +359,46 @@ def _live_tile_types(game_list, config, team_data):
     return tile_map
 
 
+def _is_final_spray_game(g):
+    """A finished postseason game with a spray chart to show on a 3-wide final tile."""
+    return (g.get('detailed_state') in _FINAL_STATES
+            and g.get('game_type') in POSTSEASON_GAME_TYPES
+            and bool(g.get('all_game_hits')))
+
+
+def _add_final_triples(tile_map, game_list, config, team_data):
+    """Give finished postseason games a 3-wide tile from whatever slot budget the
+    live games leave over (2 units each, within _MAX_TRIPLE_TILES). The featured
+    team's game goes first. Only on a slate with spare slots — a full 15-game
+    grid is never squeezed for a finished game."""
+    if len(game_list) >= 15:
+        return
+    used = sum(2 if t == 'triple' else 1 for t in tile_map.values())
+    remaining = 15 - len(game_list) - used
+    triples = sum(1 for t in tile_map.values() if t == 'triple')
+    finals = [i for i, g in enumerate(game_list) if i not in tile_map and _is_final_spray_game(g)]
+    primary = config.get('primary', '')
+    abbrs = team_data.get('team_abbreviation', {})
+
+    def _is_featured(i):
+        g = game_list[i]
+        return bool(primary) and primary in (abbrs.get(str(g.get('away_team_id', '')), ''),
+                                             abbrs.get(str(g.get('home_team_id', '')), ''))
+
+    for i in sorted(finals, key=lambda i: not _is_featured(i)):
+        if triples >= _MAX_TRIPLE_TILES or remaining < 2:
+            break
+        tile_map[i] = 'triple'
+        triples += 1
+        remaining -= 2
+
+
 def _find_tile_types(game_list, config, team_data):
-    """Expanded-tile map for live games, plus a wide tile for the featured
-    team's pre-game lineup when a spare slot unit is left over (live games
-    keep priority over the pre-game tile)."""
+    """Expanded-tile map for live games and finished postseason games (live
+    keeps priority), plus a wide tile for the featured team's pre-game lineup
+    when a spare slot unit is left over."""
     tile_map = _live_tile_types(game_list, config, team_data)
+    _add_final_triples(tile_map, game_list, config, team_data)
     pregame = next((i for i, g in enumerate(game_list)
                     if i not in tile_map and _is_featured_pregame(g, config, team_data)), None)
     if pregame is None:
@@ -1016,7 +1051,13 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         score_changed = changed_game_ids is not None and game_pk_key in changed_game_ids
         sx = gx * 150 + x_start
         sy = gy * 150 + y_start
-        if slot_type == 'triple':
+        if slot_type == 'triple' and game.get('detailed_state') in _FINAL_STATES:
+            Himage = draw_final_triple_box(
+                Himage, sx, sy, game, team_data,
+                use_logos=use_logos,
+                logo_x_offset=logo_x_offset,
+            )
+        elif slot_type == 'triple':
             Himage = draw_triple_box(
                 Himage, sx, sy, game, team_data,
                 score_changed=score_changed,

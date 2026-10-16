@@ -1424,3 +1424,35 @@ def fetch_scorecard_data(game_pk):
         'away_pitchers': away_pitchers,
         'home_pitchers': home_pitchers,
     }
+
+
+_SPRAY_CACHE = 'final_spray_cache'
+_SPRAY_KEEP_SECONDS = 7 * 86400
+_SPRAY_FIELDS = ('x', 'y', 'is_hr', 'is_hit', 'is_out')
+
+
+def fetch_final_spray(game_pk):
+    """Every ball in play of a finished game, for the wide final tile's field.
+
+    A finished game never changes, so the result is cached on disk
+    (``data/final_spray_cache.json``) and the live feed is fetched once; entries
+    are dropped after a week. Returns None when the feed can't be read (nothing
+    is cached then, so the next call retries).
+    """
+    import time
+    from util import load_json_file, save_off_results
+    cache = load_json_file(f'{_SPRAY_CACHE}.json') or {}
+    key = str(game_pk)
+    if key in cache:
+        return cache[key]['hits']
+    try:
+        plays = fetch_live_feed(game_pk).get('liveData', {}).get('plays', {})
+        hits = [{f: h[f] for f in _SPRAY_FIELDS} for h in _extract_all_hit_coordinates(plays)]
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
+        print(f'fetch_final_spray: {e}')
+        return None
+    now = time.time()
+    cache = {k: v for k, v in cache.items() if now - v.get('saved', 0) < _SPRAY_KEEP_SECONDS}
+    cache[key] = {'saved': now, 'hits': hits}
+    save_off_results(cache, _SPRAY_CACHE)
+    return hits

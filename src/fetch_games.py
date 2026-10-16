@@ -15,7 +15,7 @@ import pytz
 # Allow running as a standalone script from any directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from util import LIVE_STATES, load_json_file, prune_stale, save_off_results
+from util import LIVE_STATES, POSTSEASON_GAME_TYPES, load_json_file, prune_stale, save_off_results
 from config_loader import load_config, add_config_arg
 
 SPORT_NAMES = {
@@ -688,6 +688,9 @@ def parse_games(data, sport_id=None, config=None):
             'away_lineup': _parse_schedule_lineup(
                 game.get('lineups', {}).get('awayPlayers', [])),
         }
+        if game_dict.get('detailed_state') in ('Final', 'Game Over') and game_dict.get('game_type') in POSTSEASON_GAME_TYPES:
+            from game_detail_fetch import fetch_final_spray
+            game_dict['all_game_hits'] = fetch_final_spray(game_id) or []
         _h_inn = game_dict.get('home_inning_runs') or []
         _a_inn = game_dict.get('away_inning_runs') or []
         game_dict['walk_off'] = bool(
