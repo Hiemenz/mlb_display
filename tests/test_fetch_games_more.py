@@ -1431,3 +1431,30 @@ class TestFetchScoreboardForDate:
              patch('fetch_games.parse_games'):
             fetch_scoreboard_for_date('2026-07-01', sport_id=1, config=None)
         mock_cfg.assert_called_once()
+
+
+class TestFinalSpray:
+    """Finished postseason games carry their spray chart; regular-season finals don't."""
+
+    def _final(self, game_type):
+        g = _minimal_game_api(state='Final', current_inning=9, away_runs=1, home_runs=2)
+        g['gameType'] = game_type
+        return g
+
+    def test_postseason_final_gets_spray(self):
+        spray = [{'x': 1, 'y': 2, 'is_hr': False, 'is_hit': True, 'is_out': False}]
+        with patch('game_detail_fetch.fetch_final_spray', return_value=spray) as f:
+            games = _parse_isolated([self._final('L')])
+        f.assert_called_once()
+        assert games[0]['all_game_hits'] == spray
+
+    def test_failed_fetch_gives_empty_list(self):
+        with patch('game_detail_fetch.fetch_final_spray', return_value=None):
+            games = _parse_isolated([self._final('L')])
+        assert games[0]['all_game_hits'] == []
+
+    def test_regular_season_final_skips_fetch(self):
+        with patch('game_detail_fetch.fetch_final_spray') as f:
+            games = _parse_isolated([self._final('R')])
+        f.assert_not_called()
+        assert 'all_game_hits' not in games[0]
