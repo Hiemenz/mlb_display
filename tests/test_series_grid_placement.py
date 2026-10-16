@@ -2,9 +2,11 @@
 from unittest.mock import patch
 
 from test_streaks_grid_placement import BASE_CONFIG, TEAM_DATA, _game
+from datetime import date
+
 from PIL import Image
 
-SERIES = {'leaders': {
+SERIES = {'last_played': date.today().isoformat(), 'leaders': {
     'homeRuns': [{'rank': 1, 'value': '2', 'name': 'A. Hitter', 'team_id': '147'}],
     'strikeOuts': [{'rank': 1, 'value': '9', 'name': 'P. Pitcher', 'team_id': '111'}],
 }}
@@ -53,4 +55,10 @@ def test_series_panel_off_by_default_skips_series_file():
 
 def test_no_series_data_draws_no_series_tiles():
     ds, dl = _render(3, dict(BASE_CONFIG, show_series_panel=True), series={})
+    ds.assert_not_called()
+
+
+def test_stale_series_draws_no_tiles():
+    stale = dict(SERIES, last_played='2020-01-01')
+    ds, dl = _render(3, dict(BASE_CONFIG, show_series_panel=True), series=stale)
     ds.assert_not_called()

@@ -1916,7 +1916,7 @@ class DrawOptions:
     win_prob_center_line: bool = True
 
 
-def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False, win_prob_center_line=True, suppress_lineup=False):
+def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False, use_logos=False, logo_x_offset=2, show_win_prob=False, streak_map=None, show_winner_logo=True, scale=1, force_linescore=False, always_show_hits=False, hide_last_play=False, skip_header_invert=False, win_prob_center_line=True, suppress_lineup=False, suppress_final_linescore=False):
     """Render a single game score box onto Himage at (start_x, start_y)."""
     s = scale
     _is_walkoff = bool(game_data.get('walk_off'))
@@ -1991,7 +1991,7 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
         _decisions_ready = bool(winner_name and loser_name)
         _show_linescore = (away_inning_runs or home_inning_runs) and (
             _in_linescore_window or not _decisions_ready
-        )
+        ) and not (suppress_final_linescore and _decisions_ready)
         if _show_linescore:
             draw, Himage = _draw_linescore_grid(draw, Himage, start_x, start_y, game_data, team_data, use_logos, scale=scale)
         else:
@@ -3067,10 +3067,12 @@ def _draw_wide_right_panel(draw, Himage, rp_x, rp_y, rp_w, rp_h, header_h, game_
         _pt_max_w = zone_lx - _pt_x - 2 * s
         _pt_step = 9 * s
         _pt_top = rp_y + header_h + 2 * s
-        for _pn, _pp in enumerate(ab_pitches, start=1):
-            _ey = _pt_top + (_pn - 1) * _pt_step
-            if _ey + _pt_step > rp_y + rp_h - 37 * s:
-                break
+        # Fill down to the pitcher-name row (it spans the full width). A long
+        # at-bat overflows, so keep the most recent pitches, numbered as-is.
+        _pt_rows = max(int((rp_y + 107 * s - _pt_top) // _pt_step), 0)
+        _pt_first = max(len(ab_pitches) - _pt_rows, 0)
+        for _pn, _pp in enumerate(ab_pitches[_pt_first:], start=_pt_first + 1):
+            _ey = _pt_top + (_pn - _pt_first - 1) * _pt_step
             _abbr = _pp.get('pt_abbr') or _WIDE_PITCH_TYPE.get(_pp.get('code', ''), _pp.get('code', ''))
             _label = f'{_pn}-{_abbr}' if _abbr else str(_pn)
             _lw = int(font7.getlength(_label))
@@ -3406,6 +3408,60 @@ def draw_wide_box(Himage, start_x, start_y, game_data, team_data,
     return Himage
 
 
+def draw_final_triple_box(Himage, start_x, start_y, game_data, team_data,
+                          use_logos=False, logo_x_offset=2, scale=1):
+    """Postseason finished-game tile, 3 cells wide (435×130 px).
+
+    Cell 1 (135 px): the normal final box — score, hits/errors, pitchers of record.
+    Cell 2 (150 px): hit/out tally on top, inning-by-inning linescore at the bottom.
+    Cell 3 (150 px): the venue field with the game's full spray chart — every ball
+    in play, a filled dot for a hit and a hollow one for an out. Cell 3 carries no
+    text, so nothing sits on top of the field.
+    """
+    s = scale
+    CELL_W, MID_W, FIELD_W = 135 * s, 150 * s, 150 * s
+    TOTAL_H = 130 * s
+
+    Himage = draw_box(
+        Himage, start_x, start_y, game_data, team_data,
+        use_logos=use_logos, logo_x_offset=logo_x_offset,
+        show_winner_logo=True, scale=scale,
+        suppress_lineup=True, suppress_final_linescore=True,
+    )
+
+    draw = ImageDraw.Draw(Himage)
+    mx = start_x + CELL_W
+    fx = mx + MID_W
+    draw.line((mx, start_y, fx + FIELD_W, start_y), fill=0)
+    draw.line((mx, start_y + TOTAL_H, fx, start_y + TOTAL_H), fill=0)
+
+    # Cell 2: linescore at the bottom. The grid helper positions itself 83px below start_y and is
+    # 135px wide, so lift it to the top of the cell and widen its row rules to 150px.
+    grid_top = 78 * s    # bottom of the cell: rows end 6px above the tile's bottom border
+    _draw_linescore_grid(draw, Himage, mx + 7 * s, start_y + grid_top - 83 * s,
+                         game_data, team_data, use_logos, scale=scale)
+    draw = ImageDraw.Draw(Himage)
+    for row in (grid_top + 14 * s, grid_top + 30 * s):
+        draw.line((mx, start_y + row, fx, start_y + row), fill=0)
+
+    # Hit/out tally above the linescore, with a dot legend matching the field.
+    hits = game_data.get('all_game_hits') or []
+    n_hit = sum(1 for h in hits if h.get('is_hit', not h.get('is_out', False)))
+    font = _get_font(11 * s)
+    r = 3 * s
+    for i, (filled, label, n) in enumerate(((True, 'Hits', n_hit), (False, 'Outs', len(hits) - n_hit))):
+        y = start_y + 10 * s + i * 20 * s
+        cx = mx + 22 * s
+        draw.ellipse([cx - r, y + 5 * s - r, cx + r, y + 5 * s + r],
+                     fill=0 if filled else None, outline=0)
+        draw.text((cx + 10 * s, y), f"{label}  {n}", font=font, fill=0)
+
+    # Cell 3: field only. vis_h=150 centres it across the full grid slot.
+    _draw_field_cell(draw, Himage, fx, start_y, 150, 150, game_data, scale=scale,
+                     vis_h=150, full_spray=True)
+    return Himage
+
+
 # MLBAM hit-coordinate → field-feet transform. These constants MUST match the
 # ones used to build the wall/infield polygons in data/mlbam_walls.json and
 # data/mlbam_infield.json (see src/extract_infield_polygons.py) — otherwise
@@ -3457,7 +3513,8 @@ _FIELD_FALLBACK_POLY = [
 ]
 
 
-def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=0, vis_h=None):
+def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=0, vis_h=None,
+                     full_spray=False):
     """Draw compact field diagram in a 150×130 px tile cell.
 
     Draws the venue outfield wall with 5 fence distance markers, the infield
@@ -3473,6 +3530,9 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     preserved and home plate extends into the fh drawing gap below the tile.
 
     y_offset (legacy): shifts the diagram up when vis_h is not supplied.
+
+    full_spray: plot every ball in play from ``all_game_hits`` (filled dot =
+    hit, hollow = out) instead of waiting for a between-innings break.
     """
     s = scale
     FSCALE = 0.30 * s
@@ -3796,7 +3856,7 @@ def _draw_field_cell(draw, Himage, fx, fy, fw, fh, game_data, scale=1, y_offset=
     # Between innings: show full-game spray chart (all batted balls as dots).
     _between_innings = game_data.get('inningState') in ('Middle', 'End')
     _all_game_hits   = game_data.get('all_game_hits') or []
-    if _between_innings and _all_game_hits:
+    if (_between_innings or full_spray) and _all_game_hits:
         for h in _all_game_hits:
             hx_ft, hy_ft = _hit_coord_to_feet(h['x'], h['y'])
             is_hr  = h.get('is_hr',  False)
