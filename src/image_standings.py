@@ -1559,7 +1559,13 @@ def _paste_logo(canvas, abbr, team_id, size, cx, cy):
         draw.text((cx - tw // 2, cy - size // 2 + 2), abbr[:3], font=font, fill=0)
 
 
-def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='left'):
+def is_world_series_layout(series_by_league):
+    """True when the current round is the World Series (one series, shown on both sides)."""
+    return any(s.get('round') == 'WS'
+               for lg in ('AL', 'NL') for s in series_by_league.get(lg, []))
+
+
+def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='left', scale=1):
     """Draw AL or NL current-round series in the narrow 32px sidebar.
 
     Each series block shows:
@@ -1568,6 +1574,9 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
       • A short centre-line separator
       • One tiny win-logo per home win, stacked downward
       • Home-team logo at the bottom
+
+    ``scale`` widens the column (32px * scale) and scales every logo, used to
+    give the World Series a double-size right-hand sidebar.
     """
     league  = 'AL' if side == 'left' else 'NL'
     series  = series_by_league.get(league, [])
@@ -1577,9 +1586,9 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
     abbr_map = team_data.get('team_abbreviation', {})
     draw     = ImageDraw.Draw(Himage)
 
-    col_cx   = 16 if side == 'left' else 784   # centre-x of the 32px sidebar column
-    _PAIR    = 14                               # per-logo size when two logos sit side by side
-    _WIN     = _SIDEBAR_LOGO_SIZE              # 20px — game-slot logo
+    col_cx   = 16 * scale if side == 'left' else 800 - 16 * scale   # centre-x of the sidebar column
+    _PAIR    = 14 * scale                       # per-logo size when two logos sit side by side
+    _WIN     = _SIDEBAR_LOGO_SIZE * scale       # 20px (x scale) — game-slot logo
     _EMPTY_R = _WIN // 2 - 3                   # radius of dotted placeholder circle
 
     # Max games by game_type: F=WC(3), D=DS(5), L=CS(7), W=WS(7)

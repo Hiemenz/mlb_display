@@ -967,7 +967,7 @@ def _find_2x2_block(free_slots, prefer_bottom_right=False, max_col=3):
     return None
 
 
-def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None, suppress_date=False):
+def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=None, changed_game_ids=None, use_logos=False, logo_x_offset=2, show_win_prob=False, layout=None, suppress_date=False, x_start=32):
     """Render the full scoreboard grid of game boxes onto Himage.
 
     ``suppress_date`` skips the date label entirely — set by the caller when
@@ -1015,7 +1015,6 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         draw.text((_lx,     _ly), _label, font=_font_date, fill=0)
         draw.text((_lx + 1, _ly), _label, font=_font_date, fill=0)  # bold stroke
 
-    x_start = 32
     y_start = 30
 
     # Accept a precomputed (game_list, slots) so callers that also need the

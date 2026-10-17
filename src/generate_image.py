@@ -23,7 +23,7 @@ from image_standings import (
     _WC_STRIP_H,
     derive_wildcard_from_standings, draw_wildcard_header, draw_standings_sidebar,
     draw_standings_sidebar_fullscreen, draw_playoff_bracket_header,
-    derive_playoff_series_by_league, draw_playoff_round_header, draw_playoff_seedings_sidebar,
+    derive_playoff_series_by_league, is_world_series_layout, draw_playoff_round_header, draw_playoff_seedings_sidebar,
     draw_overflow_ticker, _ticker_window, draw_transactions_header,
     draw_recap_header,
 )
@@ -280,13 +280,13 @@ def _compute_fullscreen_regions(bypass_cache, featured_game, old_by_pk,
 
 def _compute_grid_changed_regions(ordered, slots, refreshed_game_ids, bypass_cache,
                                   dropped_games, ticker_will_show, bracket,
-                                  all_games_done, game_state_data, config, league_mode):
+                                  all_games_done, game_state_data, config, league_mode,
+                                  x_start=32, ws_layout=False):
     """Compute partial-refresh changed_regions list and layout_changed flag for grid mode.
 
     Persists grid positions and header state to disk as side effects.
     Returns (changed_regions, layout_changed).
     """
-    x_start = 32
     y_start = 30
     changed_regions = []
     for game, slot_info in zip(ordered, slots):
@@ -352,8 +352,12 @@ def _compute_grid_changed_regions(ordered, slots, refreshed_game_ids, bypass_cac
         }
         _old_bracket_wins = load_json_file('old_bracket_wins.json') or {}
         if _bracket_wins != _old_bracket_wins:
-            changed_regions.append((0, y_start, x_start, 480 - y_start))
-            changed_regions.append((800 - x_start, y_start, x_start, 480 - y_start))
+            if ws_layout:
+                changed_regions.append((0, y_start, 64, 480 - y_start))
+                changed_regions.append((736, y_start, 64, 480 - y_start))
+            else:
+                changed_regions.append((0, y_start, 32, 480 - y_start))
+                changed_regions.append((768, y_start, 32, 480 - y_start))
         save_off_results(_bracket_wins, 'old_bracket_wins')
 
     return changed_regions, layout_changed
@@ -549,7 +553,16 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
     # strip outright, or when the playoff round header will occupy it instead.
     _suppress_date = _ticker_will_show or bool(_bracket)
 
-    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots), suppress_date=_suppress_date)
+    # World Series: drop the left sidebar, slide the grid flush left and give
+    # the right sidebar double width (and double-size logos).
+    _series = {}
+    if (config.get('show_standings_sidebar', False) and _bracket
+            and standings_data and 'standings' in standings_data):
+        _series = derive_playoff_series_by_league(_bracket, standings_data)
+    _ws_layout = is_world_series_layout(_series)
+    _grid_x_start = 0 if _ws_layout else 32
+
+    Himage = draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str, changed_game_ids=changed_game_ids, use_logos=use_logos, logo_x_offset=logo_x_offset, show_win_prob=show_win_prob, layout=(_ordered, _slots), suppress_date=_suppress_date, x_start=_grid_x_start)
 
     # Header strip priority:
     #   1. Overflow ticker — shown whenever any game didn't get a grid slot
@@ -588,12 +601,14 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
 
     if config.get('show_standings_sidebar', False):
         if standings_data and 'standings' in standings_data:
-            _series = {}
-            if _bracket and league_mode != 'aaa':
+            if _bracket and league_mode != 'aaa' and not _series:
                 _series = derive_playoff_series_by_league(_bracket, standings_data)
             _magic_badges = config.get('sidebar_magic_badges', False)
             for _side, _lg in (('left', 'AL'), ('right', 'NL')):
-                if _series.get(_lg):
+                if _ws_layout:
+                    if _side == 'right':
+                        Himage = draw_playoff_seedings_sidebar(Himage, _series, team_data, side=_side, scale=2)
+                elif _series.get(_lg):
                     Himage = draw_playoff_seedings_sidebar(Himage, _series, team_data, side=_side)
                 else:
                     # No series for this side (between rounds, a league that is
@@ -617,6 +632,7 @@ def  orchestrate_score_board(game_state_data, team_data, date_str=None, bypass_c
         _ordered, _slots, refreshed_game_ids, bypass_cache,
         _dropped_games, _ticker_will_show, _bracket,
         _all_games_done, game_state_data, config, league_mode,
+        x_start=_grid_x_start, ws_layout=_ws_layout,
     )
 
     return (Himage, changed_regions)

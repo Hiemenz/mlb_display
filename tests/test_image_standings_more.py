@@ -39,6 +39,7 @@ from image_standings import (
     derive_playoff_series_by_league,
     draw_playoff_round_header,
     draw_playoff_seedings_sidebar,
+    is_world_series_layout,
     draw_playoff_seedings_fullscreen,
 )
 
@@ -2104,3 +2105,23 @@ class TestIsTeamSeriesOver:
         from image_standings import is_team_series_over
         assert not is_team_series_over('NYY', None)
         assert not is_team_series_over('NYY', {'series': []})
+
+
+@needs_pil
+class TestWorldSeriesSidebar:
+    def _ws(self):
+        ws = _ps('WS', '1', '11', 'T1', 'N1', away_wins=2, home_wins=1)
+        return {'AL': [ws], 'NL': [ws]}
+
+    def test_is_world_series_layout(self):
+        assert is_world_series_layout(self._ws())
+        assert not is_world_series_layout(_series_by_league())
+        assert not is_world_series_layout({'AL': [], 'NL': []})
+
+    def test_scale_two_uses_double_width_right_column(self):
+        img = _blank()
+        with patch('image_standings._logo_small', return_value=None):
+            draw_playoff_seedings_sidebar(img, self._ws(), {}, side='right', scale=2)
+        # Ink reaches into the wider 64px column but never left of it.
+        assert img.crop((736, 0, 768, 480)).getbbox() is not None
+        assert img.crop((0, 0, 736, 480)).getextrema() == (255, 255)

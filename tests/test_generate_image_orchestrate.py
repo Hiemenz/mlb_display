@@ -765,6 +765,37 @@ def test_playoff_sidebar_falls_back_to_standings_for_a_side_with_no_series():
 
 
 @needs_pil
+def test_world_series_shifts_grid_and_doubles_right_sidebar():
+    """World Series: grid flush left, left sidebar dropped, right sidebar scale=2."""
+    import generate_image
+
+    stub_img = Image.new('1', (800, 480), 255)
+    cfg = dict(FIXED_CONFIG, show_standings_sidebar=True, show_playoff_bracket=True)
+    games = [{'game_pk': 1, 'away_team_id': 119, 'home_team_id': 137, 'detailed_state': 'Scheduled'}]
+    standings_data = {'standings': {'1': [{'team_id': 119, 'streak': 'W2'}]}}
+    bracket = {'season': datetime.now().year, 'series': [{'round': 'WS', 'game_results': []}]}
+    ws = {'round': 'WS'}
+
+    with patch('generate_image.load_json_file',
+               side_effect=_fake_loader({'standings.json': standings_data,
+                                         'playoff_bracket.json': bracket})), \
+         patch('generate_image.save_off_results'), \
+         patch('generate_image.draw_out_of_town_score_board', return_value=stub_img) as mock_grid, \
+         patch('generate_image.draw_playoff_round_header', side_effect=lambda img, b: img), \
+         patch('generate_image.derive_playoff_series_by_league',
+               return_value={'AL': [ws], 'NL': [ws]}), \
+         patch('generate_image.draw_playoff_seedings_sidebar', side_effect=lambda img, *a, **k: img) as mock_po, \
+         patch('generate_image.draw_standings_sidebar', side_effect=lambda img, *a, **k: img) as mock_sb:
+        generate_image.orchestrate_score_board(
+            games, TEAM_DATA, date_str='2026-10-25', bypass_cache=True, config=cfg)
+
+    assert mock_grid.call_args.kwargs['x_start'] == 0
+    assert mock_po.call_count == 1
+    assert mock_po.call_args.kwargs == {'side': 'right', 'scale': 2}
+    assert mock_sb.call_count == 0
+
+
+@needs_pil
 def test_grid_path_wildcard_skipped_for_aaa_league_mode():
     """Grid path wildcard skipped for aaa league mode."""
     import generate_image
