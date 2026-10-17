@@ -1,8 +1,7 @@
 """Draw a playoff series tile (135x130) for an empty grid slot.
 
-Game slots (G1…Gmax) show either a completed result or the scheduled
-away-logo home-logo time for upcoming games.  The decisive last game when a
-series goes to its maximum is centred; all others pair left|right per row.
+Completed games stack in the column under the team that won them (away left,
+home right); scheduled games follow as full-width away-logo home-logo time rows.
 """
 from datetime import datetime
 
@@ -172,14 +171,15 @@ def _draw_result_row(draw, Himage, cx, gy, game_num, gr,
     else:
         win_logo = None
 
-    logo_gap = 3
+    # Gaps are tight: this row has to fit a ~67px half-column.
+    logo_gap = 2
     logo_w   = (win_logo.width + logo_gap) if win_logo else 0
-    total    = label_w + 4 + score_w + logo_w
+    total    = label_w + 3 + score_w + logo_w
     gx       = cx - total // 2
     _bold_text(draw, gx, gy, label, font, fg)
-    _bold_text(draw, gx + label_w + 4, gy, score, font, fg)
+    _bold_text(draw, gx + label_w + 3, gy, score, font, fg)
     if win_logo:
-        lx = gx + label_w + 4 + score_w + logo_gap
+        lx = gx + label_w + 3 + score_w + logo_gap
         _paste_logo_transparent(Himage, win_logo,
                                 lx, gy + (_SCORE_LOGO - win_logo.height) // 2 + 1)
 
@@ -312,40 +312,34 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
             return ('upcoming', upcoming[idx])
         return ('empty', None)
 
-    def _draw_slot(cx, gy, slot_num):
-        kind, data = _slot(slot_num)
-        if kind == 'result':
-            _draw_result_row(draw, Himage, cx, gy, slot_num, data, **kw_result)
-        elif kind == 'upcoming':
-            _draw_upcoming_row(draw, Himage, cx, gy, data, use_logos, fg)
+    # Results stack in the column of the team that won each game; upcoming
+    # games follow as full-width rows beneath the taller column.
+    columns = {str(away_id): [], str(home_id): []}
+    for n, gr in enumerate(game_results, 1):
+        wid = str(gr.get('winner_id', ''))
+        if wid not in columns:
+            wid = str(away_id) if (gr.get('away_score') or 0) > (gr.get('home_score') or 0) else str(home_id)
+        columns[wid].append((n, gr))
 
-    row = 0
-    slot = 1
-    while slot <= max_games and games_start + row * _GAME_ROW_H + _GAME_ROW_H <= body_bottom:
-        gy   = games_start + row * _GAME_ROW_H
-        kind, _ = _slot(slot)
+    def _row_y(row):
+        return games_start + row * _GAME_ROW_H
 
-        if slot == max_games:
-            # Decisive last game — always centred.
-            _draw_slot(mid_x, gy, slot)
-            row += 1
-            slot += 1
-        elif kind == 'upcoming':
-            # Upcoming game: full-width row so "logo @ logo day Xpm" has room.
-            _draw_slot(mid_x, gy, slot)
-            row += 1
-            slot += 1
-        else:
-            # Completed result: pair with the next slot if it's also a result;
-            # otherwise draw it full-width so there's no orphaned left-aligned row.
-            next_kind, _ = _slot(slot + 1) if slot + 1 <= max_games else ('empty', None)
-            if next_kind == 'result':
-                _draw_slot(away_cx, gy, slot)
-                _draw_slot(home_cx, gy, slot + 1)
-                slot += 2
-            else:
-                _draw_slot(mid_x, gy, slot)
-                slot += 1
-            row += 1
+    def fits(row):
+        return _row_y(row) + _GAME_ROW_H <= body_bottom
+
+    for tid, cx in ((str(away_id), away_cx), (str(home_id), home_cx)):
+        for row, (n, gr) in enumerate(columns[tid]):
+            if fits(row):
+                _draw_result_row(draw, Himage, cx, _row_y(row), n, gr, **kw_result)
+
+    row = max(len(columns[str(away_id)]), len(columns[str(home_id)]))
+    for slot in range(n_played + 1, max_games + 1):
+        if not fits(row):
+            break
+        kind, data = _slot(slot)
+        if kind != 'upcoming':
+            break
+        _draw_upcoming_row(draw, Himage, mid_x, _row_y(row), data, use_logos, fg)
+        row += 1
 
     return Himage

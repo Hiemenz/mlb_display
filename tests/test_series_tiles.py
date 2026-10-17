@@ -139,12 +139,23 @@ class TestDrawSeriesCell:
     @staticmethod
     def _make_games(n, round='WS'):
         return dict(_WC_SERIES, round=round, game_results=[
-            {'winner_id': '143', 'game_pk': i,
+            {'winner_id': '143' if i % 2 == 0 else '144', 'game_pk': i,
              'date': f'2026-10-{i+1:02d}',
              'away_id': '143', 'home_id': '144',
-             'away_score': 3, 'home_score': 1}
+             'away_score': 3 if i % 2 == 0 else 1,
+             'home_score': 1 if i % 2 == 0 else 3}
             for i in range(n)
         ])
+
+    def test_wins_stack_in_winners_column(self):
+        # Away team (143) wins everything: ink only in the left half below dots.
+        games = dict(_WC_SERIES, round='DS', game_results=[
+            {'winner_id': '143', 'away_id': '143', 'home_id': '144',
+             'away_score': 3, 'home_score': 1} for _ in range(3)])
+        img = _draw(games)
+        left = list(img.crop((10, 80, 75, 138)).getdata()).count(0)
+        right = list(img.crop((80, 80, 145, 138)).getdata()).count(0)
+        assert left > 0 and right == 0
 
     def test_wc_three_games_centred_g3(self):
         img = _draw(self._make_games(3, 'WC'))
