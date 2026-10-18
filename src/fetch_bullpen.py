@@ -60,6 +60,27 @@ def live_playoff_team_ids(games, primary_abbr=''):
     return ids
 
 
+def active_series_team_ids(bracket, primary_abbr='', today=None):
+    """Team ids (str) of the postseason series currently being played, away then home.
+
+    ``bracket`` is playoff_bracket.json. Only unfinished series in the active
+    round with both teams decided count. The primary team's series wins;
+    otherwise the first one listed. [] when there is no such series.
+    """
+    from image_standings import derive_playoff_active_round
+    series = (bracket or {}).get('series') or []
+    if not series:
+        return []
+    rnd = derive_playoff_active_round(bracket, today=today)
+    open_series = [s for s in series
+                   if s.get('round') == rnd and not s.get('complete')
+                   and s.get('away_id') and s.get('home_id')]
+    open_series.sort(key=lambda s: primary_abbr not in (s.get('away_abbr'), s.get('home_abbr')))
+    if not open_series:
+        return []
+    return [str(open_series[0]['away_id']), str(open_series[0]['home_id'])]
+
+
 def _abbr_to_team_id(abbr):
     abbr_map = (load_json_file('teams.json') or {}).get('team_abbreviation', {})
     for tid, a in abbr_map.items():
