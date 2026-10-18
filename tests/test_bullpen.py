@@ -784,3 +784,40 @@ class TestMainRefresh:
         main_mod._refresh_bullpen({'show_bullpen_panel': True, 'primary': 'ATL'}, 'mlb',
                                   context=' here')
         assert 'bullpen fetch here failed' in capsys.readouterr().out
+
+
+_DS = {'round': 'DS', 'away_abbr': 'AAA', 'home_abbr': 'BBB', 'away_id': '1', 'home_id': '2',
+       'away_wins': 1, 'home_wins': 0, 'complete': False, 'first_game_date': '2026-10-04'}
+_DS_PRIMARY = dict(_DS, away_abbr='NYY', home_abbr='BOS', away_id='147', home_id='111')
+
+
+class TestActiveSeriesTeamIds:
+    def test_primary_series_wins(self):
+        from fetch_bullpen import active_series_team_ids
+        bracket = {'series': [_DS, _DS_PRIMARY]}
+        assert active_series_team_ids(bracket, 'NYY', today='2026-10-10') == ['147', '111']
+
+    def test_falls_back_to_first_open_series(self):
+        from fetch_bullpen import active_series_team_ids
+        assert active_series_team_ids({'series': [_DS, _DS_PRIMARY]}, 'ATL',
+                                      today='2026-10-10') == ['1', '2']
+
+    def test_skips_complete_and_undecided(self):
+        from fetch_bullpen import active_series_team_ids
+        done = dict(_DS, complete=True)
+        tbd = dict(_DS, away_id='', away_abbr='AL Low')
+        assert active_series_team_ids({'series': [done, tbd]}, '', today='2026-10-10') == []
+
+    def test_no_bracket(self):
+        from fetch_bullpen import active_series_team_ids
+        assert active_series_team_ids(None) == []
+        assert active_series_team_ids({'series': []}) == []
+
+
+@needs_pil
+class TestActiveSeriesTiles:
+    def test_grid_shows_active_series_teams(self):
+        data = dict(BULLPEN, series=[_DS], teams=dict(
+            BULLPEN['teams'], **{'1': {'abbr': 'AAA', 'pitchers': PITCHERS[:1]},
+                                 '2': {'abbr': 'BBB', 'pitchers': PITCHERS[:1]}}))
+        assert [c[2] for c in _render(3, data=data)] == ['AAA', 'BBB']

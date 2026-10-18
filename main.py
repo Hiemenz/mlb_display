@@ -23,7 +23,7 @@ from fetch_games import fetch_scoreboard_for_date, fetch_all_team_abbreviations,
 from fetch_leaders import fetch_leaders
 from fetch_series_stats import fetch_series_leaders
 from fetch_streaks import fetch_streaks
-from fetch_bullpen import fetch_bullpen, live_playoff_team_ids
+from fetch_bullpen import fetch_bullpen, live_playoff_team_ids, active_series_team_ids
 from fetch_news import fetch_news
 from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from fetch_team_quadrant import fetch_team_quadrant
@@ -1002,8 +1002,10 @@ def _refresh_bullpen(config, league_mode, force=False, context=''):
         return
     primary = config.get('primary', '')
     live_ids = live_playoff_team_ids((load_json_file('games.json') or {}).get('games'), primary)
+    series_ids = active_series_team_ids(load_json_file('playoff_bracket.json'), primary)
     if not (config.get('show_bullpen_panel', False) or live_ids):
         return
+    live_ids = live_ids + [t for t in series_ids if t not in live_ids]
     try:
         fetch_bullpen(primary, days=config.get('bullpen_lookback_days', 3), force=force,
                       extra_team_ids=live_ids)

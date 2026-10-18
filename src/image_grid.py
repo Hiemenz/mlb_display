@@ -1095,7 +1095,7 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         for g in (game_state_data or [])
     )
     # Boost and auto-enable bullpen tiles for any live playoff game regardless of config.
-    from fetch_bullpen import live_playoff_team_ids
+    from fetch_bullpen import live_playoff_team_ids, active_series_team_ids
     _live_playoff_ids = live_playoff_team_ids(game_state_data, _primary_abbr_live)
     _any_playoff_live = bool(_live_playoff_ids)
 
@@ -1134,7 +1134,11 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
         from image_bullpen import draw_bullpen_cell
         from image_standings import is_team_series_over
         _bp_bracket = load_json_file('playoff_bracket.json')
-        _bp_order = _live_playoff_ids or (_bp_data or {}).get('team_order', [])
+        # Live games first; else the series being played this round (so the
+        # tiles track the playoffs, not just the primary team's schedule).
+        _bp_order = (_live_playoff_ids
+                     or active_series_team_ids(_bp_bracket, config.get('primary', ''))
+                     or (_bp_data or {}).get('team_order', []))
         for _bp_tid in _bp_order:
             if not _free_slots:
                 break
