@@ -312,7 +312,6 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     home_wins  = series.get('home_wins', 0)
     total_wins = _WIN_GOAL.get(rnd, 2)
 
-    font_sm  = _get_font(9)
     away_cx  = sx + panel_cell.CELL_W // 4
     home_cx  = sx + 3 * panel_cell.CELL_W // 4
     mid_x    = sx + panel_cell.CELL_W // 2
