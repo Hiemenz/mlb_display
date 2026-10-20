@@ -364,6 +364,13 @@ def fetch_playoff_bracket(season=None):
         key=lambda s: (s.pop('round_order', 9), s.get('away_abbr', '')),
     )
 
+    # Regular-season head-to-head for each matchup (cached on disk; shown as a
+    # footnote under the series tile). None when unavailable.
+    from fetch_season_series import season_series
+    for s in series_list:
+        if s.get('away_id') and s.get('home_id'):
+            s['season_series'] = season_series(s['away_id'], s['home_id'], season)
+
     # Supplement with a targeted 14-day fetch so that recently-confirmed
     # broadcast times replace any midnight-UTC placeholders in scheduled_games.
     # The full-year call may cache stale midnight-UTC values; the narrow window

@@ -1624,7 +1624,10 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
         winner_abbr = s.get('winner_abbr') if is_complete else None
 
         # Content: header pair + game slots + optional winner footer pill.
-        _PILL_H      = 23   # abbr line (12) + score line (11)
+        # The double-wide World Series sidebar has room for a bigger pill.
+        _AB_SZ, _SC_SZ = (20, 30) if scale > 1 else (11, 14)
+        _SC_Y          = _AB_SZ + 3
+        _PILL_H        = _SC_Y + _SC_SZ + 3   # abbr line + score line
         footer_h     = (2 + _PILL_H) if (is_complete and winner_abbr) else 0
         content_h    = _PAIR + total_slots * _WIN + footer_h
         top_y = block_y + (block_h - content_h) // 2
@@ -1675,8 +1678,8 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
             w_wins    = away_wins if winner_abbr == away_abbr else home_wins
             l_wins    = home_wins if winner_abbr == away_abbr else away_wins
             score_str = f'{w_wins}-{l_wins}'
-            font_ab   = _get_font(11)
-            font_sm   = _get_font(8)
+            font_ab   = _get_font(_AB_SZ)
+            font_sm   = _get_font(_SC_SZ)
             ba        = font_ab.getbbox(winner_abbr)
             bs        = font_sm.getbbox(score_str)
             pill_w    = max(ba[2] - ba[0], bs[2] - bs[0]) + 8
@@ -1688,8 +1691,8 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
             draw.text((ax,     cur_y + 1), winner_abbr, font=font_ab, fill=255)
             draw.text((ax + 1, cur_y + 1), winner_abbr, font=font_ab, fill=255)
             sx = round(col_cx - (bs[0] + bs[2]) / 2) + 1
-            draw.text((sx,     cur_y + 13), score_str, font=font_sm, fill=255)
-            draw.text((sx + 1, cur_y + 13), score_str, font=font_sm, fill=255)
+            draw.text((sx,     cur_y + _SC_Y), score_str, font=font_sm, fill=255)
+            draw.text((sx + 1, cur_y + _SC_Y), score_str, font=font_sm, fill=255)
 
         # Block divider (skip after last series)
         if idx < n - 1:
