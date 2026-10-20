@@ -309,7 +309,7 @@ def fetch_playoff_bracket(season=None):
             entry    = series_map[key]
             state    = game.get('status', {}).get('detailedState', '')
             game_pk  = game.get('gamePk', 0)
-            if state in ('Final', 'Game Over', 'Final: Tied'):
+            if state in ('Final', 'Game Over', 'Final: Tied', 'Completed Early'):
                 # Determine winner by team ID so attribution is correct even when
                 # teams swap home/away roles in later games of the series.
                 winning_id = None
