@@ -23,6 +23,7 @@ _DOT_GAP      = 3
 _LOGO_SZ      = 28
 _SCORE_LOGO   = 14   # logo height inside a game-result / upcoming row
 _GAME_ROW_H   = 15   # vertical step between game rows (4 rows fit in cell)
+_FOOT_FONT_SZ = 17   # season-series footnote under the tile (20px strip)
 _GAME_FONT_SZ = 11   # font size for scores and upcoming time
 
 
@@ -53,6 +54,12 @@ def _bold_text(draw, x, y, text, font, fill):
     """Simulate bold by double-printing with a 1px horizontal offset."""
     draw.text((x,     y), text, font=font, fill=fill)
     draw.text((x + 1, y), text, font=font, fill=fill)
+
+
+def _heavy_text(draw, x, y, text, font, fill):
+    """Bolder than _bold_text: also overprints 1px down, for larger type."""
+    _bold_text(draw, x, y, text, font, fill)
+    _bold_text(draw, x, y + 1, text, font, fill)
 
 
 def _scheduled_games(away_id, home_id, extra=None, bracket_show_time=True):
@@ -237,30 +244,30 @@ def _draw_season_series(Himage, sx, sy, series):
         return
     a = wins.get(str(series.get('away_id')), 0)
     h = wins.get(str(series.get('home_id')), 0)
-    font = _get_font(14)
+    font = _get_font(_FOOT_FONT_SZ)
     draw = ImageDraw.Draw(Himage)
-    y = sy + panel_cell.CELL_H + 2
+    y = sy + panel_cell.CELL_H + 1
     right = sx + panel_cell.CELL_W - 2
 
     if a == h:
         text = f'RS: tied {a}-{h}'
-        _bold_text(draw, right - int(font.getlength(text)), y, text, font, 0)
+        _heavy_text(draw, right - int(font.getlength(text)), y, text, font, 0)
         return
 
     abbr, tid, hi, lo = ((series.get('away_abbr'), series.get('away_id'), a, h) if a > h
                          else (series.get('home_abbr'), series.get('home_id'), h, a))
     score = f'{hi}-{lo}'
-    logo = _logo_small(abbr, tid, size=_SCORE_LOGO + 4)
+    logo = _logo_small(abbr, tid, size=_FOOT_FONT_SZ + 4)
     lead = logo.width if logo is not None else int(font.getlength(abbr))
     score_x = right - int(font.getlength(score))
     lead_x = score_x - 3 - lead
-    _bold_text(draw, score_x, y, score, font, 0)
+    _heavy_text(draw, score_x, y, score, font, 0)
     if logo is not None:
-        _paste_logo_transparent(Himage, logo, lead_x, y + (14 - logo.height) // 2 + 1)
+        _paste_logo_transparent(Himage, logo, lead_x, y + (_FOOT_FONT_SZ - logo.height) // 2 + 2)
     else:
-        _bold_text(draw, lead_x, y, abbr, font, 0)
+        _heavy_text(draw, lead_x, y, abbr, font, 0)
     label = 'RS:'
-    _bold_text(draw, lead_x - 3 - int(font.getlength(label)), y, label, font, 0)
+    _heavy_text(draw, lead_x - 3 - int(font.getlength(label)), y, label, font, 0)
 
 
 def draw_series_cell(Himage, sx, sy, series, use_logos=True):
