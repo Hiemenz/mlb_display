@@ -295,8 +295,31 @@ def _should_refresh_playoff_bracket(force=False):
     Series win counts only change once per completed game, so hourly is
     frequent enough even during an active series.
     """
+    if _bracket_missing_final_game():
+        print("Playoff bracket missing a finished game — refreshing")
+        return True
     return _should_refresh('Playoff bracket', 'playoff_bracket.json',
                            _PLAYOFF_BRACKET_MAX_AGE_HOURS, force)
+
+
+def _bracket_missing_final_game():
+    """True when a Final postseason game in games.json isn't yet counted in the
+    cached bracket. Self-heals when the schedule API lags the live feed: the
+    refresh keeps retrying each poll until the game shows up, instead of
+    waiting out the hourly TTL."""
+    try:
+        games = load_json_file('games.json').get('games', [])
+        series = (load_json_file('playoff_bracket.json') or {}).get('series', [])
+    except Exception:
+        return False
+    counted = {gr.get('game_pk') for s in series for gr in s.get('game_results', [])}
+    return any(
+        g.get('game_type') in POSTSEASON_GAME_TYPES
+        and g.get('detailed_state') in _STANDINGS_FINAL_STATES
+        and g.get('detailed_state') != 'Postponed'
+        and g.get('game_pk') not in counted
+        for g in games
+    )
 
 
 def _hours_since(iso_ts):

@@ -7,6 +7,7 @@ World Series is over the bracket is final and must never be re-fetched."""
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 
+import main
 from standings import is_postseason_window
 
 
@@ -104,3 +105,22 @@ class TestRefreshPlayoffBracketWSGuard:
         """Non-stale cache skips fetch even with live WS."""
         mock = _call_refresh(_WS_LIVE_BRACKET, age_stale=False)
         mock.assert_not_called()
+
+
+def test_bracket_missing_final_game_detects_uncounted_final():
+    games = {'games': [{'game_pk': 1, 'game_type': 'D', 'detailed_state': 'Final'}]}
+    bracket = {'series': [{'game_results': []}]}
+    data = {'games.json': games, 'playoff_bracket.json': bracket}
+    with patch('main.load_json_file', side_effect=lambda f: data[f]):
+        assert main._bracket_missing_final_game() is True
+        bracket['series'][0]['game_results'].append({'game_pk': 1})
+        assert main._bracket_missing_final_game() is False
+
+
+def test_bracket_missing_final_game_ignores_live_and_unreadable():
+    games = {'games': [{'game_pk': 2, 'game_type': 'D', 'detailed_state': 'In Progress'}]}
+    data = {'games.json': games, 'playoff_bracket.json': {'series': []}}
+    with patch('main.load_json_file', side_effect=lambda f: data[f]):
+        assert main._bracket_missing_final_game() is False
+    with patch('main.load_json_file', side_effect=OSError):
+        assert main._bracket_missing_final_game() is False
