@@ -4,7 +4,7 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import requests
-from PIL import Image, ImageDraw
+from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -54,7 +54,7 @@ class TestSeasonSeriesDraw:
     def _drawn(series):
         img = Image.new('1', (800, 480), 255)
         before = img.tobytes()
-        _draw_season_series(ImageDraw.Draw(img), 0, 0, series)
+        _draw_season_series(img, 0, 0, series)
         return img.tobytes() != before
 
     def test_drawn_for_leader_and_tie(self):

@@ -224,10 +224,11 @@ def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
     draw.text((lx, gy), time_str, font=font, fill=fg)
 
 
-def _draw_season_series(draw, sx, sy, series):
-    """Series preview: regular-season head-to-head below the tile, e.g. 'RS: TB 4-2'.
+def _draw_season_series(Himage, sx, sy, series):
+    """Series preview: regular-season head-to-head below the tile, e.g. 'RS: [TB logo] 4-2'.
 
     Only shown before the series starts; it goes away once a game has been played.
+    Right-anchored. A tied season series has no leader, so it reads 'RS: tied 3-3'.
     """
     wins = series.get('season_series')
     started = (series.get('away_wins') or 0) + (series.get('home_wins') or 0) \
@@ -236,15 +237,30 @@ def _draw_season_series(draw, sx, sy, series):
         return
     a = wins.get(str(series.get('away_id')), 0)
     h = wins.get(str(series.get('home_id')), 0)
+    font = _get_font(14)
+    draw = ImageDraw.Draw(Himage)
+    y = sy + panel_cell.CELL_H + 2
+    right = sx + panel_cell.CELL_W - 2
+
     if a == h:
         text = f'RS: tied {a}-{h}'
+        _bold_text(draw, right - int(font.getlength(text)), y, text, font, 0)
+        return
+
+    abbr, tid, hi, lo = ((series.get('away_abbr'), series.get('away_id'), a, h) if a > h
+                         else (series.get('home_abbr'), series.get('home_id'), h, a))
+    score = f'{hi}-{lo}'
+    logo = _logo_small(abbr, tid, size=_SCORE_LOGO + 4)
+    lead = logo.width if logo is not None else int(font.getlength(abbr))
+    score_x = right - int(font.getlength(score))
+    lead_x = score_x - 3 - lead
+    _bold_text(draw, score_x, y, score, font, 0)
+    if logo is not None:
+        _paste_logo_transparent(Himage, logo, lead_x, y + (14 - logo.height) // 2 + 1)
     else:
-        lead, hi, lo = ((series.get('away_abbr'), a, h) if a > h
-                        else (series.get('home_abbr'), h, a))
-        text = f'RS: {lead} {hi}-{lo}'
-    font = _get_font(14)
-    x = sx + panel_cell.CELL_W - int(font.getlength(text)) - 2
-    _bold_text(draw, x, sy + panel_cell.CELL_H + 2, text, font, 0)
+        _bold_text(draw, lead_x, y, abbr, font, 0)
+    label = 'RS:'
+    _bold_text(draw, lead_x - 3 - int(font.getlength(label)), y, label, font, 0)
 
 
 def draw_series_cell(Himage, sx, sy, series, use_logos=True):
@@ -299,8 +315,8 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
         _paste_small_logo(Himage, away_abbr, away_id, away_cx, logo_cy, _LOGO_SZ)
         _paste_small_logo(Himage, home_abbr, home_id, home_cx, logo_cy, _LOGO_SZ)
 
-    vsw = int(font_sm.getlength('@'))
-    draw.text((mid_x - vsw // 2, logo_cy - 4), '@', font=font_sm, fill=fg)
+    vsw = int(font_sm.getlength('vs'))
+    draw.text((mid_x - vsw // 2, logo_cy - 4), 'vs', font=font_sm, fill=fg)
 
     dots_y = logo_cy + _LOGO_SZ // 2 + 6
     _dot_row(draw, away_cx, dots_y, away_wins, total_wins, fg, 255)
@@ -365,5 +381,5 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
         _draw_upcoming_row(draw, Himage, mid_x, _row_y(row), data, use_logos, fg)
         row += 1
 
-    _draw_season_series(draw, sx, sy, series)
+    _draw_season_series(Himage, sx, sy, series)
     return Himage
