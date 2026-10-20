@@ -981,6 +981,32 @@ def _draw_game_end_time(ctx, end_utc_str, in_linescore_window, game_is_final):
     ctx.bold((x, strip_y + (strip_h - 14 * ctx.s) // 2), text, ctx.font14)
 
 
+def _draw_season_series(ctx, game_data, away_name, home_name, in_linescore_window, game_is_final):
+    """Left-align the regular-season head-to-head in the strip below a postseason box.
+
+    Mirrors _draw_game_end_time (same strip, same visibility rules) on the
+    opposite side, e.g. 'RS: NYY 4-2' or 'RS: tied 3-3'.
+    """
+    wins = game_data.get('season_series')
+    if not game_is_final or not wins:
+        return
+    cfg = load_yaml_file('config.yaml')
+    if not (in_linescore_window or cfg.get('show_game_end_time_always', False)):
+        return
+
+    a = wins.get(str(game_data.get('away_team_id')), 0)
+    h = wins.get(str(game_data.get('home_team_id')), 0)
+    if a == h:
+        text = f'RS: tied {a}-{h}'
+    else:
+        lead, hi, lo = (away_name, a, h) if a > h else (home_name, h, a)
+        text = f'RS: {lead} {hi}-{lo}'
+
+    strip_y = ctx.y + ctx.h + 21 * ctx.s
+    strip_h = 19 * ctx.s
+    ctx.bold((ctx.x + 1 * ctx.s, strip_y + (strip_h - 14 * ctx.s) // 2), text, ctx.font14)
+
+
 def _draw_win_probability_bar(ctx, game_data, away_team, home_team, center_line=True):
     """Draw the live win-probability strip below the box.
 
@@ -2455,6 +2481,8 @@ def draw_box(Himage, start_x, start_y, game_data, team_data, score_changed=False
 
     # End time — right-aligned in the strip below the box, beside the duration.
     _draw_game_end_time(ctx, _end_utc_str, _in_linescore_window, _game_is_final)
+    _draw_season_series(ctx, game_data, away_team_name, home_team_name,
+                        _in_linescore_window, _game_is_final)
 
     # ABS challenges remaining — small stacked dots to the left of each team's logo
     if game_data['detailed_state'] == 'In Progress':
