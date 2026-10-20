@@ -23,7 +23,7 @@ _DOT_GAP      = 3
 _LOGO_SZ      = 28
 _SCORE_LOGO   = 14   # logo height inside a game-result / upcoming row
 _GAME_ROW_H   = 15   # vertical step between game rows (4 rows fit in cell)
-_FOOT_FONT_SZ = 17   # season-series footnote under the tile (20px strip)
+_FOOT_FONT_SZ = 20   # season-series footnote under the tile (20px strip)
 _GAME_FONT_SZ = 11   # font size for scores and upcoming time
 
 
@@ -246,7 +246,7 @@ def _draw_season_series(Himage, sx, sy, series):
     h = wins.get(str(series.get('home_id')), 0)
     font = _get_font(_FOOT_FONT_SZ)
     draw = ImageDraw.Draw(Himage)
-    y = sy + panel_cell.CELL_H + 1
+    y = sy + panel_cell.CELL_H - 1   # glyph ink starts ~5px below the origin
     right = sx + panel_cell.CELL_W - 2
 
     if a == h:
@@ -257,13 +257,13 @@ def _draw_season_series(Himage, sx, sy, series):
     abbr, tid, hi, lo = ((series.get('away_abbr'), series.get('away_id'), a, h) if a > h
                          else (series.get('home_abbr'), series.get('home_id'), h, a))
     score = f'{hi}-{lo}'
-    logo = _logo_small(abbr, tid, size=_FOOT_FONT_SZ + 4)
+    logo = _logo_small(abbr, tid, size=_FOOT_FONT_SZ - 1)
     lead = logo.width if logo is not None else int(font.getlength(abbr))
     score_x = right - int(font.getlength(score))
     lead_x = score_x - 3 - lead
     _heavy_text(draw, score_x, y, score, font, 0)
     if logo is not None:
-        _paste_logo_transparent(Himage, logo, lead_x, y + (_FOOT_FONT_SZ - logo.height) // 2 + 2)
+        _paste_logo_transparent(Himage, logo, lead_x, sy + panel_cell.CELL_H + (20 - logo.height) // 2)
     else:
         _heavy_text(draw, lead_x, y, abbr, font, 0)
     label = 'RS:'
