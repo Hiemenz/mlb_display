@@ -4,12 +4,12 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import fetch_season_series as fss  # noqa: E402
-from image_box import _TileCtx, _draw_season_series  # noqa: E402
+from image_series import _draw_season_series  # noqa: E402
 
 
 def _game(away_id, home_id, away_won, state='Final'):
@@ -51,19 +51,18 @@ class TestSeasonSeriesFetch:
 
 class TestSeasonSeriesDraw:
     @staticmethod
-    def _draw(series, final=True, window=True):
-        ctx = _TileCtx(Image.new('1', (800, 480), 255), 0, 0, 1, False, 2)
-        before = ctx.Himage.tobytes()
-        game = {'away_team_id': 147, 'home_team_id': 111, 'season_series': series}
-        with patch('image_box.load_yaml_file', return_value={}):
-            _draw_season_series(ctx, game, 'NYY', 'BOS', window, final)
-        return ctx.Himage.tobytes() != before
+    def _drawn(series):
+        img = Image.new('1', (800, 480), 255)
+        before = img.tobytes()
+        _draw_season_series(ImageDraw.Draw(img), 0, 0, series)
+        return img.tobytes() != before
 
-    def test_drawn_when_final_in_window(self):
-        assert self._draw({'147': 4, '111': 2})
-        assert self._draw({'147': 3, '111': 3})
+    def test_drawn_for_leader_and_tie(self):
+        base = {'away_id': 147, 'home_id': 111, 'away_abbr': 'NYY', 'home_abbr': 'BOS'}
+        assert self._drawn(dict(base, season_series={'147': 4, '111': 2}))
+        assert self._drawn(dict(base, season_series={'147': 2, '111': 4}))
+        assert self._drawn(dict(base, season_series={'147': 3, '111': 3}))
 
-    def test_skipped_when_not_final_outside_window_or_missing(self):
-        assert not self._draw({'147': 4, '111': 2}, final=False)
-        assert not self._draw({'147': 4, '111': 2}, window=False)
-        assert not self._draw(None)
+    def test_skipped_when_missing(self):
+        assert not self._drawn({'away_id': 147, 'home_id': 111})
+        assert not self._drawn({'season_series': None})

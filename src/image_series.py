@@ -224,6 +224,24 @@ def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
     draw.text((lx, gy), time_str, font=font, fill=fg)
 
 
+def _draw_season_series(draw, sx, sy, series):
+    """Regular-season head-to-head in the strip below the tile, e.g. 'RS: TB 4-2'."""
+    wins = series.get('season_series')
+    if not wins:
+        return
+    a = wins.get(str(series.get('away_id')), 0)
+    h = wins.get(str(series.get('home_id')), 0)
+    if a == h:
+        text = f'RS: tied {a}-{h}'
+    else:
+        lead, hi, lo = ((series.get('away_abbr'), a, h) if a > h
+                        else (series.get('home_abbr'), h, a))
+        text = f'RS: {lead} {hi}-{lo}'
+    font = _get_font(14)
+    x = sx + (panel_cell.CELL_W - int(font.getlength(text))) // 2
+    _bold_text(draw, x, sy + panel_cell.CELL_H + 3, text, font, 0)
+
+
 def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     """Draw one playoff series into the 135x130 cell at (sx, sy).
 
@@ -342,4 +360,5 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
         _draw_upcoming_row(draw, Himage, mid_x, _row_y(row), data, use_logos, fg)
         row += 1
 
+    _draw_season_series(draw, sx, sy, series)
     return Himage

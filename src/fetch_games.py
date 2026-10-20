@@ -17,7 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from util import LIVE_STATES, POSTSEASON_GAME_TYPES, load_json_file, prune_stale, save_off_results
 from config_loader import load_config, add_config_arg
-from fetch_season_series import season_series
 
 SPORT_NAMES = {
     1: "MLB", 8: "World Baseball Classic",
@@ -700,9 +699,6 @@ def parse_games(data, sport_id=None, config=None):
             len(_h_inn) == len(_a_inn) and
             _h_inn[-1] is not None and _h_inn[-1] > 0
         )
-        if game.get('gameType') in POSTSEASON_GAME_TYPES and away_team_id and home_team_id:
-            game_dict['season_series'] = season_series(
-                away_team_id, home_team_id, _season_for_games([game_dict]))
         # In fullscreen mode only make live-feed calls for the one displayed game
         _featured = config.get('_featured_abbr', '')
         _is_featured = (not _featured) or (_featured in (
