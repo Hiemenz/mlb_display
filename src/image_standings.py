@@ -1625,7 +1625,7 @@ def draw_playoff_seedings_sidebar(Himage, series_by_league, team_data, side='lef
 
         # Content: header pair + game slots + optional winner footer pill.
         # The double-wide World Series sidebar has room for a bigger pill.
-        _AB_SZ, _SC_SZ = (20, 16) if scale > 1 else (11, 9)
+        _AB_SZ, _SC_SZ = (20, 30) if scale > 1 else (11, 14)
         _SC_Y          = _AB_SZ + 3
         _PILL_H        = _SC_Y + _SC_SZ + 3   # abbr line + score line
         footer_h     = (2 + _PILL_H) if (is_complete and winner_abbr) else 0

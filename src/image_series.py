@@ -225,9 +225,14 @@ def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
 
 
 def _draw_season_series(draw, sx, sy, series):
-    """Regular-season head-to-head in the strip below the tile, e.g. 'RS: TB 4-2'."""
+    """Series preview: regular-season head-to-head below the tile, e.g. 'RS: TB 4-2'.
+
+    Only shown before the series starts; it goes away once a game has been played.
+    """
     wins = series.get('season_series')
-    if not wins:
+    started = (series.get('away_wins') or 0) + (series.get('home_wins') or 0) \
+        or series.get('game_results')
+    if not wins or started:
         return
     a = wins.get(str(series.get('away_id')), 0)
     h = wins.get(str(series.get('home_id')), 0)

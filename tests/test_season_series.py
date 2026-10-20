@@ -63,6 +63,13 @@ class TestSeasonSeriesDraw:
         assert self._drawn(dict(base, season_series={'147': 2, '111': 4}))
         assert self._drawn(dict(base, season_series={'147': 3, '111': 3}))
 
+    def test_removed_once_series_has_started(self):
+        base = {'away_id': 147, 'home_id': 111, 'away_abbr': 'NYY', 'home_abbr': 'BOS',
+                'season_series': {'147': 4, '111': 2}}
+        assert self._drawn(dict(base, away_wins=0, home_wins=0, game_results=[]))
+        assert not self._drawn(dict(base, away_wins=1, home_wins=0))
+        assert not self._drawn(dict(base, game_results=[{'winner_id': 147}]))
+
     def test_skipped_when_missing(self):
         assert not self._drawn({'away_id': 147, 'home_id': 111})
         assert not self._drawn({'season_series': None})
