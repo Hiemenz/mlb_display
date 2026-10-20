@@ -243,8 +243,8 @@ def _draw_season_series(draw, sx, sy, series):
                         else (series.get('home_abbr'), h, a))
         text = f'RS: {lead} {hi}-{lo}'
     font = _get_font(14)
-    x = sx + (panel_cell.CELL_W - int(font.getlength(text))) // 2
-    _bold_text(draw, x, sy + panel_cell.CELL_H + 3, text, font, 0)
+    x = sx + panel_cell.CELL_W - int(font.getlength(text)) - 2
+    _bold_text(draw, x, sy + panel_cell.CELL_H + 2, text, font, 0)
 
 
 def draw_series_cell(Himage, sx, sy, series, use_logos=True):
