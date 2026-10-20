@@ -23,7 +23,8 @@ _DOT_GAP      = 3
 _LOGO_SZ      = 28
 _SCORE_LOGO   = 14   # logo height inside a game-result / upcoming row
 _GAME_ROW_H   = 15   # vertical step between game rows (4 rows fit in cell)
-_FOOT_FONT_SZ = 20   # season-series footnote under the tile (20px strip)
+_VS_FONT_SZ   = 18   # 'vs' between the header logos
+_FOOT_FONT_SZ = 14   # season-series footnote under the tile (20px strip)
 _GAME_FONT_SZ = 11   # font size for scores and upcoming time
 
 
@@ -246,28 +247,28 @@ def _draw_season_series(Himage, sx, sy, series):
     h = wins.get(str(series.get('home_id')), 0)
     font = _get_font(_FOOT_FONT_SZ)
     draw = ImageDraw.Draw(Himage)
-    y = sy + panel_cell.CELL_H - 1   # glyph ink starts ~5px below the origin
+    y = sy + panel_cell.CELL_H + 2
     right = sx + panel_cell.CELL_W - 2
 
     if a == h:
         text = f'RS: tied {a}-{h}'
-        _heavy_text(draw, right - int(font.getlength(text)), y, text, font, 0)
+        _bold_text(draw, right - int(font.getlength(text)), y, text, font, 0)
         return
 
     abbr, tid, hi, lo = ((series.get('away_abbr'), series.get('away_id'), a, h) if a > h
                          else (series.get('home_abbr'), series.get('home_id'), h, a))
     score = f'{hi}-{lo}'
-    logo = _logo_small(abbr, tid, size=_FOOT_FONT_SZ - 1)
+    logo = _logo_small(abbr, tid, size=_FOOT_FONT_SZ + 4)
     lead = logo.width if logo is not None else int(font.getlength(abbr))
     score_x = right - int(font.getlength(score))
     lead_x = score_x - 3 - lead
-    _heavy_text(draw, score_x, y, score, font, 0)
+    _bold_text(draw, score_x, y, score, font, 0)
     if logo is not None:
-        _paste_logo_transparent(Himage, logo, lead_x, sy + panel_cell.CELL_H + (20 - logo.height) // 2)
+        _paste_logo_transparent(Himage, logo, lead_x, y + (_FOOT_FONT_SZ - logo.height) // 2 + 1)
     else:
-        _heavy_text(draw, lead_x, y, abbr, font, 0)
+        _bold_text(draw, lead_x, y, abbr, font, 0)
     label = 'RS:'
-    _heavy_text(draw, lead_x - 3 - int(font.getlength(label)), y, label, font, 0)
+    _bold_text(draw, lead_x - 3 - int(font.getlength(label)), y, label, font, 0)
 
 
 def draw_series_cell(Himage, sx, sy, series, use_logos=True):
@@ -322,8 +323,11 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
         _paste_small_logo(Himage, away_abbr, away_id, away_cx, logo_cy, _LOGO_SZ)
         _paste_small_logo(Himage, home_abbr, home_id, home_cx, logo_cy, _LOGO_SZ)
 
-    vsw = int(font_sm.getlength('vs'))
-    draw.text((mid_x - vsw // 2, logo_cy - 4), 'vs', font=font_sm, fill=fg)
+    font_vs = _get_font(_VS_FONT_SZ)
+    vsw = int(font_vs.getlength('vs'))
+    vs_box = font_vs.getbbox('vs')
+    _heavy_text(draw, mid_x - vsw // 2, logo_cy - (vs_box[1] + vs_box[3]) // 2 - 1,
+                'vs', font_vs, fg)
 
     dots_y = logo_cy + _LOGO_SZ // 2 + 6
     _dot_row(draw, away_cx, dots_y, away_wins, total_wins, fg, 255)
