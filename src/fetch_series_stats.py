@@ -193,6 +193,25 @@ def build_series_leaders(stats):
     return {cat: _ranked(entries) for cat, entries in cats.items() if entries}
 
 
+def build_key_players(stats, hitters=2, pitchers=1):
+    """Per team, the top hitters and pitchers of the series, as display-ready lines.
+
+    Hitters come pre-sorted by HR/RBI/hits and pitchers by outs recorded
+    (``_add_up``); only lines with something to show are kept.
+    """
+    out = {}
+    for tid, team in stats['teams'].items():
+        bats = [{'name': _short_name(b['name']), 'avg': f"{b['avg']:.3f}",
+                 'hits': b['hits'], 'atBats': b['atBats'],
+                 'homeRuns': b['homeRuns'], 'rbi': b['rbi']}
+                for b in team['batters'] if b['hits'] or b['rbi']][:hitters]
+        arms = [{'name': _short_name(p['name']), 'ip': p['ip'], 'era': f"{p['era']:.2f}",
+                 'strikeOuts': p['strikeOuts']}
+                for p in team['pitchers'] if p['outs']][:pitchers]
+        out[tid] = {'batters': bats, 'pitchers': arms}
+    return out
+
+
 def _team_ids(primary_abbr):
     """(primary team id, id -> abbreviation map) from standings.json; id is None if unknown."""
     abbrs = load_json_file('standings.json').get('team_abbreviation', {})
@@ -231,6 +250,7 @@ def fetch_series_leaders(games, primary_abbr, force=False):
     result = {'key': key, 'fetched_at': time.time(), 'games': stats['games'],
               'last_played': stats['last_played'],
               'matchup': f"{abbrs.get(str(game['away_team_id']), '?')} @ {abbrs.get(str(game['home_team_id']), '?')}",
-              'leaders': build_series_leaders(stats)}
+              'leaders': build_series_leaders(stats),
+              'teams': build_key_players(stats)}
     save_off_results(result, _LEADERS_FILE)
     return result

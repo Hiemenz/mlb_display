@@ -1538,9 +1538,10 @@ def draw_playoff_round_header(Himage, bracket_data):
         return Himage
     label    = _ROUND_LABEL.get(rnd, rnd)
     draw     = ImageDraw.Draw(Himage)
-    font     = _get_font(11)
-    tracking = 2
-    ty       = (_WC_STRIP_H - 11) // 2
+    size     = 22
+    font     = _get_font(size)
+    tracking = 3
+    ty       = (_WC_STRIP_H - size) // 2
     lw       = int(font.getlength(label)) + tracking * (len(label) - 1)
     _draw_header_label(draw, font, label, (800 - lw) // 2, ty, tracking)
     return Himage

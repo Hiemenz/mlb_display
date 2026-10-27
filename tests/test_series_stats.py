@@ -327,3 +327,33 @@ def test_short_name():
     assert fss._short_name('Fernando Tatis Jr.') == 'F. Tatis Jr.'
     assert fss._short_name('Ohtani') == 'Ohtani'
     assert fss._short_name('') == ''
+
+
+class TestKeyPlayers:
+    TEAMS = {'143': {'batters': [{'name': 'K. Schwarber', 'homeRuns': 2, 'rbi': 5, 'hits': 4, 'atBats': 12},
+                                 {'name': 'T. Turner', 'homeRuns': 0, 'rbi': 0, 'hits': 5, 'atBats': 13}],
+                     'pitchers': [{'name': 'Z. Wheeler', 'ip': '6.1', 'strikeOuts': 9}]}}
+
+    def test_build_key_players_limits_and_formats(self):
+        stats = {'teams': {'1': {
+            'batters': [{'name': 'Aaron Judge', 'avg': 0.4, 'hits': 4, 'atBats': 10, 'homeRuns': 1, 'rbi': 2},
+                        {'name': 'B Two', 'avg': 0.3, 'hits': 3, 'atBats': 10, 'homeRuns': 0, 'rbi': 1},
+                        {'name': 'C Three', 'avg': 0.2, 'hits': 2, 'atBats': 10, 'homeRuns': 0, 'rbi': 0},
+                        {'name': 'D Zero', 'avg': 0.0, 'hits': 0, 'atBats': 4, 'homeRuns': 0, 'rbi': 0}],
+            'pitchers': [{'name': 'Gerrit Cole', 'outs': 18, 'ip': '6.0', 'era': 1.5, 'strikeOuts': 7},
+                         {'name': 'Idle Guy', 'outs': 0, 'ip': '0.0', 'era': 0.0, 'strikeOuts': 0}]}}}
+        out = fss.build_key_players(stats)['1']
+        assert [b['name'] for b in out['batters']] == ['A. Judge', 'B. Two']
+        assert out['pitchers'] == [{'name': 'G. Cole', 'ip': '6.0', 'era': '1.50', 'strikeOuts': 7}]
+
+    def test_tile_draws_and_is_available(self):
+        from PIL import Image
+        import image_series_stats as iss
+        from datetime import date
+        data = {'last_played': date.today().isoformat(), 'leaders': {}, 'teams': self.TEAMS}
+        assert iss.available_categories(data) == ['keyPlayers']
+        im = Image.new('L', (135, 130), 255)
+        iss.draw_series_stats_cell(im, 0, 0, data, {'team_abbreviation': {'143': 'PHI'}}, 'keyPlayers')
+        assert im.getextrema()[0] == 0
+        blank = Image.new('L', (135, 130), 255)
+        iss.draw_series_stats_cell(blank, 0, 0, {'teams': {}}, {}, 'keyPlayers')

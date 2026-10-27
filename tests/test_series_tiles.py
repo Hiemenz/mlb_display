@@ -261,34 +261,13 @@ class TestDrawSeriesCell:
         assert result[0]['away_abbr'] == 'PHI'
         assert result[0]['home_abbr'] == 'ATL'
 
-    def test_extra_fallback_ws_shows_date_only(self):
-        """WS bracket games always show M/D date (times may be unconfirmed)."""
-        from image_series import _scheduled_games
-        from unittest.mock import patch
-        import re
-        extra = [{'game_start_utc': '2026-10-23T00:00:00Z', 'away_id': '143', 'home_id': '144',
-                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 99}]
-        with patch('image_series.load_json_file', return_value={'games': []}):
-            result = _scheduled_games('143', '144', extra=extra, bracket_show_time=False)
-        assert re.match(r'^\d{1,2}/\d{1,2}$', result[0]['time']), \
-            f"Expected M/D for WS game, got {result[0]['time']!r}"
-
-    def test_extra_fallback_cs_shows_time(self):
-        """CS bracket games always show day+time regardless of UTC hour."""
-        from image_series import _scheduled_games
-        from unittest.mock import patch
+    def test_when_label_time_only_for_today_or_tomorrow(self):
+        from image_series import _when_label
         from datetime import datetime, timezone, timedelta
         import re
-        # Midnight UTC for a future game — CS should always show time, not date-only.
-        future_midnight = (datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ) + timedelta(days=2)).strftime('%Y-%m-%dT00:00:00Z')
-        extra = [{'game_start_utc': future_midnight, 'away_id': '143', 'home_id': '144',
-                  'away_abbr': 'PHI', 'home_abbr': 'ATL', 'game_pk': 98}]
-        with patch('image_series.load_json_file', return_value={'games': []}):
-            result = _scheduled_games('143', '144', extra=extra, bracket_show_time=True)
-        assert re.match(r'^[A-Z][a-z]{2} \d{1,2}(am|pm)$', result[0]['time']), \
-            f"Expected day+time for CS game, got {result[0]['time']!r}"
+        now = datetime.now(timezone.utc)
+        assert re.match(r'^[A-Z][a-z]{2} \d{1,2}(am|pm)$', _when_label(now + timedelta(hours=20)))
+        assert re.match(r'^[A-Z][a-z]{2}$', _when_label(now + timedelta(days=3)))
 
     def test_extra_fallback_skips_past_games(self):
         """Bracket games that are in the past are filtered out."""

@@ -63,7 +63,20 @@ def _heavy_text(draw, x, y, text, font, fill):
     _bold_text(draw, x, y + 1, text, font, fill)
 
 
-def _scheduled_games(away_id, home_id, extra=None, bracket_show_time=True):
+def _when_label(dt):
+    """Day of week, plus the start time only when the game is today or tomorrow.
+
+    Further out, start times are rarely settled (and a clock time for a game
+    days away is noise), so just the weekday is shown.
+    """
+    local = dt.astimezone()
+    label = local.strftime('%a')
+    if (local.date() - datetime.now(local.tzinfo).date()).days <= 1:
+        label += ' ' + local.strftime('%-I%p').lower()   # e.g. "Sun 8pm"
+    return label
+
+
+def _scheduled_games(away_id, home_id, extra=None):
     """Return upcoming scheduled games for this series, sorted by date.
 
     Each entry: {time, away_id, home_id, away_abbr, home_abbr}.
@@ -73,9 +86,8 @@ def _scheduled_games(away_id, home_id, extra=None, bracket_show_time=True):
     has no upcoming game for this series (e.g. an off-day between CS/WS games)
     these are used as a fallback, filtered to future start times.
 
-    ``bracket_show_time`` controls how bracket fallback times are formatted:
-    True (CS) → always render the time string ("Mon 8pm"); False (WS) →
-    always render just the date ("10/23") since WS times may be unconfirmed.
+    Labels come from ``_when_label``: weekday always, time only for games today
+    or tomorrow.
     """
     try:
         games = load_json_file('games.json').get('games', [])
@@ -95,8 +107,7 @@ def _scheduled_games(away_id, home_id, extra=None, bracket_show_time=True):
         raw = g.get('game_date', '')
         try:
             dt    = datetime.fromisoformat(raw.replace('Z', '+00:00'))
-            local = dt.astimezone()
-            time_str = local.strftime('%a') + ' ' + local.strftime('%-I%p').lower()  # e.g. "Sun 8pm"
+            time_str = _when_label(dt)
         except Exception:
             time_str = ''
         out.append({
@@ -129,11 +140,7 @@ def _scheduled_games(away_id, home_id, extra=None, bracket_show_time=True):
                 dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                 if dt <= now:
                     continue
-                local = dt.astimezone()
-                if bracket_show_time:
-                    time_str = local.strftime('%a') + ' ' + local.strftime('%-I%p').lower()
-                else:
-                    time_str = local.strftime('%-m/%-d')
+                time_str = _when_label(dt)
             except Exception:
                 time_str = ''
             out.append({
@@ -170,7 +177,7 @@ def _draw_result_row(draw, Himage, cx, gy, game_num, gr,
     score      = f'{max(a_sc, h_sc)}-{min(a_sc, h_sc)}'
     score_w    = int(font.getlength(score))
 
-    # Winner logo after the score.
+    # GM label, winner logo, then the score.
     winner_id  = str(gr.get('winner_id', ''))
     if use_logos and winner_id:
         win_abbr = away_abbr if str(away_id) == winner_id else home_abbr
@@ -182,14 +189,15 @@ def _draw_result_row(draw, Himage, cx, gy, game_num, gr,
     # Gaps are tight: this row has to fit a ~67px half-column.
     logo_gap = 2
     logo_w   = (win_logo.width + logo_gap) if win_logo else 0
-    total    = label_w + 3 + score_w + logo_w
+    total    = label_w + 3 + logo_w + score_w
     gx       = cx - total // 2
     _bold_text(draw, gx, gy, label, font, fg)
-    _bold_text(draw, gx + label_w + 3, gy, score, font, fg)
+    sx = gx + label_w + 3
     if win_logo:
-        lx = gx + label_w + 3 + score_w + logo_gap
         _paste_logo_transparent(Himage, win_logo,
-                                lx, gy + (_SCORE_LOGO - win_logo.height) // 2 + 1)
+                                sx, gy + (_SCORE_LOGO - win_logo.height) // 2 + 1)
+        sx += win_logo.width + logo_gap
+    _bold_text(draw, sx, gy, score, font, fg)
 
 
 def _draw_upcoming_row(draw, Himage, cx, gy, sched, use_logos, fg):
@@ -302,7 +310,8 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     fg = 0
     label_tmpl  = _ROUND_LABEL.get(rnd, rnd)
     header_text = label_tmpl.format(l=league).strip() if '{l}' in label_tmpl else label_tmpl
-    panel_cell.draw_chrome(draw, sx, sy, header_text)
+    panel_cell.draw_chrome(draw, sx, sy, header_text,
+                           size=panel_cell._PLAYOFF_HEADER_SIZE)
 
     away_abbr  = series.get('away_abbr', '???')
     home_abbr  = series.get('home_abbr', '???')
@@ -345,7 +354,6 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
     upcoming = [] if winner else _scheduled_games(
         away_id, home_id,
         extra=_bracket_sched,
-        bracket_show_time=(rnd == 'CS'),   # CS times are confirmed; WS shows date-only
     )
 
     kw_result = dict(away_abbr=away_abbr, away_id=away_id,

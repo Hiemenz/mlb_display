@@ -25,11 +25,13 @@ PAD = 2
 # The header band: both rules and the text baseline between them.
 HEADER_H = 20
 _HEADER_TEXT_Y = 3
+_HEADER_SIZE = 14
+_PLAYOFF_HEADER_SIZE = 17   # series tiles are postseason-only
 
 
 def header_font():
     """Font for a panel header — the same size and weight as draw_box's 'Final'."""
-    return _get_font(14)
+    return _get_font(_HEADER_SIZE)
 
 
 def row_font(n_entries, dense_above=6):
@@ -45,20 +47,25 @@ def row_font(n_entries, dense_above=6):
     return _get_font(12 if n_entries <= dense_above else 11)
 
 
-def draw_chrome(draw, sx, sy, header, font=None):
+def draw_chrome(draw, sx, sy, header, size=_HEADER_SIZE, text_y=None):
     """Draw the panel frame: top rule, header separator, centred bold header
     and bottom rule.
 
     Bold is the renderer's 1px-offset double draw rather than a bold font face,
     matching how draw_box emphasises text.
     """
-    font = font or header_font()
+    if text_y is None:
+        text_y = _HEADER_TEXT_Y if size <= _HEADER_SIZE else 1
+    font = _get_font(size)
+    while font.getlength(header) > CELL_W - 4 and size > 10:
+        size -= 1
+        font = _get_font(size)
     draw.line([(sx, sy), (sx + CELL_W - 1, sy)], fill=0)
     draw.line([(sx, sy + HEADER_H), (sx + CELL_W - 1, sy + HEADER_H)], fill=0)
 
     hdr_x = sx + (CELL_W - int(font.getlength(header))) // 2
-    draw.text((hdr_x, sy + _HEADER_TEXT_Y), header, font=font, fill=0)
-    draw.text((hdr_x + 1, sy + _HEADER_TEXT_Y), header, font=font, fill=0)
+    draw.text((hdr_x, sy + text_y), header, font=font, fill=0)
+    draw.text((hdr_x + 1, sy + text_y), header, font=font, fill=0)
 
     draw.line([(sx, sy + CELL_H - 1), (sx + CELL_W - 1, sy + CELL_H - 1)], fill=0, width=1)
 
