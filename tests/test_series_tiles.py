@@ -461,3 +461,50 @@ class TestSeriesGridPlacement:
 
     def test_missing_bracket_data_shows_nothing(self):
         assert _render_grid(3, bracket={}) == []
+
+
+class TestWorldSeriesLiveScore:
+    SERIES = {'round': 'WS', 'away_abbr': 'PHI', 'home_abbr': 'ATL', 'away_id': '143',
+              'home_id': '144', 'away_wins': 1, 'home_wins': 1,
+              'game_results': [{'away_score': 3, 'home_score': 1, 'winner_id': '143'},
+                               {'away_score': 2, 'home_score': 4, 'winner_id': '144'}]}
+    LIVE = {'detailed_state': 'In Progress', 'away_team_id': 143, 'home_team_id': 144,
+            'away_runs': 3, 'home_runs': 2, 'current_inning': 5, 'inningState': 'Top'}
+
+    def _render(self, games, series=None, use_logos=False):
+        from PIL import Image
+        from unittest.mock import patch
+        import image_series
+        im = Image.new('L', (135, 130), 255)
+        with patch('image_series.load_json_file', return_value={'games': games}):
+            image_series.draw_series_cell(im, 0, 0, series or self.SERIES, use_logos=use_logos)
+        return im
+
+    def test_live_game_returned_only_for_this_series(self):
+        from unittest.mock import patch
+        import image_series
+        with patch('image_series.load_json_file', return_value={'games': [self.LIVE]}):
+            assert image_series._live_game('143', '144') is self.LIVE
+            assert image_series._live_game('1', '2') is None
+        with patch('image_series.load_json_file', side_effect=RuntimeError):
+            assert image_series._live_game('143', '144') is None
+
+    def test_live_row_drawn_for_world_series(self):
+        base = self._render([])
+        live = self._render([self.LIVE])
+        assert list(base.getdata()) != list(live.getdata())
+
+    def test_live_row_not_drawn_for_other_rounds(self):
+        series = {**self.SERIES, 'round': 'CS'}
+        assert list(self._render([], series).getdata()) == list(self._render([self.LIVE], series).getdata())
+
+    def test_live_row_with_logos_enabled(self):
+        assert self._render([self.LIVE], use_logos=True).getextrema()[0] == 0
+
+    def test_live_row_tied_has_no_leader_logo(self):
+        tied = {**self.LIVE, 'away_runs': 4, 'home_runs': 4}
+        assert self._render([tied], use_logos=True).getextrema()[0] == 0
+
+    def test_live_row_home_leading_with_logos(self):
+        home = {**self.LIVE, 'away_runs': 1, 'home_runs': 6}
+        assert self._render([home], use_logos=True).getextrema()[0] == 0
