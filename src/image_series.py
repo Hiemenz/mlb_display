@@ -9,7 +9,7 @@ from PIL import Image
 
 import panel_cell
 from image_assets import ImageDraw, _get_font, _logo_small, _logo_ghost
-from util import load_json_file
+from util import LIVE_STATES, load_json_file
 
 _WIN_GOAL    = {'WC': 2, 'DS': 3, 'CS': 4, 'WS': 4}
 _ROUND_LABEL = {
@@ -154,6 +154,51 @@ def _scheduled_games(away_id, home_id, extra=None):
         out.sort(key=lambda x: x['sort_key'])
 
     return out
+
+
+def _live_game(away_id, home_id):
+    """The in-progress game between these two teams from games.json, or None."""
+    try:
+        games = load_json_file('games.json').get('games', [])
+    except Exception:
+        return None
+    for g in games:
+        if (g.get('detailed_state') in LIVE_STATES
+                and {str(g.get('away_team_id', '')), str(g.get('home_team_id', ''))}
+                == {str(away_id), str(home_id)}):
+            return g
+    return None
+
+
+def _draw_live_row(draw, Himage, cx, gy, game_num, game,
+                   away_abbr, away_id, home_abbr, home_id, use_logos, fg):
+    """Draw the game in progress as 'GM n [leader logo] lead-trail LIVE', centred at cx.
+
+    Mirrors a finished game's row, with the leading team's logo in place of the
+    winner's; a tie has no leader, so no logo.
+    """
+    font  = _get_font(_GAME_FONT_SZ)
+    label = f'GM {game_num}'
+    a_sc  = int(game.get('away_runs') or 0)
+    h_sc  = int(game.get('home_runs') or 0)
+    score = f'{max(a_sc, h_sc)}-{min(a_sc, h_sc)}'
+    tag   = 'LIVE'
+    gap   = 3
+    tag_gap = 7
+    logo  = None
+    if use_logos and a_sc != h_sc:
+        lead_abbr, lead_id = (away_abbr, away_id) if a_sc > h_sc else (home_abbr, home_id)
+        logo = _logo_small(lead_abbr, lead_id, size=_SCORE_LOGO)
+    logo_w = (logo.width + 2) if logo else 0
+    label_w, score_w = int(font.getlength(label)), int(font.getlength(score))
+    gx = cx - (label_w + gap + logo_w + score_w + tag_gap + int(font.getlength(tag))) // 2
+    _bold_text(draw, gx, gy, label, font, fg)
+    gx += label_w + gap
+    if logo:
+        _paste_logo_transparent(Himage, logo, gx, gy + (_SCORE_LOGO - logo.height) // 2 + 1)
+        gx += logo_w
+    _bold_text(draw, gx, gy, score, font, fg)
+    _bold_text(draw, gx + score_w + tag_gap, gy, tag, font, fg)
 
 
 def _draw_result_row(draw, Himage, cx, gy, game_num, gr,
@@ -364,7 +409,7 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
         """Return (kind, data) for a game slot number (1-indexed)."""
         if slot_num <= n_played:
             return ('result', game_results[slot_num - 1])
-        idx = slot_num - n_played - 1
+        idx = slot_num - first_upcoming   # first_upcoming skips a live game's row
         if idx < len(upcoming):
             return ('upcoming', upcoming[idx])
         return ('empty', None)
@@ -390,7 +435,13 @@ def draw_series_cell(Himage, sx, sy, series, use_logos=True):
                 _draw_result_row(draw, Himage, cx, _row_y(row), n, gr, **kw_result)
 
     row = max(len(columns[str(away_id)]), len(columns[str(home_id)]))
-    for slot in range(n_played + 1, max_games + 1):
+    first_upcoming = n_played + 1
+    live = _live_game(away_id, home_id) if rnd == 'WS' and not winner else None
+    if live and fits(row):
+        _draw_live_row(draw, Himage, mid_x, _row_y(row), n_played + 1, live, **kw_result)
+        row += 1
+        first_upcoming += 1
+    for slot in range(first_upcoming, max_games + 1):
         if not fits(row):
             break
         kind, data = _slot(slot)
