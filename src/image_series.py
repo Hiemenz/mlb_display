@@ -187,7 +187,10 @@ def _draw_live_row(draw, Himage, cx, gy, game_num, game,
     tag_gap = 7
     logo  = None
     if use_logos and a_sc != h_sc:
-        lead_abbr, lead_id = (away_abbr, away_id) if a_sc > h_sc else (home_abbr, home_id)
+        # The game's home/away can be the reverse of the series' listing order,
+        # so find the leader by the game's own team ids.
+        lead_id = str(game.get('away_team_id') if a_sc > h_sc else game.get('home_team_id'))
+        lead_abbr = away_abbr if str(away_id) == lead_id else home_abbr
         logo = _logo_small(lead_abbr, lead_id, size=_SCORE_LOGO)
     logo_w = (logo.width + 2) if logo else 0
     label_w, score_w = int(font.getlength(label)), int(font.getlength(score))
