@@ -508,3 +508,17 @@ class TestWorldSeriesLiveScore:
     def test_live_row_home_leading_with_logos(self):
         home = {**self.LIVE, 'away_runs': 1, 'home_runs': 6}
         assert self._render([home], use_logos=True).getextrema()[0] == 0
+
+    def test_live_row_logo_follows_the_game_not_series_order(self):
+        """Game's home team (144) leads, though the series lists 143 as 'away'."""
+        from unittest.mock import patch
+        from PIL import Image
+        import image_series
+        game = {**self.LIVE, 'away_team_id': 143, 'home_team_id': 144, 'away_runs': 2, 'home_runs': 3}
+        flipped = {**self.SERIES, 'away_abbr': 'ATL', 'away_id': '144',
+                   'home_abbr': 'PHI', 'home_id': '143'}
+        seen = []
+        with patch('image_series.load_json_file', return_value={'games': [game]}), \
+             patch('image_series._logo_small', side_effect=lambda a, i, size: seen.append((a, i)) or None):
+            image_series.draw_series_cell(Image.new('L', (135, 130), 255), 0, 0, flipped, use_logos=True)
+        assert ('ATL', '144') in seen[-1:]
