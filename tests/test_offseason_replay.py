@@ -168,3 +168,43 @@ class TestIdleHook:
     def test_not_consulted_in_season(self):
         start, _ = self._run(True, datetime(2026, 7, 1, 12, 5))
         start.assert_not_called()
+
+
+class TestFinalWorldSeries:
+    WS = [{'round': 'WS', 'complete': True,
+           'game_results': [{'date': '2026-10-30'}, {'date': '2026-11-01'}]}]
+
+    def test_final_date_is_last_game(self):
+        import main
+        assert main._final_world_series_date(self.WS) == '2026-11-01'
+        assert main._final_world_series_date([{'round': 'WS', 'complete': False}]) is None
+        assert main._final_world_series_date([{'round': 'WS', 'complete': True}]) is None
+        assert main._final_world_series_date(None) is None
+
+    def test_no_final_date_means_not_shown(self):
+        import main
+        assert not main._show_final_world_series({}, [])
+
+    def test_shows_final_day_and_renders(self):
+        import main
+        with patch('main.fetch_scoreboard_for_date'), \
+             patch('main.load_json_file', return_value={'games': [{'x': 1}]}), \
+             patch('main._render_and_display') as rd:
+            assert main._show_final_world_series({'night_mode': False}, self.WS)
+        assert rd.call_args.args[1] == '2026-11-01'
+
+    def test_empty_games_or_error_falls_back(self):
+        import main
+        with patch('main.fetch_scoreboard_for_date'), \
+             patch('main.load_json_file', return_value={}):
+            assert not main._show_final_world_series({}, self.WS)
+        with patch('main.fetch_scoreboard_for_date', side_effect=RuntimeError('boom')):
+            assert not main._show_final_world_series({}, self.WS)
+
+    def test_auto_open(self):
+        import main
+        with patch('main.fetch_scoreboard_for_date'), \
+             patch('main.load_json_file', return_value={'games': [{'x': 1}]}), \
+             patch('main._render_and_display'), patch('subprocess.run') as run:
+            assert main._show_final_world_series({}, self.WS, auto_open=True)
+        run.assert_called_once()

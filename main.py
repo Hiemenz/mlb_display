@@ -566,6 +566,45 @@ def _is_postseason_idle():
     return bool(bracket) and is_postseason_window(datetime.now())
 
 
+def _final_world_series_date(series):
+    """Date of the last game of a completed World Series, or None."""
+    for s in series or []:
+        if s.get('round') == 'WS' and s.get('complete'):
+            dates = [g.get('date') for g in s.get('game_results', []) if g.get('date')]
+            return max(dates) if dates else None
+    return None
+
+
+def _show_final_world_series(config, series, auto_open=False):
+    """Off-season: keep the World Series finale on the panel (grid + series tile + bracket).
+
+    Re-renders the clinching game's day from cached data, so the screen stays
+    put until the next season. True when it was shown (or already up to date).
+    """
+    final_date = _final_world_series_date(series)
+    if not final_date:
+        return False
+    sport_priority = config.get('sport_id_priority', [1])
+    sport_id = sport_priority[0] if isinstance(sport_priority, list) else sport_priority
+    output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
+    try:
+        fetch_scoreboard_for_date(final_date, sport_id, config)
+        if not load_json_file('games.json').get('games'):
+            return False
+        set_historical_mode(True)
+        is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
+        _render_and_display(dict(config, dark_mode=is_dark), final_date, output_path,
+                            no_throttle=False, dark_transitioned=False, morning_block=None)
+    except Exception as e:
+        print(f"Off-season: final World Series render failed ({e})")
+        return False
+    print(f"Off-season: showing World Series final ({final_date})")
+    if auto_open:
+        import subprocess
+        subprocess.run(['open', output_path], check=False)
+    return True
+
+
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen.
 
@@ -580,8 +619,11 @@ def _show_idle_screen(config, auto_open=False):
     from offseason_replay import is_offseason, maybe_start_replay
     _now = _local_now(config)
     _series = (load_json_file('playoff_bracket.json') or {}).get('series')
-    if is_offseason(_now, _series) and maybe_start_replay(config, _now.strftime('%Y-%m-%d')):
-        return
+    if is_offseason(_now, _series):
+        if _show_final_world_series(config, _series, auto_open=auto_open):
+            return
+        if maybe_start_replay(config, _now.strftime('%Y-%m-%d')):
+            return
 
     _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
     idle_config = dict(config, dark_mode=_is_dark)
