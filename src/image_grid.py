@@ -1129,6 +1129,10 @@ def draw_out_of_town_score_board(Himage, game_state_data, team_data, date_str=No
     def _draw_bullpen():
         if not ((config.get('show_bullpen_panel', False) or _any_playoff_live) and _free_slots):
             return
+        # Season over: the World Series final stays up without bullpen workload.
+        if any(s.get('round') == 'WS' and s.get('complete')
+               for s in (load_json_file('playoff_bracket.json') or {}).get('series', [])):
+            return
         _bp_data = load_json_file('bullpen.json')
         _bp_teams = (_bp_data or {}).get('teams', {})
         from image_bullpen import draw_bullpen_cell
