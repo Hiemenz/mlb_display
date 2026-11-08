@@ -75,6 +75,8 @@ FIELD_SPECS = [
      'label': 'Replay Delay (sec)', 'help': 'Real seconds between display updates (default 20).'},
     {'key': 'offseason_replay', 'source': 'yaml', 'type': 'bool', 'label': 'Off-Season Replay',
      'help': 'After the World Series, replay a random past game day on the idle screen.'},
+    {'key': 'idle_free_agent_rotation', 'source': 'yaml', 'type': 'bool', 'label': 'Free-Agent Signing Cards',
+     'help': 'Off-season: rotate cards for major-league free-agent signings (old team, new team, terms).'},
     {'key': 'use_team_logos', 'source': 'yaml', 'type': 'bool', 'label': 'Team Logos'},
     {'key': 'show_standings_sidebar', 'source': 'yaml', 'type': 'bool', 'label': 'Standings Sidebar'},
     {'key': 'show_wildcard_standings', 'source': 'yaml', 'type': 'bool', 'label': 'Wildcard Standings Strip'},

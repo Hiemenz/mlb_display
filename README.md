@@ -115,6 +115,8 @@ When there are no games at all for the day (e.g. the All-Star break, a postseaso
 3. **Quadrant** — the offense-vs-pitching chart.
 4. **This day in history** — disable with `idle_history_rotation: false`.
 
+In the off-season, **free-agent signing cards** (headshot, old team → new team, contract terms when known) take every other 15-minute block while qualifying signings exist — disable with `idle_free_agent_rotation: false`; `free_agent_lookback_days` (default 21) sets how far back to look. MLB's API has no contract terms, so cards read "SIGNED" until a terms source is added.
+
 A block that has nothing to show falls back to the next one, and an empty transactions list falls back to the next-games screen.
 
 During the **postseason** the Recent Moves and Quadrant slots show the next-games screen instead (and `idle_schedule_rotation` is ignored). After the **World Series** (Dec–Feb, or once the WS is complete in the bracket data) the idle screen is replaced by a **replay of a random past game day**: `src/offseason_replay.py` launches `src/replay.py` as a detached process on a random past regular-season date, and starts another once it finishes. The whole slate (up to the grid's 15 games) is shown at once, each game running on its real, staggered start time; busy days are preferred. Toggle with `offseason_replay: true/false` in `config/config.yaml` (also in the config server); `offseason_replays_per_day` (default 2) caps how many run each day, and `offseason_replay_step_minutes` (5) / `offseason_replay_delay_seconds` (30) set the pace.

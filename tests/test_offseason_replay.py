@@ -146,6 +146,7 @@ class TestIdleHook:
         import main
         with patch('main.datetime') as dt, \
              patch('main.load_json_file', return_value=None), \
+             patch('image_free_agents.free_agent_idle_image', return_value=None), \
              patch('offseason_replay.maybe_start_replay', return_value=started) as start, \
              patch('main._render_next_games', side_effect=RuntimeError('reached idle')):
             dt.now.return_value = now
