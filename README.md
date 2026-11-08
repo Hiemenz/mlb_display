@@ -605,3 +605,19 @@ mlb_display/
 ## License
 
 MIT
+
+### Building the Peanuts strip cache (optional)
+
+`scripts/build_comic_cache.py` rebuilds whole strips from the Hugging Face panel dataset
+[`afmck/peanuts-opt-6.7b`](https://huggingface.co/datasets/afmck/peanuts-opt-6.7b) (1950-2000) into the
+gitignored `data/comics/peanuts/YYYY-MM-DD.png` that `idle_comic_rotation` reads:
+
+```
+uv run --group comics python scripts/build_comic_cache.py              # original single-row dailies
+uv run --group comics python scripts/build_comic_cache.py --daily-rows 2   # 2x2 dailies: fills more of the panel
+```
+
+It downloads six ~620 MB shards one at a time (deleted after use), skips strips that already exist (so it
+resumes), and prints a summary. Strips the dataset over-segmented into word-balloon fragments (more than 5
+panels on a weekday or 9 on a Sunday) are skipped. The dataset's license tag is "other" and the strips remain
+Charles Schulz's copyrighted work: keep the output private, for personal display only, and never commit it.
