@@ -203,3 +203,40 @@ def test_main_idle_uses_comic_and_survives_failure():
         dt.now.return_value = datetime(2026, 7, 1, 12, 5)   # block 0, in season
         with pytest.raises(RuntimeError, match='reached idle'):
             main._show_idle_screen(cfg)
+
+
+def test_all_blocks_ignores_the_block_list():
+    on = {'idle_comic_rotation': True}
+    even = datetime(2026, 11, 7, 10, 5)
+    assert ic.comic_idle_image(on, even, **_kw()) is None
+    assert ic.comic_idle_image(on, even, all_blocks=True, **_kw()).size == (800, 480)
+    assert ic.comic_idle_image(on, even, all_blocks=True,
+                               **_kw(replay_running=lambda pid: True)) is None   # replay still wins
+
+
+def _idle(moves_image, has_moves, now, comic_cfg=True):
+    """Run main._show_idle_screen in the off-season; return the comic hook's mock."""
+    import main
+    cfg = {'timezone': 'UTC', 'idle_comic_rotation': comic_cfg}
+    with patch('main.datetime') as dt, \
+         patch('main.load_json_file', return_value=None), \
+         patch('main.send_to_display'), \
+         patch('refresh_tracker.needs_full_refresh', return_value=True), \
+         patch('PIL.Image.Image.save'), \
+         patch('offseason_replay.is_offseason', return_value=True), \
+         patch('image_free_agents.free_agent_idle_image', return_value=moves_image), \
+         patch('image_free_agents.has_moves', return_value=has_moves), \
+         patch('image_comic.comic_idle_image', return_value=Image.new('1', (800, 480), 1)) as comic:
+        dt.now.return_value = now
+        main._show_idle_screen(cfg)
+    return comic
+
+
+def test_offseason_rotation_moves_first_then_comic():
+    img = Image.new('1', (800, 480), 0)
+    # moves have this block: the comic is not consulted
+    assert not _idle(img, True, NOW).called
+    # odd block with moves available: comic runs, but only on its own blocks
+    assert _idle(None, True, NOW).call_args.kwargs['all_blocks'] is False
+    # nothing to show: the comic gets every off-season block
+    assert _idle(None, False, NOW).call_args.kwargs['all_blocks'] is True

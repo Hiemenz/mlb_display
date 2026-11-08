@@ -79,6 +79,8 @@ FIELD_SPECS = [
      'help': "When idle, show the comic strip published on today's date (strips from data/comics/)."},
     {'key': 'comic_rotate_hours', 'source': 'yaml', 'type': 'text', 'label': 'Comic Rotate (hours)',
      'help': '0 = one strip per day; N = step through every strip for the date every N hours.'},
+    {'key': 'idle_free_agent_rotation', 'source': 'yaml', 'type': 'bool', 'label': 'Free-Agent Signing Cards',
+     'help': 'Off-season: rotate cards for major-league free-agent signings (old team, new team, terms).'},
     {'key': 'use_team_logos', 'source': 'yaml', 'type': 'bool', 'label': 'Team Logos'},
     {'key': 'show_standings_sidebar', 'source': 'yaml', 'type': 'bool', 'label': 'Standings Sidebar'},
     {'key': 'show_wildcard_standings', 'source': 'yaml', 'type': 'bool', 'label': 'Wildcard Standings Strip'},

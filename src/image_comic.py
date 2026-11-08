@@ -141,18 +141,20 @@ def draw_comic_screen(strip, config, now=None, title='PEANUTS'):
 
 # --- idle-screen hook ----------------------------------------------------------
 
-def comic_idle_image(config, now, source=None, replay_running=None, load=None):
+def comic_idle_image(config, now, source=None, replay_running=None, load=None, all_blocks=False):
     """The comic screen for this moment, or None when it isn't its turn.
 
     Off unless `idle_comic_rotation` is on. Takes the 15-minute blocks listed in
     `comic_idle_blocks` (default [1, 3], the odd ones, leaving the even blocks to
     other idle views), never interrupts a running off-season replay, and yields
-    quietly when the source has no strip for today's date.
+    quietly when the source has no strip for today's date. `all_blocks=True`
+    ignores the block list (the off-season hook uses it when there are no moves
+    to show, so the comic gets every block).
     """
     from util import load_json_file
     if not config.get('idle_comic_rotation', False):
         return None
-    if now.minute // 15 not in config.get('comic_idle_blocks', [1, 3]):
+    if not all_blocks and now.minute // 15 not in config.get('comic_idle_blocks', [1, 3]):
         return None
     if replay_running is None:
         from offseason_replay import _replay_running

@@ -21,3 +21,16 @@ def pytest_addoption(parser):
         '--update-golden', action='store_true', default=False,
         help='Write golden-image regression renders to tests/golden/ instead of asserting.',
     )
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _no_season_dates(monkeypatch):
+    """Keep every test off the network and off data/season.json: with no season
+    dates, season_phase() uses its calendar fallback, so results don't depend on
+    the machine or the day. Tests of get_season() import the real function at
+    module load (before this runs) and exercise it directly."""
+    import season_phase
+    monkeypatch.setattr(season_phase, 'get_season', lambda year, now_ts=None: None)

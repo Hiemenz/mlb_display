@@ -622,17 +622,29 @@ def _show_idle_screen(config, auto_open=False):
     idle_config = dict(config, dark_mode=_is_dark)
     image = None
 
+    _offseason = is_offseason(_now, _series)
+    _moves = False
+    if _offseason:
+        # Free-agent/trade screens take every other 15-minute block (and every
+        # block while a move is breaking); the comic takes the rest.
+        from image_free_agents import free_agent_idle_image, has_moves
+        try:
+            image = free_agent_idle_image(idle_config, _now)
+            _moves = has_moves(idle_config)
+        except Exception as _fe:
+            print(f"Idle: free-agent screen failed ({_fe}), falling back")
+
     # "On this day" comic strip (opt-in): takes the 15-minute blocks listed in
-    # comic_idle_blocks, in the off-season too, ahead of the replay below.
-    if config.get('idle_comic_rotation', False):
+    # comic_idle_blocks, and in the off-season every block that has no moves to show.
+    if image is None and config.get('idle_comic_rotation', False):
         from image_comic import comic_idle_image
         try:
-            image = comic_idle_image(idle_config, _now)
+            image = comic_idle_image(idle_config, _now, all_blocks=_offseason and not _moves)
         except Exception as _ce:
             print(f"Idle: comic render failed ({_ce}), falling back")
 
     # After the World Series there is nothing to show: replay a random past day.
-    if image is None and is_offseason(_now, _series):
+    if image is None and _offseason:
         if _show_final_world_series(config, _series, auto_open=auto_open):
             return
         if maybe_start_replay(config, _now.strftime('%Y-%m-%d')):
