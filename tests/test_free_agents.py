@@ -131,7 +131,7 @@ def test_dark_mode_keeps_headshot_positive():
     with patch('image_free_agents._load_headshot', return_value=photo):
         light = ifa.draw_free_agent_screen(SIGNING, TEAMS, {})
         dark = ifa.draw_free_agent_screen(SIGNING, TEAMS, {'dark_mode': True})
-    probe = (24 + ifa._PHOTO_W // 2, ifa._HDR_H + 24 + ifa._PHOTO_H // 2)
+    probe = (ifa._PX + ifa._PHOTO_W // 2, ifa._PY + ifa._PHOTO_H // 2)
     assert light.getpixel(probe) == dark.getpixel(probe) == 1
     assert dark.getpixel((5, 100)) == 0   # while the page itself is dark
 
@@ -193,7 +193,7 @@ def test_idle_image_refreshes_stale_data_and_survives_failures():
     fetch = MagicMock(return_value={'signings': [SIGNING]})
     img = ifa.free_agent_idle_image({}, even, load=stale, fetch=fetch,
                                     replay_running=lambda pid: False)
-    assert img is not None and fetch.call_args.kwargs == {'lookback_days': 21}
+    assert img is not None and fetch.call_args.kwargs == {'lookback_days': 21, 'include_trades': True, 'previous': {}}
     boom = MagicMock(side_effect=RuntimeError('x'))
     assert ifa.free_agent_idle_image({}, even, load=stale, fetch=boom,
                                      replay_running=lambda pid: False) is None
@@ -214,19 +214,19 @@ def test_grid_dark_mode_keeps_portraits_positive():
     photo = Image.new('1', (ifa._G_PHOTO_W, ifa._G_PHOTO_H), 1)
     with patch('image_free_agents._load_headshot', return_value=photo):
         dark = ifa.draw_free_agent_grid([SIGNING], TEAMS, {'dark_mode': True})
-    assert dark.getpixel((5 + 50, ifa._HDR_H + 5 + 75)) == 1
+    assert dark.getpixel((ifa._G_PX + 45, ifa._HDR_H + ifa._G_PY + 67)) == 1
     assert dark.getpixel((790, 470)) == 0
 
 
 def test_idle_image_defaults_to_grid_and_pages_through_signings():
-    sigs = [dict(SIGNING, player_id=i) for i in range(12)]
+    sigs = [dict(SIGNING, player_id=i) for i in range(27)]
     kw = dict(load=_store(**{'free_agents.json': {'fetched_at': 9e12, 'signings': sigs},
                             'teams.json': TEAMS}), replay_running=lambda pid: False)
     with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
         ifa.free_agent_idle_image({}, datetime(2026, 11, 20, 9, 0), **kw)
         ifa.free_agent_idle_image({}, datetime(2026, 11, 20, 9, 30), **kw)
     first, second = (c.args[0] for c in g.call_args_list)
-    assert len(first) + len(second) == 12 and first != second
+    assert len(first) + len(second) == 27 and first != second
 
 
 def test_team_logo_paths():
@@ -238,7 +238,7 @@ def test_team_logo_paths():
     small_tall = Image.new('1', (20, 40), 0)
     big = Image.new('1', (130, 100), 0)
     with patch('image_free_agents._load_logo_gray', return_value=object()):
-        for logo, want in ((small_wide, (130, 65)), (small_tall, (65, 130)), (big, (130, 100))):
+        for logo, want in ((small_wide, (100, 50)), (small_tall, (50, 100)), (big, (130, 100))):
             with patch('image_free_agents._logo_small', return_value=logo):
                 assert ifa._team_logo('DET', '116').size == want
 
@@ -257,3 +257,203 @@ def test_idle_image_default_collaborators():
          patch('fetch_free_agents.fetch_free_agents', return_value={'signings': [SIGNING]}):
         img = ifa.free_agent_idle_image(SINGLE, even, load=_store(**{'teams.json': TEAMS}))
     assert img is not None
+
+
+# --- trades ----------------------------------------------------------------
+
+def _trade(pid=5, date='2026-11-18', frm=(111, 'Boston Red Sox'), to=(147, 'New York Yankees'),
+           mirrored=False):
+    """One half of the API's mirrored pair; `mirrored` swaps from/to like the bad half does."""
+    a, b = ({'id': to[0], 'name': to[1]}, {'id': frm[0], 'name': frm[1]})
+    tx = {'typeCode': 'TR', 'date': date, 'person': {'id': pid, 'fullName': 'T Rade'},
+          'description': f'{frm[1]} traded RHP T Rade to {to[1]} for cash.'}
+    tx['fromTeam'], tx['toTeam'] = (b, a) if not mirrored else (a, b)
+    return tx
+
+
+def test_trade_direction_comes_from_description():
+    for mirrored in (False, True):
+        frm, to = ffa._trade_teams(_trade(mirrored=mirrored))
+        assert (frm['name'], to['name']) == ('Boston Red Sox', 'New York Yankees')
+    odd = {'description': 'nothing useful', 'fromTeam': {'name': 'A'}, 'toTeam': {'name': 'B'}}
+    assert [t['name'] for t in ffa._trade_teams(odd)] == ['A', 'B']
+
+
+def test_fetch_includes_deduplicated_trades():
+    data, _ = _fetch([_trade(), _trade(mirrored=True), _tx()], _person())
+    kinds = sorted(s['kind'] for s in data['signings'])
+    assert kinds == ['signing', 'trade']
+    trade = next(s for s in data['signings'] if s['kind'] == 'trade')
+    assert (trade['from_team_name'], trade['to_team_id'], trade['terms']) == \
+        ('Boston Red Sox', '147', None)
+
+
+def test_fetch_can_exclude_trades_and_skips_teamless_trades():
+    def get(url, timeout=0):
+        return _resp(200, {'transactions': [_trade()]}) if 'transactions' in url \
+            else _resp(200, {'people': [_person()]})
+    with patch('fetch_free_agents.requests.get', side_effect=get), \
+         patch('fetch_free_agents.save_off_results'):
+        assert ffa.fetch_free_agents(today=TODAY, include_trades=False)['signings'] == []
+    bad = _trade()
+    bad['fromTeam'] = bad['toTeam'] = {}
+    assert _fetch([bad], _person())[0]['signings'] == []
+
+
+def test_titles_and_verbs_follow_kind():
+    sg, tr = dict(SIGNING), dict(SIGNING, kind='trade')
+    assert ifa._title_for([sg]) == 'FREE AGENT SIGNINGS'
+    assert ifa._title_for([sg], single=True) == 'FREE AGENT SIGNING'
+    assert ifa._title_for([tr]) == 'TRADES' and ifa._title_for([tr], single=True) == 'TRADE'
+    assert ifa._title_for([sg, tr]) == 'SIGNINGS & TRADES'
+    assert ifa._verb(tr) == 'TRADED' and ifa._verb(sg) == 'SIGNED'
+    assert ifa.draw_free_agent_screen(dict(tr, terms=None), TEAMS, {}).size == (800, 480)
+
+
+# --- density & paging ------------------------------------------------------
+
+def test_paginate_balances_and_switches_tier():
+    assert ifa.paginate([]) == []
+    assert [len(c) for c in ifa.paginate(range(7))] == [7]
+    assert [len(c) for c in ifa.paginate(range(10))] == [10]
+    assert [len(c) for c in ifa.paginate(range(11))] == [11]
+    assert [len(c) for c in ifa.paginate(range(20))] == [20]
+    assert [len(c) for c in ifa.paginate(range(27))] == [14, 13]
+    assert sum(len(c) for c in ifa.paginate(range(61))) == 61
+
+
+@pytest.mark.parametrize('n', [1, 5, 10, 11, 15, 16, 20])
+def test_grid_renders_any_count(n):
+    moves = [dict(SIGNING, player_id=i, kind='trade' if i % 2 else 'signing',
+                  terms=None if i % 3 else '1 yr / $5M') for i in range(n)]
+    for dark in (False, True):
+        img = ifa.draw_free_agent_grid(moves, TEAMS, {'dark_mode': dark})
+        assert img.size == (800, 480)
+
+
+def test_dense_pages_fill_the_panel_height():
+    for n, rows in ((11, 3), (15, 3), (16, 4), (20, 4)):
+        img = ifa.draw_free_agent_grid([dict(SIGNING)] * n, TEAMS, {})
+        bottom_row_top = ifa._HDR_H + (rows - 1) * ((480 - ifa._HDR_H) // rows)
+        # something is drawn in the last row's band, and nothing past the rows
+        assert any(img.getpixel((x, bottom_row_top + 20)) == 0 for x in range(0, 800, 3))
+
+
+def test_idle_image_dense_and_trade_filter():
+    sigs = [dict(SIGNING, player_id=i, kind='trade' if i < 20 else 'signing') for i in range(23)]
+    store = _store(**{'free_agents.json': {'fetched_at': 9e12, 'signings': sigs}, 'teams.json': TEAMS})
+    even = datetime(2026, 11, 20, 9, 0)
+    with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
+        ifa.free_agent_idle_image({}, even, load=store, replay_running=lambda p: False)
+        assert g.call_args.kwargs['dense'] is True
+        ifa.free_agent_idle_image({'free_agent_include_trades': False}, even, load=store,
+                                  replay_running=lambda p: False)
+        assert g.call_args.kwargs['dense'] is False and len(g.call_args.args[0]) == 3
+
+
+def test_choose_grid_fills_the_panel():
+    assert ifa.choose_grid(2) == (2, 1)
+    assert ifa.choose_grid(4) == (4, 1)
+    assert ifa.choose_grid(6) == (3, 2)
+    assert ifa.choose_grid(10) == (5, 2)
+    for n in range(2, 11):
+        cols, rows = ifa.choose_grid(n)
+        assert cols * rows >= n
+
+
+def test_single_move_uses_the_full_card_and_short_rows_are_centred():
+    one = ifa.draw_free_agent_grid([SIGNING], TEAMS, {})
+    assert one.tobytes() == ifa.draw_free_agent_screen(SIGNING, TEAMS, {}).tobytes()
+    assert ifa.draw_free_agent_grid([SIGNING] * 7, TEAMS, {}).size == (800, 480)   # 4 + 3, centred
+
+
+def test_resign_shows_the_team_once_in_every_layout():
+    rs = dict(SIGNING, to_team_id='116', terms='1 yr / $5M')
+    assert ifa._is_resign(rs) and not ifa._is_resign(SIGNING)
+    assert not ifa._is_resign(dict(SIGNING, from_team_id='', to_team_id=''))
+    single = ifa.draw_free_agent_screen(rs, TEAMS, {})
+    roomy = ifa.draw_free_agent_grid([rs, SIGNING], TEAMS, {'dark_mode': True})
+    dense = ifa.draw_free_agent_grid([rs] * 12, TEAMS, {})
+    assert {i.size for i in (single, roomy, dense)} == {(800, 480)}
+
+
+# --- polling & breaking ------------------------------------------
+
+def test_fetch_reuses_known_moves_and_flags_new_ones_as_new():
+    first, _ = _fetch([_tx(pid=1)], _person())
+    assert first['signings'][0]['seen_at'] is None            # initial population: not breaking
+    calls = []
+
+    def get(url, timeout=0):
+        calls.append(url)
+        return _resp(200, {'transactions': [_tx(pid=1), _tx(pid=2)]}) if 'transactions' in url \
+            else _resp(200, {'people': [_person()]})
+    with patch('fetch_free_agents.requests.get', side_effect=get), \
+         patch('fetch_free_agents.save_off_results'):
+        second = ffa.fetch_free_agents(today=TODAY, previous=first)
+    assert sum('/people/' in c for c in calls) == 1            # only the new player is looked up
+    by_id = {m['player_id']: m for m in second['signings']}
+    assert by_id[1]['seen_at'] is None and by_id[2]['seen_at']  # the new one is stamped
+
+
+def test_fetch_remembers_rookies_and_retries_failures():
+    rookie = _person(debut='2026-10-01')
+    first, _ = _fetch([_tx(pid=3)], rookie)
+    assert first['skipped'] == ['3:2026-11-18:signing'] and first['signings'] == []
+    calls = []
+
+    def get(url, timeout=0):
+        calls.append(url)
+        return _resp(200, {'transactions': [_tx(pid=3), _tx(pid=4)]}) if 'transactions' in url \
+            else _resp(500)
+    with patch('fetch_free_agents.requests.get', side_effect=get), \
+         patch('fetch_free_agents.save_off_results'):
+        out = ffa.fetch_free_agents(today=TODAY, previous=first)
+    assert sum('/people/3' in c for c in calls) == 0           # known rookie: no refetch
+    assert sum('/people/4' in c for c in calls) == 1           # failure: not remembered
+    assert out['skipped'] == ['3:2026-11-18:signing'] and out['signings'] == []
+
+
+def test_breaking_badge_and_window():
+    assert ifa._is_breaking({'seen_at': 1000}, 1000 + 59 * 60, 60)
+    assert not ifa._is_breaking({'seen_at': 1000}, 1000 + 61 * 60, 60)
+    assert not ifa._is_breaking({'seen_at': None}, 1000, 60)
+    assert not ifa._is_breaking({}, 1000, 60)
+    plain = ifa.draw_free_agent_grid([SIGNING, SIGNING], TEAMS, {})
+    badged = ifa.draw_free_agent_grid([SIGNING, SIGNING], TEAMS, {}, breaking=True)
+    assert plain.tobytes() != badged.tobytes()
+    assert ifa.draw_free_agent_screen(SIGNING, TEAMS, {}, breaking=True).tobytes() != \
+        ifa.draw_free_agent_screen(SIGNING, TEAMS, {}).tobytes()
+
+
+def test_idle_breaking_overrides_the_odd_block_and_shows_only_new_moves():
+    old = dict(SIGNING, player_id=1, seen_at=None)
+    new = dict(SIGNING, player_id=2, seen_at=5000)
+    store = _store(**{'free_agents.json': {'fetched_at': 5000, 'signings': [old, new]}, 'teams.json': TEAMS})
+    odd = datetime(2026, 11, 20, 9, 15)
+    kw = dict(load=store, replay_running=lambda p: False)
+    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw) is not None     # breaking
+    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 7200, **kw) is None        # aged out
+    with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
+        ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw)
+    assert g.call_args.args[0] == [new] and g.call_args.kwargs['breaking'] is True
+    # a running replay still wins, even over breaking news
+    assert ifa.free_agent_idle_image({}, odd, now_ts=5600, load=store, replay_running=lambda p: True) is None
+    # single layout also switches to the grid path while breaking
+    assert ifa.free_agent_idle_image({'free_agent_layout': 'single'}, odd, now_ts=5600, **kw) is not None
+
+
+def test_poll_interval_is_hourly_and_configurable():
+    even = datetime(2026, 11, 20, 9, 0)
+    fetch = MagicMock(return_value={'signings': [SIGNING]})
+    kw = dict(fetch=fetch, replay_running=lambda p: False, now_ts=10_000)
+
+    def store(fetched_at):
+        return _store(**{'free_agents.json': {'fetched_at': fetched_at, 'signings': [SIGNING]},
+                         'teams.json': TEAMS})
+    ifa.free_agent_idle_image({}, even, load=store(10_000 - 59 * 60), **kw)
+    assert not fetch.called                                   # 59 min old: still fresh
+    ifa.free_agent_idle_image({}, even, load=store(10_000 - 61 * 60), **kw)
+    assert fetch.call_count == 1                              # 61 min old: re-poll
+    ifa.free_agent_idle_image({'free_agent_poll_minutes': 15}, even, load=store(10_000 - 20 * 60), **kw)
+    assert fetch.call_count == 2                              # configurable

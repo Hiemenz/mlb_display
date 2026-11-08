@@ -115,7 +115,7 @@ When there are no games at all for the day (e.g. the All-Star break, a postseaso
 3. **Quadrant** — the offense-vs-pitching chart.
 4. **This day in history** — disable with `idle_history_rotation: false`.
 
-In the off-season, **free-agent signing cards** (headshot, old team → new team, contract terms when known) take every other 15-minute block while qualifying signings exist — disable with `idle_free_agent_rotation: false`; `free_agent_lookback_days` (default 21) sets how far back to look. MLB's API has no contract terms, so cards read "SIGNED" until a terms source is added.
+In the off-season, **free-agent signing cards** (headshot, old team → new team, contract terms when known) take every other 15-minute block while qualifying signings exist — disable with `idle_free_agent_rotation: false`; `free_agent_lookback_days` (default 21) sets how far back to look. Trades are included (`free_agent_include_trades: false` to drop them); the layout adapts to the count (1 → full card, 2–10 → scaled cards, 11+ → compact rows, paged). New moves are polled hourly (`free_agent_poll_minutes`) and a newly detected move is **BREAKING** for `free_agent_breaking_minutes` (default 60): the screen shows just those moves under a BREAKING badge and takes every block. MLB's API has no contract terms, so cards read "SIGNED" until a terms source is added.
 
 A block that has nothing to show falls back to the next one, and an empty transactions list falls back to the next-games screen.
 
