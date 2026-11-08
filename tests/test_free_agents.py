@@ -457,3 +457,13 @@ def test_poll_interval_is_hourly_and_configurable():
     assert fetch.call_count == 1                              # 61 min old: re-poll
     ifa.free_agent_idle_image({'free_agent_poll_minutes': 15}, even, load=store(10_000 - 20 * 60), **kw)
     assert fetch.call_count == 2                              # configurable
+
+
+def test_has_moves_respects_toggles():
+    store = _store(**{'free_agents.json': {'signings': [dict(SIGNING, kind='trade')]}})
+    assert ifa.has_moves({}, load=store)
+    assert not ifa.has_moves({'free_agent_include_trades': False}, load=store)
+    assert not ifa.has_moves({'idle_free_agent_rotation': False}, load=store)
+    assert not ifa.has_moves({}, load=_store())
+    with patch('util.load_json_file', return_value={'signings': [SIGNING]}):
+        assert ifa.has_moves({})

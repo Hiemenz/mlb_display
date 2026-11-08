@@ -507,6 +507,17 @@ def pick_signing(signings, now):
     return signings[idx], idx
 
 
+def has_moves(config, load=None):
+    """True when there are free-agent/trade moves to show (after the last poll)."""
+    from util import load_json_file
+    if not config.get('idle_free_agent_rotation', True):
+        return False
+    moves = ((load or load_json_file)('free_agents.json') or {}).get('signings') or []
+    if not config.get('free_agent_include_trades', True):
+        moves = [m for m in moves if m.get('kind', 'signing') != 'trade']
+    return bool(moves)
+
+
 def _is_breaking(move, now_ts, minutes):
     """True for a move first seen within the last `minutes` minutes."""
     seen = move.get('seen_at')
