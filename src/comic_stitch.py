@@ -19,7 +19,8 @@ Edge cases handled here:
   * strips the dataset over-segmented (a detector that sliced word balloons and
     sub-panels out of the art) are rejected: more than MAX_DAILY_PANELS on a
     weekday or MAX_SUNDAY_PANELS on a Sunday can't be reassembled reliably;
-  * a lone orphan panel on the last row is avoided when another row count works;
+  * panels are split as evenly as possible across rows (7 -> 3+2+2), so no
+    row of three or more ever ends with a lone orphan panel;
   * the result is capped in size so a 3 GB dataset doesn't become a 3 GB cache.
 """
 import io
@@ -39,7 +40,6 @@ MARGIN = 8              # white border around the finished strip
 MAX_W, MAX_H = 1000, 640
 MAX_DAILY_PANELS = 5     # dailies are 4 panels; more means fragments were detected
 MAX_SUNDAY_PANELS = 9    # Sundays are 7-8 panels; beyond 9 the data is fragments
-ORPHAN_PENALTY = 0.5     # error added when the last row would hold a single panel
 BLANK_STDDEV = 2.0      # a panel this flat (all white / all black) carries nothing
 
 
@@ -118,6 +118,12 @@ def _decode(data):
     return img
 
 
+def row_sizes(n, rows):
+    """Panels per row, as even as possible (7 in 3 rows -> [3, 2, 2], never 3+3+1)."""
+    base, extra = divmod(n, rows)
+    return [base + (1 if i < extra else 0) for i in range(rows)]
+
+
 def choose_rows(n, sizes, sunday):
     """Number of rows (1-3) whose stitched aspect is closest to the target.
 
@@ -129,11 +135,9 @@ def choose_rows(n, sizes, sunday):
     avg_aspect = sum(w / h for w, h in sizes) / len(sizes)
     best, best_err = 1, float('inf')
     for rows in range(1, min(3, n) + 1):
-        per_row = math.ceil(n / rows)
-        aspect = per_row * avg_aspect / rows
+        counts = row_sizes(n, rows)
+        aspect = max(counts) * avg_aspect / rows
         err = abs(math.log(aspect / target))
-        if per_row > 2 and n - per_row * (rows - 1) == 1:
-            err += ORPHAN_PENALTY
         if err < best_err - 1e-9:
             best, best_err = rows, err
     return best
@@ -162,8 +166,10 @@ def stitch(images, sunday=False, rows=None):
         return ImageOps.expand(images[0], MARGIN, fill=255)
     rows_n = (min(rows, len(images)) if rows
               else choose_rows(len(images), [i.size for i in images], sunday))
-    per_row = math.ceil(len(images) / rows_n)
-    rows = [_row_image(images[i:i + per_row]) for i in range(0, len(images), per_row)]
+    rows, start = [], 0
+    for count in row_sizes(len(images), rows_n):
+        rows.append(_row_image(images[start:start + count]))
+        start += count
     width = max(r.size[0] for r in rows)
     height = sum(r.size[1] for r in rows) + GAP * (len(rows) - 1)
     canvas = Image.new('L', (width, height), 255)

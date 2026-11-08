@@ -68,11 +68,23 @@ def test_choose_rows():
     assert cs.choose_rows(2, sq[:2], sunday=True) in (1, 2)
 
 
+def test_row_sizes_are_even():
+    assert cs.row_sizes(7, 3) == [3, 2, 2]
+    assert cs.row_sizes(8, 2) == [4, 4]
+    assert cs.row_sizes(5, 2) == [3, 2]
+    assert cs.row_sizes(4, 1) == [4]
+    for n in range(1, 13):
+        for rows in range(1, 4):
+            sizes = cs.row_sizes(n, rows)
+            assert sum(sizes) == n and max(sizes) - min(sizes) <= 1
+
+
 def test_choose_rows_avoids_a_lone_orphan_panel():
     sizes = [(200, 150)] * 7
-    rows = cs.choose_rows(7, sizes, sunday=True)
-    per = -(-7 // rows)
-    assert 7 - per * (rows - 1) != 1                          # never 3+3+1
+    for sunday in (True, False):
+        rows = cs.choose_rows(7, sizes, sunday)
+        counts = cs.row_sizes(7, rows)
+        assert not (min(counts) == 1 and max(counts) > 2)
 
 
 def test_stitch_daily_is_one_wide_row():
