@@ -615,25 +615,34 @@ def _show_idle_screen(config, auto_open=False):
     transactions, so the panel is never blank. During the postseason the
     transactions and quadrant slots show the next-games preview instead.
     """
-    # After the World Series there is nothing to show: replay a random past day.
     from offseason_replay import is_offseason, maybe_start_replay
     _now = _local_now(config)
     _series = (load_json_file('playoff_bracket.json') or {}).get('series')
-    if is_offseason(_now, _series):
+    _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
+    idle_config = dict(config, dark_mode=_is_dark)
+    image = None
+
+    # "On this day" comic strip (opt-in): takes the 15-minute blocks listed in
+    # comic_idle_blocks, in the off-season too, ahead of the replay below.
+    if config.get('idle_comic_rotation', False):
+        from image_comic import comic_idle_image
+        try:
+            image = comic_idle_image(idle_config, _now)
+        except Exception as _ce:
+            print(f"Idle: comic render failed ({_ce}), falling back")
+
+    # After the World Series there is nothing to show: replay a random past day.
+    if image is None and is_offseason(_now, _series):
         if _show_final_world_series(config, _series, auto_open=auto_open):
             return
         if maybe_start_replay(config, _now.strftime('%Y-%m-%d')):
             return
-
-    _is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
-    idle_config = dict(config, dark_mode=_is_dark)
 
     # Block 0 (min 0-14)  -> next day's games
     # Block 1 (min 15-29) -> transactions
     # Block 2 (min 30-44) -> quadrant chart (if data available)
     # Block 3 (min 45-59) -> this day in history (if data available)
     _block = datetime.now().minute // 15
-    image = None
 
     # In the postseason, transactions and the season-shape quadrant chart are
     # not relevant: the useful thing on an off day is when games resume, so
@@ -642,7 +651,7 @@ def _show_idle_screen(config, auto_open=False):
     if _postseason_idle and _block in (1, 2):
         _block = 0
 
-    if _block == 0 and (_postseason_idle or config.get('idle_schedule_rotation', True)):
+    if image is None and _block == 0 and (_postseason_idle or config.get('idle_schedule_rotation', True)):
         image = _render_next_games(config, idle_config)
 
     if image is None and _block == 3 and config.get('idle_history_rotation', True):

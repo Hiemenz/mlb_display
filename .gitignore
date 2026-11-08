@@ -22,6 +22,8 @@ tests/golden/_failures/
 output/
 
 # Runtime data / cache
+# Comic strips are supplied locally and never committed (copyrighted)
+data/comics/
 data/*.json
 # Cron job logs (scripts/weekly_quadrant.sh)
 data/*.log
