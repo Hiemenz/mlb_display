@@ -112,34 +112,34 @@ def _strip(aspect, years=(1963, 1971, 1999), idx=0):
 @pytest.mark.parametrize('name,aspect', SHAPES.items())
 def test_every_shape_renders_and_fills_what_the_panel_allows(name, aspect):
     x, y, w, h = ic.strip_layout((round(200 * aspect), 200))
-    assert 0 <= x and x + w <= 800 and ic._BAR_H <= y and y + h <= 480 - ic._FOOT_H
+    assert 0 <= x and x + w <= 800 and ic._MARGIN <= y and y + h <= 480 - ic._FOOT_H
     # as large as the panel allows: it touches the full usable width or height
-    assert w >= 790 - 1 or h >= 428 - 1
+    assert w >= 794 - 1 or h >= 456 - 1
     # …without distortion
     assert abs(w / h - aspect) / aspect < 0.02
-    img = ic.draw_comic_screen(_strip(aspect), {}, NOW)
+    img = ic.draw_comic_screen(_strip(aspect), {})
     assert img.size == (800, 480) and img.mode == '1'
 
 
 def test_strip_covers_majority_of_panel_for_sunday_style_strips():
     _, _, w, h = ic.strip_layout((round(200 * 1.6), 200))
     assert w * h > PANEL / 2
-    # a 3.5:1 daily can't exceed the width limit (~46%), but spans the whole width
+    # a 3.5:1 daily can't exceed the width limit (~49%), but spans the whole width
     _, _, w, h = ic.strip_layout((700, 200))
-    assert w >= 789 and w * h > PANEL * 0.4
+    assert w >= 793 and w * h > PANEL * 0.45
 
 
 def test_wide_strip_is_centred_vertically():
     x, y, w, h = ic.strip_layout((880, 200))
-    top, bot = ic._BAR_H + ic._MARGIN, 480 - ic._FOOT_H
+    top, bot = ic._MARGIN, 480 - ic._FOOT_H
     assert abs((y - top) - (bot - (y + h))) <= 1
 
 
 def test_dark_mode_keeps_strip_positive_and_page_dark():
     s = _strip(1.6)
     x, y, w, h = ic.strip_layout(s.image.size)
-    light = ic.draw_comic_screen(s, {}, NOW)
-    dark = ic.draw_comic_screen(s, {'dark_mode': True}, NOW)
+    light = ic.draw_comic_screen(s, {})
+    dark = ic.draw_comic_screen(s, {'dark_mode': True})
     probe = (x + 30, y + 30)
     assert light.getpixel(probe) == dark.getpixel(probe)
     assert dark.getpixel((2, 100)) == 0 and light.getpixel((2, 100)) == 1
@@ -240,3 +240,16 @@ def test_offseason_rotation_moves_first_then_comic():
     assert _idle(None, True, NOW).call_args.kwargs['all_blocks'] is False
     # nothing to show: the comic gets every off-season block
     assert _idle(None, False, NOW).call_args.kwargs['all_blocks'] is True
+
+
+def test_no_title_bar_and_border_is_trimmed():
+    from PIL import Image, ImageDraw
+    img = ic.draw_comic_screen(_strip(3.5), {})
+    assert all(img.getpixel((x, 2)) == 1 for x in range(0, 800, 7))   # no black bar across the top
+    # a strip with a thick white scan border loses it, so the art gets bigger
+    art = Image.new('L', (400, 200), 255)
+    ImageDraw.Draw(art).rectangle([60, 40, 340, 160], fill=0)
+    trimmed = ic.trim_border(art)
+    assert trimmed.size == (280 + 1 + 4, 120 + 1 + 4)
+    assert ic.trim_border(Image.new('L', (50, 50), 255)).size == (50, 50)   # blank: untouched
+    assert ic.strip_layout(trimmed.size)[2] > ic.strip_layout(art.size)[2] * 0.99

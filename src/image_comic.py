@@ -1,20 +1,19 @@
 """Full-panel (800x480, 1-bit) "on this day" comic strip screen.
 
-The strip is the star: it is scaled to nearly the whole panel and everything
-else is a slim band around it.
+The strip is the whole screen: no title bar, a hairline frame, and a single
+tiny footer line. Its white scan border is trimmed first so every pixel goes to
+the art, then it is scaled as large as the panel allows.
 
     ┌──────────────────────────────────────────────┐
-    │ ⚾ PEANUTS                              NOV 7 │  thin title bar (20px)
     │ ┌──────────────────────────────────────────┐ │
     │ │                                          │ │
-    │ │           the strip, dithered            │ │  fills everything between
-    │ │                                          │ │  the bars; wide/short strips
+    │ │           the strip, dithered            │ │  fills everything above the
+    │ │                                          │ │  footer; wide/short strips
     │ └──────────────────────────────────────────┘ │  are centred vertically
     │ Originally published Nov 7, 1963 |||▮|||  3 of 50│  one tiny footer line
     └──────────────────────────────────────────────┘
 
-Tall (Sunday-style) strips use the full height; dark mode inverts the page but
-keeps the strip itself black ink on white paper.
+Dark mode inverts the page but keeps the strip itself black ink on white paper.
 """
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
@@ -23,39 +22,23 @@ from image_assets import _get_font
 from image_idle import _invert_if_dark
 
 _W, _H = 800, 480
-_BAR_H = 20                  # thin title bar
-_FOOT_H = 26                 # one-line footer
-_MARGIN = 4
+_FOOT_H = 20                 # one-line footer
+_MARGIN = 2                  # gap above/beside the frame
+_TRIM_BELOW = 240            # pixels lighter than this are scan-border white
 _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 
-# --- small drawing helpers (kept local so this module stands alone) ---------
-
-def _bold(draw, xy, text, font, fill=0):
-    """Faux-bold: the single-weight font drawn twice, 1px apart."""
-    x, y = xy
-    draw.text((x, y), text, font=font, fill=fill)
-    draw.text((x + 1, y), text, font=font, fill=fill)
-
-
-def _draw_ball(img, cx, cy, r=8):
-    d = ImageDraw.Draw(img)
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
-    d.arc([cx - 2 * r + 2, cy - r + 2, cx - 1, cy + r - 2], -70, 70, fill=0, width=1)
-    d.arc([cx + 1, cy - r + 2, cx + 2 * r - 2, cy + r - 2], 110, 250, fill=0, width=1)
-
-
-def _title_bar(img, title, right=''):
-    d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, _W, _BAR_H - 1], fill=0)
-    _draw_ball(img, 14, _BAR_H // 2)
-    font = _get_font(13)
-    _bold(d, (28, 2), title, font, 255)
-    if right:
-        d.text((_W - 10 - int(font.getlength(right)), 2), right, font=font, fill=255)
-
-
 # --- strip preparation -------------------------------------------------------
+
+def trim_border(gray, pad=2):
+    """Crop the white scan border off a grayscale strip (keeps `pad` px; a blank image is returned as is)."""
+    box = gray.point(lambda v: 255 if v < _TRIM_BELOW else 0).getbbox()
+    if box is None:
+        return gray
+    left, top, right, bottom = box
+    return gray.crop((max(0, left - pad), max(0, top - pad),
+                      min(gray.size[0], right + pad), min(gray.size[1], bottom + pad)))
+
 
 def prepare_strip(gray, max_w, max_h):
     """Grayscale strip → 1-bit image scaled to fit max_w × max_h (aspect kept)."""
@@ -73,15 +56,15 @@ def strip_layout(size):
 
     The one fit rule: scale uniformly by min(avail_w / w, avail_h / h) so the
     strip is as large as the panel allows without distortion, where the
-    available box is the 790 x 428 px between the title bar and the footer.
-    Wide strips therefore fill the width, tall ones fill the height, and
+    available box is everything above the footer (794 x 456 px, inside a
+    hairline frame). Wide strips fill the width, tall ones fill the height, and
     whichever dimension is left over is centred (a wide strip floats mid-panel).
     """
     avail_w = _W - 2 * _MARGIN - 2
-    avail_h = _H - _FOOT_H - (_BAR_H + _MARGIN) - 2
+    avail_h = _H - _FOOT_H - _MARGIN - 2
     scale = min(avail_w / size[0], avail_h / size[1])
     w, h = max(1, round(size[0] * scale)), max(1, round(size[1] * scale))
-    top, bot = _BAR_H + _MARGIN, _H - _FOOT_H
+    top, bot = _MARGIN, _H - _FOOT_H
     return (_W - w) // 2, top + (bot - top - h) // 2, w, h
 
 
@@ -106,22 +89,21 @@ def _timeline(draw, years, current, x0, x1, cy):
     draw.rectangle([cx - 1, cy - 7, cx + 1, cy + 7], fill=0)
 
 
-def draw_comic_screen(strip, config, now=None, title='PEANUTS'):
+def draw_comic_screen(strip, config):
     """Render one Strip (see fetch_comic.Strip) as a full panel."""
     img = Image.new('1', (_W, _H), 1)
     draw = ImageDraw.Draw(img)
-    right = f'{_MONTHS[now.month - 1].upper()} {now.day}' if now is not None else ''
-    _title_bar(img, title, right)
 
-    # Strip: as big as the area between the two bands allows, centred.
-    ax, ay, aw, ah = strip_layout(strip.image.size)
-    art = prepare_strip(strip.image, aw, ah)
+    # Strip: border trimmed, then as big as the area above the footer allows.
+    gray = trim_border(strip.image.convert('L'))
+    ax, ay, aw, ah = strip_layout(gray.size)
+    art = prepare_strip(gray, aw, ah)
     draw.rectangle([ax - 1, ay - 1, ax + art.size[0], ay + art.size[1]], outline=0, width=1)
     img.paste(art, (ax, ay))
 
     # One tiny footer line: caption left, year ticks, "n of N" right.
     small = _get_font(12)
-    fy = _H - _FOOT_H + (_FOOT_H - 12) // 2 - 1
+    fy = _H - _FOOT_H + (_FOOT_H - 12) // 2 - 2
     caption = f'Originally published {_date_text(strip.date)}'
     draw.text((8, fy), caption, font=small, fill=0)
     count = f'{strip.position + 1} of {strip.total}' if strip.total > 1 else ''
@@ -166,4 +148,4 @@ def comic_idle_image(config, now, source=None, replay_running=None, load=None, a
     if strip is None:
         return None
     print(f'Idle: showing comic strip from {strip.date} ({strip.position + 1}/{strip.total})')
-    return draw_comic_screen(strip, config, now, str(config.get('comic_name', 'peanuts')).upper())
+    return draw_comic_screen(strip, config)
