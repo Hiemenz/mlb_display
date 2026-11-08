@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 from fetch_idle import pick_replay_date
+from season_phase import is_offseason_phase, season_phase
 from util import load_json_file
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,19 +24,14 @@ _DEFAULT_REPLAYS_PER_DAY = 2  # then the regular idle screen takes over until to
 
 
 def is_offseason(now, bracket_series=None):
-    """True once the World Series is over and until the next season starts.
+    """True once the World Series is over and until spring training.
 
-    Dec-Feb is always off-season. In Oct/Nov it starts as soon as the World
-    Series is complete in the bracket data, or after Nov 10 regardless.
+    Follows the real season dates (see season_phase): the postseason ends when
+    the bracket says the World Series is complete, or at the scheduled end of
+    the postseason, whichever comes first. Without season data it falls back
+    to the old calendar rules (Dec-Feb, Nov 10, or a completed World Series).
     """
-    if now.month in (12, 1, 2):
-        return True
-    if now.month == 11 and now.day > 10:
-        return True
-    if now.month in (10, 11):
-        return any(s.get('round') == 'WS' and s.get('complete')
-                   for s in (bracket_series or []))
-    return False
+    return is_offseason_phase(season_phase(now, bracket_series))
 
 
 def _replay_running(pid):
