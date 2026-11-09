@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 import fetch_comic as fc
 import image_comic as ic
 
-NOW = datetime(2026, 11, 7, 10, 20)   # minute 20 → block 1
+NOW = datetime(2026, 11, 7, 10, 40)   # minute 40 → comic half-hour
 
 
 def placeholder(aspect, height=200, panels=4):
@@ -168,7 +168,7 @@ def test_idle_hook_gates():
     on = {'idle_comic_rotation': True}
     assert ic.comic_idle_image({}, NOW, **_kw()) is None                       # off by default
     assert ic.comic_idle_image(on, NOW, **_kw()).size == (800, 480)
-    assert ic.comic_idle_image(on, datetime(2026, 11, 7, 10, 5), **_kw()) is None   # block 0
+    assert ic.comic_idle_image(on, datetime(2026, 11, 7, 10, 5), **_kw()) is None   # moves' half-hour
     assert ic.comic_idle_image(dict(on, comic_idle_blocks=[0]),
                                datetime(2026, 11, 7, 10, 5), **_kw()).size == (800, 480)
     assert ic.comic_idle_image(on, NOW, **_kw(replay_running=lambda pid: True)) is None
@@ -282,3 +282,34 @@ def test_offseason_baseball_off_skips_final_and_replay():
         dt.now.return_value = NOW
         main._show_idle_screen(cfg)
     assert not replay.called and not final.called
+
+
+def test_sunday_is_all_comic_and_falls_back_to_moves():
+    sunday = datetime(2026, 11, 8, 10, 5)      # first half-hour: moves would normally win
+    img = Image.new('1', (800, 480), 0)
+    comic = _idle(img, True, sunday)
+    assert comic.call_args.kwargs['all_blocks'] is True
+    # no strip for today: the moves screen fills in
+    import main
+    with patch('main.datetime') as dt, patch('main.load_json_file', return_value=None), \
+         patch('main.send_to_display'), patch('refresh_tracker.needs_full_refresh', return_value=True), \
+         patch('PIL.Image.Image.save'), patch('offseason_replay.is_offseason', return_value=True), \
+         patch('image_free_agents.free_agent_idle_image', return_value=img) as moves, \
+         patch('image_free_agents.has_moves', return_value=True), \
+         patch('image_comic.comic_idle_image', return_value=None):
+        dt.now.return_value = sunday
+        main._show_idle_screen({'timezone': 'UTC', 'idle_comic_rotation': True})
+    assert moves.called
+
+
+def test_comic_failure_falls_through():
+    import main
+    with patch('main.datetime') as dt, patch('main.load_json_file', return_value=None), \
+         patch('main.send_to_display'), patch('refresh_tracker.needs_full_refresh', return_value=True), \
+         patch('PIL.Image.Image.save'), patch('offseason_replay.is_offseason', return_value=True), \
+         patch('image_free_agents.free_agent_idle_image', return_value=None), \
+         patch('image_free_agents.has_moves', return_value=False), \
+         patch('image_comic.comic_idle_image', side_effect=RuntimeError('x')), \
+         patch('main._show_final_world_series', return_value=False):
+        dt.now.return_value = datetime(2026, 11, 8, 10, 5)
+        main._show_idle_screen({'timezone': 'UTC', 'idle_comic_rotation': True, 'offseason_baseball': False})

@@ -167,7 +167,7 @@ def _store(**files):
 def test_pick_signing_steps_and_wraps():
     sigs = ['a', 'b', 'c']
     t0 = datetime(2026, 11, 20, 9, 0)
-    t1 = datetime(2026, 11, 20, 9, 30)
+    t1 = datetime(2026, 11, 20, 10, 0)
     assert ifa.pick_signing([], t0) == (None, 0)
     assert ifa.pick_signing(sigs, t0)[0] != ifa.pick_signing(sigs, t1)[0]
     assert ifa.pick_signing(sigs, t0) == ifa.pick_signing(sigs, datetime(2026, 11, 20, 9, 10))
@@ -175,7 +175,7 @@ def test_pick_signing_steps_and_wraps():
 
 def test_idle_image_gates():
     fresh = {'free_agents.json': {'fetched_at': 9e12, 'signings': [SIGNING]}, 'teams.json': TEAMS}
-    even, odd = datetime(2026, 11, 20, 9, 0), datetime(2026, 11, 20, 9, 15)
+    even, odd = datetime(2026, 11, 20, 9, 0), datetime(2026, 11, 20, 9, 35)
     kw = dict(load=_store(**fresh), replay_running=lambda pid: False)
     assert ifa.free_agent_idle_image(SINGLE, even, **kw).size == (800, 480)
     assert ifa.free_agent_idle_image({}, odd, **kw) is None
@@ -224,7 +224,7 @@ def test_idle_image_defaults_to_grid_and_pages_through_signings():
                             'teams.json': TEAMS}), replay_running=lambda pid: False)
     with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
         ifa.free_agent_idle_image({}, datetime(2026, 11, 20, 9, 0), **kw)
-        ifa.free_agent_idle_image({}, datetime(2026, 11, 20, 9, 30), **kw)
+        ifa.free_agent_idle_image({}, datetime(2026, 11, 20, 10, 0), **kw)
     first, second = (c.args[0] for c in g.call_args_list)
     assert len(first) + len(second) == 27 and first != second
 
@@ -430,7 +430,7 @@ def test_idle_breaking_overrides_the_odd_block_and_shows_only_new_moves():
     old = dict(SIGNING, player_id=1, seen_at=None)
     new = dict(SIGNING, player_id=2, seen_at=5000)
     store = _store(**{'free_agents.json': {'fetched_at': 5000, 'signings': [old, new]}, 'teams.json': TEAMS})
-    odd = datetime(2026, 11, 20, 9, 15)
+    odd = datetime(2026, 11, 20, 9, 45)
     kw = dict(load=store, replay_running=lambda p: False)
     assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw) is not None     # breaking
     assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 7200, **kw) is None        # aged out
