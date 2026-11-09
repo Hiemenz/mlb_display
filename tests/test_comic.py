@@ -923,3 +923,14 @@ def test_counter_uses_hand_font_and_falls_back(monkeypatch):
         assert ic._hand_font(14).getlength('Day 3 of 14') > 0         # panel font instead of a crash
     finally:
         ic._hand_cache.clear()
+
+
+def test_snoopy_head_has_ink_and_white_face_and_logo_sits_mid_code():
+    h = ic.snoopy_head(24)
+    assert h.size == (24, 24) and h.mode == '1'
+    px = list(h.convert('L').getdata())
+    assert 0.2 < px.count(0) / len(px) < 0.6 and px.count(255) > 80      # black ear/nose/outline, white face
+    with_logo, plain = ic.qr_image('http://h:8080/arc/1970-01-05'), ic.qr_image('http://h:8080/arc/1970-01-05', logo=False)
+    assert with_logo.size[0] > plain.size[0]                              # level H needs a bigger code
+    c = with_logo.size[0] // 2
+    assert with_logo.convert('L').getpixel((c - 11, c - 11)) == 255       # white plate corner around the head

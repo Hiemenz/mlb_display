@@ -103,26 +103,32 @@ def arc_url(config, strip):
 
 
 def snoopy_head(size):
-    """A small drawn Snoopy head (white face, black ear and nose, eye), `size` px square, 1-bit.
+    """A small drawn Snoopy head in profile, `size` px square, 1-bit.
 
-    Drawn procedurally at 4x and averaged down, so there is no image asset to ship.
+    White face with one clean outline (head and long snout merged, no inner lines), a
+    big black nose, a droopy black ear and a dot eye. Drawn procedurally at 8x and
+    averaged down, so there is no image asset to ship.
     """
-    k = 4
+    k = 8
     big = size * k
     img = Image.new('L', (big, big), 255)
     d = ImageDraw.Draw(img)
 
-    def box(x0, y0, x1, y1):
-        return [round(v * big / 100) for v in (x0, y0, x1, y1)]
+    def box(x0, y0, x1, y1, grow=0.0):
+        return [round((v + g) * big / 100) for v, g in zip((x0, y0, x1, y1), (-grow, -grow, grow, grow))]
 
-    w = max(2, big // 16)
-    d.ellipse(box(24, 20, 90, 86), fill=255, outline=0, width=w)       # head
-    d.ellipse(box(6, 40, 52, 70), fill=255, outline=0, width=w)        # snout
-    d.ellipse(box(0, 42, 18, 60), fill=0)                              # nose
-    d.ellipse(box(46, 36, 56, 48), fill=0)                             # eye
-    d.ellipse(box(66, 22, 96, 78), fill=0)                             # ear
+    face = [(34, 14, 92, 72), (6, 40, 60, 70)]                          # head, snout (facing left)
+    for shape in face:                                                   # union outline: grow in black,
+        d.ellipse(box(*shape, grow=4), fill=0)
+    for shape in face:                                                   # then fill white on top
+        d.ellipse(box(*shape), fill=255)
+    d.ellipse(box(0, 40, 22, 62), fill=0)                                # nose
+    d.polygon([tuple(round(v * big / 100) for v in pt) for pt in
+               [(66, 22), (84, 18), (96, 40), (94, 72), (84, 94), (72, 80), (66, 52)]], fill=0)   # ear
+    d.ellipse(box(44, 32, 54, 44), fill=0)                               # eye
+    d.arc(box(14, 50, 52, 74), 20, 120, fill=0, width=max(2, big // 40))  # smile
     small = img.resize((size, size), Image.LANCZOS)
-    return small.point(lambda v: 255 if v > 140 else 0).convert('1')
+    return small.point(lambda v: 255 if v > 150 else 0).convert('1')
 
 
 def qr_image(url, logo=True):
@@ -143,7 +149,7 @@ def qr_image(url, logo=True):
                 px, py = (x + _QR_QUIET) * _QR_MODULE, (y + _QR_QUIET) * _QR_MODULE
                 draw.rectangle([px, py, px + _QR_MODULE - 1, py + _QR_MODULE - 1], fill=0)
     if logo:
-        side = max(12, round(img.size[0] * 0.27)) // 2 * 2            # even, ~7% of the code's area
+        side = max(14, round(img.size[0] * 0.30)) // 2 * 2            # even, ~9% of the code's area
         plate = side + 4
         c = img.size[0] // 2
         draw.rectangle([c - plate // 2, c - plate // 2, c + plate // 2 - 1, c + plate // 2 - 1], fill=1)
