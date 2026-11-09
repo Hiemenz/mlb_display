@@ -1,5 +1,5 @@
 """Tests for fetch_comic (selection, local source) and image_comic (render, hook)."""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -478,7 +478,7 @@ def test_arc_mode_prefers_days_inside_an_arc():
     src = _src(*[(y, 11, 7) for y in (1955, 1975, 1995)])
     prefs = {'arcs': [{'start': '1975-11-05', 'end': '1975-11-09'}, {'start': 'x', 'end': 'y'}, {'bad': 1}]}
     s = fc.current_strip({'comic_mode': 'arc'}, datetime(2026, 11, 7), src, prefs=prefs)
-    assert s.date.year == 1975 and s.note == 'Arc day 3 of 5'
+    assert s.date.year == 1975 and s.note == 'Arc day 3 of 4'
     s = fc.current_strip({'comic_mode': 'arc'}, datetime(2026, 11, 7), src, prefs={})
     assert s.note == 'Day 6 of 7'
 
@@ -596,3 +596,63 @@ def test_find_arcs_splits_a_linked_chain_across_a_long_gap():
         rows += _rows(f'197005{d:02d}', [f'Kid {d}'], f'topic{d} word{d}')
     arcs = ca.find_arcs(ca.group_strips(rows))
     assert [len(a) for a in arcs if a[0].year < 1971] == [3, 3]
+
+
+# --- arcs mode: one arc per day, played in order ---------------------------------------
+
+def _arc_prefs():
+    return {'arcs': [
+        {'start': '1970-01-05', 'end': '1970-01-07', 'dates': ['1970-01-05', '1970-01-06', '1970-01-07']},
+        {'start': '1960-03-04', 'end': '1960-03-07'},          # no 'dates': Fri, Sat, (Sun skipped), Mon
+        {'start': 'x', 'end': 'y'}, 'junk', {'dates': ['bad']},
+    ]}
+
+
+def _arc_src():
+    ds = [date(1970, 1, 5), date(1970, 1, 6), date(1970, 1, 7), date(1960, 3, 4), date(1960, 3, 5), date(1960, 3, 7)]
+    return FakeSource(ds, {d: placeholder(3.5, 40) for d in ds})
+
+
+def test_arc_dates_variants():
+    assert fc.arc_dates({'dates': ['1970-01-06', '1970-01-05']}) == [date(1970, 1, 5), date(1970, 1, 6)]
+    assert fc.arc_dates({'start': '1960-03-04', 'end': '1960-03-07'}) == [date(1960, 3, 4), date(1960, 3, 5), date(1960, 3, 7)]
+    assert fc.arc_dates({'start': 'x', 'end': 'y'}) == [] and fc.arc_dates('junk') == []
+
+
+def test_arc_index_counts_real_strips_not_sundays():
+    idx = fc._arc_index(_arc_prefs())
+    assert idx[date(1960, 3, 7)] == (3, 3) and idx[date(1970, 1, 6)] == (2, 3)
+
+
+def test_arcs_mode_plays_one_arc_a_day_in_order_with_x_of_n():
+    cfg = {'comic_mode': 'arcs'}
+    day = datetime(2026, 11, 7, 0, 0)
+    seen = []
+    for hour in range(6):
+        s = fc.current_strip(cfg, day.replace(hour=hour), _arc_src(), prefs=_arc_prefs())
+        seen.append((s.date, s.position + 1, s.total))
+    arc_dates_today = {d for d, _, _ in seen}
+    assert len(arc_dates_today) == 3                         # one arc, three strips, repeating
+    assert [p for _, p, _ in seen] == [1, 2, 3, 1, 2, 3]     # strip 1..N in order, starting at midnight
+    assert [d for d, _, _ in seen[:3]] == sorted(d for d, _, _ in seen[:3])   # chronological within the arc
+    nxt = fc.current_strip(cfg, day + timedelta(days=1), _arc_src(), prefs=_arc_prefs())
+    assert nxt.date.year != seen[0][0].year                  # tomorrow is the other arc
+
+
+def test_arcs_mode_fallbacks():
+    cfg = {'comic_mode': 'arcs', 'comic_arc_offset': 1, 'comic_arc_minutes': 0}
+    assert fc.current_strip(cfg, NOW, _arc_src(), prefs=_arc_prefs()) is not None
+    # no arcs in prefs -> normal on-this-day selection
+    s = fc.current_strip({'comic_mode': 'arcs'}, datetime(2026, 1, 5), _arc_src(), prefs={})
+    assert s.date == date(1970, 1, 5)
+    # arcs whose strips never load -> falls through to the normal path too
+    empty = FakeSource([date(1970, 1, 5)], {})
+    assert fc.current_strip({'comic_mode': 'arcs'}, datetime(2026, 1, 5), empty, prefs=_arc_prefs()) is None
+
+
+def test_arcs_mode_counter_reads_day_x_of_n():
+    s = fc.current_strip({'comic_mode': 'arcs'}, datetime(2026, 11, 7, 1), _arc_src(), prefs=_arc_prefs())
+    assert s.label == 'Day' and s.position == 1
+    img = ic.draw_comic_screen(s, {})
+    plain = ic.draw_comic_screen(s._replace(label=''), {})
+    assert img.tobytes() != plain.tobytes()          # 'Day ' lengthens the gutter counter

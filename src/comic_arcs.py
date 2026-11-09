@@ -135,5 +135,6 @@ def find_arcs(strips, thresh=THRESH, text_weight=TEXT_WEIGHT):
 
 
 def arcs_to_json(arcs):
-    """Compact, hand-editable form for prefs.json: [{'start', 'end', 'days'}]."""
-    return [{'start': a[0].isoformat(), 'end': a[-1].isoformat(), 'days': len(a)} for a in arcs]
+    """Compact form for prefs.json: [{'start', 'end', 'days', 'dates'}] (dates = the strips actually in the arc)."""
+    return [{'start': a[0].isoformat(), 'end': a[-1].isoformat(), 'days': len(a),
+             'dates': [d.isoformat() for d in a]} for a in arcs]

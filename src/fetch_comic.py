@@ -92,6 +92,7 @@ class Strip(NamedTuple):
     total: int                # how many strips exist for this month/day
     years: list               # publication years of all of them (sorted)
     note: str = ''            # extra caption, e.g. 'Day 3 of 7' or 'Nearest day'
+    label: str = ''           # prefix for the gutter's 'n of N' counter, e.g. 'Day' (arcs mode)
 
 
 def pick_index(count, today, now, rotate_hours=0):
@@ -147,18 +148,50 @@ def _week_anchor_year(years, today):
     return lo + int.from_bytes(digest[:4], 'big') % (hi - lo + 1)
 
 
+def arc_dates(arc):
+    """The strip dates of one prefs.json arc: its stored 'dates', else every non-Sunday from start to end."""
+    try:
+        if arc.get('dates'):
+            return sorted(date.fromisoformat(x) for x in arc['dates'])
+        start, end = date.fromisoformat(arc['start']), date.fromisoformat(arc['end'])
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return []
+    days = [start + timedelta(days=k) for k in range((end - start).days + 1)]
+    return [d for d in days if d.weekday() != 6]
+
+
 def _arc_index(prefs):
     """{date: (day number, arc length)} for every day inside an arc in prefs['arcs'] (see comic_arcs)."""
     index = {}
     for arc in prefs.get('arcs') or []:
-        try:
-            start, end = date.fromisoformat(arc['start']), date.fromisoformat(arc['end'])
-        except (KeyError, TypeError, ValueError):
-            continue
-        n = (end - start).days + 1
-        for k in range(n):
-            index[start + timedelta(days=k)] = (k + 1, n)
+        ds = arc_dates(arc)
+        for k, d in enumerate(ds):
+            index[d] = (k + 1, len(ds))
     return index
+
+
+def arc_strip(config, now, source, prefs):
+    """Arcs mode: one whole arc per day, in chronological order, played strip by strip.
+
+    Day N shows arc N of the date-sorted list (wrapping; `comic_arc_offset` shifts the
+    start). Within the day it steps through the arc's strips in order, one every
+    `comic_arc_minutes` (default 60; idle blocks 2 and 3 of an hour then share a
+    strip), starting with strip 1 at midnight. Strip.position/total are the 'x of N'.
+    Returns None when there are no arcs or none of the strips load.
+    """
+    arcs = sorted((ds for ds in (arc_dates(a) for a in prefs.get('arcs') or []) if ds), key=lambda ds: ds[0])
+    if not arcs:
+        return None
+    ds = arcs[(now.date().toordinal() + int(config.get('comic_arc_offset', 0))) % len(arcs)]
+    step = max(1, int(config.get('comic_arc_minutes', 60)))
+    start = ((now.hour * 60 + now.minute) // step) % len(ds)
+    years = sorted({d.year for d in ds})
+    for offset in range(len(ds)):
+        i = (start + offset) % len(ds)
+        image = source.load(ds[i])
+        if image is not None:
+            return Strip(ds[i], image, i, len(ds), years, label='Day')
+    return None
 
 
 def _candidates(source, now, window, blocked):
@@ -176,7 +209,8 @@ def current_strip(config, now, source=None, tag=None, prefs=None):
     """The Strip to show right now, or None when the source has nothing usable.
 
     Selection (all optional, via config):
-      comic_mode 'day' (default) | 'week' | 'arc'
+      comic_mode 'day' (default) | 'week' | 'arc' | 'arcs'
+                                            arcs = one whole arc per day, in order (see arc_strip)
                                             week = same-ish year all week
                                             arc  = week, but only days inside a story arc
                                             (prefs.json 'arcs', built by scripts/build_comic_arcs.py)
@@ -190,6 +224,10 @@ def current_strip(config, now, source=None, tag=None, prefs=None):
     source = source or LocalCacheSource(comic)
     prefs = load_prefs(comic) if prefs is None else prefs
     blocked = _parse_dates(prefs.get('blocked'))
+    if config.get('comic_mode', 'day') == 'arcs' and not (tag or config.get('comic_tag')):
+        found = arc_strip(config, now, source, prefs)
+        if found is not None:
+            return found
     note = ''
     tag = tag or config.get('comic_tag')
     dates = []

@@ -146,7 +146,7 @@ def draw_comic_screen(strip, config):
     low -= _vtext(img, caption, small, gx, low) + 8
     high = 6
     if strip.total > 1:
-        count = f'{strip.position + 1} of {strip.total}'
+        count = f'{strip.label + " " if strip.label else ""}{strip.position + 1} of {strip.total}'
         high += _vtext(img, count, small, gx, high + int(small.getlength(count)) + 2) + 8
     _timeline(draw, strip.years, strip.date.year, _GUT - 6, high, low)
 
@@ -196,7 +196,7 @@ def main(argv=None):
     ap.add_argument('out', help='output image path')
     ap.add_argument('--comic', default='peanuts')
     ap.add_argument('--tag')
-    ap.add_argument('--mode', choices=['day', 'week', 'arc'], default='day')
+    ap.add_argument('--mode', choices=['day', 'week', 'arc', 'arcs'], default='day')
     args = ap.parse_args(argv)
     now = datetime.fromisoformat(args.date)
     config = {'comic_name': args.comic, 'comic_mode': args.mode, 'comic_today': now.date()}
