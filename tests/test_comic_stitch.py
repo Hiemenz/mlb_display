@@ -63,8 +63,9 @@ def test_decode_rejects_bad_tiny_and_blank_panels():
 def test_choose_rows():
     sq = [(200, 150)] * 4
     assert cs.choose_rows(1, [(200, 150)], False) == 1
-    assert cs.choose_rows(4, sq, sunday=False) == 1          # four panels: one row
-    assert cs.choose_rows(4, sq, sunday=True) == 2           # a Sunday page: two rows
+    assert cs.choose_rows(4, sq, sunday=False) == 2          # 4:3 panels: a 2x2 block is biggest
+    assert cs.choose_rows(4, [(100, 400)] * 4) == 1       # tall panels: one row is biggest
+    assert cs.choose_rows(4, sq, sunday=True) == 2
     assert cs.choose_rows(2, sq[:2], sunday=True) in (1, 2)
 
 
@@ -87,9 +88,9 @@ def test_choose_rows_avoids_a_lone_orphan_panel():
         assert not (min(counts) == 1 and max(counts) > 2)
 
 
-def test_stitch_daily_is_one_wide_row():
+def test_stitch_daily_forced_to_one_wide_row():
     imgs = [cs._decode(_png()) for _ in range(4)]
-    out = cs.stitch(imgs)
+    out = cs.stitch(imgs, rows=1)
     assert out.mode == 'L' and out.size[0] > out.size[1] * 3
     assert out.getpixel((0, 0)) == 255                        # white margin
 
@@ -163,7 +164,7 @@ def test_cache_output_is_readable_by_the_local_cache_source(tmp_path):
 
 
 def test_forced_rows_reflow_a_daily_into_a_block():
-    one = cs.build_strip(DAILY, _panels(4))[0]
+    one = cs.build_strip(DAILY, _panels(4), daily_rows=1)[0]
     two = cs.build_strip(DAILY, _panels(4), daily_rows=2)[0]
     assert one.size[0] / one.size[1] > 3 and two.size[0] / two.size[1] < 2.2
     assert cs.stitch([cs._decode(_png())] * 2, rows=5).size[1] > 0       # capped at the panel count
