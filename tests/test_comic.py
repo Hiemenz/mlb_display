@@ -155,6 +155,24 @@ def test_timeline_skips_tiny_span():
     ic._timeline(d, [1963], 1963, 9, 100, 110)            # too short → no-op
 
 
+def test_timeline_spine_ticks_labels_and_marker():
+    img = Image.new('1', (40, 300), 1)
+    years = list(range(1950, 1991))
+    ic._timeline(ImageDraw.Draw(img), years, 1970, 12, 0, 300)
+    assert all(img.getpixel((12, y)) == 0 for y in range(10, 290))      # continuous spine
+    assert img.getpixel((14, 4)) == 0                                    # decade tick at oldest year
+    left = img.crop((0, 0, 11, 300)).convert('L').point(lambda v: 255 - v)
+    assert left.getbbox() is not None                                    # decade labels left of spine
+    mid = 4 + round(20 * 292 / 40)
+    assert img.getpixel((16, mid)) == 0 and img.getpixel((16, mid + 4)) == 1   # marker triangle base
+
+
+def test_timeline_single_year_and_dense_labels():
+    img = Image.new('1', (40, 100), 1)
+    ic._timeline(ImageDraw.Draw(img), [1960, 1961, 1962, 1970], 1961, 12, 0, 100)
+    assert img.getbbox() is not None
+
+
 # --- idle hook -------------------------------------------------------------------
 
 def _kw(**over):

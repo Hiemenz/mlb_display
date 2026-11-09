@@ -86,20 +86,34 @@ def _vtext(img, text, font, x, y_bottom):
 
 
 def _timeline(draw, years, current, cx, y0, y1):
-    """Tiny horizontal tick per available year down the gutter (oldest at the top); current year longer."""
+    """Year timeline down the gutter, oldest at the top.
+
+    A hairline spine at x=cx, a short tick to its right per available year (longer at
+    decades, which also get a tiny two-digit label on the left), and a filled triangle
+    pointing at the spine from the right for the current year.
+    """
     if y1 - y0 < 20:
         return
     lo, hi = min(years), max(years)
+    y0, y1 = y0 + 4, y1 - 4          # room for the marker at either end
 
     def ypos(yr):
         return (y0 + y1) // 2 if hi == lo else y0 + round((yr - lo) * (y1 - y0) / (hi - lo))
 
+    draw.line([cx, ypos(lo) - 2, cx, ypos(hi) + 2], fill=0, width=1)
+    font = _get_font(8)
+    last_label = -99
     for yr in years:
-        if yr != current:
-            y = ypos(yr)
-            draw.line([cx - 3, y, cx + 3, y], fill=0, width=1)
+        y = ypos(yr)
+        if yr % 10 == 0:
+            draw.line([cx + 1, y, cx + 3, y], fill=0, width=1)
+            if y - last_label >= 10:
+                draw.text((cx - 2, y), f'{yr % 100:02d}', font=font, fill=0, anchor='rm')
+                last_label = y
+        else:
+            draw.line([cx + 1, y, cx + 1, y], fill=0, width=1)
     cy = ypos(current)
-    draw.rectangle([cx - 7, cy - 1, cx + 7, cy + 1], fill=0)
+    draw.polygon([(cx + 1, cy), (cx + 4, cy - 3), (cx + 4, cy + 3)], fill=0)
 
 
 def draw_comic_screen(strip, config):
@@ -123,7 +137,7 @@ def draw_comic_screen(strip, config):
     if strip.total > 1:
         count = f'{strip.position + 1} of {strip.total}'
         high += _vtext(img, count, small, gx, high + int(small.getlength(count)) + 2) + 8
-    _timeline(draw, strip.years, strip.date.year, _GUT // 2 - 1, high, low)
+    _timeline(draw, strip.years, strip.date.year, _GUT - 6, high, low)
 
     dark = config.get('dark_mode', False)
     out = _invert_if_dark(img, dark)
