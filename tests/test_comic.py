@@ -112,9 +112,9 @@ def _strip(aspect, years=(1963, 1971, 1999), idx=0):
 @pytest.mark.parametrize('name,aspect', SHAPES.items())
 def test_every_shape_renders_and_fills_what_the_panel_allows(name, aspect):
     x, y, w, h = ic.strip_layout((round(200 * aspect), 200))
-    assert 0 <= x and x + w <= 800 and ic._MARGIN <= y and y + h <= 480 - ic._FOOT_H
+    assert ic._GUT <= x and x + w <= 800 and ic._MARGIN <= y and y + h <= 480 - ic._MARGIN
     # as large as the panel allows: it touches the full usable width or height
-    assert w >= 794 - 1 or h >= 456 - 1
+    assert w >= 800 - ic._GUT - ic._MARGIN - 3 or h >= 480 - 2 * ic._MARGIN - 3
     # …without distortion
     assert abs(w / h - aspect) / aspect < 0.02
     img = ic.draw_comic_screen(_strip(aspect), {})
@@ -126,12 +126,12 @@ def test_strip_covers_majority_of_panel_for_sunday_style_strips():
     assert w * h > PANEL / 2
     # a 3.5:1 daily can't exceed the width limit (~49%), but spans the whole width
     _, _, w, h = ic.strip_layout((700, 200))
-    assert w >= 793 and w * h > PANEL * 0.45
+    assert w >= 776 and w * h > PANEL * 0.44
 
 
 def test_wide_strip_is_centred_vertically():
     x, y, w, h = ic.strip_layout((880, 200))
-    top, bot = ic._MARGIN, 480 - ic._FOOT_H
+    top, bot = ic._MARGIN, 480 - ic._MARGIN
     assert abs((y - top) - (bot - (y + h))) <= 1
 
 
@@ -152,7 +152,7 @@ def test_single_strip_and_single_year_render():
 
 def test_timeline_skips_tiny_span():
     d = ImageDraw.Draw(Image.new('1', (800, 480), 1))
-    ic._timeline(d, [1963], 1963, 100, 110, 470)          # too narrow → no-op
+    ic._timeline(d, [1963], 1963, 9, 100, 110)            # too short → no-op
 
 
 # --- idle hook -------------------------------------------------------------------
