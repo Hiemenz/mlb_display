@@ -495,14 +495,14 @@ _BREAKING_MINUTES = 60           # a new move counts as breaking for this long
 
 
 def pick_signing(signings, now):
-    """The signing for this 30-minute slot, stepping through the list in order.
+    """The signing for this hour, stepping through the list in order.
 
     Keyed to the wall clock so every cron tick in the same slot draws the same
     card (the idle screen skips the panel push when the image is unchanged).
     """
     if not signings:
         return None, 0
-    slot = now.timetuple().tm_yday * 48 + now.hour * 2 + now.minute // 30
+    slot = now.timetuple().tm_yday * 24 + now.hour
     idx = slot % len(signings)
     return signings[idx], idx
 
@@ -527,8 +527,8 @@ def _is_breaking(move, now_ts, minutes):
 def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=None, now_ts=None):
     """Card/grid for the current slot, or None when it isn't the free agents' turn.
 
-    Polls for new moves hourly (`free_agent_poll_minutes`). Normally takes the even 15-minute
-    blocks (0 and 2) so the other idle views keep the odd ones. While a newly
+    Polls for new moves hourly (`free_agent_poll_minutes`). Normally takes the first half of
+    every hour (minutes 0-29) so the comic keeps the second half. While a newly
     detected move is "breaking" (config `free_agent_breaking_minutes`, default
     60) the screen shows just those moves under a BREAKING badge and takes
     every block. Never interrupts a running off-season replay, and quietly
@@ -559,7 +559,7 @@ def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=Non
     window = config.get('free_agent_breaking_minutes', _BREAKING_MINUTES)
     breaking = [m for m in signings if _is_breaking(m, now_ts, window)]
 
-    if not breaking and (now.minute // 15) % 2:
+    if not breaking and now.minute >= 30:
         return None
     if replay_running is None:
         from offseason_replay import _replay_running
@@ -569,7 +569,7 @@ def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=Non
 
     team_data = load('teams.json') or {}
     shown = breaking or signings
-    slot = now.timetuple().tm_yday * 48 + now.hour * 2 + now.minute // 30
+    slot = now.timetuple().tm_yday * 24 + now.hour
     if config.get('free_agent_layout', 'grid') == 'grid' or breaking:
         chunks = paginate(shown)
         page = slot % len(chunks)

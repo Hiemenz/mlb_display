@@ -624,9 +624,24 @@ def _show_idle_screen(config, auto_open=False):
 
     _offseason = is_offseason(_now, _series)
     _moves = False
-    if _offseason:
-        # Free-agent/trade screens take every other 15-minute block (and every
-        # block while a move is breaking); the comic takes the rest.
+    _sunday = _now.weekday() == 6
+
+    def _comic(all_blocks):
+        if not config.get('idle_comic_rotation', False):
+            return None
+        from image_comic import comic_idle_image
+        try:
+            return comic_idle_image(idle_config, _now, all_blocks=all_blocks)
+        except Exception as _ce:
+            print(f"Idle: comic render failed ({_ce}), falling back")
+            return None
+
+    # Off-season: Sundays are all comic. Other days show the comic when there
+    # are no signings/trades, and alternate every 30 minutes (moves first, comic
+    # second) when there are; a BREAKING move takes every block.
+    if _offseason and _sunday:
+        image = _comic(True)
+    if image is None and _offseason:
         from image_free_agents import free_agent_idle_image, has_moves
         try:
             image = free_agent_idle_image(idle_config, _now)
@@ -634,14 +649,8 @@ def _show_idle_screen(config, auto_open=False):
         except Exception as _fe:
             print(f"Idle: free-agent screen failed ({_fe}), falling back")
 
-    # "On this day" comic strip (opt-in): takes the 15-minute blocks listed in
-    # comic_idle_blocks, and in the off-season every block that has no moves to show.
-    if image is None and config.get('idle_comic_rotation', False):
-        from image_comic import comic_idle_image
-        try:
-            image = comic_idle_image(idle_config, _now, all_blocks=_offseason and not _moves)
-        except Exception as _ce:
-            print(f"Idle: comic render failed ({_ce}), falling back")
+    if image is None and not (_offseason and _sunday):
+        image = _comic(_offseason and not _moves)
 
     # After the World Series there is nothing to show: replay a random past day.
     if image is None and _offseason and config.get('offseason_baseball', True):
