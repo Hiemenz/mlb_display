@@ -1,17 +1,20 @@
 """Full-panel (800x480, 1-bit) "on this day" comic strip screen.
 
-The strip is the whole screen: no title bar, a hairline frame, and a single
-tiny footer line. Its white scan border is trimmed first so every pixel goes to
-the art, then it is scaled as large as the panel allows.
+The strip is the screen: no title bar, a hairline frame, and a slim left gutter
+that carries everything else (rotated caption, year ticks, "n of N") so the art
+gets the full height. Its white scan border is trimmed first, then it is scaled
+as large as the panel allows.
 
-    ┌──────────────────────────────────────────────┐
-    │ ┌──────────────────────────────────────────┐ │
-    │ │                                          │ │
-    │ │           the strip, dithered            │ │  fills everything above the
-    │ │                                          │ │  footer; wide/short strips
-    │ └──────────────────────────────────────────┘ │  are centred vertically
-    │ Originally published Nov 7, 1963 |||▮|||  3 of 50│  one tiny footer line
-    └──────────────────────────────────────────────┘
+    ┌─┬────────────────────────────────────────────┐
+    │3│ ┌────────────────────────────────────────┐ │
+    │o│ │                                        │ │
+    │f│ │         the strip, dithered            │ │
+    │5│ │                                        │ │
+    │0│ │                                        │ │
+    │▬│ └────────────────────────────────────────┘ │
+    │-│                                            │
+    │O│   (wide strips are centred vertically)     │
+    └─┴────────────────────────────────────────────┘
 
 Dark mode inverts the page but keeps the strip itself black ink on white paper.
 """
@@ -22,7 +25,7 @@ from image_assets import _get_font
 from image_idle import _invert_if_dark
 
 _W, _H = 800, 480
-_FOOT_H = 20                 # one-line footer
+_GUT = 18                    # left gutter: rotated caption + year timeline
 _MARGIN = 2                  # gap above/beside the frame
 _TRIM_BELOW = 240            # pixels lighter than this are scan-border white
 _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -55,38 +58,48 @@ def strip_layout(size):
     """Where a strip of pixel `size` (w, h) lands: (x, y, w, h) on the panel.
 
     The one fit rule: scale uniformly by min(avail_w / w, avail_h / h) so the
-    strip is as large as the panel allows without distortion, where the
-    available box is everything above the footer (794 x 456 px, inside a
-    hairline frame). Wide strips fill the width, tall ones fill the height, and
-    whichever dimension is left over is centred (a wide strip floats mid-panel).
+    strip is as large as the panel allows without distortion. The available box
+    is everything right of the slim left gutter (which holds the caption and
+    year timeline), inside a hairline frame. Wide strips fill the width, tall
+    ones fill the height, and whichever dimension is left over is centred.
     """
-    avail_w = _W - 2 * _MARGIN - 2
-    avail_h = _H - _FOOT_H - _MARGIN - 2
+    avail_w = _W - _GUT - _MARGIN - 2
+    avail_h = _H - 2 * _MARGIN - 2
     scale = min(avail_w / size[0], avail_h / size[1])
     w, h = max(1, round(size[0] * scale)), max(1, round(size[1] * scale))
-    top, bot = _MARGIN, _H - _FOOT_H
-    return (_W - w) // 2, top + (bot - top - h) // 2, w, h
+    left, right = _GUT, _W - _MARGIN
+    return left + (right - left - w) // 2, _MARGIN + (_H - 2 * _MARGIN - h) // 2, w, h
 
 
 def _date_text(d):
     return f'{_MONTHS[d.month - 1]} {d.day}, {d.year}'
 
 
-def _timeline(draw, years, current, x0, x1, cy):
-    """Tiny tick per available year between x0 and x1, current year taller."""
-    if x1 - x0 < 20:
+def _vtext(img, text, font, x, y_bottom):
+    """Draw `text` rotated to read bottom-to-top, its bottom end at y_bottom. Returns its length."""
+    w, h = int(font.getlength(text)) + 2, 14
+    tile = Image.new('1', (w, h), 1)
+    ImageDraw.Draw(tile).text((1, 0), text, font=font, fill=0)
+    tile = tile.rotate(90, expand=True)
+    img.paste(tile, (x, y_bottom - tile.size[1]))
+    return tile.size[1]
+
+
+def _timeline(draw, years, current, cx, y0, y1):
+    """Tiny horizontal tick per available year down the gutter (oldest at the top); current year longer."""
+    if y1 - y0 < 20:
         return
     lo, hi = min(years), max(years)
 
-    def xpos(yr):
-        return (x0 + x1) // 2 if hi == lo else x0 + round((yr - lo) * (x1 - x0) / (hi - lo))
+    def ypos(yr):
+        return (y0 + y1) // 2 if hi == lo else y0 + round((yr - lo) * (y1 - y0) / (hi - lo))
 
     for yr in years:
         if yr != current:
-            x = xpos(yr)
-            draw.line([x, cy - 3, x, cy + 3], fill=0, width=1)
-    cx = xpos(current)
-    draw.rectangle([cx - 1, cy - 7, cx + 1, cy + 7], fill=0)
+            y = ypos(yr)
+            draw.line([cx - 3, y, cx + 3, y], fill=0, width=1)
+    cy = ypos(current)
+    draw.rectangle([cx - 7, cy - 1, cx + 7, cy + 1], fill=0)
 
 
 def draw_comic_screen(strip, config):
@@ -94,25 +107,23 @@ def draw_comic_screen(strip, config):
     img = Image.new('1', (_W, _H), 1)
     draw = ImageDraw.Draw(img)
 
-    # Strip: border trimmed, then as big as the area above the footer allows.
+    # Strip: border trimmed, then as big as the area right of the gutter allows.
     gray = trim_border(strip.image.convert('L'))
     ax, ay, aw, ah = strip_layout(gray.size)
     art = prepare_strip(gray, aw, ah)
     draw.rectangle([ax - 1, ay - 1, ax + art.size[0], ay + art.size[1]], outline=0, width=1)
     img.paste(art, (ax, ay))
 
-    # One tiny footer line: caption left, year ticks, "n of N" right.
+    # Left gutter, bottom to top: caption, year ticks, "n of N" at the top.
     small = _get_font(12)
-    fy = _H - _FOOT_H + (_FOOT_H - 12) // 2 - 2
-    caption = f'Originally published {_date_text(strip.date)}'
-    draw.text((8, fy), caption, font=small, fill=0)
-    count = f'{strip.position + 1} of {strip.total}' if strip.total > 1 else ''
-    right_edge = _W - 8
-    if count:
-        draw.text((right_edge - int(small.getlength(count)), fy), count, font=small, fill=0)
-        right_edge -= int(small.getlength(count)) + 14
-    _timeline(draw, strip.years, strip.date.year,
-              8 + int(small.getlength(caption)) + 16, right_edge, _H - _FOOT_H // 2)
+    gx = 2
+    low = _H - 6
+    low -= _vtext(img, f'Originally published {_date_text(strip.date)}', small, gx, low) + 8
+    high = 6
+    if strip.total > 1:
+        count = f'{strip.position + 1} of {strip.total}'
+        high += _vtext(img, count, small, gx, high + int(small.getlength(count)) + 2) + 8
+    _timeline(draw, strip.years, strip.date.year, _GUT // 2 - 1, high, low)
 
     dark = config.get('dark_mode', False)
     out = _invert_if_dark(img, dark)
