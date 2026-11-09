@@ -313,3 +313,13 @@ def test_comic_failure_falls_through():
          patch('main._show_final_world_series', return_value=False):
         dt.now.return_value = datetime(2026, 11, 8, 10, 5)
         main._show_idle_screen({'timezone': 'UTC', 'idle_comic_rotation': True, 'offseason_baseball': False})
+
+
+def test_rotate_minutes_steps_every_half_hour():
+    ds = [date(1950 + i, 11, 7) for i in range(4)]
+    src = FakeSource(ds, {d: placeholder(3.5) for d in ds})
+    cfg = {'comic_rotate_minutes': 30}
+    a = fc.current_strip(cfg, datetime(2026, 11, 7, 10, 0), src).position
+    b = fc.current_strip(cfg, datetime(2026, 11, 7, 10, 29), src).position
+    c = fc.current_strip(cfg, datetime(2026, 11, 7, 10, 30), src).position
+    assert a == b and c == (a + 1) % 4

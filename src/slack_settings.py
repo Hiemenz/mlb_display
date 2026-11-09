@@ -152,7 +152,7 @@ SETTINGS = (
     _b("offseason_baseball", "Off-season baseball (WS final + replays)", G_REPLAY),
     _b("idle_comic_rotation", "On-this-day comic", G_REPLAY),
     _b("comic_sunday_only", "Comic: Sunday strips only", G_REPLAY),
-    _i("comic_rotate_hours", "Comic: hours per strip (0 = one a day)", G_REPLAY, 0, 24),
+    _i("comic_rotate_minutes", "Comic: minutes per strip (0 = one a day)", G_REPLAY, 0, 1440),
     _i("offseason_replays_per_day", "Off-season replays per day", G_REPLAY, 1, 20),
     _i("offseason_replay_step_minutes", "Off-season step (min)", G_REPLAY, 1, 60),
     _i("offseason_replay_delay_seconds", "Off-season delay (sec)", G_REPLAY, 1, 600),

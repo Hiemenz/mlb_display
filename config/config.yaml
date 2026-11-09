@@ -318,8 +318,8 @@ offseason_baseball: false
 # signings/trades, else it alternates with them every 30 minutes.
 idle_comic_rotation: true
 comic_sunday_only: false
-# Step through every strip for today's date, one per hour (0 = one strip all day).
-comic_rotate_hours: 1
+# Step through every strip for today's date, a new one every 30 minutes (0 = one strip all day).
+comic_rotate_minutes: 30
 offseason_replays_per_day: 2
 offseason_replay_step_minutes: 5
 offseason_replay_delay_seconds: 30
