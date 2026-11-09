@@ -11,8 +11,8 @@ there, just work. To plug in a different source, implement `dates_for` and
 `load` (see the `ComicSource` protocol) and pass it to `current_strip`.
 
 Selection is deterministic: one strip per calendar date chosen by a stable hash
-of that date (`comic_rotate_hours: 0`, the default), or every strip published
-on this month/day rotating through the day every `comic_rotate_hours` hours.
+of that date (`comic_rotate_minutes: 0`, the default), or every strip published
+on this month/day rotating through the day every `comic_rotate_minutes` minutes.
 Each strip carries its original publication date.
 """
 import hashlib
@@ -120,7 +120,8 @@ def current_strip(config, now, source=None):
         dates = [d for d in dates if d.weekday() == 6]   # Sunday strips: biggest, best-laid-out
     if not dates:
         return None
-    start = pick_index(len(dates), now.date(), now, config.get('comic_rotate_hours', 0))
+    minutes = config.get('comic_rotate_minutes', config.get('comic_rotate_hours', 0) * 60)
+    start = pick_index(len(dates), now.date(), now, minutes / 60)
     years = [d.year for d in dates]
     for offset in range(len(dates)):
         i = (start + offset) % len(dates)
