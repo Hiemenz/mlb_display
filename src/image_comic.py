@@ -21,7 +21,9 @@ The page stays white paper with black ink in dark mode too (no black edges).
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from fetch_comic import current_strip
-from image_assets import _get_font
+import os
+
+from image_assets import _get_font, picdir
 
 _W, _H = 800, 480
 _GUT = 18                    # left gutter: rotated caption + year timeline
@@ -53,7 +55,7 @@ def prepare_strip(gray, max_w, max_h):
     return gray.convert('1')   # Floyd-Steinberg dither
 
 
-def strip_layout(size):
+def strip_layout(size, reserve_right=0):
     """Where a strip of pixel `size` (w, h) lands: (x, y, w, h) on the panel.
 
     The one fit rule: scale uniformly by min(avail_w / w, avail_h / h) so the
@@ -62,12 +64,91 @@ def strip_layout(size):
     year timeline), inside a hairline frame. Wide strips fill the width, tall
     ones fill the height, and whichever dimension is left over is centred.
     """
-    avail_w = _W - _GUT - _MARGIN - 2
+    avail_w = _W - _GUT - _MARGIN - 2 - reserve_right
     avail_h = _H - 2 * _MARGIN - 2
     scale = min(avail_w / size[0], avail_h / size[1])
     w, h = max(1, round(size[0] * scale)), max(1, round(size[1] * scale))
-    left, right = _GUT, _W - _MARGIN
+    left, right = _GUT, _W - _MARGIN - reserve_right
     return left + (right - left - w) // 2, _MARGIN + (_H - 2 * _MARGIN - h) // 2, w, h
+
+
+# --- QR code to the arc's web page ----------------------------------------------------
+
+_QR_MODULE = 2               # px per module (a short URL fits a 25-29 module code)
+_QR_QUIET = 2                # white modules around it
+
+
+def get_lan_ip():
+    """This machine's LAN address (the interface that would reach the internet), else 127.0.0.1."""
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(('10.255.255.255', 1))      # UDP connect sends nothing; it just picks a route
+        return sock.getsockname()[0]
+    except OSError:
+        return '127.0.0.1'
+    finally:
+        sock.close()
+
+
+def arc_url(config, strip):
+    """Where the QR code points: this strip's arc on the config server, or None when there is no arc."""
+    if strip.arc_start is None:
+        return None
+    host = config.get('comic_qr_host') or get_lan_ip()
+    port = config.get('config_server_port', 8080)
+    comic = config.get('comic_name', 'peanuts')
+    query = '' if comic == 'peanuts' else f'?comic={comic}'
+    return f'http://{host}:{port}/arc/{strip.arc_start.isoformat()}{query}'
+
+
+def snoopy_head(size):
+    """A small drawn Snoopy head (white face, black ear and nose, eye), `size` px square, 1-bit.
+
+    Drawn procedurally at 4x and averaged down, so there is no image asset to ship.
+    """
+    k = 4
+    big = size * k
+    img = Image.new('L', (big, big), 255)
+    d = ImageDraw.Draw(img)
+
+    def box(x0, y0, x1, y1):
+        return [round(v * big / 100) for v in (x0, y0, x1, y1)]
+
+    w = max(2, big // 16)
+    d.ellipse(box(24, 20, 90, 86), fill=255, outline=0, width=w)       # head
+    d.ellipse(box(6, 40, 52, 70), fill=255, outline=0, width=w)        # snout
+    d.ellipse(box(0, 42, 18, 60), fill=0)                              # nose
+    d.ellipse(box(46, 36, 56, 48), fill=0)                             # eye
+    d.ellipse(box(66, 22, 96, 78), fill=0)                             # ear
+    small = img.resize((size, size), Image.LANCZOS)
+    return small.point(lambda v: 255 if v > 140 else 0).convert('1')
+
+
+def qr_image(url, logo=True):
+    """1-bit QR code for `url` with its quiet zone, _QR_MODULE px per module.
+
+    With `logo`, a Snoopy head sits on a white plate in the middle. That needs the
+    highest error correction (the logo hides a few percent of the code, well inside
+    what level H can restore), so the code is a little bigger than a plain one.
+    """
+    import segno
+    matrix = segno.make(url, error='h' if logo else 'l').matrix
+    n = len(matrix) + 2 * _QR_QUIET
+    img = Image.new('1', (n * _QR_MODULE, n * _QR_MODULE), 1)
+    draw = ImageDraw.Draw(img)
+    for y, row in enumerate(matrix):
+        for x, cell in enumerate(row):
+            if cell:
+                px, py = (x + _QR_QUIET) * _QR_MODULE, (y + _QR_QUIET) * _QR_MODULE
+                draw.rectangle([px, py, px + _QR_MODULE - 1, py + _QR_MODULE - 1], fill=0)
+    if logo:
+        side = max(12, round(img.size[0] * 0.27)) // 2 * 2            # even, ~7% of the code's area
+        plate = side + 4
+        c = img.size[0] // 2
+        draw.rectangle([c - plate // 2, c - plate // 2, c + plate // 2 - 1, c + plate // 2 - 1], fill=1)
+        img.paste(snoopy_head(side), (c - side // 2, c - side // 2))
+    return img
 
 
 def _date_text(d):
@@ -81,9 +162,24 @@ def _years_ago(published, config):
     return max(0, ref.year - published.year - ((ref.month, ref.day) < (published.month, published.day)))
 
 
-def _vtext(img, text, font, x, y_bottom):
+_HAND_FONT = os.path.join(picdir, 'fonts', 'PatrickHand-Regular.ttf')   # OFL; see pic/fonts/OFL-PatrickHand.txt
+_hand_cache: dict = {}
+
+
+def _hand_font(size):
+    """Hand-lettered font for the 'Day x of N' counter (comic-strip feel); the panel font if the file is missing."""
+    if size not in _hand_cache:
+        try:
+            from PIL import ImageFont
+            _hand_cache[size] = ImageFont.truetype(_HAND_FONT, size)
+        except OSError:
+            _hand_cache[size] = _get_font(size)
+    return _hand_cache[size]
+
+
+def _vtext(img, text, font, x, y_bottom, h=14):
     """Draw `text` rotated to read bottom-to-top, its bottom end at y_bottom. Returns its length."""
-    w, h = int(font.getlength(text)) + 2, 14
+    w = int(font.getlength(text)) + 2
     tile = Image.new('1', (w, h), 1)
     ImageDraw.Draw(tile).text((1, 0), text, font=font, fill=0)
     tile = tile.rotate(90, expand=True)
@@ -130,8 +226,23 @@ def draw_comic_screen(strip, config):
     # Strip: border trimmed, then as big as the area right of the gutter allows.
     gray = trim_border(strip.image.convert('L'))
     ax, ay, aw, ah = strip_layout(gray.size)
+    qr = None
+    if config.get('comic_qr', False) and (url := arc_url(config, strip)):
+        qr = qr_image(url, logo=config.get('comic_qr_logo', True))
+    qr_xy = None
+    if qr is not None:
+        qw, qh = qr.size
+        if ay + ah <= _H - qh - _MARGIN - 2:                       # wide strip: free band underneath
+            qr_xy = (ax, _H - qh - _MARGIN)
+        elif ax + aw <= _W - _MARGIN - qw - 2:                     # strip leaves a side margin (2x2, Sundays, ...)
+            qr_xy = (_W - qw - _MARGIN, _H - qh - _MARGIN)
+        else:                                                      # fills both ways: shrink it for a column
+            ax, ay, aw, ah = strip_layout(gray.size, reserve_right=qw + 2)
+            qr_xy = (_W - qw - _MARGIN, _H - qh - _MARGIN)
     art = prepare_strip(gray, aw, ah)
     img.paste(art, (ax, ay))
+    if qr is not None:
+        img.paste(qr, qr_xy)
 
     # Left gutter, bottom to top: caption, year ticks, "n of N" at the top.
     small = _get_font(12)
@@ -140,14 +251,15 @@ def draw_comic_screen(strip, config):
     caption = _date_text(strip.date)
     ago = _years_ago(strip.date, config)
     if ago:
-        caption += f' · {ago} yrs ago'
+        caption += f' · {ago} yr ago' if ago == 1 else f' · {ago} yrs ago'
     if strip.note:
         caption += f' · {strip.note}'
     low -= _vtext(img, caption, small, gx, low) + 8
     high = 6
     if strip.total > 1:
         count = f'{strip.label + " " if strip.label else ""}{strip.position + 1} of {strip.total}'
-        high += _vtext(img, count, small, gx, high + int(small.getlength(count)) + 2) + 8
+        hand = _hand_font(14)
+        high += _vtext(img, count, hand, gx, high + int(hand.getlength(count)) + 2, h=16) + 8
     _timeline(draw, strip.years, strip.date.year, _GUT - 6, high, low)
 
     return img    # always white paper, even at night: no black edges around the strip
@@ -180,7 +292,7 @@ def comic_idle_image(config, now, source=None, replay_running=None, load=None, a
     if strip is None:
         return None
     print(f'Idle: showing comic strip from {strip.date} ({strip.position + 1}/{strip.total})')
-    return draw_comic_screen(strip, config)
+    return draw_comic_screen(strip, dict(config, comic_today=now.date()))
 
 
 def main(argv=None):

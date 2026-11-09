@@ -29,6 +29,9 @@ _TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '
 
 app = Flask(__name__, template_folder=_TEMPLATE_DIR)
 
+from comic_server import comic_bp  # noqa: E402  (story-arc pages the comic screen's QR code opens)
+app.register_blueprint(comic_bp)
+
 # Curated set of settings worth changing from a phone. Anything not listed
 # here is left alone — this is deliberately not a full config editor.
 FIELD_SPECS = [

@@ -76,20 +76,27 @@ def main():
     ap.add_argument('--metadata', help='read rows from this JSON-lines file instead of downloading')
     args = ap.parse_args()
     if args.metadata:
-        rows = (json.loads(line) for line in open(args.metadata))
+        with open(args.metadata) as f:
+            rows = [json.loads(line) for line in f if line.strip()]
     else:
         rows = metadata_rows()
     arcs = find_arcs(group_strips(rows))
     path = os.path.join(COMICS_DIR, args.name, 'prefs.json')
-    try:
-        with open(path) as f:
-            prefs = json.load(f)
-    except (OSError, ValueError):
-        prefs = {}
+    prefs = {}
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                prefs = json.load(f)
+            if not isinstance(prefs, dict):
+                raise ValueError('not a JSON object')
+        except (OSError, ValueError) as e:
+            sys.exit(f'{path} exists but cannot be read ({e}); fix or move it so favorites/blocked/tags are not lost')
     prefs['arcs'] = arcs_to_json(arcs)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w') as f:
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as f:
         json.dump(prefs, f, indent=1)
+    os.replace(tmp, path)
     print(f'{len(arcs)} arcs -> {path}')
 
 

@@ -16,7 +16,8 @@ import re
 from collections import Counter, defaultdict
 from datetime import date
 
-THRESH, TEXT_WEIGHT = 0.30, 0.3
+THRESH, TEXT_WEIGHT = 0.34, 0.3
+MIN_TEXT = 0.0                   # a link also needs at least this much caption-text overlap
 MIN_LEN, MAX_LEN = 3, 14
 MAX_GAP_DAYS = 3                 # Sat -> Mon is 2; one skipped day on top is tolerated
 _STOP = set('a an the and or but of to in on at is it its was be he she they his her their that this with for as by '
@@ -80,7 +81,7 @@ def _wjaccard(a, b):
     return sum(min(a[c], b[c]) for c in a if c in b) / union if union else 0.0
 
 
-def find_arcs(strips, thresh=THRESH, text_weight=TEXT_WEIGHT):
+def find_arcs(strips, thresh=THRESH, text_weight=TEXT_WEIGHT, min_text=MIN_TEXT):
     """List of arcs, each a sorted list of `date`s, longest-first de-overlapped, in date order."""
     days = sorted(d for d in strips if d.weekday() != 6)
     if not days:
@@ -102,7 +103,7 @@ def find_arcs(strips, thresh=THRESH, text_weight=TEXT_WEIGHT):
         for b in days[i + 1:i + 3]:
             if (b - a).days > MAX_GAP_DAYS + 1:
                 break
-            if sim(a, b) >= thresh:
+            if sim(a, b) >= thresh and _cos(tv[a], tv[b]) >= min_text:
                 parent[find(b)] = find(a)
     groups = defaultdict(list)
     for d in days:

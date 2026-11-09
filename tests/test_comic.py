@@ -376,7 +376,7 @@ def test_week_mode_stays_near_one_year_all_week():
     years = {fc.current_strip(cfg, datetime(2026, 11, d), src, prefs={}).date.year for d in range(2, 9)}
     assert len(years) <= 2
     s = fc.current_strip(cfg, datetime(2026, 11, 4), src, prefs={})   # a Wednesday
-    assert s.note == 'Day 3 of 7'
+    assert s.note == ''
 
 
 def test_tag_selects_across_whole_archive():
@@ -478,9 +478,9 @@ def test_arc_mode_prefers_days_inside_an_arc():
     src = _src(*[(y, 11, 7) for y in (1955, 1975, 1995)])
     prefs = {'arcs': [{'start': '1975-11-05', 'end': '1975-11-09'}, {'start': 'x', 'end': 'y'}, {'bad': 1}]}
     s = fc.current_strip({'comic_mode': 'arc'}, datetime(2026, 11, 7), src, prefs=prefs)
-    assert s.date.year == 1975 and s.note == 'Arc day 3 of 4'
+    assert s.date.year == 1975 and s.note == ''
     s = fc.current_strip({'comic_mode': 'arc'}, datetime(2026, 11, 7), src, prefs={})
-    assert s.note == 'Day 6 of 7'
+    assert s.note == '' and s.date.month == 11
 
 
 # --- arc detection (comic_arcs) -------------------------------------------------------
@@ -509,7 +509,7 @@ def test_find_arcs_groups_linked_days_and_splits_unlinked():
 
 def test_find_arcs_splits_overlong_chain_and_skips_overlap():
     import comic_arcs as ca
-    from datetime import date as D, timedelta
+    from datetime import date as D
     rows, d = [], D(1970, 1, 5)
     for _ in range(40):                                     # one 40-day chain of identical strips
         while d.weekday() == 6:
@@ -543,7 +543,14 @@ def test_build_comic_arcs_script(tmp_path, monkeypatch):
     saved = json.loads((tmp_path / 'peanuts' / 'prefs.json').read_text())
     assert saved['blocked'] == ['1960-01-01'] and saved['arcs']
     (tmp_path / 'peanuts' / 'prefs.json').write_text('garbage')
-    b.main()
+    with pytest.raises(SystemExit):                          # never overwrite a prefs file it cannot read
+        b.main()
+    assert (tmp_path / 'peanuts' / 'prefs.json').read_text() == 'garbage'
+    (tmp_path / 'peanuts' / 'prefs.json').write_text('[1]')
+    with pytest.raises(SystemExit):
+        b.main()
+    (tmp_path / 'peanuts' / 'prefs.json').unlink()
+    b.main()                                                 # no file yet: created
     assert json.loads((tmp_path / 'peanuts' / 'prefs.json').read_text())['arcs']
 
 
@@ -624,23 +631,30 @@ def test_arc_index_counts_real_strips_not_sundays():
     assert idx[date(1960, 3, 7)] == (3, 3) and idx[date(1970, 1, 6)] == (2, 3)
 
 
-def test_arcs_mode_plays_one_arc_a_day_in_order_with_x_of_n():
-    cfg = {'comic_mode': 'arcs'}
+def test_arcs_mode_plays_every_arc_in_order_through_the_day():
+    cfg = {'comic_mode': 'arcs', 'comic_arc_minutes': 60}
     day = datetime(2026, 11, 7, 0, 0)
     seen = []
-    for hour in range(6):
+    for hour in range(24):
         s = fc.current_strip(cfg, day.replace(hour=hour), _arc_src(), prefs=_arc_prefs())
         seen.append((s.date, s.position + 1, s.total))
-    arc_dates_today = {d for d, _, _ in seen}
-    assert len(arc_dates_today) == 3                         # one arc, three strips, repeating
-    assert [p for _, p, _ in seen] == [1, 2, 3, 1, 2, 3]     # strip 1..N in order, starting at midnight
-    assert [d for d, _, _ in seen[:3]] == sorted(d for d, _, _ in seen[:3])   # chronological within the arc
-    nxt = fc.current_strip(cfg, day + timedelta(days=1), _arc_src(), prefs=_arc_prefs())
-    assert nxt.date.year != seen[0][0].year                  # tomorrow is the other arc
+    # the playlist is 1960's 3-strip arc then 1970's 3-strip arc, repeating: strips 1..3 in order each time
+    assert [p for _, p, _ in seen] == [1, 2, 3] * 8
+    assert {d.year for d, _, _ in seen} == {1960, 1970}                      # many arcs in one day
+    for start in range(0, 24, 3):
+        trio = [d for d, _, _ in seen[start:start + 3]]
+        assert trio == sorted(trio) and len({d.year for d in trio}) == 1     # each arc plays whole, in order
+
+
+def test_arcs_mode_continues_across_midnight():
+    cfg = {'comic_mode': 'arcs', 'comic_arc_minutes': 60}
+    last = fc.current_strip(cfg, datetime(2026, 11, 7, 23, 0), _arc_src(), prefs=_arc_prefs())
+    first = fc.current_strip(cfg, datetime(2026, 11, 8, 0, 0), _arc_src(), prefs=_arc_prefs())
+    assert first.position == (last.position + 1) % 3          # the very next strip: no jump at midnight
 
 
 def test_arcs_mode_fallbacks():
-    cfg = {'comic_mode': 'arcs', 'comic_arc_offset': 1, 'comic_arc_minutes': 0}
+    cfg = {'comic_mode': 'arcs', 'comic_arc_offset': 1, 'comic_arc_minutes': 0}   # 0 is clamped to 1 minute
     assert fc.current_strip(cfg, NOW, _arc_src(), prefs=_arc_prefs()) is not None
     # no arcs in prefs -> normal on-this-day selection
     s = fc.current_strip({'comic_mode': 'arcs'}, datetime(2026, 1, 5), _arc_src(), prefs={})
@@ -656,3 +670,256 @@ def test_arcs_mode_counter_reads_day_x_of_n():
     img = ic.draw_comic_screen(s, {})
     plain = ic.draw_comic_screen(s._replace(label=''), {})
     assert img.tobytes() != plain.tobytes()          # 'Day ' lengthens the gutter counter
+
+
+# --- QR code + web server -----------------------------------------------------------------
+
+def _arc_strip_obj(aspect=3.5, arc_start=date(1970, 1, 5)):
+    return fc.Strip(date(1970, 1, 6), placeholder(aspect, 120), 1, 3, [1970], label='Day', arc_start=arc_start)
+
+
+def test_arc_url_variants(monkeypatch):
+    s = _arc_strip_obj()
+    cfg = {'comic_qr_host': 'pi.local', 'config_server_port': 9000}
+    assert ic.arc_url(cfg, s) == 'http://pi.local:9000/arc/1970-01-05'
+    assert ic.arc_url({'comic_qr_host': 'h', 'comic_name': 'garfield'}, s) == 'http://h:8080/arc/1970-01-05?comic=garfield'
+    assert ic.arc_url(cfg, s._replace(arc_start=None)) is None
+    monkeypatch.setattr(ic, 'get_lan_ip', lambda: '192.0.2.1')
+    assert ic.arc_url({}, s).startswith('http://192.0.2.1:8080/')
+
+
+def test_get_lan_ip_real_and_failing(monkeypatch):
+    assert ic.get_lan_ip().count('.') == 3
+
+    class Boom:
+        def connect(self, *_):
+            raise OSError('no route')
+
+        def close(self):
+            pass
+
+    import socket
+    monkeypatch.setattr(socket, 'socket', lambda *a, **k: Boom())
+    assert ic.get_lan_ip() == '127.0.0.1'
+
+
+def test_qr_image_is_square_and_has_quiet_zone():
+    q = ic.qr_image('http://192.0.2.1:8080/arc/1970-01-05')
+    assert q.mode == '1' and q.size[0] == q.size[1] and q.size[0] % ic._QR_MODULE == 0
+    n = q.size[0]
+    px = q.load()
+    q2 = q.convert('L')
+    assert all(q2.getpixel((x, 0)) == 255 for x in range(n))       # top quiet-zone row is white
+    assert any(px[x, y] == 0 for x in range(n) for y in range(n))
+
+
+def test_qr_drawn_under_wide_strip_and_beside_tall_strip():
+    cfg = {'comic_qr': True, 'comic_qr_host': '192.0.2.1'}
+    for aspect in (3.6, 1.2):                                   # wide strip, then a tall (height-filling) one
+        s = _arc_strip_obj(aspect)
+        with_qr = ic.draw_comic_screen(s, cfg)
+        without = ic.draw_comic_screen(s, {})
+        assert with_qr.tobytes() != without.tobytes() and with_qr.size == (800, 480)
+        qr = ic.qr_image(ic.arc_url(cfg, s))
+        corner = with_qr.crop((800 - qr.size[0] - 2, 480 - qr.size[1] - 2, 800, 480)) if aspect < 2 else \
+            with_qr.crop((20, 480 - qr.size[1] - 2, 20 + qr.size[0], 480))
+        assert any(p == 0 for p in corner.getdata())            # ink in the QR spot
+    off = ic.draw_comic_screen(_arc_strip_obj(), {'comic_qr': False})
+    assert off.size == (800, 480)
+    assert ic.draw_comic_screen(_arc_strip_obj(arc_start=None), cfg).size == (800, 480)   # no arc -> no QR
+
+
+def test_strip_layout_reserve_right_shrinks_strip():
+    full = ic.strip_layout((1000, 1000))
+    reserved = ic.strip_layout((1000, 1000), reserve_right=70)
+    assert reserved[2] <= full[2] and reserved[0] + reserved[2] <= 800 - 2 - 70
+
+
+def _client(tmp_path, monkeypatch, arcs=True):
+    import json
+    import comic_server as cs
+    from flask import Flask
+    root = tmp_path / 'peanuts'
+    _write(root / '1970-01-05.png')
+    _write(root / '1970-01-06.png')
+    _write(root / '1971-02-01.png')
+    prefs = {'arcs': [{'start': '1970-01-05', 'end': '1970-01-06', 'dates': ['1970-01-05', '1970-01-06']},
+                      {'start': '1971-02-01', 'end': '1971-02-03', 'dates': ['1971-02-01']}]} if arcs else {}
+    (root / 'prefs.json').write_text(json.dumps(prefs))
+    monkeypatch.setattr(fc, 'COMICS_DIR', str(tmp_path))
+    monkeypatch.setattr(fc.LocalCacheSource, '__init__',
+                        lambda self, comic='peanuts', root=None: (setattr(self, 'comic', comic),
+                                                                  setattr(self, 'dir', str(tmp_path / comic)))[0])
+    app = Flask(__name__)
+    app.register_blueprint(cs.comic_bp)
+    return app.test_client()
+
+
+def test_arc_page_lists_strips_in_order(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    r = c.get('/arc/1970-01-05')
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and 'Day 1 of 2' in html and 'Day 2 of 2' in html
+    assert html.index('1970-01-05') < html.index('1970-01-06')
+    assert 'Next arc' in html and 'Previous arc' not in html
+    assert 'Previous arc' in c.get('/arc/1971-02-01').get_data(as_text=True)
+
+
+def test_arc_page_errors(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    assert c.get('/arc/1999-01-01').status_code == 404          # not an arc start
+    assert c.get('/arc/not-a-date').status_code == 404
+    assert c.get('/arc/1970-01-05?comic=../etc').status_code == 400
+
+
+def test_strip_image_served_and_validated(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    r = c.get('/comic/img/1970-01-05')
+    assert r.status_code == 200 and r.data[:4] == b'\x89PNG'
+    assert c.get('/comic/img/1999-01-01').status_code == 404
+    assert c.get('/comic/img/xx').status_code == 404
+    assert c.get('/comic/img/1970-01-05?comic=a%2Fb').status_code == 400
+
+
+def test_config_server_registers_comic_blueprint():
+    import config_server
+    assert 'comic.arc_page' in {r.endpoint for r in config_server.app.url_map.iter_rules()}
+
+
+def test_find_arc_neighbors():
+    prefs = _arc_prefs()
+    ds, prev, nxt = fc.find_arc(prefs, date(1970, 1, 5))
+    assert len(ds) == 3 and prev == date(1960, 3, 4) and nxt is None
+    assert fc.find_arc(prefs, date(2000, 1, 1)) is None
+    assert fc.find_arc({}, date(1970, 1, 5)) is None
+
+
+# --- review fixes -----------------------------------------------------------------------
+
+def test_arcs_mode_default_step_is_fifteen_minutes():
+    cfg = {'comic_mode': 'arcs'}
+    seen = [fc.current_strip(cfg, datetime(2026, 11, 7, 10, m), _arc_src(), prefs=_arc_prefs()).position for m in (0, 15, 30, 45)]
+    assert seen == [(seen[0] + k) % 3 for k in range(4)]
+
+
+def test_arcs_step_not_dividing_a_day_does_not_repeat_at_midnight():
+    cfg = {'comic_mode': 'arcs', 'comic_arc_minutes': 7}
+    a = fc.current_strip(cfg, datetime(2026, 11, 7, 23, 59), _arc_src(), prefs=_arc_prefs())
+    b = fc.current_strip(cfg, datetime(2026, 11, 8, 0, 0), _arc_src(), prefs=_arc_prefs())
+    assert a is not None and b is not None
+    c = fc.current_strip(cfg, datetime(2026, 11, 8, 0, 7), _arc_src(), prefs=_arc_prefs())
+    assert (c.position - b.position) % 3 == 1
+
+
+def test_mixed_order_spreads_years_and_visits_every_arc_once():
+    order = fc._mixed_order(10)
+    assert sorted(order) == list(range(10))
+    assert all(abs(a - b) >= 3 for a, b in zip(order, order[1:]))   # neighbours are far apart in the date-sorted list
+    assert fc._mixed_order(1) == [0] and sorted(fc._mixed_order(7)) == list(range(7))
+
+
+def _many_arcs():
+    ds, prefs = [], {'arcs': []}
+    for k in range(6):
+        year = 1950 + k * 8
+        days = [date(year, 3, 2 + j) for j in range(3)]
+        ds += days
+        prefs['arcs'].append({'start': days[0].isoformat(), 'end': days[-1].isoformat(), 'dates': [d.isoformat() for d in days]})
+    return FakeSource(ds, {d: placeholder(3.5, 40) for d in ds}), prefs
+
+
+def test_arcs_mode_mixes_years_within_a_day_and_chronological_option():
+    src, prefs = _many_arcs()
+    def years(cfg):
+        out = []
+        for q in range(24):
+            s = fc.current_strip(cfg, datetime(2026, 11, 7, 6 + q // 4, (q % 4) * 15), src, prefs=prefs)
+            out.append(s.date.year)
+        return out
+    mixed = years({'comic_mode': 'arcs'})
+    chrono = years({'comic_mode': 'arcs', 'comic_arc_order': 'chronological'})
+    assert len(set(mixed)) >= 5 and len(set(chrono)) >= 5
+    first_arc = [mixed[i] for i in range(0, 24, 3)]
+    assert max(abs(a - b) for a, b in zip(first_arc, first_arc[1:])) >= 16        # decades apart
+    descents = sum(b < a for a, b in zip(chrono, chrono[1:]))
+    assert descents <= 1                                                           # chronological: only the wrap-around goes back
+
+
+def test_arcs_mode_honours_blocked_favorites_cache_and_sunday_only():
+    src, prefs = _many_arcs()
+    now = datetime(2026, 11, 7, 10)
+    prefs = dict(prefs, blocked=[d.isoformat() for d in (date(1950, 3, 2), date(1950, 3, 3), date(1950, 3, 4))])
+    seen = {fc.current_strip({'comic_mode': 'arcs'}, now.replace(hour=h, minute=m), src, prefs=prefs).date
+            for h in range(24) for m in (0, 15, 30, 45)}
+    assert not any(d.year == 1950 for d in seen) and seen
+    only = dict(prefs, favorites=['1966-03-02'])
+    fav = [fc.current_strip({'comic_mode': 'arcs', 'comic_favorites_only': True}, now.replace(hour=h), src, prefs=only)
+           for h in range(24)]
+    assert {s.date for s in fav} == {date(1966, 3, 2)} and {s.total for s in fav} == {1}      # counter reflects what is eligible
+    assert fc.arc_strip({'comic_sunday_only': True}, now, src, prefs) is None
+    src.available = lambda: {date(1958, 3, 2)}                                                # only one strip actually cached
+    s = fc.current_strip({'comic_mode': 'arcs'}, now, src, prefs=prefs)
+    assert s.date == date(1958, 3, 2) and s.total == 1
+
+
+def test_filters_apply_before_nearest_day_search():
+    src = _src((1966, 11, 6), (1966, 11, 7), (1971, 11, 8))
+    now = datetime(2026, 11, 7, 10)                                   # a Saturday in 2026; Sunday strips are 1966-11-06
+    assert fc.current_strip({'comic_sunday_only': True}, now, src, prefs={}).date == date(1966, 11, 6)
+    prefs = {'favorites': ['1971-11-08']}
+    assert fc.current_strip({'comic_favorites_only': True}, now, src, prefs=prefs).date == date(1971, 11, 8)
+
+
+def test_tag_mode_falls_back_and_tolerates_bad_tags():
+    src = _src((1966, 11, 7))
+    now = datetime(2026, 11, 7, 10)
+    # tagged date is not in the source -> plain on-this-day strip instead of nothing
+    s = fc.current_strip({'comic_tag': 'halloween'}, now, src, prefs={'tags': {'1966-10-31': ['halloween']}})
+    assert s.date == date(1966, 11, 7)
+    # a malformed tags value does not raise; matching ignores case
+    assert fc.current_strip({'comic_tag': 'x'}, now, src, prefs={'tags': ['oops']}).date == date(1966, 11, 7)
+    src2 = _src((1966, 10, 31), (1970, 4, 5))
+    s = fc.current_strip({'comic_tag': 'HALLOWEEN'}, now, src2, prefs={'tags': {'1966-10-31': ['Halloween']}})
+    assert s.date == date(1966, 10, 31)
+
+
+def test_years_ago_singular_and_local_date():
+    assert ic._years_ago(date(1965, 11, 7), {'comic_today': date(2026, 11, 7)}) == 61
+    s = fc.Strip(date(1965, 11, 8), placeholder(3.5, 40), 0, 1, [1965])
+    seen = {}
+    from unittest.mock import patch as _patch
+    with _patch.object(ic, 'draw_comic_screen', lambda strip, cfg: seen.setdefault('cfg', cfg)), \
+            _patch.object(ic, 'current_strip', lambda *a, **k: s):
+        ic.comic_idle_image({'idle_comic_rotation': True}, datetime(2026, 11, 7, 23, 50), replay_running=lambda pid: False,
+                            load=lambda name: {}, all_blocks=True)
+    assert seen['cfg']['comic_today'] == date(2026, 11, 7)            # caption uses the display's local date
+
+
+def test_cache_report_tolerates_null_prefs(tmp_path):
+    import json
+    import sys
+    sys.path.insert(0, 'scripts')
+    import comic_cache_report as r
+    _write(tmp_path / 'peanuts' / '1966-10-31.png')
+    (tmp_path / 'peanuts' / 'prefs.json').write_text(json.dumps({'favorites': None, 'blocked': None, 'tags': None}))
+    assert 'favorites: 0, blocked: 0, tagged: 0' in r.report('peanuts', str(tmp_path))
+
+
+def test_local_source_available(tmp_path):
+    _write(tmp_path / 'peanuts' / '1966-10-31.png')
+    _write(tmp_path / 'peanuts' / '1999-02-29.png')
+    (tmp_path / 'peanuts' / 'readme.txt').write_text('x')
+    assert fc.LocalCacheSource('peanuts', str(tmp_path)).available() == {date(1966, 10, 31)}
+    assert fc.LocalCacheSource('nope', str(tmp_path)).available() == set()
+
+
+def test_counter_uses_hand_font_and_falls_back(monkeypatch):
+    f = ic._hand_font(14)
+    assert f is ic._hand_font(14) and f.getlength('Day 3 of 14') > 0
+    assert 'PatrickHand' in str(getattr(f, 'path', ''))
+    monkeypatch.setattr(ic, '_HAND_FONT', '/nonexistent/font.ttf')
+    ic._hand_cache.clear()
+    try:
+        assert ic._hand_font(14).getlength('Day 3 of 14') > 0         # panel font instead of a crash
+    finally:
+        ic._hand_cache.clear()

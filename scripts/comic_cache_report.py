@@ -26,8 +26,8 @@ def report(comic='peanuts', root=None):
     lines.append(f'calendar days with no strip: {len(empty)} of {len(per_day)}')
     if empty:
         lines.append('  ' + ', '.join(f'{m:02d}-{dd:02d}' for m, dd in empty[:40]) + (' ...' if len(empty) > 40 else ''))
-    lines.append(f"favorites: {len(prefs.get('favorites', []))}, blocked: {len(prefs.get('blocked', []))}, "
-                 f"tagged: {len(prefs.get('tags', {}))}")
+    lines.append(f"favorites: {len(prefs.get('favorites') or [])}, blocked: {len(prefs.get('blocked') or [])}, "
+                 f"tagged: {len(prefs.get('tags') or {})}")
     return '\n'.join(lines)
 
 
