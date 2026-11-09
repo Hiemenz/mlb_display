@@ -193,6 +193,11 @@ def _arc_index(prefs):
     return index
 
 
+def week_of_year(d):
+    """ISO week number 1-52 (the occasional week 53 folds into 52), so the year splits into 52 groups."""
+    return min(d.isocalendar()[1], 52)
+
+
 def _mixed_order(n):
     """Indices 0..n-1 in an order whose neighbours are far apart (a golden-ratio stride).
 
@@ -238,6 +243,9 @@ def arc_strip(config, now, source, prefs):
                   key=lambda ds: ds[0])
     if not arcs:
         return None
+    if config.get('comic_by_week', False):                  # only arcs that began in this week of the year
+        this_week = week_of_year(now.date())
+        arcs = [ds for ds in arcs if week_of_year(ds[0]) == this_week] or arcs
     if config.get('comic_arc_order', 'mixed') != 'chronological':
         arcs = [arcs[i] for i in _mixed_order(len(arcs))]
     playlist = [(k, i) for k, ds in enumerate(arcs) for i in range(len(ds))]
@@ -272,6 +280,8 @@ def current_strip(config, now, source=None, tag=None, prefs=None):
                                             week = same-ish year all week
                                             arc  = week, but only days inside a story arc
                                             (prefs.json 'arcs', built by scripts/build_comic_arcs.py)
+      comic_by_week                         split the archive by week of the year: strips (and, in
+                                            arcs mode, arcs) from this week number in any year
       comic_fallback_days N (default 3)     nearest day when today has none
       comic_tag / `tag`                     pick from prefs.json tagged dates
       comic_favorites_only                  restrict to prefs.json favorites (every mode)
@@ -296,6 +306,9 @@ def current_strip(config, now, source=None, tag=None, prefs=None):
         dates = sorted(d for d in _parse_dates(tags.keys())
                        if ok(d) and want in [str(t).lower() for t in tags.get(d.isoformat()) or []])
         note = str(tag).title() if dates else ''
+    if not dates and config.get('comic_by_week', False) and hasattr(source, 'available'):
+        this_week = week_of_year(now.date())                # every strip from this week of the year, any year
+        dates = sorted(d for d in source.available() if week_of_year(d) == this_week and ok(d))
     if not dates:
         window = max(0, int(config.get('comic_fallback_days', 3)))
         dates, note = _candidates(source, now, window, ok)

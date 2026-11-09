@@ -131,29 +131,75 @@ def snoopy_head(size):
     return small.point(lambda v: 255 if v > 150 else 0).convert('1')
 
 
-def qr_image(url, logo=True):
-    """1-bit QR code for `url` with its quiet zone, _QR_MODULE px per module.
+def snoopy_body(width, height):
+    """A small drawn Snoopy, whole body in profile facing left, `width` x `height` px, 1-bit.
 
-    With `logo`, a Snoopy head sits on a white plate in the middle. That needs the
-    highest error correction (the logo hides a few percent of the code, well inside
-    what level H can restore), so the code is a little bigger than a plain one.
+    Sitting up: head with long snout, black nose and droopy ear, a collar, round body,
+    front legs, an outstretched hind foot and a tail. One merged outline (white shapes
+    grown in black, then filled white), drawn at 8x and averaged down.
+    """
+    k = 8
+    W, H = width * k, height * k
+    img = Image.new('L', (W, H), 255)
+    d = ImageDraw.Draw(img)
+
+    def sx(v):
+        return round(v * W / 100)
+
+    def sy(v):
+        return round(v * H / 80)
+
+    def box(x0, y0, x1, y1, grow=0.0):
+        return [sx(x0 - grow), sy(y0 - grow), sx(x1 + grow), sy(y1 + grow)]
+
+    white = [(22, 2, 56, 34), (3, 15, 34, 33),                      # head, snout
+             (38, 30, 90, 66),                                       # body
+             (40, 52, 54, 78), (54, 56, 66, 78),                     # front legs
+             (66, 54, 98, 74)]                                       # hind leg and foot
+    for shape in white:
+        d.ellipse(box(*shape, grow=2.6), fill=0)
+    for shape in white:
+        d.ellipse(box(*shape), fill=255)
+    d.ellipse(box(0, 14, 13, 28), fill=0)                           # nose
+    d.polygon([(sx(44), sy(8)), (sx(56), sy(6)), (sx(62), sy(22)), (sx(58), sy(40)), (sx(49), sy(34))], fill=0)   # ear
+    d.ellipse(box(22, 9, 28, 16), fill=0)                           # eye
+    d.line([(sx(37), sy(28)), (sx(45), sy(37))], fill=0, width=max(3, W // 22))   # collar
+    d.line([(sx(88), sy(40)), (sx(96), sy(30)), (sx(99), sy(26))], fill=0, width=max(3, W // 28))  # tail
+    small = img.resize((width, height), Image.LANCZOS)
+    return small.point(lambda v: 255 if v > 150 else 0).convert('1')
+
+
+def qr_image(url, logo='head', module=None):
+    """1-bit QR code for `url` with its quiet zone, `module` px per module (default _QR_MODULE).
+
+    `logo` is 'head', 'body' (whole Snoopy in profile; 3 px modules by default, so a
+    bigger code) or falsy for a plain code. A logo hides part of the middle, so the code
+    uses the highest error correction (level H) and so comes out a little bigger.
     """
     import segno
+    logo = 'head' if logo is True else logo
+    module = module or (3 if logo == 'body' else _QR_MODULE)    # the whole body needs room to stay recognisable
     matrix = segno.make(url, error='h' if logo else 'l').matrix
     n = len(matrix) + 2 * _QR_QUIET
-    img = Image.new('1', (n * _QR_MODULE, n * _QR_MODULE), 1)
+    img = Image.new('1', (n * module, n * module), 1)
     draw = ImageDraw.Draw(img)
     for y, row in enumerate(matrix):
         for x, cell in enumerate(row):
             if cell:
-                px, py = (x + _QR_QUIET) * _QR_MODULE, (y + _QR_QUIET) * _QR_MODULE
-                draw.rectangle([px, py, px + _QR_MODULE - 1, py + _QR_MODULE - 1], fill=0)
+                px, py = (x + _QR_QUIET) * module, (y + _QR_QUIET) * module
+                draw.rectangle([px, py, px + module - 1, py + module - 1], fill=0)
     if logo:
-        side = max(14, round(img.size[0] * 0.30)) // 2 * 2            # even, ~9% of the code's area
-        plate = side + 4
-        c = img.size[0] // 2
-        draw.rectangle([c - plate // 2, c - plate // 2, c + plate // 2 - 1, c + plate // 2 - 1], fill=1)
-        img.paste(snoopy_head(side), (c - side // 2, c - side // 2))
+        size = img.size[0]
+        if logo == 'body':
+            lw = max(30, round(size * 0.33)) // 2 * 2
+            art = snoopy_body(lw, round(lw * 0.8))
+        else:
+            side = max(14, round(size * 0.30)) // 2 * 2                # ~9% of the code's area
+            art = snoopy_head(side)
+        plate = (art.size[0] + 4, art.size[1] + 4)
+        cx, cy = size // 2, size // 2
+        draw.rectangle([cx - plate[0] // 2, cy - plate[1] // 2, cx + plate[0] // 2 - 1, cy + plate[1] // 2 - 1], fill=1)
+        img.paste(art, (cx - art.size[0] // 2, cy - art.size[1] // 2))
     return img
 
 
@@ -234,7 +280,7 @@ def draw_comic_screen(strip, config):
     ax, ay, aw, ah = strip_layout(gray.size)
     qr = None
     if config.get('comic_qr', False) and (url := arc_url(config, strip)):
-        qr = qr_image(url, logo=config.get('comic_qr_logo', True))
+        qr = qr_image(url, logo=config.get('comic_qr_logo', True), module=config.get('comic_qr_module'))
     qr_xy = None
     if qr is not None:
         qw, qh = qr.size

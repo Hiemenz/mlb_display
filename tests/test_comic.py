@@ -934,3 +934,61 @@ def test_snoopy_head_has_ink_and_white_face_and_logo_sits_mid_code():
     assert with_logo.size[0] > plain.size[0]                              # level H needs a bigger code
     c = with_logo.size[0] // 2
     assert with_logo.convert('L').getpixel((c - 11, c - 11)) == 255       # white plate corner around the head
+
+
+# --- week-of-year split + body logo ----------------------------------------------------
+
+def test_week_of_year_folds_53_into_52():
+    assert fc.week_of_year(date(2026, 1, 5)) == 2
+    assert date(2020, 12, 31).isocalendar()[1] == 53 and fc.week_of_year(date(2020, 12, 31)) == 52
+
+
+class _WeekSource(FakeSource):
+    def available(self):
+        return set(self._dates)
+
+
+def test_by_week_shows_strips_from_this_week_number_in_any_year():
+    # 1960-01-26 and 1971-01-27 are week 4; 1960-03-01 and 1971-07-04 are not (2026-01-22 is week 4 too)
+    ds = [date(1960, 1, 26), date(1971, 1, 27), date(1960, 3, 1), date(1971, 7, 4)]
+    src = _WeekSource(ds, {d: placeholder(3.5, 40) for d in ds})
+    now = datetime(2026, 1, 22, 10)
+    assert fc.week_of_year(now.date()) == 4
+    seen = set()
+    for day in range(19, 26):
+        s = fc.current_strip({'comic_by_week': True}, datetime(2026, 1, day, 10), src, prefs={})
+        seen.add(s.date)
+    assert seen <= {date(1960, 1, 26), date(1971, 1, 27)} and seen
+    # a source with no listing, or no strips that week, falls back to the on-this-day strips
+    assert fc.current_strip({'comic_by_week': True}, datetime(2026, 7, 4, 10), src, prefs={}).date == date(1971, 7, 4)
+    plain = FakeSource([date(1960, 1, 22)], {date(1960, 1, 22): placeholder(3.5, 40)})
+    assert fc.current_strip({'comic_by_week': True}, now, plain, prefs={}).date == date(1960, 1, 22)
+
+
+def test_by_week_arcs_only_from_this_week_with_fallback():
+    src, prefs = _many_arcs()                       # six arcs, each starting March 2 (week 10 in those years)
+    in_week = {fc.current_strip({'comic_mode': 'arcs', 'comic_by_week': True}, datetime(2026, 3, 9, h, m), src, prefs=prefs).date
+               for h in range(24) for m in (0, 30)}
+    assert in_week
+    prefs['arcs'][0] = {'start': '1950-06-05', 'end': '1950-06-07', 'dates': ['1950-06-05', '1950-06-06', '1950-06-07']}
+    wk = fc.week_of_year(date(1958, 3, 2))
+    got = {fc.week_of_year(fc.current_strip({'comic_mode': 'arcs', 'comic_by_week': True}, datetime(2026, 3, 9, h), src, prefs=prefs).arc_start)
+           for h in range(24)}
+    assert got <= {wk, fc.week_of_year(date(1950, 6, 5))} and wk in got
+    only_june = {fc.week_of_year(fc.current_strip({'comic_mode': 'arcs', 'comic_by_week': True}, datetime(2026, 9, 14, h), src, prefs=prefs).arc_start)
+                 for h in range(24)}                # no arc began that week -> falls back to every arc
+    assert only_june
+
+
+def test_body_logo_is_bigger_code_and_scales_with_module():
+    body = ic.snoopy_body(40, 32)
+    assert body.size == (40, 32) and body.mode == '1'
+    px = list(body.convert('L').getdata())
+    assert 0.1 < px.count(0) / len(px) < 0.5
+    url = 'http://h:8080/arc/1970-01-05'
+    head, full = ic.qr_image(url, logo='head'), ic.qr_image(url, logo='body')
+    assert full.size[0] == head.size[0] // 2 * 3            # 3 px modules for the body, 2 for the head
+    assert ic.qr_image(url, logo='body', module=2).size == head.size
+    assert ic.qr_image(url, logo=False).size[0] < head.size[0]
+    cfg = {'comic_qr': True, 'comic_qr_host': 'h', 'comic_qr_logo': 'body', 'comic_qr_module': 2}
+    assert ic.draw_comic_screen(_arc_strip_obj(), cfg).size == (800, 480)
