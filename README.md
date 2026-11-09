@@ -613,8 +613,8 @@ MIT
 gitignored `data/comics/peanuts/YYYY-MM-DD.png` that `idle_comic_rotation` reads:
 
 ```
-uv run --group comics python scripts/build_comic_cache.py              # original single-row dailies
-uv run --group comics python scripts/build_comic_cache.py --daily-rows 2   # 2x2 dailies: fills more of the panel
+uv run --group comics python scripts/build_comic_cache.py              # biggest layout per strip (weekdays usually 2x2)
+uv run --group comics python scripts/build_comic_cache.py --daily-rows 1   # force single-row dailies (default picks the layout that fills the panel most)
 ```
 
 It downloads six ~620 MB shards one at a time (deleted after use), skips strips that already exist (so it

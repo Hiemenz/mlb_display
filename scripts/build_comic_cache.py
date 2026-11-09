@@ -55,9 +55,9 @@ def main():
     ap.add_argument('--out', default=os.path.join('data', 'comics', 'peanuts'))
     ap.add_argument('--shards-dir', help='use already-downloaded *.parquet shards from here')
     ap.add_argument('--max-shards', type=int, help='stop after N shards (testing)')
-    ap.add_argument('--daily-rows', type=int, choices=(1, 2), default=1,
-                    help='1 keeps weekday strips as one wide row (original look); 2 reflows them '
-                         'into a 2x2 block that fills much more of the e-ink panel')
+    ap.add_argument('--daily-rows', type=int, choices=(1, 2), default=None,
+                    help='default: pick whatever layout makes each strip largest on the panel '
+                         '(usually a 2x2 block for weekdays); 1 forces one wide row, 2 forces 2x2')
     ap.add_argument('--force', action='store_true', help='rebuild strips that already exist')
     args = ap.parse_args()
 
