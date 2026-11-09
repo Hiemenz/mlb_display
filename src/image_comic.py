@@ -196,7 +196,7 @@ def main(argv=None):
     ap.add_argument('out', help='output image path')
     ap.add_argument('--comic', default='peanuts')
     ap.add_argument('--tag')
-    ap.add_argument('--mode', choices=['day', 'week'], default='day')
+    ap.add_argument('--mode', choices=['day', 'week', 'arc'], default='day')
     args = ap.parse_args(argv)
     now = datetime.fromisoformat(args.date)
     config = {'comic_name': args.comic, 'comic_mode': args.mode, 'comic_today': now.date()}

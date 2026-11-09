@@ -470,3 +470,129 @@ def test_resolve_morning_comic_block(monkeypatch):
     monkeypatch.setattr(m, '_local_now', lambda c: datetime(2026, 6, 2, 8, 0))
     ctx = m._resolve_target_date(argparse.Namespace(date=None), cfg)
     assert ctx.mode_override == 'comic' and ctx.showing_previous_day is False
+
+
+# --- arc mode ----------------------------------------------------------------------
+
+def test_arc_mode_prefers_days_inside_an_arc():
+    src = _src(*[(y, 11, 7) for y in (1955, 1975, 1995)])
+    prefs = {'arcs': [{'start': '1975-11-05', 'end': '1975-11-09'}, {'start': 'x', 'end': 'y'}, {'bad': 1}]}
+    s = fc.current_strip({'comic_mode': 'arc'}, datetime(2026, 11, 7), src, prefs=prefs)
+    assert s.date.year == 1975 and s.note == 'Arc day 3 of 5'
+    s = fc.current_strip({'comic_mode': 'arc'}, datetime(2026, 11, 7), src, prefs={})
+    assert s.note == 'Day 6 of 7'
+
+
+# --- arc detection (comic_arcs) -------------------------------------------------------
+
+def _rows(day, chars, cap, n=3):
+    return [{'panel_name': f'{day}_{i:02d}', 'characters': chars, 'themes': [], 'caption': cap} for i in range(n)]
+
+
+def test_find_arcs_groups_linked_days_and_splits_unlinked():
+    import comic_arcs as ca
+    rows = []
+    for d in range(1, 6):                                   # Mon-Fri: Linus+Lucy blanket arc
+        rows += _rows(f'196503{d + 7:02d}', ['Linus van Pelt', 'Lucy van Pelt'], 'blanket attacks lucy')
+    for d in range(15, 18):                                 # an unrelated gag run, different characters
+        rows += _rows(f'196503{d}', ['Snoopy'], 'doghouse sleeping')
+    rows += _rows('19650320', ['Schroeder'], 'piano beethoven')   # lone strip
+    rows += _rows('19650319', ['Violet Gray'], 'mud pie')
+    rows += [{'panel_name': 'bad', 'characters': None}, {'panel_name': '19650230_00'}]   # ignored
+    strips = ca.group_strips(rows)
+    arcs = ca.find_arcs(strips)
+    assert any(len(a) >= 5 for a in arcs)
+    out = ca.arcs_to_json(arcs)
+    assert out[0]['days'] == len(arcs[0]) and out[0]['start'] <= out[0]['end']
+    assert ca.find_arcs({}) == []
+
+
+def test_find_arcs_splits_overlong_chain_and_skips_overlap():
+    import comic_arcs as ca
+    from datetime import date as D, timedelta
+    rows, d = [], D(1970, 1, 5)
+    for _ in range(40):                                     # one 40-day chain of identical strips
+        while d.weekday() == 6:
+            d += timedelta(days=1)
+        rows += _rows(d.strftime('%Y%m%d'), ['Snoopy', 'Woodstock'], 'flying ace red baron')
+        d += timedelta(days=1)
+    rows += _rows('19700106', ['Rerun van Pelt'], 'bicycle ride') + _rows('19700301', ['Marcie'], 'school')
+    arcs = ca.find_arcs(ca.group_strips(rows))
+    assert arcs and all(ca.MIN_LEN <= len(a) <= ca.MAX_LEN for a in arcs)
+    spans = [(a[0], a[-1]) for a in arcs]
+    assert all(b[0] > a[1] for a, b in zip(spans, spans[1:]))
+
+
+def test_build_comic_arcs_script(tmp_path, monkeypatch):
+    import json
+    import sys
+    sys.path.insert(0, 'scripts')
+    import build_comic_arcs as b
+    meta = tmp_path / 'm.jsonl'
+    rows = []
+    for d in range(8, 13):
+        rows += _rows(f'196503{d:02d}', ['Linus van Pelt', 'Lucy van Pelt'], 'blanket attacks lucy')
+    for d in range(1, 30):                                  # unrelated filler so IDF has a corpus
+        rows += _rows(f'197005{d:02d}', [f'Kid {d}'], f'topic{d} word{d}')
+    meta.write_text('\n'.join(json.dumps(r) for r in rows))
+    monkeypatch.setattr(b, 'COMICS_DIR', str(tmp_path))
+    (tmp_path / 'peanuts').mkdir()
+    (tmp_path / 'peanuts' / 'prefs.json').write_text('{"blocked": ["1960-01-01"]}')
+    monkeypatch.setattr(sys, 'argv', ['x', '--metadata', str(meta)])
+    b.main()
+    saved = json.loads((tmp_path / 'peanuts' / 'prefs.json').read_text())
+    assert saved['blocked'] == ['1960-01-01'] and saved['arcs']
+    (tmp_path / 'peanuts' / 'prefs.json').write_text('garbage')
+    b.main()
+    assert json.loads((tmp_path / 'peanuts' / 'prefs.json').read_text())['arcs']
+
+
+def test_range_file_and_rows(monkeypatch):
+    import sys
+    sys.path.insert(0, 'scripts')
+    import build_comic_arcs as b
+
+    class Resp:
+        def __init__(self, content=b'', headers=None, url='u'):
+            self.content, self.headers, self.url = content, headers or {}, url
+
+        def raise_for_status(self):
+            pass
+
+    data = b'0123456789'
+    monkeypatch.setattr(b.requests, 'head', lambda url, **k: Resp(headers={'Content-Length': '10'}, url='real'))
+
+    class Sess:
+        def get(self, url, headers=None, timeout=0):
+            lo, hi = headers['Range'].split('=')[1].split('-')
+            return Resp(data[int(lo):int(hi) + 1])
+
+    monkeypatch.setattr(b.requests, 'Session', Sess)
+    f = b.RangeFile('x')
+    assert f.seekable() and f.readable() and f.seek(2) == 2 and f.read(3) == b'234' and f.tell() == 5
+    assert f.seek(-2, 2) == 8 and f.read() == b'89' and f.read(5) == b''
+    f.seek(1)
+    assert f.seek(2, 1) == 3
+    buf = bytearray(4)
+    assert f.readinto(buf) == 4 and bytes(buf) == b'3456'
+    f.close()
+
+    import types
+    batch = types.SimpleNamespace(to_pylist=lambda: [{'panel_name': 'a'}])
+    pf = types.SimpleNamespace(iter_batches=lambda **k: [batch])
+    fake_pq = types.SimpleNamespace(ParquetFile=lambda fh: pf)
+    monkeypatch.setitem(sys.modules, 'pyarrow.parquet', fake_pq)
+    monkeypatch.setitem(sys.modules, 'pyarrow', types.SimpleNamespace(parquet=fake_pq))
+    monkeypatch.setattr(b.requests, 'get', lambda url, timeout=0: types.SimpleNamespace(json=lambda: ['u1', 'u2']))
+    assert list(b.metadata_rows()) == [{'panel_name': 'a'}, {'panel_name': 'a'}]
+
+
+def test_find_arcs_splits_a_linked_chain_across_a_long_gap():
+    import comic_arcs as ca
+    rows = []
+    for day in ('19691230', '19691231', '19700101', '19700105', '19700106', '19700107'):
+        rows += _rows(day, ['Linus van Pelt', 'Lucy van Pelt'], 'blanket attacks lucy')
+    for d in range(1, 30):
+        rows += _rows(f'197005{d:02d}', [f'Kid {d}'], f'topic{d} word{d}')
+    arcs = ca.find_arcs(ca.group_strips(rows))
+    assert [len(a) for a in arcs if a[0].year < 1971] == [3, 3]

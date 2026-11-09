@@ -147,6 +147,20 @@ def _week_anchor_year(years, today):
     return lo + int.from_bytes(digest[:4], 'big') % (hi - lo + 1)
 
 
+def _arc_index(prefs):
+    """{date: (day number, arc length)} for every day inside an arc in prefs['arcs'] (see comic_arcs)."""
+    index = {}
+    for arc in prefs.get('arcs') or []:
+        try:
+            start, end = date.fromisoformat(arc['start']), date.fromisoformat(arc['end'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        n = (end - start).days + 1
+        for k in range(n):
+            index[start + timedelta(days=k)] = (k + 1, n)
+    return index
+
+
 def _candidates(source, now, window, blocked):
     """(dates, note): this month/day's strips, else the nearest day within `window` days."""
     for offset in range(window + 1):
@@ -162,7 +176,10 @@ def current_strip(config, now, source=None, tag=None, prefs=None):
     """The Strip to show right now, or None when the source has nothing usable.
 
     Selection (all optional, via config):
-      comic_mode 'day' (default) | 'week'   week = same-ish year all week
+      comic_mode 'day' (default) | 'week' | 'arc'
+                                            week = same-ish year all week
+                                            arc  = week, but only days inside a story arc
+                                            (prefs.json 'arcs', built by scripts/build_comic_arcs.py)
       comic_fallback_days N (default 3)     nearest day when today has none
       comic_tag / `tag`                     pick from prefs.json tagged dates
       comic_favorites_only                  restrict to prefs.json favorites
@@ -191,11 +208,15 @@ def current_strip(config, now, source=None, tag=None, prefs=None):
     if not dates:
         return None
     years = [d.year for d in dates]
-    if config.get('comic_mode', 'day') == 'week' and not tag:
-        anchor = _week_anchor_year(years, now.date())
-        best = min(dates, key=lambda d: (abs(d.year - anchor), d))
+    mode = config.get('comic_mode', 'day')
+    if mode in ('week', 'arc') and not tag:
+        arcs = _arc_index(prefs) if mode == 'arc' else {}
+        pool = [d for d in dates if d in arcs] or dates
+        anchor = _week_anchor_year([d.year for d in pool], now.date())
+        best = min(pool, key=lambda d: (abs(d.year - anchor), d))
         start = dates.index(best)
-        note = note or f'Day {now.weekday() + 1} of 7'
+        if not note:
+            note = f'Arc day {arcs[best][0]} of {arcs[best][1]}' if best in arcs else f'Day {now.weekday() + 1} of 7'
     else:
         minutes = config.get('comic_rotate_minutes', config.get('comic_rotate_hours', 0) * 60)
         start = pick_index(len(dates), now.date(), now, minutes / 60)
