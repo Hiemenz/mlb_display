@@ -14,8 +14,9 @@ Edge cases handled here:
   * undecodable, tiny, or blank panels are dropped;
   * panels of slightly different sizes are normalised to a common height per row;
   * single-panel strips pass through unchanged;
-  * daily strips lay out in one row, Sunday strips (taller) in 2-3 rows chosen
-    to land near a target aspect, with a short last row centred;
+  * every strip is laid out in 1-3 rows, whichever makes it largest on the
+    comic screen (a four-panel daily usually becomes a 2x2 block), with a
+    short last row centred;
   * strips the dataset over-segmented (a detector that sliced word balloons and
     sub-panels out of the art) are rejected: more than MAX_DAILY_PANELS on a
     weekday or MAX_SUNDAY_PANELS on a Sunday can't be reassembled reliably;
@@ -32,8 +33,7 @@ from PIL import Image, ImageOps
 
 _NAME = re.compile(r'^(\d{8})_(\d{1,3})$')
 
-DAILY_ASPECT = 3.8      # four panels side by side
-SUNDAY_ASPECT = 1.8     # two or three rows of panels
+PANEL_W, PANEL_H = 776, 468   # room the comic screen gives a strip (see image_comic.strip_layout)
 MIN_PANEL_PX = 24       # anything smaller is a detection artefact
 GAP = 6                 # white gutter between panels
 MARGIN = 8              # white border around the finished strip
@@ -124,22 +124,26 @@ def row_sizes(n, rows):
     return [base + (1 if i < extra else 0) for i in range(rows)]
 
 
-def choose_rows(n, sizes, sunday):
-    """Number of rows (1-3) whose stitched aspect is closest to the target.
+def choose_rows(n, sizes, sunday=False):
+    """Number of rows (1-3) that makes the strip as large as possible on the panel.
+
+    Each candidate layout (panels split evenly across rows) has an estimated
+    aspect; the one that fills the largest area of the PANEL_W x PANEL_H box
+    (the comic screen minus its gutter) wins. Ties keep fewer rows. `sunday`
+    is accepted for callers' convenience; size alone decides.
 
     sizes: [(w, h)] of the panels; used to estimate the finished aspect.
     """
     if n <= 1:
         return 1
-    target = SUNDAY_ASPECT if sunday else DAILY_ASPECT
     avg_aspect = sum(w / h for w, h in sizes) / len(sizes)
-    best, best_err = 1, float('inf')
+    best, best_area = 1, 0.0
     for rows in range(1, min(3, n) + 1):
-        counts = row_sizes(n, rows)
-        aspect = max(counts) * avg_aspect / rows
-        err = abs(math.log(aspect / target))
-        if err < best_err - 1e-9:
-            best, best_err = rows, err
+        aspect = max(row_sizes(n, rows)) * avg_aspect / rows
+        width = min(PANEL_W, PANEL_H * aspect)
+        area = width * width / aspect
+        if area > best_area * 1.01:      # must win by 1% to add a row
+            best, best_area = rows, area
     return best
 
 
@@ -200,8 +204,8 @@ def skip_reason(day, n_panels):
 def build_strip(day, panels, daily_rows=None):
     """(image, meta) for one date's {index: bytes} panels.
 
-    daily_rows reflows weekday strips into that many rows (2 = a 2x2 block that
-    fills more of the panel; None keeps the original single row).
+    daily_rows forces that many rows for weekday strips (None = choose the
+    layout that comes out largest on screen).
     image is None when the date is skipped; meta['skipped'] then says why
     ('over-segmented (N panels)' or 'no usable panels'). Otherwise meta is
     {'panels': used, 'expected': highest index + 1, 'incomplete': bool}.
