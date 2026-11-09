@@ -116,6 +116,8 @@ def current_strip(config, now, source=None):
     """
     source = source or LocalCacheSource(config.get('comic_name', 'peanuts'))
     dates = sorted(source.dates_for(now.month, now.day))
+    if config.get('comic_sunday_only', False):
+        dates = [d for d in dates if d.weekday() == 6]   # Sunday strips: biggest, best-laid-out
     if not dates:
         return None
     start = pick_index(len(dates), now.date(), now, config.get('comic_rotate_hours', 0))

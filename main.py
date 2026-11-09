@@ -644,7 +644,7 @@ def _show_idle_screen(config, auto_open=False):
             print(f"Idle: comic render failed ({_ce}), falling back")
 
     # After the World Series there is nothing to show: replay a random past day.
-    if image is None and _offseason:
+    if image is None and _offseason and config.get('offseason_baseball', True):
         if _show_final_world_series(config, _series, auto_open=auto_open):
             return
         if maybe_start_replay(config, _now.strftime('%Y-%m-%d')):
