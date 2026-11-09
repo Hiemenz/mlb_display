@@ -135,14 +135,12 @@ def test_wide_strip_is_centred_vertically():
     assert abs((y - top) - (bot - (y + h))) <= 1
 
 
-def test_dark_mode_keeps_strip_positive_and_page_dark():
+def test_dark_mode_keeps_white_paper_no_black_edges():
     s = _strip(1.6)
-    x, y, w, h = ic.strip_layout(s.image.size)
     light = ic.draw_comic_screen(s, {})
     dark = ic.draw_comic_screen(s, {'dark_mode': True})
-    probe = (x + 30, y + 30)
-    assert light.getpixel(probe) == dark.getpixel(probe)
-    assert dark.getpixel((2, 100)) == 0 and light.getpixel((2, 100)) == 1
+    assert list(light.getdata()) == list(dark.getdata())
+    assert dark.getpixel((799, 100)) == 1 and dark.getpixel((400, 479)) == 1
 
 
 def test_single_strip_and_single_year_render():

@@ -16,13 +16,12 @@ as large as the panel allows.
     │O│   (wide strips are centred vertically)     │
     └─┴────────────────────────────────────────────┘
 
-Dark mode inverts the page but keeps the strip itself black ink on white paper.
+The page stays white paper with black ink in dark mode too (no black edges).
 """
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from fetch_comic import current_strip
 from image_assets import _get_font
-from image_idle import _invert_if_dark
 
 _W, _H = 800, 480
 _GUT = 28                    # left gutter: rotated caption + year timeline
@@ -139,11 +138,7 @@ def draw_comic_screen(strip, config):
         high += _vtext(img, count, small, gx, high + int(small.getlength(count)) + 2) + 8
     _timeline(draw, strip.years, strip.date.year, 13, high, low)
 
-    dark = config.get('dark_mode', False)
-    out = _invert_if_dark(img, dark)
-    if dark:   # keep the strip black ink on white paper, not a negative
-        out.paste(art, (ax, ay))
-    return out
+    return img    # always white paper, even at night: no black edges around the strip
 
 
 # --- idle-screen hook ----------------------------------------------------------
