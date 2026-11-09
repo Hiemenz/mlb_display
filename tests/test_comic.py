@@ -126,7 +126,7 @@ def test_strip_covers_majority_of_panel_for_sunday_style_strips():
     assert w * h > PANEL / 2
     # a 3.5:1 daily can't exceed the width limit (~49%), but spans the whole width
     _, _, w, h = ic.strip_layout((700, 200))
-    assert w >= 764 and w * h > PANEL * 0.42
+    assert w >= 776 and w * h > PANEL * 0.44
 
 
 def test_wide_strip_is_centred_vertically():
@@ -158,11 +158,11 @@ def test_timeline_spine_ticks_labels_and_marker():
     years = list(range(1950, 1991))
     ic._timeline(ImageDraw.Draw(img), years, 1970, 12, 0, 300)
     assert all(img.getpixel((12, y)) == 0 for y in range(10, 290))      # continuous spine
-    assert img.getpixel((14, 6)) == 0 and img.getpixel((19, 6)) == 0    # decade tick at oldest year
+    assert img.getpixel((14, 4)) == 0                                    # decade tick at oldest year
     left = img.crop((0, 0, 11, 300)).convert('L').point(lambda v: 255 - v)
     assert left.getbbox() is not None                                    # decade labels left of spine
-    mid = 6 + round(20 * 288 / 40)
-    assert img.getpixel((21, mid)) == 0 and img.getpixel((21, mid + 8)) == 1   # chunky current-year marker
+    mid = 4 + round(20 * 292 / 40)
+    assert img.getpixel((16, mid)) == 0 and img.getpixel((16, mid + 4)) == 1   # marker triangle base
 
 
 def test_timeline_single_year_and_dense_labels():

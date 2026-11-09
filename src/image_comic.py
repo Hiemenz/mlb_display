@@ -24,7 +24,7 @@ from fetch_comic import current_strip
 from image_assets import _get_font
 
 _W, _H = 800, 480
-_GUT = 28                    # left gutter: rotated caption + year timeline
+_GUT = 18                    # left gutter: rotated caption + year timeline
 _MARGIN = 2                  # gap above/beside the frame
 _TRIM_BELOW = 240            # pixels lighter than this are scan-border white
 _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -85,35 +85,34 @@ def _vtext(img, text, font, x, y_bottom):
 
 
 def _timeline(draw, years, current, cx, y0, y1):
-    """Year timeline down the gutter, oldest at the top, drawn bold enough to read on e-ink.
+    """Year timeline down the gutter, oldest at the top.
 
-    A 2px spine at x=cx (width 2); a 1px tick to its right for every available year,
-    a longer 2px tick at each decade with a small two-digit label to its left; and a
-    chunky marker (bar + arrowhead) across the spine at the current year.
+    A hairline spine at x=cx, a short tick to its right per available year (longer at
+    decades, which also get a tiny two-digit label on the left), and a filled triangle
+    pointing at the spine from the right for the current year.
     """
-    if y1 - y0 < 24:
+    if y1 - y0 < 20:
         return
     lo, hi = min(years), max(years)
-    y0, y1 = y0 + 6, y1 - 6          # room for the marker at either end
+    y0, y1 = y0 + 4, y1 - 4          # room for the marker at either end
 
     def ypos(yr):
         return (y0 + y1) // 2 if hi == lo else y0 + round((yr - lo) * (y1 - y0) / (hi - lo))
 
-    draw.rectangle([cx, ypos(lo) - 3, cx + 1, ypos(hi) + 3], fill=0)
-    font = _get_font(10)
+    draw.line([cx, ypos(lo) - 2, cx, ypos(hi) + 2], fill=0, width=1)
+    font = _get_font(8)
     last_label = -99
     for yr in years:
         y = ypos(yr)
         if yr % 10 == 0:
-            draw.rectangle([cx + 2, y, cx + 9, y + 1], fill=0)
-            if y - last_label >= 13:
-                draw.text((cx - 2, y + 1), f'{yr % 100:02d}', font=font, fill=0, anchor='rm')
+            draw.line([cx + 1, y, cx + 3, y], fill=0, width=1)
+            if y - last_label >= 10:
+                draw.text((cx - 2, y), f'{yr % 100:02d}', font=font, fill=0, anchor='rm')
                 last_label = y
         else:
-            draw.line([cx + 2, y, cx + 5, y], fill=0, width=1)
+            draw.line([cx + 1, y, cx + 1, y], fill=0, width=1)
     cy = ypos(current)
-    draw.rectangle([cx - 3, cy - 1, cx + 11, cy + 2], fill=0)
-    draw.polygon([(cx + 12, cy - 4), (cx + 12, cy + 5), (cx + 17, cy)], fill=0)
+    draw.polygon([(cx + 1, cy), (cx + 4, cy - 3), (cx + 4, cy + 3)], fill=0)
 
 
 def draw_comic_screen(strip, config):
@@ -136,7 +135,7 @@ def draw_comic_screen(strip, config):
     if strip.total > 1:
         count = f'{strip.position + 1} of {strip.total}'
         high += _vtext(img, count, small, gx, high + int(small.getlength(count)) + 2) + 8
-    _timeline(draw, strip.years, strip.date.year, 13, high, low)
+    _timeline(draw, strip.years, strip.date.year, _GUT - 6, high, low)
 
     return img    # always white paper, even at night: no black edges around the strip
 
