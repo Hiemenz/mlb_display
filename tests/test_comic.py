@@ -339,3 +339,134 @@ def test_rotate_minutes_steps_every_half_hour():
     b = fc.current_strip(cfg, datetime(2026, 11, 7, 10, 29), src).position
     c = fc.current_strip(cfg, datetime(2026, 11, 7, 10, 30), src).position
     assert a == b and c == (a + 1) % 4
+
+
+# --- selection features: fallback, week mode, prefs, tags ----------------------
+
+def _src(*ymd):
+    ds = [date(*x) for x in ymd]
+    return FakeSource(ds, {d: placeholder(3.5, 40) for d in ds})
+
+
+def test_fallback_to_nearest_day_with_note():
+    src = _src((1966, 11, 8), (1970, 11, 5))
+    s = fc.current_strip({}, datetime(2026, 11, 7, 10), src, prefs={})
+    assert s.date == date(1966, 11, 8) and s.note == 'Nearest day'
+
+
+def test_fallback_disabled_or_out_of_range():
+    src = _src((1966, 11, 20))
+    assert fc.current_strip({'comic_fallback_days': 0}, datetime(2026, 11, 7), src, prefs={}) is None
+    assert fc.current_strip({}, datetime(2026, 11, 7), src, prefs={}) is None
+
+
+def test_blocked_and_favorites_only():
+    src = _src((1960, 11, 7), (1970, 11, 7))
+    prefs = {'blocked': ['1960-11-07', 'bad'], 'favorites': ['1970-11-07']}
+    s = fc.current_strip({}, datetime(2026, 11, 7), src, prefs=prefs)
+    assert s.date == date(1970, 11, 7)
+    assert fc.current_strip({'comic_favorites_only': True}, datetime(2026, 11, 7), src, prefs=prefs).date.year == 1970
+    assert fc.current_strip({'comic_favorites_only': True}, datetime(2026, 11, 7), src,
+                            prefs={'favorites': []}) is None
+
+
+def test_week_mode_stays_near_one_year_all_week():
+    src = _src(*[(y, 11, d) for y in (1955, 1975, 1995) for d in range(2, 9)])
+    cfg = {'comic_mode': 'week'}
+    years = {fc.current_strip(cfg, datetime(2026, 11, d), src, prefs={}).date.year for d in range(2, 9)}
+    assert len(years) <= 2
+    s = fc.current_strip(cfg, datetime(2026, 11, 4), src, prefs={})   # a Wednesday
+    assert s.note == 'Day 3 of 7'
+
+
+def test_tag_selects_across_whole_archive():
+    src = _src((1966, 10, 31), (1970, 4, 5))
+    prefs = {'tags': {'1970-04-05': ['baseball'], '1966-10-31': ['halloween'], 'x': ['baseball']}}
+    s = fc.current_strip({'comic_tag': 'baseball'}, datetime(2026, 11, 7), src, prefs=prefs)
+    assert s.date == date(1970, 4, 5) and s.note == 'Baseball'
+    s = fc.current_strip({}, datetime(2026, 10, 31), src, tag='nope', prefs=prefs)
+    assert s.date == date(1966, 10, 31) and s.note == ''
+
+
+def test_unloadable_strips_skipped_in_week_mode():
+    src = FakeSource([date(1960, 11, 7), date(1970, 11, 7)], {date(1970, 11, 7): placeholder(3.5, 40)})
+    assert fc.current_strip({'comic_mode': 'week'}, datetime(2026, 11, 7), src, prefs={}).date.year == 1970
+    assert fc.current_strip({}, datetime(2026, 11, 7), FakeSource([date(1960, 11, 7)]), prefs={}) is None
+
+
+def test_load_prefs(tmp_path):
+    (tmp_path / 'peanuts').mkdir()
+    assert fc.load_prefs('peanuts', str(tmp_path)) == {}
+    (tmp_path / 'peanuts' / 'prefs.json').write_text('{"blocked": ["1960-01-01"]}')
+    assert fc.load_prefs('peanuts', str(tmp_path)) == {'blocked': ['1960-01-01']}
+    (tmp_path / 'peanuts' / 'prefs.json').write_text('[1]')
+    assert fc.load_prefs('peanuts', str(tmp_path)) == {}
+    (tmp_path / 'peanuts' / 'prefs.json').write_text('nope')
+    assert fc.load_prefs('peanuts', str(tmp_path)) == {}
+
+
+def test_caption_years_ago_and_note():
+    assert ic._years_ago(date(1966, 11, 8), {'comic_today': date(2026, 11, 7)}) == 59
+    assert ic._years_ago(date(1966, 11, 7), {'comic_today': date(2026, 11, 7)}) == 60
+    s = fc.Strip(date(1966, 11, 7), placeholder(3.5, 40), 0, 1, [1966], 'Day 2 of 7')
+    assert ic.draw_comic_screen(s, {'comic_today': date(2026, 11, 7)}).size == (800, 480)
+
+
+def test_cli_no_strip(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(ic, 'current_strip', lambda *a, **k: None)
+    assert ic.main(['2026-10-31', str(tmp_path / 'o.png')]) == 1
+    assert 'no strip' in capsys.readouterr().out
+
+
+def test_cli_success(tmp_path, monkeypatch):
+    s = fc.Strip(date(1966, 10, 31), placeholder(3.5, 40), 0, 1, [1966])
+    monkeypatch.setattr(ic, 'current_strip', lambda *a, **k: s)
+    out = tmp_path / 'o.png'
+    assert ic.main(['2026-10-31', str(out), '--mode', 'week']) == 0 and out.exists()
+
+
+def test_cache_report(tmp_path):
+    import sys
+    sys.path.insert(0, 'scripts')
+    import comic_cache_report as r
+    _write(tmp_path / 'peanuts' / '1966-10-31.png')
+    text = r.report('peanuts', str(tmp_path))
+    assert 'strips: 1' in text and 'years: 1966-1966' in text and 'no strip: 365 of 366' in text
+    assert 'strips: 0' in r.report('missing', str(tmp_path))
+
+
+# --- morning rotation ------------------------------------------------------------
+
+def test_morning_rotation_includes_comic_only_when_enabled():
+    import main as m
+    base = m.morning_rotation({'idle_comic_rotation': False})
+    assert 'comic' not in base
+    assert m.morning_rotation({'idle_comic_rotation': True})[-1] == 'comic'
+    assert 'comic' not in m.morning_rotation({'idle_comic_rotation': True, 'morning_alternate_comic': False})
+
+
+def test_show_morning_comic(monkeypatch, tmp_path):
+    import main as m
+    img = Image.new('1', (800, 480), 1)
+    sent = []
+    monkeypatch.setattr(m, '_REPO_ROOT', str(tmp_path))
+    monkeypatch.setattr(m, 'send_to_display', lambda p, force_full=False: sent.append(p))
+    monkeypatch.setattr(ic, 'comic_idle_image', lambda *a, **k: img)
+    assert m._show_morning_comic({'night_mode': False}, NOW) is True and sent
+    monkeypatch.setattr(ic, 'comic_idle_image', lambda *a, **k: None)
+    assert m._show_morning_comic({}, NOW) is False
+    monkeypatch.setattr(ic, 'comic_idle_image', lambda *a, **k: 1 / 0)
+    assert m._show_morning_comic({}, NOW) is False
+    monkeypatch.setattr(ic, 'comic_idle_image', lambda *a, **k: img)
+    monkeypatch.setattr(m, 'send_to_display', lambda *a, **k: 1 / 0)
+    assert m._show_morning_comic({}, NOW) is True
+
+
+def test_resolve_morning_comic_block(monkeypatch):
+    import argparse
+    import main as m
+    cfg = {'idle_comic_rotation': True, 'night_end': 7}
+    monkeypatch.setattr(m, 'morning_rotation', lambda c, now=None: ('comic',))
+    monkeypatch.setattr(m, '_local_now', lambda c: datetime(2026, 6, 2, 8, 0))
+    ctx = m._resolve_target_date(argparse.Namespace(date=None), cfg)
+    assert ctx.mode_override == 'comic' and ctx.showing_previous_day is False

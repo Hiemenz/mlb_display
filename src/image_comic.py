@@ -74,6 +74,13 @@ def _date_text(d):
     return f'{_MONTHS[d.month - 1]} {d.day}, {d.year}'
 
 
+def _years_ago(published, config):
+    """Whole years between the strip and the reference date (config['comic_today'] or today)."""
+    from datetime import date as _date
+    ref = config.get('comic_today') or _date.today()
+    return max(0, ref.year - published.year - ((ref.month, ref.day) < (published.month, published.day)))
+
+
 def _vtext(img, text, font, x, y_bottom):
     """Draw `text` rotated to read bottom-to-top, its bottom end at y_bottom. Returns its length."""
     w, h = int(font.getlength(text)) + 2, 14
@@ -130,7 +137,13 @@ def draw_comic_screen(strip, config):
     small = _get_font(12)
     gx = 2
     low = _H - 6
-    low -= _vtext(img, f'Originally published {_date_text(strip.date)}', small, gx, low) + 8
+    caption = _date_text(strip.date)
+    ago = _years_ago(strip.date, config)
+    if ago:
+        caption += f' · {ago} yrs ago'
+    if strip.note:
+        caption += f' · {strip.note}'
+    low -= _vtext(img, caption, small, gx, low) + 8
     high = 6
     if strip.total > 1:
         count = f'{strip.position + 1} of {strip.total}'
@@ -168,3 +181,33 @@ def comic_idle_image(config, now, source=None, replay_running=None, load=None, a
         return None
     print(f'Idle: showing comic strip from {strip.date} ({strip.position + 1}/{strip.total})')
     return draw_comic_screen(strip, config)
+
+
+def main(argv=None):
+    """CLI: render a strip for any date, e.g. `image_comic.py 1966-10-31 out.png`.
+
+    The date picks the month/day (and so that day's strips); --tag picks from
+    prefs.json tags instead. Handy for previewing without the idle rotation.
+    """
+    import argparse
+    from datetime import datetime
+    ap = argparse.ArgumentParser(description=main.__doc__)
+    ap.add_argument('date', help='YYYY-MM-DD')
+    ap.add_argument('out', help='output image path')
+    ap.add_argument('--comic', default='peanuts')
+    ap.add_argument('--tag')
+    ap.add_argument('--mode', choices=['day', 'week'], default='day')
+    args = ap.parse_args(argv)
+    now = datetime.fromisoformat(args.date)
+    config = {'comic_name': args.comic, 'comic_mode': args.mode, 'comic_today': now.date()}
+    strip = current_strip(config, now, tag=args.tag)
+    if strip is None:
+        print('no strip available')
+        return 1
+    draw_comic_screen(strip, config).save(args.out)
+    print(f'wrote {args.out} ({strip.date})')
+    return 0
+
+
+if __name__ == '__main__':   # pragma: no cover
+    raise SystemExit(main())

@@ -16,9 +16,10 @@ on this month/day rotating through the day every `comic_rotate_minutes` minutes.
 Each strip carries its original publication date.
 """
 import hashlib
+import json
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import NamedTuple, Optional, Protocol
 
 from PIL import Image
@@ -90,6 +91,7 @@ class Strip(NamedTuple):
     position: int             # 0-based position among this date's strips
     total: int                # how many strips exist for this month/day
     years: list               # publication years of all of them (sorted)
+    note: str = ''            # extra caption, e.g. 'Day 3 of 7' or 'Nearest day'
 
 
 def pick_index(count, today, now, rotate_hours=0):
@@ -109,23 +111,97 @@ def pick_index(count, today, now, rotate_hours=0):
     return int.from_bytes(digest[:4], 'big') % count
 
 
-def current_strip(config, now, source=None):
+def load_prefs(comic, root=None):
+    """Optional hand-edited data/comics/<comic>/prefs.json.
+
+        {"favorites": ["1966-10-31"], "blocked": ["1971-03-02"],
+         "tags": {"1966-10-31": ["halloween"], "1970-04-05": ["baseball"]}}
+
+    Missing or unreadable files mean no preferences. Dates are ISO strings.
+    """
+    path = os.path.join(root or COMICS_DIR, comic, 'prefs.json')
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _parse_dates(values):
+    out = set()
+    for v in values or []:
+        try:
+            out.add(date.fromisoformat(v))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _week_anchor_year(years, today):
+    """A year for this ISO week, stable all week, so consecutive days come from
+    nearby publication years (Peanuts story arcs run several days)."""
+    iso = today.isocalendar()
+    digest = hashlib.sha256(f'{iso[0]}-{iso[1]}'.encode()).digest()
+    lo, hi = min(years), max(years)
+    return lo + int.from_bytes(digest[:4], 'big') % (hi - lo + 1)
+
+
+def _candidates(source, now, window, blocked):
+    """(dates, note): this month/day's strips, else the nearest day within `window` days."""
+    for offset in range(window + 1):
+        for sign in ((1,) if offset == 0 else (1, -1)):
+            d = now.date() + timedelta(days=sign * offset)
+            dates = [x for x in source.dates_for(d.month, d.day) if x not in blocked]
+            if dates:
+                return sorted(dates), ('' if offset == 0 else 'Nearest day')
+    return [], ''
+
+
+def current_strip(config, now, source=None, tag=None, prefs=None):
     """The Strip to show right now, or None when the source has nothing usable.
 
-    Unreadable files are skipped, falling through to the next strip in order.
+    Selection (all optional, via config):
+      comic_mode 'day' (default) | 'week'   week = same-ish year all week
+      comic_fallback_days N (default 3)     nearest day when today has none
+      comic_tag / `tag`                     pick from prefs.json tagged dates
+      comic_favorites_only                  restrict to prefs.json favorites
+    Blocked dates (prefs.json) are never shown. Unreadable files are skipped,
+    falling through to the next strip in order.
     """
-    source = source or LocalCacheSource(config.get('comic_name', 'peanuts'))
-    dates = sorted(source.dates_for(now.month, now.day))
+    comic = config.get('comic_name', 'peanuts')
+    source = source or LocalCacheSource(comic)
+    prefs = load_prefs(comic) if prefs is None else prefs
+    blocked = _parse_dates(prefs.get('blocked'))
+    note = ''
+    tag = tag or config.get('comic_tag')
+    dates = []
+    if tag:
+        dates = sorted(_parse_dates((prefs.get('tags') or {}).keys()) - blocked)
+        dates = [d for d in dates if tag in (prefs['tags'].get(d.isoformat()) or [])]
+        note = tag.title() if dates else ''
+    if not dates:
+        window = max(0, int(config.get('comic_fallback_days', 3)))
+        dates, note = _candidates(source, now, window, blocked)
     if config.get('comic_sunday_only', False):
         dates = [d for d in dates if d.weekday() == 6]   # Sunday strips: biggest, best-laid-out
+    if config.get('comic_favorites_only', False):
+        favs = _parse_dates(prefs.get('favorites'))
+        dates = [d for d in dates if d in favs]
     if not dates:
         return None
-    minutes = config.get('comic_rotate_minutes', config.get('comic_rotate_hours', 0) * 60)
-    start = pick_index(len(dates), now.date(), now, minutes / 60)
     years = [d.year for d in dates]
+    if config.get('comic_mode', 'day') == 'week' and not tag:
+        anchor = _week_anchor_year(years, now.date())
+        best = min(dates, key=lambda d: (abs(d.year - anchor), d))
+        start = dates.index(best)
+        note = note or f'Day {now.weekday() + 1} of 7'
+    else:
+        minutes = config.get('comic_rotate_minutes', config.get('comic_rotate_hours', 0) * 60)
+        start = pick_index(len(dates), now.date(), now, minutes / 60)
     for offset in range(len(dates)):
         i = (start + offset) % len(dates)
         image = source.load(dates[i])
         if image is not None:
-            return Strip(dates[i], image, i, len(dates), years)
+            return Strip(dates[i], image, i, len(dates), years, note)
     return None
