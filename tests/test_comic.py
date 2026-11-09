@@ -253,3 +253,32 @@ def test_no_title_bar_and_border_is_trimmed():
     assert trimmed.size == (280 + 1 + 4, 120 + 1 + 4)
     assert ic.trim_border(Image.new('L', (50, 50), 255)).size == (50, 50)   # blank: untouched
     assert ic.strip_layout(trimmed.size)[2] > ic.strip_layout(art.size)[2] * 0.99
+
+
+def test_sunday_only_filters_to_sunday_strips():
+    sun, mon = date(1963, 11, 7), date(1971, 11, 7)
+    assert sun.weekday() == 3 and mon.weekday() == 6   # sanity: 1971-11-07 was a Sunday
+    ds = [sun, mon]
+    src = FakeSource(ds, {d: placeholder(1.8) for d in ds})
+    assert fc.current_strip({'comic_sunday_only': True}, NOW, src).date == mon
+    assert fc.current_strip({'comic_sunday_only': True}, NOW,
+                            FakeSource([sun], {sun: placeholder(1.8)})) is None
+    assert fc.current_strip({}, NOW, FakeSource([sun], {sun: placeholder(1.8)})).date == sun
+
+
+def test_offseason_baseball_off_skips_final_and_replay():
+    import main
+    cfg = {'timezone': 'UTC', 'offseason_baseball': False}
+    with patch('main.datetime') as dt, \
+         patch('main.load_json_file', return_value=None), \
+         patch('main.send_to_display'), \
+         patch('refresh_tracker.needs_full_refresh', return_value=True), \
+         patch('PIL.Image.Image.save'), \
+         patch('offseason_replay.is_offseason', return_value=True), \
+         patch('offseason_replay.maybe_start_replay') as replay, \
+         patch('main._show_final_world_series') as final, \
+         patch('image_free_agents.free_agent_idle_image', return_value=None), \
+         patch('image_free_agents.has_moves', return_value=False):
+        dt.now.return_value = NOW
+        main._show_idle_screen(cfg)
+    assert not replay.called and not final.called

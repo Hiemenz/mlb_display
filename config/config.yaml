@@ -311,6 +311,12 @@ replay_delay_seconds: 20
 # offseason_replays_per_day: how many replays to start each day (then idle screen).
 # offseason_replay_step_minutes / offseason_replay_delay_seconds: pacing.
 offseason_replay: true
+# offseason_baseball: false skips all baseball (final World Series screen and
+# replays) in the off-season, leaving moves, comics and the regular idle screens.
+offseason_baseball: false
+# Peanuts: only show strips that originally ran on a Sunday (the big ones).
+idle_comic_rotation: true
+comic_sunday_only: true
 offseason_replays_per_day: 2
 offseason_replay_step_minutes: 5
 offseason_replay_delay_seconds: 30
