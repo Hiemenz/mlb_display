@@ -29,8 +29,11 @@ uv run mypy
   - `scan` (from `code-quality.yml`)
 - PR reviews: `required_approving_review_count: 0` — checks gate merges, not human review.
 - Conversation resolution required before merge.
-- Repo settings (same file): `allow_auto_merge: true`, `delete_branch_on_merge: true` —
-  a PR's head branch is deleted on merge.
+- Repo settings (same file): `allow_auto_merge: true`, `delete_branch_on_merge: true`.
+  A merge made with `GITHUB_TOKEN` skips that auto-delete **and triggers no workflows**
+  (no `ci.yml` / `docs-update.yml` push run on `main`). `auto-merge.yml` therefore uses
+  the `AUTO_MERGE_TOKEN` secret (a personal token) when set, else `GITHUB_TOKEN`; and
+  `delete-merged-branch.yml` cleans up head branches hourly either way.
 - Because of `strict: true`, once one PR merges every other open PR is BEHIND and its
   auto-merge waits. Bring it up to date with
   `gh api -X PUT repos/Hiemenz/mlb_display/pulls/<N>/update-branch` (the installed `gh`
@@ -49,6 +52,9 @@ uv run mypy
   checks pass. A PR opened as non-draft is armed at once, so always open drafts. **Do not
   mark a draft PR ready-for-review without confirming with the user first** — doing so
   triggers auto-merge immediately.
+- **`delete-merged-branch.yml`** — hourly, on manual run, and on PR closed as merged:
+  deletes the head branch of each PR merged in the last 24 h (same repo only, never
+  `main`, only if the branch still points at the merged commit).
 - **`docs-update.yml`** — nightly (08:00 UTC), manual (`workflow_dispatch`), and on push to
   `main` touching `src/image_box.py`, `src/image_grid.py`, `src/image_standings.py`,
   `src/image_featured.py`, `src/image_assets.py`, `src/image_utils.py`,
