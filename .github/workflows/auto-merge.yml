@@ -15,4 +15,7 @@ jobs:
       - name: Enable auto-merge
         run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A personal token makes the merge run as the user, so GitHub's delete-branch-on-merge
+          # and push-triggered workflows (ci.yml on main, docs-update.yml) fire; a merge made
+          # with GITHUB_TOKEN triggers neither. Falls back to GITHUB_TOKEN when unset.
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN || secrets.GITHUB_TOKEN }}

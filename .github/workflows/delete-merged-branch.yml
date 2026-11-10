@@ -1,0 +1,45 @@
+name: Delete merged branches
+
+# GitHub's "automatically delete head branches" setting does not fire when the merge is
+# performed with GITHUB_TOKEN, and that merge doesn't trigger `pull_request: closed` runs
+# either. auto-merge.yml arms auto-merge with GITHUB_TOKEN unless the AUTO_MERGE_TOKEN
+# secret is set, so this also runs hourly. It deletes the head branch of every PR merged in
+# the last 24 hours, but only while the branch still points at the commit that merged (so
+# later pushes to a reused branch name are never lost).
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: delete-merged-branches
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Delete head branches of recently merged PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh pr list --repo "$REPO" --state merged --limit 100 --search "merged:>=$since" \
+            --json headRefName,headRefOid,isCrossRepository \
+            -q '.[] | select(.isCrossRepository | not) | "\(.headRefName) \(.headRefOid)"' |
+          while read -r ref sha; do
+            [ "$ref" = main ] && continue
+            tip=$(gh api "repos/$REPO/git/ref/heads/$ref" -q .object.sha 2>/dev/null) || continue
+            if [ "$tip" = "$sha" ]; then
+              gh api -X DELETE "repos/$REPO/git/refs/heads/$ref" && echo "deleted $ref"
+            else
+              echo "kept $ref (new commits since merge)"
+            fi
+          done
