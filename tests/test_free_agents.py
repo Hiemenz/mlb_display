@@ -467,3 +467,12 @@ def test_has_moves_respects_toggles():
     assert not ifa.has_moves({}, load=_store())
     with patch('util.load_json_file', return_value={'signings': [SIGNING]}):
         assert ifa.has_moves({})
+
+
+def test_idle_blocks_alternate_every_15_minutes_when_configured():
+    fresh = {'free_agents.json': {'fetched_at': 9e12, 'signings': [SIGNING]}, 'teams.json': TEAMS}
+    kw = dict(load=_store(**fresh), replay_running=lambda pid: False)
+    cfg = dict(SINGLE, free_agent_idle_blocks=[0, 2])
+    shown = [m for m in (0, 15, 30, 45)
+             if ifa.free_agent_idle_image(cfg, datetime(2026, 11, 20, 9, m), **kw) is not None]
+    assert shown == [0, 30]
