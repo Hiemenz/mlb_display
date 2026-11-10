@@ -120,6 +120,36 @@ def _date_label(date_str):
         return ''
 
 
+def _seen_time(signing):
+    """'3:42 PM' when this move was first spotted on the day it happened, else ''.
+
+    MLB's transactions API gives only a date, so the clock time is when this scoreboard first
+    polled the move (`seen_at`). It is only a good stand-in when that is the same calendar day;
+    moves already in the first poll's backlog have no `seen_at` and show the date alone.
+    """
+    seen = signing.get('seen_at')
+    if not seen:
+        return ''
+    try:
+        when = datetime.fromtimestamp(seen)
+    except (OverflowError, OSError, ValueError, TypeError):
+        return ''
+    if when.strftime('%Y-%m-%d') != signing.get('date'):
+        return ''
+    return when.strftime('%-I:%M %p')
+
+
+def _when_label(signing, short=False):
+    """'NOV 8' (or 'NOV 8 3:42P' with `short`, 'NOV 8 · SEEN 3:42 PM' otherwise)."""
+    day = _date_label(signing.get('date'))
+    clock = _seen_time(signing)
+    if not clock:
+        return day
+    if short:
+        return f"{day} {clock.replace(' AM', 'A').replace(' PM', 'P')}".strip()
+    return f'{day} · SEEN {clock}'.strip(' ·')
+
+
 def _abbr(team_data, team_id):
     return ((team_data or {}).get('team_abbreviation') or {}).get(str(team_id), '')
 
@@ -240,9 +270,9 @@ def draw_free_agent_screen(signing, team_data, config, page=None, total=None, br
         draw.rounded_rectangle([col_x, py, col_x + w, py + 26], 13, fill=0)
         draw.text((col_x + 11, py + 3), label, font=pill_font, fill=255)
         px_end = col_x + w + 12
-    date = _date_label(signing.get('date'))
+    date = _when_label(signing)
     if date:
-        draw.text((px_end, py + 3), f'{_verb(signing)} {date}', font=pill_font, fill=0)
+        draw.text((px_end, py + 3), f'{_verb(signing)} {date}', font=_fit_font(f'{_verb(signing)} {date}', _W - 30 - px_end, 17, 12), fill=0)
 
     # FROM  ──▶  TO medallions (or one medallion for a re-signing)
     r = 66
@@ -367,7 +397,10 @@ def _draw_grid_cell(img, draw, x, y, signing, team_data, cw=_CELL_W, ch=_CELL_H)
     _bold_centered(draw, mid, by0 + (bh - tf.size) // 2 - 1, terms, tf, 255)
     old_a, new_a = _abbr(team_data, old_id), _abbr(team_data, new_id)
     sub = f'{old_a} > {new_a}' if old_a and new_a and old_a != new_a else signing.get('position', '')
-    _centered(draw, mid, by0 + bh + S(4), sub, _get_font(max(11, S(11))))
+    when = _when_label(signing, short=True)
+    if when:
+        sub = f'{sub} · {when}' if sub else when
+    _centered(draw, mid, by0 + bh + S(4), sub, _fit_font(sub, W - S(14), max(11, S(11)), 8))
 
 
 # Dense tier: 5 columns x 3-4 rows of compact cards (up to 20 per page) once there
