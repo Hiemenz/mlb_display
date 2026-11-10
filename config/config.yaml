@@ -315,8 +315,11 @@ offseason_replay: true
 # replays) in the off-season, leaving moves, comics and the regular idle screens.
 offseason_baseball: false
 # Peanuts: Sundays are all comic; other off-season days show it when there are no
-# signings/trades, else it alternates with them every 30 minutes.
+# signings/trades, else it alternates with them every 15 minutes (moves in blocks
+# 0 and 2, comic in 1 and 3; a BREAKING move still takes every block).
 idle_comic_rotation: true
+free_agent_idle_blocks: [0, 2]
+comic_idle_blocks: [1, 3]
 comic_sunday_only: false
 # comic_mode: arcs plays whole story arcs (prefs.json 'arcs') strip by strip, counter
 # 'Day x of N'; day = every strip for today's date across years, counter 'x of N'.
