@@ -52,8 +52,8 @@ _PAGE = """<!doctype html>
 </main></body></html>"""
 
 
-def _comic_name():
-    name = request.args.get('comic', 'peanuts')
+def _comic_name(name=None):
+    name = request.args.get('comic', 'peanuts') if name is None else name
     if not _NAME_RE.match(name):
         abort(400)
     return name
@@ -66,10 +66,24 @@ def _parse_day(text):
         abort(404)
 
 
+@comic_bp.route('/a/<code>')
+@comic_bp.route('/a/<code>/<comic>')
+def short_arc(code, comic='peanuts'):
+    """The QR code's link: `/a/DK0` (or `/a/DK0/garfield`) is the arc starting on the date `arc_code`
+    encoded. Case-insensitive, because the code is printed upper-case."""
+    start = fc.arc_start_from_code(code)
+    if start is None:
+        abort(404)
+    return _arc_response(_comic_name(comic.lower()), start)
+
+
 @comic_bp.route('/arc/<start>')
 def arc_page(start):
-    comic = _comic_name()
-    found = fc.find_arc(fc.load_prefs(comic), _parse_day(start))
+    return _arc_response(_comic_name(), _parse_day(start))
+
+
+def _arc_response(comic, start):
+    found = fc.find_arc(fc.load_prefs(comic), start)
     if found is None:
         abort(404)
     ds, prev, nxt = found

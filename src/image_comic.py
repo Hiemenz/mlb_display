@@ -20,7 +20,7 @@ The page stays white paper with black ink in dark mode too (no black edges).
 """
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
-from fetch_comic import current_strip
+from fetch_comic import arc_code, current_strip
 import os
 
 from image_assets import _get_font, picdir
@@ -74,8 +74,9 @@ def strip_layout(size, reserve_right=0):
 
 # --- QR code to the arc's web page ----------------------------------------------------
 
-_QR_MODULE = 2               # px per module (a short URL fits a 25-29 module code)
+_QR_MODULE = 3               # px per module (the short link fits a 29-module code, ~100 px with its quiet zone)
 _QR_QUIET = 2                # white modules around it
+_LOGO_FRAC = 0.20            # head side as a fraction of the code width (a small code tolerates less covered)
 
 
 def get_lan_ip():
@@ -92,14 +93,23 @@ def get_lan_ip():
 
 
 def arc_url(config, strip):
-    """Where the QR code points: this strip's arc on the config server, or None when there is no arc."""
+    """Where the QR code points: this strip's arc on the config server, or None when there is no arc.
+
+    The link is short and all upper-case (`HTTP://HOST:8080/A/DK0`, plus `/GARFIELD` for other comics), so the QR code can use its
+    denser alphanumeric mode and stays small. Scheme and host are case-insensitive and the server
+    lower-cases the rest. `DK0` is `arc_code` of the arc's first day.
+    """
     if strip.arc_start is None:
         return None
     host = config.get('comic_qr_host') or get_lan_ip()
     port = config.get('config_server_port', 8080)
     comic = config.get('comic_name', 'peanuts')
-    query = '' if comic == 'peanuts' else f'?comic={comic}'
-    return f'http://{host}:{port}/arc/{strip.arc_start.isoformat()}{query}'
+    try:
+        path = f'/a/{arc_code(strip.arc_start)}' + ('' if comic == 'peanuts' else f'/{comic}')
+    except ValueError:                                  # before 1950: no short code, use the date
+        query = '' if comic == 'peanuts' else f'?comic={comic}'
+        return f'http://{host}:{port}/arc/{strip.arc_start.isoformat()}{query}'
+    return f'http://{host}:{port}{path}'.upper()
 
 
 def snoopy_head(size):
@@ -194,7 +204,7 @@ def qr_image(url, logo='head', module=None):
             lw = max(30, round(size * 0.33)) // 2 * 2
             art = snoopy_body(lw, round(lw * 0.8))
         else:
-            side = max(14, round(size * 0.30)) // 2 * 2                # ~9% of the code's area
+            side = max(14, round(size * _LOGO_FRAC)) // 2 * 2                # ~4% of the code area
             art = snoopy_head(side)
         plate = (art.size[0] + 4, art.size[1] + 4)
         cx, cy = size // 2, size // 2

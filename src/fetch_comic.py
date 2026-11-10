@@ -174,6 +174,38 @@ def arc_dates(arc):
     return [d for d in days if d.weekday() != 6]
 
 
+_CODE_EPOCH = _Date(1950, 1, 1)
+_B36 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+
+def arc_code(start):
+    """A 3-4 character base-36 code for an arc's start date (days since 1950-01-01), as in 'DK0'.
+
+    It depends only on the date, so a printed or displayed code keeps working when the arcs are
+    rebuilt. It is upper-case alphanumeric on purpose: a QR code can then use its denser mode.
+    """
+    n = (start - _CODE_EPOCH).days
+    if n < 0:
+        raise ValueError('arc starts before 1950')
+    out = ''
+    while True:
+        n, r = divmod(n, 36)
+        out = _B36[r] + out
+        if not n:
+            return out
+
+
+def arc_start_from_code(code):
+    """The start date `arc_code` encoded, or None when `code` is not a valid code."""
+    code = (code or '').upper()
+    if not 1 <= len(code) <= 5 or any(c not in _B36 for c in code):
+        return None
+    try:
+        return _CODE_EPOCH + timedelta(days=int(code, 36))
+    except OverflowError:
+        return None
+
+
 def find_arc(prefs, start):
     """(strip dates, previous arc start, next arc start) for the arc starting on `start`, or None."""
     arcs = sorted(((ds[0], ds) for ds in (arc_dates(a) for a in prefs.get('arcs') or []) if ds), key=lambda t: t[0])

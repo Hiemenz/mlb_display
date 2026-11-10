@@ -681,11 +681,15 @@ def _arc_strip_obj(aspect=3.5, arc_start=date(1970, 1, 5)):
 def test_arc_url_variants(monkeypatch):
     s = _arc_strip_obj()
     cfg = {'comic_qr_host': 'pi.local', 'config_server_port': 9000}
-    assert ic.arc_url(cfg, s) == 'http://pi.local:9000/arc/1970-01-05'
-    assert ic.arc_url({'comic_qr_host': 'h', 'comic_name': 'garfield'}, s) == 'http://h:8080/arc/1970-01-05?comic=garfield'
+    code = fc.arc_code(date(1970, 1, 5))
+    assert ic.arc_url(cfg, s) == f'HTTP://PI.LOCAL:9000/A/{code}'
+    assert ic.arc_url({'comic_qr_host': 'h', 'comic_name': 'garfield'}, s) == f'HTTP://H:8080/A/{code}/GARFIELD'
+    old = s._replace(arc_start=date(1949, 12, 31))      # no short code before 1950: fall back to the date link
+    assert ic.arc_url({'comic_qr_host': 'h', 'comic_name': 'garfield'}, old) == 'http://h:8080/arc/1949-12-31?comic=garfield'
+    assert ic.arc_url(cfg, old) == 'http://pi.local:9000/arc/1949-12-31'
     assert ic.arc_url(cfg, s._replace(arc_start=None)) is None
     monkeypatch.setattr(ic, 'get_lan_ip', lambda: '192.0.2.1')
-    assert ic.arc_url({}, s).startswith('http://192.0.2.1:8080/')
+    assert ic.arc_url({}, s).startswith('HTTP://192.0.2.1:8080/')
 
 
 def test_get_lan_ip_real_and_failing(monkeypatch):
@@ -715,7 +719,7 @@ def test_qr_image_is_square_and_has_quiet_zone():
 
 def test_qr_drawn_under_wide_strip_and_beside_tall_strip():
     cfg = {'comic_qr': True, 'comic_qr_host': '192.0.2.1'}
-    for aspect in (3.6, 1.2):                                   # wide strip, then a tall (height-filling) one
+    for aspect in (3.6, 1.2, 1.7):                              # wide strip, tall (side margin), then one that fills both ways
         s = _arc_strip_obj(aspect)
         with_qr = ic.draw_comic_screen(s, cfg)
         without = ic.draw_comic_screen(s, {})
@@ -763,6 +767,38 @@ def test_arc_page_lists_strips_in_order(tmp_path, monkeypatch):
     assert html.index('1970-01-05') < html.index('1970-01-06')
     assert 'Next arc' in html and 'Previous arc' not in html
     assert 'Previous arc' in c.get('/arc/1971-02-01').get_data(as_text=True)
+
+
+def test_arc_code_round_trip_and_invalid():
+    for d in (date(1950, 10, 2), date(1970, 1, 5), date(1987, 11, 25), date(2000, 2, 13), date(2026, 11, 9)):
+        code = fc.arc_code(d)
+        assert code == code.upper() and 1 <= len(code) <= 4
+        assert fc.arc_start_from_code(code) == d and fc.arc_start_from_code(code.lower()) == d
+    assert fc.arc_code(date(1950, 1, 1)) == '0'
+    with pytest.raises(ValueError):
+        fc.arc_code(date(1949, 12, 31))
+    for bad in ('', None, '!!', 'ABCDEF', 'a b', 'ZZZZZ'):    # empty, junk, too long, past the max date
+        assert fc.arc_start_from_code(bad) is None
+
+
+def test_short_arc_route_matches_long_page(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    code = fc.arc_code(date(1970, 1, 5))
+    long_html = c.get('/arc/1970-01-05').get_data(as_text=True)
+    for url in (f'/a/{code}', f'/a/{code.lower()}', f'/a/{code}/PEANUTS'):
+        r = c.get(url)
+        assert r.status_code == 200 and r.get_data(as_text=True) == long_html
+    assert c.get(f'/a/{fc.arc_code(date(1999, 1, 1))}').status_code == 404    # not an arc start
+    assert c.get('/a/!!').status_code == 404
+    assert c.get(f'/a/{code}/..%2Fetc').status_code in (400, 404)
+    assert c.get(f'/a/{code}/GARFIELD').status_code == 404                     # no such comic: no prefs
+
+
+def test_qr_for_arc_url_is_alphanumeric_and_compact():
+    import segno
+    url = ic.arc_url({'comic_qr_host': '192.168.100.123'}, _arc_strip_obj(arc_start=date(1987, 11, 25)))
+    assert segno.make(url, error='h').mode == 'alphanumeric'
+    assert ic.qr_image(url).size[0] == (29 + 4) * 3        # 29 modules + quiet zone at 3 px
 
 
 def test_arc_page_errors(tmp_path, monkeypatch):
@@ -987,8 +1023,8 @@ def test_body_logo_is_bigger_code_and_scales_with_module():
     assert 0.1 < px.count(0) / len(px) < 0.5
     url = 'http://h:8080/arc/1970-01-05'
     head, full = ic.qr_image(url, logo='head'), ic.qr_image(url, logo='body')
-    assert full.size[0] == head.size[0] // 2 * 3            # 3 px modules for the body, 2 for the head
-    assert ic.qr_image(url, logo='body', module=2).size == head.size
+    assert full.size == head.size                            # both default to 3 px modules
+    assert ic.qr_image(url, logo='body', module=2).size[0] == head.size[0] // 3 * 2
     assert ic.qr_image(url, logo=False).size[0] < head.size[0]
     cfg = {'comic_qr': True, 'comic_qr_host': 'h', 'comic_qr_logo': 'body', 'comic_qr_module': 2}
     assert ic.draw_comic_screen(_arc_strip_obj(), cfg).size == (800, 480)
