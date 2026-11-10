@@ -511,16 +511,86 @@ def test_find_arcs_splits_overlong_chain_and_skips_overlap():
     import comic_arcs as ca
     from datetime import date as D
     rows, d = [], D(1970, 1, 5)
-    for _ in range(40):                                     # one 40-day chain of identical strips
+    for _ in range(60):                                     # one 60-day chain of identical strips (> MAX_LEN)
         while d.weekday() == 6:
             d += timedelta(days=1)
         rows += _rows(d.strftime('%Y%m%d'), ['Snoopy', 'Woodstock'], 'flying ace red baron')
         d += timedelta(days=1)
     rows += _rows('19700106', ['Rerun van Pelt'], 'bicycle ride') + _rows('19700301', ['Marcie'], 'school')
     arcs = ca.find_arcs(ca.group_strips(rows))
-    assert arcs and all(ca.MIN_LEN <= len(a) <= ca.MAX_LEN for a in arcs)
+    assert len(arcs) >= 2 and all(ca.MIN_LEN <= len(a) <= ca.MAX_LEN for a in arcs)
     spans = [(a[0], a[-1]) for a in arcs]
     assert all(b[0] > a[1] for a, b in zip(spans, spans[1:]))
+
+
+def test_find_arcs_keeps_a_seven_week_storyline_whole():
+    """The strip's longest storyline ran almost seven weeks (Sep 13 - Oct 28 1976): no 14-day cap."""
+    import comic_arcs as ca
+    from datetime import date as D
+    rows, d, n = [], D(1976, 9, 13), 0
+    while n < 38:
+        if d.weekday() != 6:
+            rows += _rows(d.strftime('%Y%m%d'), ['Peppermint Patty', 'Marcie'], 'ace obedience school diploma')
+            n += 1
+        d += timedelta(days=1)
+    for k in range(1, 29):                                  # unrelated filler so IDF has a corpus
+        rows += _rows(f'198005{k:02d}', [f'Kid {k}'], f'topic{k} word{k}')
+    arcs = ca.find_arcs(ca.group_strips(rows))
+    assert [len(a) for a in arcs if a[0].year == 1976] == [38]
+
+
+def test_find_arcs_pooled_window_bridges_one_noisy_day():
+    """One mis-tagged day mid-storyline no longer cuts it: each gap compares several days a side."""
+    import comic_arcs as ca
+    rows = []
+    for day in ('19650308', '19650309', '19650311', '19650312', '19650313'):
+        rows += _rows(day, ['Linus van Pelt', 'Lucy van Pelt'], 'blanket attacks lucy')
+    rows += _rows('19650310', ['Snoopy'], 'doghouse supper')    # Wednesday's tags/caption miss the arc
+    for k in range(1, 29):
+        rows += _rows(f'197005{k:02d}', [f'Kid {k}'], f'topic{k} word{k}')
+    arcs = ca.find_arcs(ca.group_strips(rows))
+    assert [len(a) for a in arcs if a[0].year == 1965] == [6]
+
+
+def test_score_arcs_against_known_storylines():
+    import comic_arcs as ca
+    from datetime import date as D
+    days = [D(1976, 9, 13) + timedelta(days=k) for k in range(20)]
+    arcs = [days[0:5], days[6:12]]                          # two pieces; the second leaks past the end
+    known = {'story': ('1976-09-13', '1976-09-22'), 'missing': ('1990-01-01', '1990-01-31'),
+             'sunday only': ('1976-09-19', '1976-09-19')}
+    rows, coverage = ca.score_arcs(arcs, days, known)
+    story, missing, sunday = rows
+    assert story['pieces'] == 2 and story['total'] == 9 and story['best'] == 5 and story['spill'] == 2
+    assert missing['pieces'] == 0 and missing['best'] == 0 and missing['total'] == 0
+    assert sunday['total'] == 0                             # Sundays are never in an arc, so not counted
+    assert coverage == pytest.approx(5 / 9)
+    assert len(ca.score_arcs([], days)[0]) == len(ca.KNOWN_STORYLINES)
+
+
+def test_eval_comic_arcs_script(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+    sys.path.insert(0, 'scripts')
+    import build_comic_arcs
+    import eval_comic_arcs as ev
+    rows = []
+    for d in range(11, 26):
+        if d not in (14, 21):                               # skip the Sundays
+            rows += _rows(f'196503{d:02d}', ['Linus van Pelt', 'Lucy van Pelt'], 'blanket attacks lucy')
+    for k in range(1, 29):
+        rows += _rows(f'197005{k:02d}', [f'Kid {k}'], f'topic{k} word{k}')
+    meta = tmp_path / 'm.jsonl'
+    meta.write_text('\n'.join(json.dumps(r) for r in rows) + '\n\n')
+    assert ev.main(['--metadata', str(meta)]) == 0
+    out = capsys.readouterr().out
+    assert 'Living blanket' in out and 'best 13/13' in out and 'mean coverage' in out
+    monkeypatch.setattr(build_comic_arcs, 'metadata_rows', lambda: iter(rows))
+    dump = tmp_path / 'dump.jsonl'
+    assert ev.main(['--dump', str(dump)]) == 0               # download path, saved for --metadata
+    assert len(dump.read_text().splitlines()) == len(rows)
+    assert ev.main([]) == 0
+    assert 'longest 0' in ev.report([])
 
 
 def test_build_comic_arcs_script(tmp_path, monkeypatch):
