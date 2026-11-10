@@ -605,6 +605,34 @@ def _show_final_world_series(config, series, auto_open=False):
     return True
 
 
+def _show_morning_comic(config, now, auto_open=False):
+    """Render and push the comic for a morning-rotation block.
+
+    Returns False when there is no strip for today (or it fails to render), so
+    the caller falls through to the normal scoreboard instead of a blank panel.
+    """
+    from image_comic import comic_idle_image
+    is_dark = _in_dark_window(config) if config.get('night_mode', True) else False
+    try:
+        image = comic_idle_image(dict(config, dark_mode=is_dark), now, all_blocks=True)
+    except Exception as e:
+        print(f"Morning: comic render failed ({e}), showing scoreboard")
+        return False
+    if image is None:
+        print("Morning: no comic strip available, showing scoreboard")
+        return False
+    output_path = os.path.join(_REPO_ROOT, 'resulting_image.bmp')
+    image.save(output_path)
+    try:
+        send_to_display(output_path, force_full=True)
+    except Exception as e:
+        print(f"Warning: display send failed: {e}")
+    if auto_open:
+        import subprocess
+        subprocess.run(['open', output_path], check=False)
+    return True
+
+
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen.
 
@@ -794,6 +822,11 @@ def morning_rotation(config, now=None):
     if config.get('morning_alternate_bracket', False) and _is_postseason:
         views.append('bracket')
 
+    # The on-this-day comic rides along when the comic screen is enabled at all
+    # (idle_comic_rotation) unless the morning cycle opts out.
+    if config.get('idle_comic_rotation', False) and config.get('morning_alternate_comic', True):
+        views.append('comic')
+
     return tuple(views)
 
 
@@ -833,6 +866,9 @@ def _resolve_target_date(args, config):
         if view == 'quadrant':
             print(f"Morning alternating (block {block}) — showing team quadrant")
             return _DateContext(today, False, block, now, 'quadrant')
+        if view == 'comic':
+            print(f"Morning alternating (block {block}) — showing comic strip")
+            return _DateContext(today, False, block, now, 'comic')
         if view == 'bracket':
             print(f"Morning alternating (block {block}) — showing playoff bracket")
             return _DateContext(today, False, block, now, 'bracket')
@@ -1393,6 +1429,10 @@ Examples:
                         _show_idle_screen(config, auto_open=_auto_open)
                 return
 
+    if _date_ctx.mode_override == 'comic' and _show_morning_comic(
+            config, _now, auto_open=args.local and system_platform == 'Darwin'):
+        return
+
     # 7a. Auto dark/light mode: day = light, night = dark.
     # Uses dark_start / dark_end config keys (defaults: 20 → 7) so the display
     # dark window is independent of the refresh-suppression night window.
@@ -1435,7 +1475,7 @@ Examples:
     # actually configured comes back on the next block. Built before the
     # quadrant refresh so that refresh sees the mode it gates on.
     view_config = config
-    if _date_ctx.mode_override:
+    if _date_ctx.mode_override and _date_ctx.mode_override != 'comic':
         view_config = dict(config, display_mode=_date_ctx.mode_override)
     _refresh_team_quadrant(view_config, league_mode, force=_force_data_refresh)
 

@@ -21,7 +21,9 @@ The page stays white paper with black ink in dark mode too (no black edges).
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from fetch_comic import current_strip
-from image_assets import _get_font
+import os
+
+from image_assets import _get_font, picdir
 
 _W, _H = 800, 480
 _GUT = 18                    # left gutter: rotated caption + year timeline
@@ -53,7 +55,7 @@ def prepare_strip(gray, max_w, max_h):
     return gray.convert('1')   # Floyd-Steinberg dither
 
 
-def strip_layout(size):
+def strip_layout(size, reserve_right=0):
     """Where a strip of pixel `size` (w, h) lands: (x, y, w, h) on the panel.
 
     The one fit rule: scale uniformly by min(avail_w / w, avail_h / h) so the
@@ -62,21 +64,174 @@ def strip_layout(size):
     year timeline), inside a hairline frame. Wide strips fill the width, tall
     ones fill the height, and whichever dimension is left over is centred.
     """
-    avail_w = _W - _GUT - _MARGIN - 2
+    avail_w = _W - _GUT - _MARGIN - 2 - reserve_right
     avail_h = _H - 2 * _MARGIN - 2
     scale = min(avail_w / size[0], avail_h / size[1])
     w, h = max(1, round(size[0] * scale)), max(1, round(size[1] * scale))
-    left, right = _GUT, _W - _MARGIN
+    left, right = _GUT, _W - _MARGIN - reserve_right
     return left + (right - left - w) // 2, _MARGIN + (_H - 2 * _MARGIN - h) // 2, w, h
+
+
+# --- QR code to the arc's web page ----------------------------------------------------
+
+_QR_MODULE = 2               # px per module (a short URL fits a 25-29 module code)
+_QR_QUIET = 2                # white modules around it
+
+
+def get_lan_ip():
+    """This machine's LAN address (the interface that would reach the internet), else 127.0.0.1."""
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(('10.255.255.255', 1))      # UDP connect sends nothing; it just picks a route
+        return sock.getsockname()[0]
+    except OSError:
+        return '127.0.0.1'
+    finally:
+        sock.close()
+
+
+def arc_url(config, strip):
+    """Where the QR code points: this strip's arc on the config server, or None when there is no arc."""
+    if strip.arc_start is None:
+        return None
+    host = config.get('comic_qr_host') or get_lan_ip()
+    port = config.get('config_server_port', 8080)
+    comic = config.get('comic_name', 'peanuts')
+    query = '' if comic == 'peanuts' else f'?comic={comic}'
+    return f'http://{host}:{port}/arc/{strip.arc_start.isoformat()}{query}'
+
+
+def snoopy_head(size):
+    """A small drawn Snoopy head in profile, `size` px square, 1-bit.
+
+    White face with one clean outline (head and long snout merged, no inner lines), a
+    big black nose, a droopy black ear and a dot eye. Drawn procedurally at 8x and
+    averaged down, so there is no image asset to ship.
+    """
+    k = 8
+    big = size * k
+    img = Image.new('L', (big, big), 255)
+    d = ImageDraw.Draw(img)
+
+    def box(x0, y0, x1, y1, grow=0.0):
+        return [round((v + g) * big / 100) for v, g in zip((x0, y0, x1, y1), (-grow, -grow, grow, grow))]
+
+    face = [(34, 14, 92, 72), (6, 40, 60, 70)]                          # head, snout (facing left)
+    for shape in face:                                                   # union outline: grow in black,
+        d.ellipse(box(*shape, grow=4), fill=0)
+    for shape in face:                                                   # then fill white on top
+        d.ellipse(box(*shape), fill=255)
+    d.ellipse(box(0, 40, 22, 62), fill=0)                                # nose
+    d.polygon([tuple(round(v * big / 100) for v in pt) for pt in
+               [(66, 22), (84, 18), (96, 40), (94, 72), (84, 94), (72, 80), (66, 52)]], fill=0)   # ear
+    d.ellipse(box(44, 32, 54, 44), fill=0)                               # eye
+    d.arc(box(14, 50, 52, 74), 20, 120, fill=0, width=max(2, big // 40))  # smile
+    small = img.resize((size, size), Image.LANCZOS)
+    return small.point(lambda v: 255 if v > 150 else 0).convert('1')
+
+
+def snoopy_body(width, height):
+    """A small drawn Snoopy, whole body in profile facing left, `width` x `height` px, 1-bit.
+
+    Sitting up: head with long snout, black nose and droopy ear, a collar, round body,
+    front legs, an outstretched hind foot and a tail. One merged outline (white shapes
+    grown in black, then filled white), drawn at 8x and averaged down.
+    """
+    k = 8
+    W, H = width * k, height * k
+    img = Image.new('L', (W, H), 255)
+    d = ImageDraw.Draw(img)
+
+    def sx(v):
+        return round(v * W / 100)
+
+    def sy(v):
+        return round(v * H / 80)
+
+    def box(x0, y0, x1, y1, grow=0.0):
+        return [sx(x0 - grow), sy(y0 - grow), sx(x1 + grow), sy(y1 + grow)]
+
+    white = [(22, 2, 56, 34), (3, 15, 34, 33),                      # head, snout
+             (38, 30, 90, 66),                                       # body
+             (40, 52, 54, 78), (54, 56, 66, 78),                     # front legs
+             (66, 54, 98, 74)]                                       # hind leg and foot
+    for shape in white:
+        d.ellipse(box(*shape, grow=2.6), fill=0)
+    for shape in white:
+        d.ellipse(box(*shape), fill=255)
+    d.ellipse(box(0, 14, 13, 28), fill=0)                           # nose
+    d.polygon([(sx(44), sy(8)), (sx(56), sy(6)), (sx(62), sy(22)), (sx(58), sy(40)), (sx(49), sy(34))], fill=0)   # ear
+    d.ellipse(box(22, 9, 28, 16), fill=0)                           # eye
+    d.line([(sx(37), sy(28)), (sx(45), sy(37))], fill=0, width=max(3, W // 22))   # collar
+    d.line([(sx(88), sy(40)), (sx(96), sy(30)), (sx(99), sy(26))], fill=0, width=max(3, W // 28))  # tail
+    small = img.resize((width, height), Image.LANCZOS)
+    return small.point(lambda v: 255 if v > 150 else 0).convert('1')
+
+
+def qr_image(url, logo='head', module=None):
+    """1-bit QR code for `url` with its quiet zone, `module` px per module (default _QR_MODULE).
+
+    `logo` is 'head', 'body' (whole Snoopy in profile; 3 px modules by default, so a
+    bigger code) or falsy for a plain code. A logo hides part of the middle, so the code
+    uses the highest error correction (level H) and so comes out a little bigger.
+    """
+    import segno
+    logo = 'head' if logo is True else logo
+    module = module or (3 if logo == 'body' else _QR_MODULE)    # the whole body needs room to stay recognisable
+    matrix = segno.make(url, error='h' if logo else 'l').matrix
+    n = len(matrix) + 2 * _QR_QUIET
+    img = Image.new('1', (n * module, n * module), 1)
+    draw = ImageDraw.Draw(img)
+    for y, row in enumerate(matrix):
+        for x, cell in enumerate(row):
+            if cell:
+                px, py = (x + _QR_QUIET) * module, (y + _QR_QUIET) * module
+                draw.rectangle([px, py, px + module - 1, py + module - 1], fill=0)
+    if logo:
+        size = img.size[0]
+        if logo == 'body':
+            lw = max(30, round(size * 0.33)) // 2 * 2
+            art = snoopy_body(lw, round(lw * 0.8))
+        else:
+            side = max(14, round(size * 0.30)) // 2 * 2                # ~9% of the code's area
+            art = snoopy_head(side)
+        plate = (art.size[0] + 4, art.size[1] + 4)
+        cx, cy = size // 2, size // 2
+        draw.rectangle([cx - plate[0] // 2, cy - plate[1] // 2, cx + plate[0] // 2 - 1, cy + plate[1] // 2 - 1], fill=1)
+        img.paste(art, (cx - art.size[0] // 2, cy - art.size[1] // 2))
+    return img
 
 
 def _date_text(d):
     return f'{_MONTHS[d.month - 1]} {d.day}, {d.year}'
 
 
-def _vtext(img, text, font, x, y_bottom):
+def _years_ago(published, config):
+    """Whole years between the strip and the reference date (config['comic_today'] or today)."""
+    from datetime import date as _date
+    ref = config.get('comic_today') or _date.today()
+    return max(0, ref.year - published.year - ((ref.month, ref.day) < (published.month, published.day)))
+
+
+_HAND_FONT = os.path.join(picdir, 'fonts', 'PatrickHand-Regular.ttf')   # OFL; see pic/fonts/OFL-PatrickHand.txt
+_hand_cache: dict = {}
+
+
+def _hand_font(size):
+    """Hand-lettered font for the 'Day x of N' counter (comic-strip feel); the panel font if the file is missing."""
+    if size not in _hand_cache:
+        try:
+            from PIL import ImageFont
+            _hand_cache[size] = ImageFont.truetype(_HAND_FONT, size)
+        except OSError:
+            _hand_cache[size] = _get_font(size)
+    return _hand_cache[size]
+
+
+def _vtext(img, text, font, x, y_bottom, h=14):
     """Draw `text` rotated to read bottom-to-top, its bottom end at y_bottom. Returns its length."""
-    w, h = int(font.getlength(text)) + 2, 14
+    w = int(font.getlength(text)) + 2
     tile = Image.new('1', (w, h), 1)
     ImageDraw.Draw(tile).text((1, 0), text, font=font, fill=0)
     tile = tile.rotate(90, expand=True)
@@ -123,18 +278,40 @@ def draw_comic_screen(strip, config):
     # Strip: border trimmed, then as big as the area right of the gutter allows.
     gray = trim_border(strip.image.convert('L'))
     ax, ay, aw, ah = strip_layout(gray.size)
+    qr = None
+    if config.get('comic_qr', False) and (url := arc_url(config, strip)):
+        qr = qr_image(url, logo=config.get('comic_qr_logo', True), module=config.get('comic_qr_module'))
+    qr_xy = None
+    if qr is not None:
+        qw, qh = qr.size
+        if ay + ah <= _H - qh - _MARGIN - 2:                       # wide strip: free band underneath
+            qr_xy = (ax, _H - qh - _MARGIN)
+        elif ax + aw <= _W - _MARGIN - qw - 2:                     # strip leaves a side margin (2x2, Sundays, ...)
+            qr_xy = (_W - qw - _MARGIN, _H - qh - _MARGIN)
+        else:                                                      # fills both ways: shrink it for a column
+            ax, ay, aw, ah = strip_layout(gray.size, reserve_right=qw + 2)
+            qr_xy = (_W - qw - _MARGIN, _H - qh - _MARGIN)
     art = prepare_strip(gray, aw, ah)
     img.paste(art, (ax, ay))
+    if qr is not None:
+        img.paste(qr, qr_xy)
 
     # Left gutter, bottom to top: caption, year ticks, "n of N" at the top.
     small = _get_font(12)
     gx = 2
     low = _H - 6
-    low -= _vtext(img, f'Originally published {_date_text(strip.date)}', small, gx, low) + 8
+    caption = _date_text(strip.date)
+    ago = _years_ago(strip.date, config)
+    if ago:
+        caption += f' · {ago} yr ago' if ago == 1 else f' · {ago} yrs ago'
+    if strip.note:
+        caption += f' · {strip.note}'
+    low -= _vtext(img, caption, small, gx, low) + 8
     high = 6
     if strip.total > 1:
-        count = f'{strip.position + 1} of {strip.total}'
-        high += _vtext(img, count, small, gx, high + int(small.getlength(count)) + 2) + 8
+        count = f'{strip.label + " " if strip.label else ""}{strip.position + 1} of {strip.total}'
+        hand = _hand_font(14)
+        high += _vtext(img, count, hand, gx, high + int(hand.getlength(count)) + 2, h=16) + 8
     _timeline(draw, strip.years, strip.date.year, _GUT - 6, high, low)
 
     return img    # always white paper, even at night: no black edges around the strip
@@ -167,4 +344,34 @@ def comic_idle_image(config, now, source=None, replay_running=None, load=None, a
     if strip is None:
         return None
     print(f'Idle: showing comic strip from {strip.date} ({strip.position + 1}/{strip.total})')
-    return draw_comic_screen(strip, config)
+    return draw_comic_screen(strip, dict(config, comic_today=now.date()))
+
+
+def main(argv=None):
+    """CLI: render a strip for any date, e.g. `image_comic.py 1966-10-31 out.png`.
+
+    The date picks the month/day (and so that day's strips); --tag picks from
+    prefs.json tags instead. Handy for previewing without the idle rotation.
+    """
+    import argparse
+    from datetime import datetime
+    ap = argparse.ArgumentParser(description=main.__doc__)
+    ap.add_argument('date', help='YYYY-MM-DD')
+    ap.add_argument('out', help='output image path')
+    ap.add_argument('--comic', default='peanuts')
+    ap.add_argument('--tag')
+    ap.add_argument('--mode', choices=['day', 'week', 'arc', 'arcs'], default='day')
+    args = ap.parse_args(argv)
+    now = datetime.fromisoformat(args.date)
+    config = {'comic_name': args.comic, 'comic_mode': args.mode, 'comic_today': now.date()}
+    strip = current_strip(config, now, tag=args.tag)
+    if strip is None:
+        print('no strip available')
+        return 1
+    draw_comic_screen(strip, config).save(args.out)
+    print(f'wrote {args.out} ({strip.date})')
+    return 0
+
+
+if __name__ == '__main__':   # pragma: no cover
+    raise SystemExit(main())
