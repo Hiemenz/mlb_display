@@ -126,6 +126,30 @@ def test_draw_handles_missing_terms_resign_and_bad_date():
     assert ifa.draw_free_agent_screen(s, TEAMS, {}).size == (800, 480)
 
 
+def _ts(day, hh, mm):
+    return datetime(*map(int, day.split('-')), hh, mm).timestamp()
+
+
+def test_when_label_adds_time_only_when_seen_the_same_day():
+    same = dict(SIGNING, seen_at=_ts('2026-11-18', 15, 42))
+    assert ifa._when_label(same) == 'NOV 18 · SEEN 3:42 PM'
+    assert ifa._when_label(same, short=True) == 'NOV 18 3:42P'
+    assert ifa._when_label(dict(same, seen_at=_ts('2026-11-18', 9, 5)), short=True) == 'NOV 18 9:05A'
+    assert ifa._when_label(dict(SIGNING, seen_at=_ts('2026-11-19', 8, 0))) == 'NOV 18'   # seen a day later: date only
+    assert ifa._when_label(dict(SIGNING, seen_at=None)) == 'NOV 18'                      # backlog from the first poll
+    assert ifa._when_label(dict(SIGNING, seen_at=10 ** 30)) == 'NOV 18'                  # nonsense timestamp
+    assert ifa._when_label(dict(SIGNING, date='nope', seen_at=_ts('2026-11-18', 1, 0))) == ''
+
+
+def test_cards_and_grid_draw_with_a_seen_time():
+    s = dict(SIGNING, seen_at=_ts('2026-11-18', 15, 42))
+    plain = ifa.draw_free_agent_screen(SIGNING, TEAMS, {})
+    assert ifa.draw_free_agent_screen(s, TEAMS, {}).tobytes() != plain.tobytes()
+    grid = ifa.draw_free_agent_grid([s, SIGNING], TEAMS, {})
+    assert grid.size == (800, 480)
+    assert grid.tobytes() != ifa.draw_free_agent_grid([SIGNING, SIGNING], TEAMS, {}).tobytes()
+
+
 def test_dark_mode_keeps_headshot_positive():
     photo = Image.new('1', (ifa._PHOTO_W, ifa._PHOTO_H), 1)   # an all-white portrait
     with patch('image_free_agents._load_headshot', return_value=photo):
