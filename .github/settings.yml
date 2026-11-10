@@ -1,6 +1,8 @@
 repository:
   # Managed by the Probot Settings app.
   # https://github.com/repository-settings/app
+  allow_auto_merge: true        # auto-merge.yml arms it on every non-draft PR
+  delete_branch_on_merge: true  # remove a PR's head branch once it merges
 
 branches:
   - name: main
