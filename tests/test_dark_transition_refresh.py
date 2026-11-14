@@ -119,3 +119,37 @@ def test_no_transition_does_not_force_leaders_refresh(monkeypatch, tmp_path):
     _run_main(monkeypatch, tmp_path, {'last_dark_mode': False}, render_mock, config=config)
 
     fetch_leaders_mock.assert_not_called()
+
+
+def _run_throttled(monkeypatch, tmp_path, cached_games, reason):
+    """main() on a tick the poll gate throttles; returns the idle-screen mock."""
+    idle = MagicMock()
+    monkeypatch.setattr(main_mod, '_REPO_ROOT', str(tmp_path))
+    monkeypatch.delenv('ENV', raising=False)
+    monkeypatch.setattr(main_mod.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(sys, 'argv', ['main.py'])
+    monkeypatch.setattr(main_mod, 'load_config', lambda *a, **k: dict(BASE_CONFIG))
+    monkeypatch.setattr(main_mod, '_load_schedule_state', lambda: {})
+    monkeypatch.setattr(main_mod, '_should_skip_poll', lambda *a, **k: (True, reason))
+    monkeypatch.setattr(main_mod, 'load_json_file', lambda *a, **k: {'games': cached_games})
+    for name in ('_maybe_show_derby_bracket', '_maybe_show_quadrant'):
+        monkeypatch.setattr(main_mod, name, lambda *a, **k: False)
+    for name in ('_refresh_standings', '_refresh_playoff_bracket',
+                 '_refresh_transactions', '_refresh_news'):
+        monkeypatch.setattr(main_mod, name, MagicMock())
+    monkeypatch.setattr(main_mod, '_show_idle_screen', idle)
+    main_mod.main()
+    return idle
+
+
+def test_throttled_tick_with_no_games_still_draws_the_idle_screen(monkeypatch, tmp_path):
+    """Off-season the gate says 'Throttled' (nothing cached) for an hour at a time.
+    The idle screen must still run every tick so moves/comic alternate every
+    15 minutes instead of only on the hourly fetch."""
+    idle = _run_throttled(monkeypatch, tmp_path, [], 'Throttled — 3min since last fetch')
+    idle.assert_called_once()
+
+
+def test_throttled_tick_with_games_does_not_draw_the_idle_screen(monkeypatch, tmp_path):
+    idle = _run_throttled(monkeypatch, tmp_path, [{}], 'Throttled — 3min since last fetch')
+    idle.assert_not_called()

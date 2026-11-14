@@ -457,7 +457,8 @@ def test_idle_breaking_overrides_the_odd_block_and_shows_only_new_moves():
     odd = datetime(2026, 11, 20, 9, 45)
     kw = dict(load=store, replay_running=lambda p: False)
     assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw) is not None     # breaking
-    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 7200, **kw) is None        # aged out
+    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 29 * 60, **kw) is not None  # still breaking
+    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 31 * 60, **kw) is None     # aged out of the 30-min window
     with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
         ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw)
     assert g.call_args.args[0] == [new] and g.call_args.kwargs['breaking'] is True
@@ -467,7 +468,7 @@ def test_idle_breaking_overrides_the_odd_block_and_shows_only_new_moves():
     assert ifa.free_agent_idle_image({'free_agent_layout': 'single'}, odd, now_ts=5600, **kw) is not None
 
 
-def test_poll_interval_is_hourly_and_configurable():
+def test_poll_interval_is_quarter_hourly_and_configurable():
     even = datetime(2026, 11, 20, 9, 0)
     fetch = MagicMock(return_value={'signings': [SIGNING]})
     kw = dict(fetch=fetch, replay_running=lambda p: False, now_ts=10_000)
@@ -475,12 +476,12 @@ def test_poll_interval_is_hourly_and_configurable():
     def store(fetched_at):
         return _store(**{'free_agents.json': {'fetched_at': fetched_at, 'signings': [SIGNING]},
                          'teams.json': TEAMS})
-    ifa.free_agent_idle_image({}, even, load=store(10_000 - 59 * 60), **kw)
-    assert not fetch.called                                   # 59 min old: still fresh
-    ifa.free_agent_idle_image({}, even, load=store(10_000 - 61 * 60), **kw)
-    assert fetch.call_count == 1                              # 61 min old: re-poll
-    ifa.free_agent_idle_image({'free_agent_poll_minutes': 15}, even, load=store(10_000 - 20 * 60), **kw)
-    assert fetch.call_count == 2                              # configurable
+    ifa.free_agent_idle_image({}, even, load=store(10_000 - 14 * 60), **kw)
+    assert not fetch.called                                   # 14 min old: still fresh
+    ifa.free_agent_idle_image({}, even, load=store(10_000 - 16 * 60), **kw)
+    assert fetch.call_count == 1                              # 16 min old: re-poll
+    ifa.free_agent_idle_image({'free_agent_poll_minutes': 60}, even, load=store(10_000 - 20 * 60), **kw)
+    assert fetch.call_count == 1                              # configurable
 
 
 def test_has_moves_respects_toggles():

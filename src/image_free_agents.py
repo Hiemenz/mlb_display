@@ -523,8 +523,8 @@ def draw_free_agent_grid(signings, team_data, config, page=1, pages=1, dense=Non
 # Idle-screen rotation
 # ---------------------------------------------------------------------------
 
-_REFRESH_MINUTES = 60            # poll for new moves hourly (config: free_agent_poll_minutes)
-_BREAKING_MINUTES = 60           # a new move counts as breaking for this long
+_REFRESH_MINUTES = 15            # poll for new moves every 15 min (config: free_agent_poll_minutes)
+_BREAKING_MINUTES = 30           # a new move counts as breaking for this long
 
 
 def pick_signing(signings, now):
@@ -560,10 +560,10 @@ def _is_breaking(move, now_ts, minutes):
 def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=None, now_ts=None):
     """Card/grid for the current slot, or None when it isn't the free agents' turn.
 
-    Polls for new moves hourly (`free_agent_poll_minutes`). Normally takes the 15-minute blocks in
+    Polls for new moves every 15 minutes (`free_agent_poll_minutes`). Normally takes the 15-minute blocks in
     `free_agent_idle_blocks` (default [0, 1]: minutes 0-29) so the comic keeps the rest. While a newly
     detected move is "breaking" (config `free_agent_breaking_minutes`, default
-    60) the screen shows just those moves under a BREAKING badge and takes
+    30) the screen shows just those moves under a BREAKING badge and takes
     every block. Never interrupts a running off-season replay, and quietly
     yields when there is nothing to show (moves age out after the lookback).
     """
