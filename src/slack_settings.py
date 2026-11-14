@@ -153,6 +153,7 @@ SETTINGS = (
     _b("idle_comic_rotation", "On-this-day comic", G_REPLAY),
     Setting("free_agent_idle_blocks", "Idle: moves in 15-min blocks", "int_list", G_REPLAY,
             help="Comma-separated quarter-hours (0-3) of each hour that show signings/trades, e.g. 0,2."),
+    _i("free_agent_show_hours", "Idle: show moves from last (hours)", G_REPLAY, 0, 504),
     Setting("comic_idle_blocks", "Idle: comic in 15-min blocks", "int_list", G_REPLAY,
             help="Comma-separated quarter-hours (0-3) of each hour that show the comic, e.g. 1,3."),
     _b("comic_sunday_only", "Comic: Sunday strips only", G_REPLAY),

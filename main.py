@@ -673,7 +673,7 @@ def _show_idle_screen(config, auto_open=False):
         from image_free_agents import free_agent_idle_image, has_moves
         try:
             image = free_agent_idle_image(idle_config, _now)
-            _moves = has_moves(idle_config)
+            _moves = has_moves(idle_config, now=_now)
         except Exception as _fe:
             print(f"Idle: free-agent screen failed ({_fe}), falling back")
 
