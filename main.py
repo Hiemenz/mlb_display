@@ -1365,7 +1365,11 @@ Examples:
             skip, reason = _should_skip_poll(date_str, config, sched)
             if skip:
                 print(reason)
-                if reason.startswith("No games until"):
+                # A throttled tick with nothing cached for the day is a no-games
+                # day too: it must still draw the idle screen, or the 15-minute
+                # moves/comic rotation only advances on the hourly fetch.
+                if reason.startswith("No games until") or not (
+                        load_json_file('games.json').get('games')):
                     _auto_open = args.local and system_platform == 'Darwin'
                     if not _maybe_show_derby_bracket(
                             config, no_throttle=_no_throttle, auto_open=_auto_open):
