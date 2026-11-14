@@ -319,6 +319,7 @@ offseason_baseball: false
 # 0 and 2, comic in 1 and 3; a BREAKING move still takes every block).
 idle_comic_rotation: true
 free_agent_idle_blocks: [0, 2]
+free_agent_show_hours: 24
 comic_idle_blocks: [1, 3]
 comic_sunday_only: false
 # comic_mode: arcs plays whole story arcs (prefs.json 'arcs') strip by strip, counter

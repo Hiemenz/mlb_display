@@ -8,7 +8,7 @@ from PIL import Image
 import fetch_free_agents as ffa
 import image_free_agents as ifa
 
-TODAY = datetime(2026, 11, 20)
+TODAY = datetime(2026, 11, 19)
 
 
 def _resp(code=200, data=None):
@@ -190,16 +190,16 @@ def _store(**files):
 
 def test_pick_signing_steps_and_wraps():
     sigs = ['a', 'b', 'c']
-    t0 = datetime(2026, 11, 20, 9, 0)
-    t1 = datetime(2026, 11, 20, 10, 0)
+    t0 = datetime(2026, 11, 19, 9, 0)
+    t1 = datetime(2026, 11, 19, 10, 0)
     assert ifa.pick_signing([], t0) == (None, 0)
     assert ifa.pick_signing(sigs, t0)[0] != ifa.pick_signing(sigs, t1)[0]
-    assert ifa.pick_signing(sigs, t0) == ifa.pick_signing(sigs, datetime(2026, 11, 20, 9, 10))
+    assert ifa.pick_signing(sigs, t0) == ifa.pick_signing(sigs, datetime(2026, 11, 19, 9, 10))
 
 
 def test_idle_image_gates():
     fresh = {'free_agents.json': {'fetched_at': 9e12, 'signings': [SIGNING]}, 'teams.json': TEAMS}
-    even, odd = datetime(2026, 11, 20, 9, 0), datetime(2026, 11, 20, 9, 35)
+    even, odd = datetime(2026, 11, 19, 9, 0), datetime(2026, 11, 20, 9, 35)
     kw = dict(load=_store(**fresh), replay_running=lambda pid: False)
     assert ifa.free_agent_idle_image(SINGLE, even, **kw).size == (800, 480)
     assert ifa.free_agent_idle_image({}, odd, **kw) is None
@@ -212,7 +212,7 @@ def test_idle_image_gates():
 
 
 def test_idle_image_refreshes_stale_data_and_survives_failures():
-    even = datetime(2026, 11, 20, 9, 0)
+    even = datetime(2026, 11, 19, 9, 0)
     stale = _store(**{'teams.json': TEAMS})
     fetch = MagicMock(return_value={'signings': [SIGNING]})
     img = ifa.free_agent_idle_image({}, even, load=stale, fetch=fetch,
@@ -247,8 +247,8 @@ def test_idle_image_defaults_to_grid_and_pages_through_signings():
     kw = dict(load=_store(**{'free_agents.json': {'fetched_at': 9e12, 'signings': sigs},
                             'teams.json': TEAMS}), replay_running=lambda pid: False)
     with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
-        ifa.free_agent_idle_image({}, datetime(2026, 11, 20, 9, 0), **kw)
-        ifa.free_agent_idle_image({}, datetime(2026, 11, 20, 10, 0), **kw)
+        ifa.free_agent_idle_image({}, datetime(2026, 11, 19, 9, 0), **kw)
+        ifa.free_agent_idle_image({}, datetime(2026, 11, 19, 10, 0), **kw)
     first, second = (c.args[0] for c in g.call_args_list)
     assert len(first) + len(second) == 27 and first != second
 
@@ -276,7 +276,7 @@ def test_placeholder_initials_when_no_headshot():
 
 
 def test_idle_image_default_collaborators():
-    even = datetime(2026, 11, 20, 9, 0)
+    even = datetime(2026, 11, 19, 9, 0)
     with patch('offseason_replay._replay_running', return_value=False), \
          patch('fetch_free_agents.fetch_free_agents', return_value={'signings': [SIGNING]}):
         img = ifa.free_agent_idle_image(SINGLE, even, load=_store(**{'teams.json': TEAMS}))
@@ -366,7 +366,7 @@ def test_dense_pages_fill_the_panel_height():
 def test_idle_image_dense_and_trade_filter():
     sigs = [dict(SIGNING, player_id=i, kind='trade' if i < 20 else 'signing') for i in range(23)]
     store = _store(**{'free_agents.json': {'fetched_at': 9e12, 'signings': sigs}, 'teams.json': TEAMS})
-    even = datetime(2026, 11, 20, 9, 0)
+    even = datetime(2026, 11, 19, 9, 0)
     with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
         ifa.free_agent_idle_image({}, even, load=store, replay_running=lambda p: False)
         assert g.call_args.kwargs['dense'] is True
@@ -454,7 +454,7 @@ def test_idle_breaking_overrides_the_odd_block_and_shows_only_new_moves():
     old = dict(SIGNING, player_id=1, seen_at=None)
     new = dict(SIGNING, player_id=2, seen_at=5000)
     store = _store(**{'free_agents.json': {'fetched_at': 5000, 'signings': [old, new]}, 'teams.json': TEAMS})
-    odd = datetime(2026, 11, 20, 9, 45)
+    odd = datetime(2026, 11, 19, 9, 45)
     kw = dict(load=store, replay_running=lambda p: False)
     assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw) is not None     # breaking
     assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 29 * 60, **kw) is not None  # still breaking
@@ -469,7 +469,7 @@ def test_idle_breaking_overrides_the_odd_block_and_shows_only_new_moves():
 
 
 def test_poll_interval_is_quarter_hourly_and_configurable():
-    even = datetime(2026, 11, 20, 9, 0)
+    even = datetime(2026, 11, 19, 9, 0)
     fetch = MagicMock(return_value={'signings': [SIGNING]})
     kw = dict(fetch=fetch, replay_running=lambda p: False, now_ts=10_000)
 
@@ -499,5 +499,31 @@ def test_idle_blocks_alternate_every_15_minutes_when_configured():
     kw = dict(load=_store(**fresh), replay_running=lambda pid: False)
     cfg = dict(SINGLE, free_agent_idle_blocks=[0, 2])
     shown = [m for m in (0, 15, 30, 45)
-             if ifa.free_agent_idle_image(cfg, datetime(2026, 11, 20, 9, m), **kw) is not None]
+             if ifa.free_agent_idle_image(cfg, datetime(2026, 11, 19, 9, m), **kw) is not None]
     assert shown == [0, 30]
+
+
+def test_recent_moves_keeps_only_the_last_24_hours():
+    now = datetime(2026, 11, 20, 9, 0)
+    today, yday, old = (dict(SIGNING, date=d) for d in ('2026-11-20', '2026-11-19', '2026-11-18'))
+    nodate = {k: v for k, v in SIGNING.items() if k != 'date'}
+    assert ifa.recent_moves([today, yday, old, nodate], now) == [today, yday]
+    assert ifa.recent_moves([old], now, hours=0) == [old]              # filter can be turned off
+    assert ifa.recent_moves([old], now, hours=96) == [old]             # or widened
+    assert ifa.recent_moves([], now) == []
+
+
+def test_old_moves_are_not_shown_so_the_comic_keeps_the_screen():
+    now = datetime(2026, 11, 20, 9, 0)                                  # a moves block
+    old = {'free_agents.json': {'fetched_at': 9e12, 'signings': [dict(SIGNING, date='2026-11-17')]},
+           'teams.json': TEAMS}
+    kw = dict(load=_store(**old), replay_running=lambda p: False)
+    assert ifa.free_agent_idle_image({}, now, **kw) is None
+    assert not ifa.has_moves({}, load=_store(**old), now=now)           # -> comic gets every block
+    assert ifa.free_agent_idle_image({'free_agent_show_hours': 0}, now, **kw) is not None
+    assert ifa.has_moves({'free_agent_show_hours': 0}, load=_store(**old), now=now)
+
+    fresh = {'free_agents.json': {'fetched_at': 9e12, 'signings': [dict(SIGNING, date='2026-11-20')]},
+             'teams.json': TEAMS}
+    assert ifa.free_agent_idle_image({}, now, load=_store(**fresh), replay_running=lambda p: False) is not None
+    assert ifa.has_moves({}, load=_store(**fresh), now=now)

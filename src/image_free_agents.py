@@ -11,7 +11,7 @@ a bold inverted band:
 When no contract terms are known the band reads just "SIGNED".
 """
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
@@ -525,6 +525,20 @@ def draw_free_agent_grid(signings, team_data, config, page=1, pages=1, dense=Non
 
 _REFRESH_MINUTES = 15            # poll for new moves every 15 min (config: free_agent_poll_minutes)
 _BREAKING_MINUTES = 30           # a new move counts as breaking for this long
+_SHOW_HOURS = 24                 # only moves from this many hours back are shown (config: free_agent_show_hours)
+
+
+def recent_moves(moves, now, hours=_SHOW_HOURS):
+    """Moves dated within the last `hours` hours (0/None disables the filter).
+
+    MLB dates a transaction by day only, so this keeps every move dated on or
+    after the calendar day `hours` ago: a "last 24 hours" window is today plus
+    whatever yesterday had left of it.
+    """
+    if not hours:
+        return list(moves)
+    cutoff = (now - timedelta(hours=hours)).strftime('%Y-%m-%d')
+    return [m for m in moves if (m.get('date') or '') >= cutoff]
 
 
 def pick_signing(signings, now):
@@ -540,14 +554,15 @@ def pick_signing(signings, now):
     return signings[idx], idx
 
 
-def has_moves(config, load=None):
-    """True when there are free-agent/trade moves to show (after the last poll)."""
+def has_moves(config, load=None, now=None):
+    """True when there are free-agent/trade moves from the last day to show (after the last poll)."""
     from util import load_json_file
     if not config.get('idle_free_agent_rotation', True):
         return False
     moves = ((load or load_json_file)('free_agents.json') or {}).get('signings') or []
     if not config.get('free_agent_include_trades', True):
         moves = [m for m in moves if m.get('kind', 'signing') != 'trade']
+    moves = recent_moves(moves, now or datetime.now(), config.get('free_agent_show_hours', _SHOW_HOURS))
     return bool(moves)
 
 
@@ -561,7 +576,8 @@ def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=Non
     """Card/grid for the current slot, or None when it isn't the free agents' turn.
 
     Polls for new moves every 15 minutes (`free_agent_poll_minutes`). Normally takes the 15-minute blocks in
-    `free_agent_idle_blocks` (default [0, 1]: minutes 0-29) so the comic keeps the rest. While a newly
+    `free_agent_idle_blocks` (default [0, 1]: minutes 0-29) so the comic keeps the rest. Only
+    moves from the last 24 hours (`free_agent_show_hours`) are shown. While a newly
     detected move is "breaking" (config `free_agent_breaking_minutes`, default
     30) the screen shows just those moves under a BREAKING badge and takes
     every block. Never interrupts a running off-season replay, and quietly
@@ -587,6 +603,7 @@ def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=Non
     signings = data.get('signings') or []
     if not config.get('free_agent_include_trades', True):
         signings = [m for m in signings if m.get('kind', 'signing') != 'trade']
+    signings = recent_moves(signings, now, config.get('free_agent_show_hours', _SHOW_HOURS))
     if not signings:
         return None
     window = config.get('free_agent_breaking_minutes', _BREAKING_MINUTES)
