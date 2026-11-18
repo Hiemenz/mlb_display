@@ -11,9 +11,11 @@ they are de-duplicated per player/date and the direction is read from the
 description ("<from team> traded <pos> <name> to <to team> ...").
 
 Contract terms are NOT in MLB's API. `terms` is parsed from the description
-when the text happens to carry it ("... to a one-year contract worth $X") and
-is otherwise None; the renderer then shows only "SIGNED". A news source can
-be plugged in later by filling `terms` from `_lookup_terms`.
+when the text happens to carry it, else from the MLB Trade Rumors transactions
+feed (an article naming the player with an "N-year ... $X" pair). Moves still
+without terms are re-checked against the feed on every poll, since the article
+often lands hours after the transaction. No terms leaves None; the renderer
+then shows only "SIGNED" / "RE-SIGNED".
 
 Each entry carries `seen_at`, the time it was first fetched (None for the very
 first population, so a fresh install doesn't flag everything as breaking). Pass
@@ -23,7 +25,10 @@ people call per genuinely new move.
 
 Writes data/free_agents.json.
 """
+import html
 import re
+import unicodedata
+import xml.etree.ElementTree as ET
 import time
 from datetime import datetime, timedelta
 
@@ -59,31 +64,88 @@ def _trade_teams(tx):
     return a, b
 
 
-def _parse_terms(description):
-    """Best-effort contract terms from a transaction description, else None.
+_WORDS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
+          'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
+_YEARS = r'(\d+|one|two|three|four|five|six|seven|eight|nine|ten)[- ]year'
+_MONEY = r'\$\s?([\d.,]+)\s?(million|billion|mm|m|b)\b'
+_NEWS_URL = 'https://www.mlbtraderumors.com/category/transactions/feed'
+_TERMS_PAIR = re.compile(_YEARS + r'[^.$]{0,80}?' + _MONEY, re.I)
 
-    Looks for "$120 million" / "$12M" and "N-year" / "N years" fragments.
-    """
-    text = description or ''
-    money = re.search(r'\$\s?([\d.,]+)\s?(million|m|billion|b)\b', text, re.I)
-    years = re.search(r'(\d+|one|two|three|four|five|six|seven|eight|nine|ten)[- ]year', text, re.I)
-    if not (money or years):
-        return None
-    words = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
-             'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
+
+def _format_terms(years, money_num, money_unit):
     parts = []
     if years:
-        y = years.group(1).lower()
-        parts.append(f'{words.get(y, y)} yr')
-    if money:
-        unit = 'B' if money.group(2).lower() in ('billion', 'b') else 'M'
-        parts.append(f'${money.group(1)}{unit}')
+        y = years.lower()
+        parts.append(f'{_WORDS.get(y, y)} yr')
+    if money_num:
+        unit = 'B' if money_unit.lower() in ('billion', 'b') else 'M'
+        parts.append(f'${money_num}{unit}')
     return ' / '.join(parts)
 
 
-def _lookup_terms(player_id, description):
-    """Hook for an external contract-terms source. Today: description only."""
-    return _parse_terms(description)
+def _parse_terms(description):
+    """Best-effort contract terms from a transaction description, else None.
+
+    Looks for "$120 million" / "$12M" / "$12MM" and "N-year" / "N years" fragments.
+    """
+    text = description or ''
+    money = re.search(_MONEY, text, re.I)
+    years = re.search(_YEARS, text, re.I)
+    if not (money or years):
+        return None
+    return _format_terms(years and years.group(1), money and money.group(1),
+                         money.group(2) if money else '')
+
+
+def _parse_news_terms(text):
+    """Terms from a news article body: only an "N-year ... $X" pair counts.
+
+    Articles mention earlier contracts too ("played on a one-year, $12.5MM deal
+    with the Cardinals"), so a lone figure is ignored and the first pair wins.
+    """
+    m = _TERMS_PAIR.search(text or '')
+    return _format_terms(m.group(1), m.group(2), m.group(3)) if m else None
+
+
+def _norm(text):
+    text = unicodedata.normalize('NFKD', text or '')
+    return re.sub(r'[^a-z ]', '', ''.join(c for c in text if not unicodedata.combining(c)).lower().replace('.', ''))
+
+
+def _fetch_news(url=_NEWS_URL):
+    """Recent MLB Trade Rumors transaction articles as [{'title', 'body'}], [] on failure."""
+    try:
+        resp = requests.get(url, timeout=15, headers={'User-Agent': 'mlb-display'})
+        if resp.status_code != 200:
+            print(f'Warning: terms feed returned {resp.status_code}')
+            return []
+        root = ET.fromstring(resp.content)
+    except Exception as e:
+        print(f'Error fetching terms feed: {e}')
+        return []
+    ns = {'c': 'http://purl.org/rss/1.0/modules/content/'}
+    items = []
+    for it in root.iter('item'):
+        raw = it.findtext('c:encoded', default='', namespaces=ns) or it.findtext('description') or ''
+        body = html.unescape(re.sub(r'<[^>]+>', ' ', raw))
+        items.append({'title': html.unescape(it.findtext('title') or ''), 'body': ' '.join(body.split())})
+    return items
+
+
+def _lookup_terms(player_name, description, news=()):
+    """Terms from the transaction description, else from a news article naming the player."""
+    found = _parse_terms(description)
+    if found and ' / ' in found:
+        return found
+    name = _norm(player_name)
+    for item in news:
+        title = item['title'].lower()
+        if not name or name not in _norm(item['title']) or 'minor league' in title or 'acquire' in title:
+            continue
+        terms = _parse_news_terms(item['body'])
+        if terms:
+            return terms
+    return found
 
 
 def _experienced(person, today, min_days=_MIN_MLB_DAYS):
@@ -157,6 +219,14 @@ def fetch_free_agents(lookback_days=21, min_mlb_days=_MIN_MLB_DAYS, today=None,
     skipped_prev = set(prev.get('skipped') or [])
     now_ts = time.time()
     skipped = []
+    news = None                          # fetched lazily, at most once per poll
+
+    def terms_for(name, description):
+        nonlocal news
+        if news is None:
+            news = _fetch_news()
+        return _lookup_terms(name, description, news)
+
     wanted = [t for t in txs if _is_major_league_signing(t) or (include_trades and _is_trade(t))]
     signings, seen = [], set()
     for tx in sorted(wanted, key=lambda t: t.get('date', ''), reverse=True):
@@ -173,7 +243,10 @@ def fetch_free_agents(lookback_days=21, min_mlb_days=_MIN_MLB_DAYS, today=None,
             continue
         key = _key(tx, trade)
         if key in known:                 # already processed on an earlier poll
-            signings.append(known[key])
+            move = known[key]
+            if not trade and not move.get('terms'):
+                move = dict(move, terms=terms_for(move.get('player_name', ''), move.get('description', '')))
+            signings.append(move)
             continue
         if key in skipped_prev:
             skipped.append(key)
@@ -199,7 +272,7 @@ def fetch_free_agents(lookback_days=21, min_mlb_days=_MIN_MLB_DAYS, today=None,
             'from_team_name': from_name or '',
             'to_team_id':     str(to_team.get('id', '')),
             'to_team_name':   to_team.get('name', ''),
-            'terms':       None if trade else _lookup_terms(pid, tx.get('description', '')),
+            'terms':       None if trade else terms_for((tx.get('person') or {}).get('fullName', ''), tx.get('description', '')),
             'description': tx.get('description', ''),
         })
 

@@ -89,13 +89,15 @@ def _centered(draw, cx, y, text, font, fill=0):
     draw.text((cx - int(font.getlength(text)) // 2, y), text, font=font, fill=fill)
 
 
-def _verb(signing):
-    return 'TRADED' if signing.get('kind') == 'trade' else 'SIGNED'
-
-
 def _is_resign(signing):
-    """A signing with the player's own team: show the team once, as 'RE-SIGNED'."""
+    """A signing with the player's own team: show the team once; the terms pill says RE-SIGNED."""
     return bool(signing.get('from_team_id')) and signing.get('from_team_id') == signing.get('to_team_id')
+
+
+def _verb(signing):
+    if signing.get('kind') == 'trade':
+        return 'TRADED'
+    return 'RE-SIGNED' if _is_resign(signing) else 'SIGNED'
 
 
 def _sc(v, k):
@@ -272,7 +274,9 @@ def draw_free_agent_screen(signing, team_data, config, page=None, total=None, br
         px_end = col_x + w + 12
     date = _when_label(signing)
     if date:
-        draw.text((px_end, py + 3), f'{_verb(signing)} {date}', font=_fit_font(f'{_verb(signing)} {date}', _W - 30 - px_end, 17, 12), fill=0)
+        # the terms band is the only place that says RE-SIGNED
+        dtxt = date if _is_resign(signing) else f'{_verb(signing)} {date}'
+        draw.text((px_end, py + 3), dtxt, font=_fit_font(dtxt, _W - 30 - px_end, 17, 12), fill=0)
 
     # FROM  ──▶  TO medallions (or one medallion for a re-signing)
     r = 66
@@ -281,7 +285,6 @@ def draw_free_agent_screen(signing, team_data, config, page=None, total=None, br
     small = _get_font(14)
     if _is_resign(signing):
         cx = col_x + col_w // 2
-        _centered(draw, cx, cy - r - 22, 'RE-SIGNED WITH', small)
         _medallion(img, draw, cx, cy, r, team_data, signing.get('to_team_id'), _LOGO)
         nick = (signing.get('to_team_name') or '').split()[-1]
         _bold_centered(draw, cx, cy + r + 8, nick, _fit_font(nick, 2 * r + 60, 24, 12))
@@ -368,11 +371,9 @@ def _draw_grid_cell(img, draw, x, y, signing, team_data, cw=_CELL_W, ch=_CELL_H)
     if _is_resign(signing):          # the team once, labelled — no arrow
         col_w = x + W - S(7) - col0
         big = min(round(lg * 1.25), col_w)
-        _centered(draw, cx, py + ph // 2 - big // 2 - S(16), 'RE-SIGNED',
-                  _fit_font('RE-SIGNED', col_w, tiny.size, 7))
         logo = _team_logo(_abbr(team_data, new_id), new_id, big)
         if logo is not None:
-            img.paste(logo, (cx - logo.size[0] // 2, py + ph // 2 - logo.size[1] // 2 + S(4)))
+            img.paste(logo, (cx - logo.size[0] // 2, py + ph // 2 - logo.size[1] // 2))
     else:
         _centered(draw, cx, py - 1, 'FROM', tiny)
         _centered(draw, cx, py + ph - lg - S(13), 'TO', tiny)
