@@ -320,7 +320,7 @@ GRID_PER_PAGE = GRID_COLS * GRID_ROWS
 _CELL_W = _W // GRID_COLS                  # design size of a roomy card: 160 x 217,
 _CELL_H = (_H - _HDR_H) // GRID_ROWS       # scaled by k to fill whatever cell it gets
 _G_PHOTO_W, _G_PHOTO_H = 90, 135
-_G_PX, _G_PY = 9, 8          # portrait origin inside the design card
+_G_PX, _G_PY = 12, 9          # portrait origin inside the design card
 _G_LOGO = 34
 
 
@@ -386,13 +386,13 @@ def _draw_grid_cell(img, draw, x, y, signing, team_data, cw=_CELL_W, ch=_CELL_H)
         draw.polygon([(cx, ay + S(14)), (cx - S(8), ay + S(3)), (cx + S(8), ay + S(3))], fill=0)
 
     mid = x + W // 2
-    ny = py + ph + S(5)
+    ny = py + ph + S(4)
     name = signing.get('player_name', '')
-    nf = _fit_font(name, W - S(16), max(16, S(16)), 11)
+    nf = _fit_font(name, W - S(20), max(20, S(20)), 11)
     _bold_centered(draw, mid, ny, name, nf)
     terms = signing.get('terms') or _verb(signing)
     bh = S(24)
-    bx0, bx1, by0 = x + S(9), x + W - S(10), ny + nf.size + S(5)
+    bx0, bx1, by0 = px - 2, x + W - S(10), ny + nf.size + S(4)   # band's left edge = the portrait frame's
     draw.rounded_rectangle([bx0, by0, bx1, by0 + bh], S(8), fill=0)
     tf = _fit_font(terms, bx1 - bx0 - 10, max(17, S(17)), 11)
     _bold_centered(draw, mid, by0 + (bh - tf.size) // 2 - 1, terms, tf, 255)
@@ -526,20 +526,36 @@ def draw_free_agent_grid(signings, team_data, config, page=1, pages=1, dense=Non
 
 _REFRESH_MINUTES = 15            # poll for new moves every 15 min (config: free_agent_poll_minutes)
 _BREAKING_MINUTES = 30           # a new move counts as breaking for this long
-_SHOW_HOURS = 24                 # only moves from this many hours back are shown (config: free_agent_show_hours)
+_SHOW_HOURS = 36                 # only moves from this many hours back are shown (config: free_agent_show_hours)
+
+
+def _moved_at(move):
+    """When a move happened, as well as we can tell, else None.
+
+    MLB dates a transaction by day only. The time this scoreboard first polled it
+    (`seen_at`) is a good stand-in when it falls on that same day; otherwise the move
+    is taken to have happened at the end of its day, so it never shows for longer
+    than the window past its date.
+    """
+    try:
+        day = datetime.strptime(move.get('date') or '', '%Y-%m-%d')
+    except ValueError:
+        return None
+    try:
+        seen = datetime.fromtimestamp(move['seen_at']) if move.get('seen_at') else None
+    except (OverflowError, OSError, ValueError, TypeError):
+        seen = None
+    if seen is not None and seen.date() == day.date():
+        return seen
+    return day.replace(hour=23, minute=59, second=59)
 
 
 def recent_moves(moves, now, hours=_SHOW_HOURS):
-    """Moves dated within the last `hours` hours (0/None disables the filter).
-
-    MLB dates a transaction by day only, so this keeps every move dated on or
-    after the calendar day `hours` ago: a "last 24 hours" window is today plus
-    whatever yesterday had left of it.
-    """
+    """Moves from the last `hours` hours (0/None disables the filter)."""
     if not hours:
         return list(moves)
-    cutoff = (now - timedelta(hours=hours)).strftime('%Y-%m-%d')
-    return [m for m in moves if (m.get('date') or '') >= cutoff]
+    cutoff = now - timedelta(hours=hours)
+    return [m for m in moves if (at := _moved_at(m)) is not None and at >= cutoff]
 
 
 def pick_signing(signings, now):
@@ -578,7 +594,7 @@ def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=Non
 
     Polls for new moves every 15 minutes (`free_agent_poll_minutes`). Normally takes the 15-minute blocks in
     `free_agent_idle_blocks` (default [0, 1]: minutes 0-29) so the comic keeps the rest. Only
-    moves from the last 24 hours (`free_agent_show_hours`) are shown. While a newly
+    moves from the last 36 hours (`free_agent_show_hours`) are shown. While a newly
     detected move is "breaking" (config `free_agent_breaking_minutes`, default
     30) the screen shows just those moves under a BREAKING badge and takes
     every block. Never interrupts a running off-season replay, and quietly
