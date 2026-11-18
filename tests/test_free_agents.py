@@ -46,6 +46,82 @@ def test_major_league_filter():
     assert not ffa._is_major_league_signing(_tx(code='TR'))
 
 
+@pytest.fixture(autouse=True)
+def _no_news_feed(monkeypatch):
+    """Never hit the real terms feed; tests that want articles patch _fetch_news themselves."""
+    monkeypatch.setattr(ffa, '_fetch_news', lambda url=None: [])
+
+
+def test_parse_terms_understands_mlbtr_mm_notation():
+    assert ffa._parse_terms('a three-year, $52.5MM contract') == '3 yr / $52.5M'
+
+
+def test_parse_news_terms_takes_first_pair_and_ignores_lone_figures():
+    body = ('The Twins signed him to a two-year contract that will reportedly guarantee him $55MM. '
+            'He earned $12.5MM last year on a one-year, $12.5MM deal.')
+    assert ffa._parse_news_terms(body) == '2 yr / $55M'
+    assert ffa._parse_news_terms('He made $12.5MM last season.') is None
+    assert ffa._parse_news_terms(None) is None
+
+
+NEWS = [
+    {'title': 'Rockies Re-Sign A Guy To Minor League Deal', 'body': 'a one-year, $1MM deal'},
+    {'title': 'Tigers Acquire A Player', 'body': 'a one-year, $1MM deal'},
+    {'title': 'Yankees Sign Gléyber Torres', 'body': 'agreed to a five-year, $120MM contract.'},
+]
+
+
+def test_lookup_terms_uses_news_when_description_has_none():
+    assert ffa._lookup_terms('Gleyber Torres', 'signed as free agent', NEWS) == '5 yr / $120M'
+    assert ffa._lookup_terms('Someone Else', 'signed as free agent', NEWS) is None
+    assert ffa._lookup_terms('A Guy', '', NEWS) is None          # minor-league article skipped
+    assert ffa._lookup_terms('A Player', '', NEWS) is None       # trade article skipped
+    assert ffa._lookup_terms('Someone Else', 'a one-year contract', NEWS) == '1 yr'
+    assert ffa._lookup_terms('Gleyber Torres', 'a 2-year, $4 million deal', NEWS) == '2 yr / $4M'
+
+
+def test_fetch_news_parses_feed_and_survives_failures(monkeypatch):
+    monkeypatch.undo()
+    xml = (b'<rss xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><item>'
+           b'<title>Twins Sign Sonny Gray</title><description>short</description>'
+           b'<content:encoded><![CDATA[<p>a two-year, $55MM deal</p>]]></content:encoded></item>'
+           b'<item><title>No body</title><description>plain</description></item></channel></rss>')
+    ok = MagicMock(status_code=200, content=xml)
+    with patch('fetch_free_agents.requests.get', return_value=ok):
+        items = ffa._fetch_news()
+    assert items[0] == {'title': 'Twins Sign Sonny Gray', 'body': 'a two-year, $55MM deal'}
+    assert items[1]['body'] == 'plain'
+    with patch('fetch_free_agents.requests.get', return_value=MagicMock(status_code=500)):
+        assert ffa._fetch_news() == []
+    with patch('fetch_free_agents.requests.get', side_effect=OSError('x')):
+        assert ffa._fetch_news() == []
+
+
+def test_fetch_fills_terms_from_news_and_retries_known_moves_without_them(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ffa, '_fetch_news', lambda url=None: calls.append(1) or NEWS)
+    tx = _tx(pid=1, name='Gleyber Torres')
+    first, _ = _fetch([tx], _person())
+    assert first['signings'][0]['terms'] == '5 yr / $120M'
+    assert len(calls) == 1                                   # one feed fetch per poll
+
+    # a known move that lacked terms is re-checked against the feed (no people call needed)
+    prev = {'signings': [dict(first['signings'][0], terms=None)]}
+    def get(url, timeout=0):
+        return _resp(200, {'transactions': [tx]})
+    with patch('fetch_free_agents.requests.get', side_effect=get), \
+         patch('fetch_free_agents.save_off_results'):
+        out = ffa.fetch_free_agents(today=TODAY, previous=prev)
+    assert out['signings'][0]['terms'] == '5 yr / $120M'
+    # ...and one that already has terms never touches the feed
+    calls.clear()
+    prev = {'signings': [first['signings'][0]]}
+    with patch('fetch_free_agents.requests.get', side_effect=get), \
+         patch('fetch_free_agents.save_off_results'):
+        ffa.fetch_free_agents(today=TODAY, previous=prev)
+    assert calls == []
+
+
 def test_experienced():
     assert ffa._experienced({'mlbDebutDate': '2019-04-29'}, TODAY)
     assert not ffa._experienced({'mlbDebutDate': '2026-09-01'}, TODAY)
@@ -331,6 +407,7 @@ def test_titles_and_verbs_follow_kind():
     assert ifa._title_for([tr]) == 'TRADES' and ifa._title_for([tr], single=True) == 'TRADE'
     assert ifa._title_for([sg, tr]) == 'SIGNINGS & TRADES'
     assert ifa._verb(tr) == 'TRADED' and ifa._verb(sg) == 'SIGNED'
+    assert ifa._verb(dict(sg, from_team_id=5, to_team_id=5)) == 'RE-SIGNED'
     assert ifa.draw_free_agent_screen(dict(tr, terms=None), TEAMS, {}).size == (800, 480)
 
 
