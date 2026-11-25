@@ -397,10 +397,8 @@ def _draw_grid_cell(img, draw, x, y, signing, team_data, cw=_CELL_W, ch=_CELL_H)
     tf = _fit_font(terms, bx1 - bx0 - 10, max(17, S(17)), 11)
     _bold_centered(draw, mid, by0 + (bh - tf.size) // 2 - 1, terms, tf, 255)
     old_a, new_a = _abbr(team_data, old_id), _abbr(team_data, new_id)
-    sub = f'{old_a} > {new_a}' if old_a and new_a and old_a != new_a else signing.get('position', '')
-    when = _when_label(signing, short=True)
-    if when:
-        sub = f'{sub} · {when}' if sub else when
+    route = f'{old_a} > {new_a}' if old_a and new_a and old_a != new_a else ''
+    sub = ' · '.join(filter(None, (signing.get('position'), route, _when_label(signing, short=True))))
     _centered(draw, mid, by0 + bh + S(4), sub, _fit_font(sub, W - S(14), max(11, S(11)), 8))
 
 
@@ -430,8 +428,15 @@ def _draw_dense_cell(img, draw, x, y, signing, team_data, cell_h):
     rw, mid = rx1 - rx0, (rx0 + rx1) // 2
     words = signing.get('player_name', '').split()
     first, last = (' '.join(words[:-1]), words[-1]) if len(words) > 1 else ('', ' '.join(words))
+    # position at the right end of the first-name line
+    pos = signing.get('position') or ''
+    pos_font = _get_font(11)
+    pos_w = int(pos_font.getlength(pos))
+    if pos:
+        _bold(draw, (rx1 - pos_w - 1, py - 3), pos, pos_font)
     if first:
-        draw.text((rx0, py - 3), first, font=_fit_font(first, rw, 11, 9), fill=0)
+        first_w = rw - (pos_w + 5 if pos else 0)
+        draw.text((rx0, py - 3), first, font=_fit_font(first, first_w, 11, 9), fill=0)
     _bold(draw, (rx0, py + 8), last, _fit_font(last, rw, 15, 10))
     # old logo > new logo, centred in the room between the name and the terms pill
     old_id, new_id = signing.get('from_team_id'), signing.get('to_team_id')
