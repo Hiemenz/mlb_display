@@ -554,7 +554,8 @@ def recent_moves(moves, now, hours=_SHOW_HOURS):
     """Moves from the last `hours` hours (0/None disables the filter)."""
     if not hours:
         return list(moves)
-    cutoff = now - timedelta(hours=hours)
+    # main.py passes an aware local time; move times are naive local wall time.
+    cutoff = now.replace(tzinfo=None) - timedelta(hours=hours)
     return [m for m in moves if (at := _moved_at(m)) is not None and at >= cutoff]
 
 

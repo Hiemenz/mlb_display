@@ -616,3 +616,12 @@ def test_old_moves_are_not_shown_so_the_comic_keeps_the_screen():
              'teams.json': TEAMS}
     assert ifa.free_agent_idle_image({}, now, load=_store(**fresh), replay_running=lambda p: False) is not None
     assert ifa.has_moves({}, load=_store(**fresh), now=now)
+
+
+def test_timezone_aware_now_still_shows_moves():
+    """main.py passes pytz-aware local time; the age filter must accept it."""
+    import pytz
+    now = pytz.timezone('America/Chicago').localize(datetime(2026, 11, 19, 9, 0))
+    store = _store(**{'free_agents.json': {'fetched_at': 9e12, 'signings': [SIGNING]}, 'teams.json': TEAMS})
+    assert ifa.has_moves({}, load=store, now=now)
+    assert ifa.free_agent_idle_image({}, now, load=store, replay_running=lambda p: False) is not None
