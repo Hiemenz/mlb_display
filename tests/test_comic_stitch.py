@@ -60,38 +60,19 @@ def test_decode_rejects_bad_tiny_and_blank_panels():
     assert cs._decode(_png()).mode == 'L'
 
 
-def test_choose_rows():
-    sq = [(200, 150)] * 4
-    assert cs.choose_rows(1, [(200, 150)], False) == 1
-    assert cs.choose_rows(4, sq, sunday=False) == 2          # 4:3 panels: a 2x2 block is biggest
-    assert cs.choose_rows(4, [(100, 400)] * 4) == 1       # tall panels: one row is biggest
-    assert cs.choose_rows(4, sq, sunday=True) == 2
-    assert cs.choose_rows(2, sq[:2], sunday=True) in (1, 2)
+@pytest.mark.parametrize('n, expected', [
+    (1, [1]), (2, [2]), (3, [3]), (4, [3, 1]), (5, [3, 2]), (6, [3, 3]),
+    (7, [3, 3, 1]), (8, [3, 3, 2]), (9, [3, 3, 3])])
+def test_row_sizes_are_three_across_then_the_rest(n, expected):
+    assert cs.row_sizes(n) == expected
 
 
-def test_row_sizes_are_even():
-    assert cs.row_sizes(7, 3) == [3, 2, 2]
-    assert cs.row_sizes(8, 2) == [4, 4]
-    assert cs.row_sizes(5, 2) == [3, 2]
-    assert cs.row_sizes(4, 1) == [4]
-    for n in range(1, 13):
-        for rows in range(1, 4):
-            sizes = cs.row_sizes(n, rows)
-            assert sum(sizes) == n and max(sizes) - min(sizes) <= 1
-
-
-def test_choose_rows_avoids_a_lone_orphan_panel():
-    sizes = [(200, 150)] * 7
-    for sunday in (True, False):
-        rows = cs.choose_rows(7, sizes, sunday)
-        counts = cs.row_sizes(7, rows)
-        assert not (min(counts) == 1 and max(counts) > 2)
-
-
-def test_stitch_daily_forced_to_one_wide_row():
-    imgs = [cs._decode(_png()) for _ in range(4)]
-    out = cs.stitch(imgs, rows=1)
-    assert out.mode == 'L' and out.size[0] > out.size[1] * 3
+@pytest.mark.parametrize('n, cols, rows', [(2, 2, 1), (3, 3, 1), (4, 3, 2), (7, 3, 3)])
+def test_stitch_is_at_most_three_panels_wide(n, cols, rows):
+    out = cs.stitch([cs._decode(_png(200, 150)) for _ in range(n)])
+    assert out.mode == 'L'
+    assert out.size == (cols * 200 + (cols - 1) * cs.GAP + 2 * cs.MARGIN,
+                        rows * 150 + (rows - 1) * cs.GAP + 2 * cs.MARGIN)
     assert out.getpixel((0, 0)) == 255                        # white margin
 
 
@@ -103,9 +84,9 @@ def test_stitch_single_panel_passes_through_with_margin():
 def test_stitch_normalises_mismatched_panel_sizes_and_centres_short_rows():
     imgs = [cs._decode(_png(w, h)) for w, h in
             [(200, 150), (180, 160), (210, 140), (200, 150), (190, 150)]]
-    out = cs.stitch(imgs, sunday=True)
+    out = cs.stitch(imgs)
     assert out.size[0] > 0 and out.size[1] > 0
-    # a 5-panel Sunday is two rows, the short one centred inside the margin
+    # five panels are two rows, the short one centred inside the margin
     assert out.getpixel((out.size[0] // 2, out.size[1] - 1)) == 255
 
 
@@ -161,13 +142,3 @@ def test_cache_output_is_readable_by_the_local_cache_source(tmp_path):
     src = LocalCacheSource('peanuts', root=str(tmp_path))
     assert src.load(date.fromisoformat(DAILY)) is not None
     assert src.dates_for(11, 7) == [date.fromisoformat(DAILY)]
-
-
-def test_forced_rows_reflow_a_daily_into_a_block():
-    one = cs.build_strip(DAILY, _panels(4), daily_rows=1)[0]
-    two = cs.build_strip(DAILY, _panels(4), daily_rows=2)[0]
-    assert one.size[0] / one.size[1] > 3 and two.size[0] / two.size[1] < 2.2
-    assert cs.stitch([cs._decode(_png())] * 2, rows=5).size[1] > 0       # capped at the panel count
-    # Sundays keep their automatic layout whatever daily_rows says
-    assert cs.build_strip(SUNDAY, _panels(8), daily_rows=1)[0].size == \
-        cs.build_strip(SUNDAY, _panels(8))[0].size

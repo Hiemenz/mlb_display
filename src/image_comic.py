@@ -52,7 +52,10 @@ def prepare_strip(gray, max_w, max_h):
     gray = gray.resize(size, Image.LANCZOS)
     if scale < 1:
         gray = gray.filter(ImageFilter.SHARPEN)
-    return gray.convert('1')   # Floyd-Steinberg dither
+    art = gray.convert('1')    # Floyd-Steinberg dither
+    # Diffused error trails into blank paper as dotted streaks: keep white areas white.
+    art.paste(1, mask=gray.point(lambda v: 255 if v >= 250 else 0).convert('1', dither=Image.Dither.NONE))
+    return art
 
 
 def strip_layout(size, reserve_right=0):
