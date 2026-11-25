@@ -14,18 +14,15 @@ Edge cases handled here:
   * undecodable, tiny, or blank panels are dropped;
   * panels of slightly different sizes are normalised to a common height per row;
   * single-panel strips pass through unchanged;
-  * every strip is laid out in 1-3 rows, whichever makes it largest on the
-    comic screen (a four-panel daily usually becomes a 2x2 block), with a
-    short last row centred;
+  * every strip, daily or Sunday, reads three panels across: each full row of
+    three is followed by another row of three or fewer (4 -> 3+1, 7 -> 3+3+1),
+    with a short last row centred;
   * strips the dataset over-segmented (a detector that sliced word balloons and
     sub-panels out of the art) are rejected: more than MAX_DAILY_PANELS on a
     weekday or MAX_SUNDAY_PANELS on a Sunday can't be reassembled reliably;
-  * panels are split as evenly as possible across rows (7 -> 3+2+2), so no
-    row of three or more ever ends with a lone orphan panel;
   * the result is capped in size so a 3 GB dataset doesn't become a 3 GB cache.
 """
 import io
-import math
 import re
 from datetime import date, datetime
 
@@ -33,7 +30,7 @@ from PIL import Image, ImageOps
 
 _NAME = re.compile(r'^(\d{8})_(\d{1,3})$')
 
-PANEL_W, PANEL_H = 776, 468   # room the comic screen gives a strip (see image_comic.strip_layout)
+PANELS_PER_ROW = 3
 MIN_PANEL_PX = 24       # anything smaller is a detection artefact
 GAP = 6                 # white gutter between panels
 MARGIN = 8              # white border around the finished strip
@@ -118,33 +115,10 @@ def _decode(data):
     return img
 
 
-def row_sizes(n, rows):
-    """Panels per row, as even as possible (7 in 3 rows -> [3, 2, 2], never 3+3+1)."""
-    base, extra = divmod(n, rows)
-    return [base + (1 if i < extra else 0) for i in range(rows)]
-
-
-def choose_rows(n, sizes, sunday=False):
-    """Number of rows (1-3) that makes the strip as large as possible on the panel.
-
-    Each candidate layout (panels split evenly across rows) has an estimated
-    aspect; the one that fills the largest area of the PANEL_W x PANEL_H box
-    (the comic screen minus its gutter) wins. Ties keep fewer rows. `sunday`
-    is accepted for callers' convenience; size alone decides.
-
-    sizes: [(w, h)] of the panels; used to estimate the finished aspect.
-    """
-    if n <= 1:
-        return 1
-    avg_aspect = sum(w / h for w, h in sizes) / len(sizes)
-    best, best_area = 1, 0.0
-    for rows in range(1, min(3, n) + 1):
-        aspect = max(row_sizes(n, rows)) * avg_aspect / rows
-        width = min(PANEL_W, PANEL_H * aspect)
-        area = width * width / aspect
-        if area > best_area * 1.01:      # must win by 1% to add a row
-            best, best_area = rows, area
-    return best
+def row_sizes(n):
+    """Panels per row: full rows of PANELS_PER_ROW, then the rest (7 -> [3, 3, 1])."""
+    full, rest = divmod(n, PANELS_PER_ROW)
+    return [PANELS_PER_ROW] * full + ([rest] if rest else [])
 
 
 def _row_image(imgs):
@@ -160,18 +134,12 @@ def _row_image(imgs):
     return row
 
 
-def stitch(images, sunday=False, rows=None):
-    """One grayscale strip from ordered panel images.
-
-    rows=None picks the row count automatically; an int forces it (capped at the
-    panel count) - e.g. rows=2 reflows a four-panel daily into a 2x2 block.
-    """
+def stitch(images):
+    """One grayscale strip from ordered panel images, PANELS_PER_ROW across."""
     if len(images) == 1:
         return ImageOps.expand(images[0], MARGIN, fill=255)
-    rows_n = (min(rows, len(images)) if rows
-              else choose_rows(len(images), [i.size for i in images], sunday))
     rows, start = [], 0
-    for count in row_sizes(len(images), rows_n):
+    for count in row_sizes(len(images)):
         rows.append(_row_image(images[start:start + count]))
         start += count
     width = max(r.size[0] for r in rows)
@@ -201,11 +169,10 @@ def skip_reason(day, n_panels):
     return None
 
 
-def build_strip(day, panels, daily_rows=None):
+def build_strip(day, panels):
     """(image, meta) for one date's {index: bytes} panels.
 
-    daily_rows forces that many rows for weekday strips (None = choose the
-    layout that comes out largest on screen).
+
     image is None when the date is skipped; meta['skipped'] then says why
     ('over-segmented (N panels)' or 'no usable panels'). Otherwise meta is
     {'panels': used, 'expected': highest index + 1, 'incomplete': bool}.
@@ -221,8 +188,6 @@ def build_strip(day, panels, daily_rows=None):
     if not decoded:
         return None, {'skipped': 'no usable panels'}
     expected = max(panels) + 1
-    sunday = is_sunday(day)
-    img = cap_size(stitch([i for _, i in decoded], sunday=sunday,
-                          rows=None if sunday else daily_rows))
+    img = cap_size(stitch([i for _, i in decoded]))
     return img, {'panels': len(decoded), 'expected': expected,
                  'incomplete': len(decoded) < expected}

@@ -55,9 +55,6 @@ def main():
     ap.add_argument('--out', default=os.path.join('data', 'comics', 'peanuts'))
     ap.add_argument('--shards-dir', help='use already-downloaded *.parquet shards from here')
     ap.add_argument('--max-shards', type=int, help='stop after N shards (testing)')
-    ap.add_argument('--daily-rows', type=int, choices=(1, 2), default=None,
-                    help='default: pick whatever layout makes each strip largest on the panel '
-                         '(usually a 2x2 block for weekdays); 1 forces one wide row, 2 forces 2x2')
     ap.add_argument('--force', action='store_true', help='rebuild strips that already exist')
     args = ap.parse_args()
 
@@ -73,7 +70,7 @@ def main():
             stats['already built'] += 1
             written.add(day)
             return
-        img, meta = build_strip(day, panels, daily_rows=args.daily_rows)
+        img, meta = build_strip(day, panels)
         if img is None:
             stats[f"skipped: {meta['skipped'].split(' (')[0]}"] += 1
             return

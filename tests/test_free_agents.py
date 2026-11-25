@@ -562,13 +562,14 @@ def test_poll_interval_is_quarter_hourly_and_configurable():
 
 
 def test_has_moves_respects_toggles():
+    now = datetime(2026, 11, 19, 9, 0)                        # pinned: SIGNING's date must stay recent
     store = _store(**{'free_agents.json': {'signings': [dict(SIGNING, kind='trade')]}})
-    assert ifa.has_moves({}, load=store)
-    assert not ifa.has_moves({'free_agent_include_trades': False}, load=store)
-    assert not ifa.has_moves({'idle_free_agent_rotation': False}, load=store)
-    assert not ifa.has_moves({}, load=_store())
+    assert ifa.has_moves({}, load=store, now=now)
+    assert not ifa.has_moves({'free_agent_include_trades': False}, load=store, now=now)
+    assert not ifa.has_moves({'idle_free_agent_rotation': False}, load=store, now=now)
+    assert not ifa.has_moves({}, load=_store(), now=now)
     with patch('util.load_json_file', return_value={'signings': [SIGNING]}):
-        assert ifa.has_moves({})
+        assert ifa.has_moves({}, now=now)
 
 
 def test_idle_blocks_alternate_every_15_minutes_when_configured():
