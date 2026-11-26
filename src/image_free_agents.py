@@ -533,7 +533,7 @@ def draw_free_agent_grid(signings, team_data, config, page=1, pages=1, dense=Non
 
 _REFRESH_MINUTES = 15            # poll for new moves every 15 min (config: free_agent_poll_minutes)
 _BREAKING_MINUTES = 30           # a new move counts as breaking for this long
-_SHOW_HOURS = 36                 # only moves from this many hours back are shown (config: free_agent_show_hours)
+_SHOW_HOURS = 48                 # only moves from this many hours back are shown (config: free_agent_show_hours)
 
 
 def _moved_at(move):
@@ -602,7 +602,7 @@ def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=Non
 
     Polls for new moves every 15 minutes (`free_agent_poll_minutes`). Normally takes the 15-minute blocks in
     `free_agent_idle_blocks` (default [0, 1]: minutes 0-29) so the comic keeps the rest. Only
-    moves from the last 36 hours (`free_agent_show_hours`) are shown. While a newly
+    moves from the last 48 hours (`free_agent_show_hours`) are shown. While a newly
     detected move is "breaking" (config `free_agent_breaking_minutes`, default
     30) the screen shows just those moves under a BREAKING badge and takes
     every block. Never interrupts a running off-season replay, and quietly

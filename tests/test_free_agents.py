@@ -581,20 +581,20 @@ def test_idle_blocks_alternate_every_15_minutes_when_configured():
     assert shown == [0, 30]
 
 
-def test_recent_moves_keeps_only_the_last_36_hours():
+def test_recent_moves_keeps_only_the_last_48_hours():
     now = datetime(2026, 11, 20, 9, 0)
     today, yday, old = (dict(SIGNING, date=d) for d in ('2026-11-20', '2026-11-19', '2026-11-17'))
     nodate = {k: v for k, v in SIGNING.items() if k != 'date'}
     assert ifa.recent_moves([today, yday, old, nodate], now) == [today, yday]
     assert ifa.recent_moves([old], now, hours=0) == [old]              # filter can be turned off
     assert ifa.recent_moves([old], now, hours=96) == [old]             # or widened
-    # a move dated two days ago is gone by the next morning, never lingering past 36 h
-    assert ifa.recent_moves([yday], datetime(2026, 11, 21, 11, 59)) == [yday]
-    assert ifa.recent_moves([yday], datetime(2026, 11, 21, 12, 0, 1)) == []
+    # a date-only move counts from the end of its day, so it lasts 48 h past that
+    assert ifa.recent_moves([yday], datetime(2026, 11, 21, 23, 59)) == [yday]
+    assert ifa.recent_moves([yday], datetime(2026, 11, 22, 0, 0)) == []
     # a same-day first-seen time is more exact than end-of-day
     early = dict(yday, seen_at=datetime(2026, 11, 19, 6, 0).timestamp())
-    assert ifa.recent_moves([early], datetime(2026, 11, 20, 17, 59)) == [early]
-    assert ifa.recent_moves([early], datetime(2026, 11, 20, 18, 1)) == []
+    assert ifa.recent_moves([early], datetime(2026, 11, 21, 5, 59)) == [early]
+    assert ifa.recent_moves([early], datetime(2026, 11, 21, 6, 1)) == []
     # a first-seen time on another day is ignored; junk seen_at falls back to the date
     other_day = dict(yday, seen_at=datetime(2026, 11, 20, 1, 0).timestamp())
     junk = dict(yday, seen_at='junk')
