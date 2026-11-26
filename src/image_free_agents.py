@@ -428,18 +428,18 @@ def _draw_dense_cell(img, draw, x, y, signing, team_data, cell_h):
     rw, mid = rx1 - rx0, (rx0 + rx1) // 2
     words = signing.get('player_name', '').split()
     first, last = (' '.join(words[:-1]), words[-1]) if len(words) > 1 else ('', ' '.join(words))
-    # position badge: large, over the portrait's bottom-left corner so names keep their room
+    # position badge (white on black), large, in the card's top-right corner
     pos = signing.get('position') or ''
+    badge_w = 0
     if pos:
-        pos_font = _get_font(20)
-        bw = max(26, int(pos_font.getlength(pos)) + 12)
-        bx, by = px - 2, py + ph - 24
-        draw.rounded_rectangle([bx - 1, by - 1, bx + bw + 1, by + 25], 7, fill=255)   # white keyline
-        draw.rounded_rectangle([bx, by, bx + bw, by + 24], 6, fill=0)
-        _bold_centered(draw, bx + bw // 2, by - 1, pos, pos_font, 255)
+        pos_font = _get_font(17)
+        badge_w = max(24, int(pos_font.getlength(pos)) + 10)
+        draw.rounded_rectangle([rx1 - badge_w, py - 3, rx1, py + 17], 5, fill=0)
+        _bold_centered(draw, rx1 - badge_w // 2, py - 4, pos, pos_font, 255)
     if first:
-        draw.text((rx0, py - 3), first, font=_fit_font(first, rw, 11, 9), fill=0)
-    _bold(draw, (rx0, py + 8), last, _fit_font(last, rw, 15, 10))
+        first_w = rw - (badge_w + 3 if pos else 0)
+        draw.text((rx0, py - 1), first, font=_fit_font(first, first_w, 11, 9), fill=0)
+    _bold(draw, (rx0, py + 14), last, _fit_font(last, rw, 15, 10))   # below the badge
     # old logo > new logo, centred in the room between the name and the terms pill
     old_id, new_id = signing.get('from_team_id'), signing.get('to_team_id')
     pill_y = py + ph - 22
