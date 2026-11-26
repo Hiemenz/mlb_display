@@ -316,7 +316,7 @@ offseason_replay: true
 offseason_baseball: false
 # Peanuts: Sundays are all comic; other off-season days show it when there are no
 # signings/trades, else it alternates with them every 15 minutes (moves in blocks
-# 0 and 2, comic in 1 and 3; a BREAKING move still takes every block).
+# 0 and 2, comic in 1 and 3; a BREAKING move shows only in the moves blocks).
 idle_comic_rotation: true
 free_agent_idle_blocks: [0, 2]
 free_agent_show_hours: 48

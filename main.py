@@ -666,7 +666,7 @@ def _show_idle_screen(config, auto_open=False):
 
     # Off-season: Sundays are all comic. Other days show the comic when there
     # are no signings/trades, and alternate every 30 minutes (moves first, comic
-    # second) when there are; a BREAKING move takes every block.
+    # second) when there are, BREAKING or not.
     if _offseason and _sunday:
         image = _comic(True)
     if image is None and _offseason:
