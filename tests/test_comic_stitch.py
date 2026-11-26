@@ -1,8 +1,10 @@
 """Tests for comic_stitch: panel grouping, layout, stitching and quality gates."""
 import io
+import os
 from datetime import date
 
 import pytest
+import yaml
 from PIL import Image, ImageDraw
 
 import comic_stitch as cs
@@ -142,3 +144,21 @@ def test_cache_output_is_readable_by_the_local_cache_source(tmp_path):
     src = LocalCacheSource('peanuts', root=str(tmp_path))
     assert src.load(date.fromisoformat(DAILY)) is not None
     assert src.dates_for(11, 7) == [date.fromisoformat(DAILY)]
+
+
+def test_saved_reading_order_rearranges_panels():
+    assert cs.reading_order(['a', 'b', 'c'], [2, 0, 1]) == ['c', 'a', 'b']
+
+
+@pytest.mark.parametrize('order', [None, [], [1, 0], [0, 0, 1], [1, 2, 3]])
+def test_unusable_reading_order_keeps_dataset_order(order):
+    assert cs.reading_order(['a', 'b', 'c'], order) == ['a', 'b', 'c']
+
+
+def test_saved_order_file_holds_complete_permutations():
+    path = os.path.join(os.path.dirname(cs.__file__), '..', 'config', 'comic_panel_order.yaml')
+    with open(path) as f:
+        orders = yaml.safe_load(f)
+    for day, order in orders.items():
+        date.fromisoformat(day)
+        assert sorted(order) == list(range(len(order))), day

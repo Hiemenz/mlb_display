@@ -1,7 +1,8 @@
 """Reassemble whole comic strips from per-panel images.
 
 The Hugging Face Peanuts dataset ships individual panels named
-``YYYYMMDD_NN`` (NN = panel order within the strip). This module is the pure,
+``YYYYMMDD_NN``. NN is often NOT the reading order; the hand-checked orders in
+config/comic_panel_order.yaml override it. This module is the pure,
 network-free half of the importer (scripts/build_comic_cache.py is the I/O
 half): validate names, group panels by date, lay them out in rows, and stitch
 them into one grayscale image per strip that `fetch_comic.LocalCacheSource`
@@ -169,10 +170,23 @@ def skip_reason(day, n_panels):
     return None
 
 
-def build_strip(day, panels):
+def reading_order(images, order):
+    """`images` rearranged by a hand-checked `order` (positions, left to right).
+
+    An order that doesn't name each position exactly once is ignored, so a strip
+    whose panel count changed is never silently cut down.
+    """
+    if order and sorted(order) == list(range(len(images))):
+        return [images[i] for i in order]
+    return images
+
+
+def build_strip(day, panels, order=None):
     """(image, meta) for one date's {index: bytes} panels.
 
 
+    `order` lists the usable panels' positions in reading order (from
+    config/comic_panel_order.yaml); without it they are laid out by dataset index.
     image is None when the date is skipped; meta['skipped'] then says why
     ('over-segmented (N panels)' or 'no usable panels'). Otherwise meta is
     {'panels': used, 'expected': highest index + 1, 'incomplete': bool}.
@@ -188,6 +202,6 @@ def build_strip(day, panels):
     if not decoded:
         return None, {'skipped': 'no usable panels'}
     expected = max(panels) + 1
-    img = cap_size(stitch([i for _, i in decoded]))
+    img = cap_size(stitch(reading_order([i for _, i in decoded], order)))
     return img, {'panels': len(decoded), 'expected': expected,
                  'incomplete': len(decoded) < expected}

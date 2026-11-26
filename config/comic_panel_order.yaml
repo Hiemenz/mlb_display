@@ -1,0 +1,23 @@
+# Reading order for comic strips whose dataset panel numbers are wrong.
+#
+#   "YYYY-MM-DD": [squares, listed left to right]
+#
+# Squares are numbered from 0 in the dataset's order, counting only usable ones.
+# So [1, 0, 2, 3] shows the dataset's second square first. Every square must be
+# listed exactly once, or the line is ignored. Keep the quotes around the date.
+# After editing, rebuild: uv run --group comics python scripts/build_comic_cache.py --force
+#
+# Orders were worked out by reading each strip's dialogue and action; fix any by hand.
+# A trailing "# unsure" marks a line worth checking.
+"1965-02-15": [1, 0, 2, 3]
+"1965-02-16": [0, 1, 2, 3]
+"1965-02-17": [0, 3, 2, 1]
+"1965-02-18": [0, 1, 3, 2]
+"1965-02-19": [0, 3, 2, 1]  # unsure
+"1965-02-20": [0, 3, 2, 1]
+"1996-10-24": [1, 2, 0]
+"1996-10-25": [2, 1, 0]
+"1996-10-26": [0]
+"1975-11-13": [3, 2, 1, 0]
+"1975-11-14": [3, 1, 0, 2]
+"1975-11-15": [1, 0, 2, 3]

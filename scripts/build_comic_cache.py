@@ -19,11 +19,13 @@ import tempfile
 from collections import Counter
 
 import requests
+import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
 from comic_stitch import build_strip, iter_date_groups  # noqa: E402
 
 DATASET = 'afmck/peanuts-opt-6.7b'
+ORDER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config', 'comic_panel_order.yaml')
 _API = f'https://huggingface.co/api/datasets/{DATASET}/parquet/default/train'
 
 
@@ -60,6 +62,8 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     stats, written = Counter(), set()
+    with open(ORDER_FILE) as f:
+        orders = yaml.safe_load(f) or {}
 
     def handle(day, panels):
         if day in written:
@@ -70,7 +74,7 @@ def main():
             stats['already built'] += 1
             written.add(day)
             return
-        img, meta = build_strip(day, panels)
+        img, meta = build_strip(day, panels, orders.get(day))
         if img is None:
             stats[f"skipped: {meta['skipped'].split(' (')[0]}"] += 1
             return
