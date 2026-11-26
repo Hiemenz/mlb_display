@@ -527,22 +527,23 @@ def test_breaking_badge_and_window():
         ifa.draw_free_agent_screen(SIGNING, TEAMS, {}).tobytes()
 
 
-def test_idle_breaking_overrides_the_odd_block_and_shows_only_new_moves():
+def test_idle_breaking_shows_only_new_moves_and_never_takes_the_comic_blocks():
     old = dict(SIGNING, player_id=1, seen_at=None)
     new = dict(SIGNING, player_id=2, seen_at=5000)
     store = _store(**{'free_agents.json': {'fetched_at': 5000, 'signings': [old, new]}, 'teams.json': TEAMS})
-    odd = datetime(2026, 11, 19, 9, 45)
+    even, odd = datetime(2026, 11, 19, 9, 0), datetime(2026, 11, 19, 9, 45)
     kw = dict(load=store, replay_running=lambda p: False)
-    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw) is not None     # breaking
-    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 29 * 60, **kw) is not None  # still breaking
-    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 31 * 60, **kw) is None     # aged out of the 30-min window
+    assert ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw) is None         # comic's turn, even while breaking
     with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
-        ifa.free_agent_idle_image({}, odd, now_ts=5000 + 600, **kw)
+        ifa.free_agent_idle_image({}, even, now_ts=5000 + 29 * 60, **kw)
     assert g.call_args.args[0] == [new] and g.call_args.kwargs['breaking'] is True
+    with patch('image_free_agents.draw_free_agent_grid', wraps=ifa.draw_free_agent_grid) as g:
+        ifa.free_agent_idle_image({}, even, now_ts=5000 + 31 * 60, **kw)               # aged out of the 30-min window
+    assert g.call_args.args[0] == [old, new] and g.call_args.kwargs['breaking'] is False
     # a running replay still wins, even over breaking news
-    assert ifa.free_agent_idle_image({}, odd, now_ts=5600, load=store, replay_running=lambda p: True) is None
+    assert ifa.free_agent_idle_image({}, even, now_ts=5600, load=store, replay_running=lambda p: True) is None
     # single layout also switches to the grid path while breaking
-    assert ifa.free_agent_idle_image({'free_agent_layout': 'single'}, odd, now_ts=5600, **kw) is not None
+    assert ifa.free_agent_idle_image({'free_agent_layout': 'single'}, even, now_ts=5600, **kw) is not None
 
 
 def test_poll_interval_is_quarter_hourly_and_configurable():

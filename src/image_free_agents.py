@@ -600,13 +600,14 @@ def _is_breaking(move, now_ts, minutes):
 def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=None, now_ts=None):
     """Card/grid for the current slot, or None when it isn't the free agents' turn.
 
-    Polls for new moves every 15 minutes (`free_agent_poll_minutes`). Normally takes the 15-minute blocks in
+    Polls for new moves every 15 minutes (`free_agent_poll_minutes`). Only takes the 15-minute blocks in
     `free_agent_idle_blocks` (default [0, 1]: minutes 0-29) so the comic keeps the rest. Only
     moves from the last 48 hours (`free_agent_show_hours`) are shown. While a newly
     detected move is "breaking" (config `free_agent_breaking_minutes`, default
-    30) the screen shows just those moves under a BREAKING badge and takes
-    every block. Never interrupts a running off-season replay, and quietly
-    yields when there is nothing to show (moves age out after the lookback).
+    30) those slots show just those moves under a BREAKING badge; breaking news
+    never takes the comic's slots, so the two keep alternating. Never interrupts a
+    running off-season replay, and quietly yields when there is nothing to show
+    (moves age out after the lookback).
     """
     import time as _time
     from util import load_json_file
@@ -634,7 +635,7 @@ def free_agent_idle_image(config, now, load=None, fetch=None, replay_running=Non
     window = config.get('free_agent_breaking_minutes', _BREAKING_MINUTES)
     breaking = [m for m in signings if _is_breaking(m, now_ts, window)]
 
-    if not breaking and now.minute // 15 not in config.get('free_agent_idle_blocks', [0, 1]):
+    if now.minute // 15 not in config.get('free_agent_idle_blocks', [0, 1]):
         return None
     if replay_running is None:
         from offseason_replay import _replay_running
