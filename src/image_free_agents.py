@@ -406,13 +406,13 @@ def _draw_grid_cell(img, draw, x, y, signing, team_data, cw=_CELL_W, ch=_CELL_H)
 # are more than 10 moves. Cells stretch to fill the panel height.
 DENSE_ROWS = 4
 DENSE_PER_PAGE = GRID_COLS * DENSE_ROWS
-_D_PX, _D_PY = 7, 8
+_D_PX, _D_PY = 11, 10     # portrait origin: its frame sits 4 px inside the card's left/top/bottom
 _D_LOGO = 26
 
 
 def _dense_geom(cell_h):
     """(photo_w, photo_h) for a dense cell of height cell_h (2:3, capped for width)."""
-    ph = cell_h - 21
+    ph = cell_h - 20
     return min(ph * 2 // 3, 72), ph
 
 
@@ -424,23 +424,25 @@ def _draw_dense_cell(img, draw, x, y, signing, team_data, cell_h):
     photo = _load_headshot(signing.get('player_id'), pw, ph)
     _frame_photo(img, draw, photo, px, py, pw, ph, shadow=0, radius=6,
                  name=signing.get('player_name', ''))
-    rx0, rx1 = px + pw + 8, x + _CELL_W - 8
+    rx0, rx1 = px + pw + 6, x + _CELL_W - 8
     rw, mid = rx1 - rx0, (rx0 + rx1) // 2
     words = signing.get('player_name', '').split()
     first, last = (' '.join(words[:-1]), words[-1]) if len(words) > 1 else ('', ' '.join(words))
-    # position at the right end of the first-name line
+    # position badge (white on black), large, in the card's top-right corner
     pos = signing.get('position') or ''
-    pos_font = _get_font(11)
-    pos_w = int(pos_font.getlength(pos))
+    badge_w = 0
     if pos:
-        _bold(draw, (rx1 - pos_w - 1, py - 3), pos, pos_font)
+        pos_font = _get_font(17)
+        badge_w = max(24, int(pos_font.getlength(pos)) + 10)
+        draw.rounded_rectangle([rx1 - badge_w, py - 2, rx1, py + 17], 5, fill=0)      # top level with the frame
+        _bold_centered(draw, rx1 - badge_w // 2, py - 4, pos, pos_font, 255)
     if first:
-        first_w = rw - (pos_w + 5 if pos else 0)
-        draw.text((rx0, py - 3), first, font=_fit_font(first, first_w, 11, 9), fill=0)
-    _bold(draw, (rx0, py + 8), last, _fit_font(last, rw, 15, 10))
+        first_w = rw - (badge_w + 3 if pos else 0)
+        draw.text((rx0, py - 1), first, font=_fit_font(first, first_w, 11, 9), fill=0)
+    _bold(draw, (rx0, py + 14), last, _fit_font(last, rw, 15, 10))   # below the badge
     # old logo > new logo, centred in the room between the name and the terms pill
     old_id, new_id = signing.get('from_team_id'), signing.get('to_team_id')
-    pill_y = py + ph - 22
+    pill_y = py + ph + 1 - 21      # bottom edge level with the portrait frame's
     ly = py + 26 + max(0, (pill_y - py - 26 - _D_LOGO) // 2)
     resign = _is_resign(signing)
     spots = ((mid, new_id),) if resign else ((rx0 + _D_LOGO // 2, old_id), (rx1 - _D_LOGO // 2, new_id))
