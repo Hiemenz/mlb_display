@@ -428,16 +428,17 @@ def _draw_dense_cell(img, draw, x, y, signing, team_data, cell_h):
     rw, mid = rx1 - rx0, (rx0 + rx1) // 2
     words = signing.get('player_name', '').split()
     first, last = (' '.join(words[:-1]), words[-1]) if len(words) > 1 else ('', ' '.join(words))
-    # position at the right end of the first-name line
+    # position badge (white on black) at the right end of the first-name line
     pos = signing.get('position') or ''
-    pos_font = _get_font(11)
-    pos_w = int(pos_font.getlength(pos))
+    pos_font = _get_font(13)
+    badge_w = int(pos_font.getlength(pos)) + 10 if pos else 0
     if pos:
-        _bold(draw, (rx1 - pos_w - 1, py - 3), pos, pos_font)
+        draw.rounded_rectangle([rx1 - badge_w, py - 3, rx1, py + 12], 4, fill=0)
+        _bold_centered(draw, rx1 - badge_w // 2, py - 4, pos, pos_font, 255)
     if first:
-        first_w = rw - (pos_w + 5 if pos else 0)
-        draw.text((rx0, py - 3), first, font=_fit_font(first, first_w, 11, 9), fill=0)
-    _bold(draw, (rx0, py + 8), last, _fit_font(last, rw, 15, 10))
+        first_w = rw - (badge_w + 4 if pos else 0)
+        draw.text((rx0, py - 2), first, font=_fit_font(first, first_w, 11, 9), fill=0)
+    _bold(draw, (rx0, py + 11), last, _fit_font(last, rw, 15, 10))
     # old logo > new logo, centred in the room between the name and the terms pill
     old_id, new_id = signing.get('from_team_id'), signing.get('to_team_id')
     pill_y = py + ph - 22
