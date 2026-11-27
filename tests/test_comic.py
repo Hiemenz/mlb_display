@@ -230,32 +230,74 @@ def test_all_blocks_ignores_the_block_list():
                                **_kw(replay_running=lambda pid: True)) is None   # replay still wins
 
 
-def _idle(moves_image, has_moves, now, comic_cfg=True):
-    """Run main._show_idle_screen in the off-season; return the comic hook's mock."""
+def _idle(moves_image, turn, now, comic_image='comic'):
+    """Run main._show_idle_screen in the off-season: (comic hook mock, turn mock, pushed image)."""
     import main
-    cfg = {'timezone': 'UTC', 'idle_comic_rotation': comic_cfg}
+    cfg = {'timezone': 'UTC', 'idle_comic_rotation': True, 'offseason_baseball': False}
+    if comic_image == 'comic':
+        comic_image = Image.new('1', (800, 480), 1)
+    saved = []
     with patch('main.datetime') as dt, \
          patch('main.load_json_file', return_value=None), \
          patch('main.send_to_display'), \
          patch('refresh_tracker.needs_full_refresh', return_value=True), \
-         patch('PIL.Image.Image.save'), \
+         patch('PIL.Image.Image.save', autospec=True, side_effect=lambda im, *a, **k: saved.append(im)), \
          patch('offseason_replay.is_offseason', return_value=True), \
-         patch('image_free_agents.free_agent_idle_image', return_value=moves_image), \
-         patch('image_free_agents.has_moves', return_value=has_moves), \
-         patch('image_comic.comic_idle_image', return_value=Image.new('1', (800, 480), 1)) as comic:
+         patch('image_free_agents.free_agent_idle_image', return_value=moves_image) as moves, \
+         patch('main._idle_turn', return_value=turn) as turn_mock, \
+         patch('image_comic.comic_idle_image', return_value=comic_image) as comic:
         dt.now.return_value = now
         main._show_idle_screen(cfg)
-    return comic
+    if moves.called:
+        assert moves.call_args.args[0]['free_agent_idle_blocks'] == [0, 1, 2, 3]   # never gated by the clock
+    return comic, turn_mock, (saved[-1] if saved else None)
 
 
-def test_offseason_rotation_moves_first_then_comic():
-    img = Image.new('1', (800, 480), 0)
-    # moves have this block: the comic is not consulted
-    assert not _idle(img, True, NOW).called
-    # odd block with moves available: comic runs, but only on its own blocks
-    assert _idle(None, True, NOW).call_args.kwargs['all_blocks'] is False
-    # nothing to show: the comic gets every off-season block
-    assert _idle(None, False, NOW).call_args.kwargs['all_blocks'] is True
+@pytest.mark.parametrize('minute', [0, 20, 35, 50])
+def test_offseason_screen_follows_the_turn_not_the_clock(minute):
+    moves = Image.new('1', (800, 480), 0)
+    now = NOW.replace(minute=minute)
+    comic, _, shown = _idle(moves, 'moves', now)
+    assert shown is moves and not comic.called
+    comic, _, shown = _idle(moves, 'comic', now)
+    assert shown is not moves and comic.call_args.kwargs['all_blocks'] is True
+
+
+def test_offseason_with_nothing_new_is_always_comic():
+    comic, turn, shown = _idle(None, 'moves', NOW)
+    assert comic.call_args.kwargs['all_blocks'] is True and shown is not None
+    assert not turn.called                                  # no turn is spent when there is nothing to alternate
+
+
+def test_missing_comic_keeps_the_moves_cards_and_says_why(capsys):
+    moves = Image.new('1', (800, 480), 0)
+    _, _, shown = _idle(moves, 'comic', NOW, comic_image=None)
+    assert shown is moves
+    assert 'no usable images in data/comics/peanuts/' in capsys.readouterr().out
+
+
+def test_idle_turn_flips_for_any_run_spacing_of_14_minutes_or_more():
+    import main
+    for spacing in (14, 15, 30, 60, 120):
+        state = {}
+        with patch('main.load_json_file', side_effect=lambda name, s=state: dict(s)), \
+             patch('main.save_off_results', side_effect=lambda data, name, s=state: s.update(data)):
+            turns = [main._idle_turn(1_000_000 + n * spacing * 60) for n in range(4)]
+        assert turns == ['moves', 'comic', 'moves', 'comic'], spacing
+
+
+def test_idle_turn_holds_for_about_14_minutes_when_runs_are_frequent():
+    import main
+    state = {}
+    with patch('main.load_json_file', side_effect=lambda name: dict(state)), \
+         patch('main.save_off_results', side_effect=lambda data, name: state.update(data)):
+        turns = [main._idle_turn(1_000_000 + n * 60) for n in range(42)]
+        assert turns == ['moves'] * 14 + ['comic'] * 14 + ['moves'] * 14
+        # a clock that jumped backwards or a damaged state file starts a fresh turn
+        assert main._idle_turn(0) == 'comic'
+        state.clear()
+        state.update({'turn': 'junk'})
+        assert main._idle_turn(5) == 'moves'
 
 
 def test_no_title_bar_and_border_is_trimmed():
@@ -303,7 +345,8 @@ def test_offseason_baseball_off_skips_final_and_replay():
 def test_sunday_is_all_comic_and_falls_back_to_moves():
     sunday = datetime(2026, 11, 8, 10, 5)      # first half-hour: moves would normally win
     img = Image.new('1', (800, 480), 0)
-    comic = _idle(img, True, sunday)
+    comic, turn, _ = _idle(img, 'moves', sunday)
+    assert not turn.called
     assert comic.call_args.kwargs['all_blocks'] is True
     # no strip for today: the moves screen fills in
     import main

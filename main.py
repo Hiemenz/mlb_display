@@ -29,7 +29,7 @@ from fetch_derby import fetch_and_save_derby_bracket, get_derby_date
 from fetch_team_quadrant import fetch_team_quadrant
 from render_scoreboard import render, _get_display_mode
 from display import send_to_display
-from util import POSTSEASON_GAME_TYPES, load_json_file, in_hour_window
+from util import POSTSEASON_GAME_TYPES, load_json_file, save_off_results, in_hour_window
 from standings import get_standings, fetch_playoff_bracket, fetch_transactions, is_postseason_window
 from image_box import set_historical_mode
 from image_idle import draw_idle_screen, draw_history_screen
@@ -633,6 +633,28 @@ def _show_morning_comic(config, now, auto_open=False):
     return True
 
 
+# Just under 14 minutes, so a run every 14 or 15 minutes (plus cron jitter) always flips.
+_IDLE_TURN_SECONDS = 13 * 60 + 30
+
+
+def _idle_turn(now_ts=None):
+    """'moves' or 'comic': whose turn it is on the off-season idle screen.
+
+    Goes by what was shown last, not the clock: tying each screen to fixed
+    quarter-hours meant a display run every 30 or 60 minutes could land on the
+    same one every time. A turn lasts about 14 minutes, or until the next run
+    when runs are further apart than that.
+    """
+    now_ts = time.time() if now_ts is None else now_ts
+    state = load_json_file('idle_turn.json') or {}
+    last, since = state.get('turn'), state.get('since', 0)
+    if last in ('moves', 'comic') and 0 <= now_ts - since < _IDLE_TURN_SECONDS:
+        return last
+    turn = 'comic' if last == 'moves' else 'moves'
+    save_off_results({'turn': turn, 'since': now_ts}, 'idle_turn')
+    return turn
+
+
 def _show_idle_screen(config, auto_open=False):
     """Render and display the idle 'no games today' screen.
 
@@ -651,7 +673,6 @@ def _show_idle_screen(config, auto_open=False):
     image = None
 
     _offseason = is_offseason(_now, _series)
-    _moves = False
     _sunday = _now.weekday() == 6
 
     def _comic(all_blocks):
@@ -659,26 +680,32 @@ def _show_idle_screen(config, auto_open=False):
             return None
         from image_comic import comic_idle_image
         try:
-            return comic_idle_image(idle_config, _now, all_blocks=all_blocks)
+            strip_image = comic_idle_image(idle_config, _now, all_blocks=all_blocks)
         except Exception as _ce:
             print(f"Idle: comic render failed ({_ce}), falling back")
             return None
+        if strip_image is None and all_blocks:
+            print(f"Idle: no comic to show (replay running, or no usable images in "
+                  f"data/comics/{config.get('comic_name', 'peanuts')}/)")
+        return strip_image
 
-    # Off-season: Sundays are all comic. Other days show the comic when there
-    # are no signings/trades, and alternate every 30 minutes (moves first, comic
-    # second) when there are, BREAKING or not.
+    # Off-season: Sundays are all comic. Other days alternate signings/trades
+    # and the comic, BREAKING or not; with nothing new the comic has every run.
     if _offseason and _sunday:
         image = _comic(True)
     if image is None and _offseason:
-        from image_free_agents import free_agent_idle_image, has_moves
+        from image_free_agents import free_agent_idle_image
         try:
-            image = free_agent_idle_image(idle_config, _now)
-            _moves = has_moves(idle_config, now=_now)
+            # Always asked, so new moves are polled on the comic's turns too.
+            image = free_agent_idle_image(dict(idle_config, free_agent_idle_blocks=[0, 1, 2, 3]), _now)
         except Exception as _fe:
             print(f"Idle: free-agent screen failed ({_fe}), falling back")
+        if image is not None and not _sunday and config.get('idle_comic_rotation', False):
+            if _idle_turn() == 'comic':
+                image = _comic(True) or image
 
     if image is None and not (_offseason and _sunday):
-        image = _comic(_offseason and not _moves)
+        image = _comic(_offseason)
 
     # After the World Series there is nothing to show: replay a random past day.
     if image is None and _offseason and config.get('offseason_baseball', True):
